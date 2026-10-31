@@ -711,7 +711,10 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
       ? resolveRichMenuConversation(event, continuity) : null;
     // An exact, one-shot MY MMD shortcut remains usable after the SUPPORT
     // conversation expires. It can report only a canonically verified balance.
-    let checkptsShortcutEnabled = Boolean(checkptsShortcut && supportReplyEnabled && directUser &&
+    // Owner-approved exact commands are independent of general conversation
+    // and rights-sentence switches. Shared stop, identity and takeover gates stay.
+    let checkptsShortcutEnabled = Boolean(checkptsShortcut && enabled(env.LINE_KENJI_AI_ENABLED) &&
+      continuityEnabled && !runtimeLineKill && directUser &&
       eventMode !== "standby" && !redelivered && replyToken);
     // Exact Points aliases always use the same shortcut, even during SUPPORT.
     // Other rights sentences retain their existing bounded command behavior.
@@ -751,6 +754,7 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
         ? await resolveKenjiLineSnapshotTruth({ env, event })
         : await resolveKenjiLineLiveTruth({ env, event, intent: "points_status" })
       : null;
+    const needsMemberName = pointsTruth?.ok === true && !text(pointsTruth.display_name);
     if (pointsReplyEnabled && pointsTruth?.ok !== true) {
       const membershipTruth = await resolveKenjiLineLiveTruth({ env, event, intent: "membership_status" });
       if (membershipTruth.ok === true) pointsTruth = {
@@ -758,7 +762,15 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
         points: { status: "unavailable", active_points: null },
       };
     }
-    const pointsDecision = pointsReplyEnabled ? resolveCheckptsShortcut(pointsTruth, Date.now(), !pointsConversationEnabled || checkptsShortcut) : null;
+    // Snapshots do not carry a member name. Read it from the same signed
+    // identity's canonical membership lane; never use a LINE profile or typed name.
+    if (checkptsShortcutEnabled && needsMemberName && pointsTruth.identity_status === "resolved") {
+      const nameTruth = await resolveKenjiLineLiveTruth({ env, event, intent: "membership_status" });
+      if (nameTruth.ok === true && nameTruth.identity_status === "resolved") {
+        pointsTruth = { ...pointsTruth, display_name: nameTruth.display_name };
+      }
+    }
+    const pointsDecision = pointsReplyEnabled ? resolveCheckptsShortcut(pointsTruth, Date.now(), !checkptsShortcut && !pointsConversationEnabled) : null;
     if (checkptsShortcutEnabled) {
       // Recheck at the delivery boundary, not in the duplicate legacy intake.
       // Per may take over (including Matrix-only takeover) during a slow read.

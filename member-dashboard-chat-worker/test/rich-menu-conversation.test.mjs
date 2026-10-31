@@ -146,7 +146,7 @@ test("SUPPORT continues renewal, Points and status without confirming truth or c
 });
 
 test("unavailable Checkpts uses approved copy without campaigns or repeat verification", () => {
-  const expected = "ตอนนี้เปอร์ยังดึงข้อมูลจากระบบมายืนยันให้ไม่ได้ครับ\n\nสถานะสมาชิก: ยังตรวจสอบไม่ได้\nPoints: ยังยืนยันยอดไม่ได้\nวันหมดอายุสมาชิก: ยังตรวจสอบไม่ได้\n\nผลนี้ยังไม่ได้หมายความว่าสมาชิกหมดอายุหรือ Points เป็นศูนย์นะครับ หากเคยส่ง Wish หรือยืนยัน LINE แล้ว ไม่ต้องทำซ้ำ ฝากข้อความไว้ในแชตนี้ให้เปอร์ตรวจต่อได้ครับ";
+  const expected = "ตอนนี้เปอร์ยังดึงข้อมูลจากระบบมายืนยันให้ไม่ได้ครับ\n\nชื่อสมาชิก: ยังตรวจสอบไม่ได้\nประเภทสมาชิก: ยังตรวจสอบไม่ได้\nสถานะสมาชิก: ยังตรวจสอบไม่ได้\nPoints: ยังยืนยันยอดไม่ได้\nวันหมดอายุสมาชิก: ยังตรวจสอบไม่ได้\nการสมัคร/ต่ออายุ: ยังยืนยันผลไม่ได้\n\nผลนี้ยังไม่ได้หมายความว่าสมาชิกหมดอายุหรือ Points เป็นศูนย์นะครับ หากเคยส่ง Wish หรือยืนยัน LINE แล้ว ไม่ต้องทำซ้ำ ฝากข้อความไว้ในแชตนี้ให้เปอร์ตรวจต่อได้ครับ";
   for (const truth of [{}, { ok: false },
     { ok: true, authority: "unverified", identity_status: "resolved" },
     { ok: true, authority: "my_mmd_entitlement_resolver_v1", identity_status: "unknown" }]) {
@@ -253,4 +253,31 @@ test("only bounded server-owned topics survive, and menu state contains no custo
   assert.equal(resolveRichMenuConversation(textEvent("Standard"), continuity, now + 30 * 60 * 1000), null);
   assert.equal(resolveRichMenuConversation(textEvent("x".repeat(601)), continuity, now), null);
   assert.equal(richMenuConversationStart({ menu: "unknown", button: 0 }), null);
+});
+
+for (const [lifecycle, expected] of [["active", "ใช้งานอยู่"], ["expiring_soon", "ใช้งานอยู่"],
+  ["grace", "ช่วงผ่อนผัน"], ["expired", "หมดอายุแล้ว"], ["blocked", "ระงับการใช้งาน"],
+  ["revoked", "ถูกยกเลิก"], ["unknown", "ยังไม่พบสิทธิ์"]]) {
+  test(`Checkpts keeps the member type visible for ${lifecycle} and distinguishes verified zero`, () => {
+    const reply = resolveCheckptsShortcut({ ok: true, authority: "my_mmd_entitlement_resolver_v1", identity_status: "resolved",
+      display_name: "Canonical\nFixture", membership: { level: "private_premium", label: "Premium", lifecycle, expire_at: "2027-01-01" },
+      points: { status: "verified", active_points: 0 }, renewal: { status: "ready", amount_thb: 2500 },
+    }, Date.now(), false);
+    assert.match(reply.text, /ชื่อสมาชิก: Canonical Fixture/);
+    assert.match(reply.text, /ประเภทสมาชิก: Premium/);
+    assert.ok(reply.text.includes(expected));
+    assert.match(reply.text, /Points: 0 Points/);
+    assert.match(reply.text, /การสมัคร\/ต่ออายุ: ยังยืนยันผลไม่ได้/);
+    assert.doesNotMatch(reply.text, /2500|สำเร็จแล้ว|https?:\/\//);
+  });
+}
+
+test("Checkpts expiry follows canonical dates without inferring lifetime from an SVIP label", () => {
+  for (const [expire_at, expected] of [["2027-01-01", "01/01/2027"], ["", "ยังไม่มีวันที่ยืนยันได้"], ["2027-02-31", "ยังไม่มีวันที่ยืนยันได้"]]) {
+    const reply = resolveCheckptsShortcut({ ok: true, authority: "my_mmd_entitlement_resolver_v1", identity_status: "resolved",
+      membership: { level: "svip", label: "SVIP", lifecycle: "active", expire_at }, points: { status: "unavailable" },
+    }, Date.now(), false);
+    assert.ok(reply.text.includes(expected));
+    assert.doesNotMatch(reply.text, /ไม่มีวันหมดอายุ|Points: 0/);
+  }
 });
