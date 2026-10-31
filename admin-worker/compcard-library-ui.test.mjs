@@ -102,11 +102,11 @@ test('model-first search applies Booking filters for name, height, weight, body 
     f.$('mdWeightMin').value='70';f.$('mdWeightMax').value='85';
     f.$('mdBody').value='athletic';f.$('mdSkin').value='tan';
     f.submit('mdSearch');
-    await ready(()=>f.calls.some(c=>c.url.pathname==='/v1/admin/booking-models'&&c.url.searchParams.get('q')==='Ice T'));
+    await ready(()=>f.calls.some(c=>c.url.pathname==='/v1/admin/booking-models'&&c.url.searchParams.get('q')==='Ice T')&&f.$('mdMore').disabled===false&&f.$('mdStatus').textContent.startsWith('แสดง'));
     const request=f.calls.filter(c=>c.url.pathname==='/v1/admin/booking-models').at(-1).url;
     for(const [name,val] of [['q','Ice T'],['audience','private'],['height_min','175'],['height_max','195'],['weight_min','70'],['weight_max','85'],['body','athletic'],['skin','tan']])assert.equal(request.searchParams.get(name),val);
     f.click('#mdReset');
-    await ready(()=>f.calls.filter(c=>c.url.pathname==='/v1/admin/booking-models').length>=3);
+    await ready(()=>f.calls.filter(c=>c.url.pathname==='/v1/admin/booking-models').length>=3&&f.$('mdMore').disabled===false&&f.$('mdStatus').textContent.startsWith('แสดง'));
     const clear=f.calls.filter(c=>c.url.pathname==='/v1/admin/booking-models').at(-1).url;
     assert.equal(clear.searchParams.get('q'),'');
     assert.equal(clear.searchParams.get('height_min'),null);
