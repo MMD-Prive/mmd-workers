@@ -15,13 +15,13 @@ export const END = '// src/admin-login-hero-worker-core.js\ninit_kenji_control_a
 export const OLD_SHA = '0f9856b26c3e8ff8ea122d01eb640c40d8cc9a2d32a5c8529b8a8e286aa21023';
 export const BASE_VERSION = '7200b410-db73-4fdf-9b85-5ae14d35d9c1';
 const UI = 'admin-worker/src/kenji-owner-line-unlock.js';
-export function patchOwner(code, replacement, oldSha = OLD_SHA) {
-  const a = code.indexOf(START), b = code.indexOf(END, a + START.length);
+export function patchOwner(code, replacement, oldSha = OLD_SHA, startMarker = START, endMarker = END) {
+  const a = code.indexOf(startMarker), b = code.indexOf(endMarker, a + startMarker.length);
   assert.ok(a >= 0 && b > a, 'owner section markers missing');
-  assert.equal(code.indexOf(START, a + START.length), -1, 'duplicate owner marker');
-  assert.equal(code.indexOf(END, b + END.length), -1, 'duplicate caller marker');
+  assert.equal(code.indexOf(startMarker, a + startMarker.length), -1, 'duplicate owner marker');
+  assert.equal(code.indexOf(endMarker, b + endMarker.length), -1, 'duplicate caller marker');
   assert.equal(digest(code.slice(a, b)), oldSha, 'active owner section differs from reviewed baseline');
-  assert.ok(replacement.startsWith(START) && !replacement.includes(END));
+  assert.ok(replacement.startsWith(startMarker) && !replacement.includes(endMarker));
   const next = code.slice(0, a) + replacement + code.slice(b);
   const outside = code.slice(0, a) + code.slice(b);
   assert.equal(next.slice(0, a) + next.slice(a + replacement.length), outside);

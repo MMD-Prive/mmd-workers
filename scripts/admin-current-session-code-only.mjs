@@ -138,12 +138,14 @@ export function createTransport(token, request = fetch) {
 }
 
 export async function releaseCurrentSession(io) {
-  const state = { phase: 'preflight', worker: 'admin-worker', source_sha: io.sha };
+  const root = io.root ?? ROOT;
+  assert.ok([ROOT, `/accounts/${ACCOUNT}/workers/scripts/immigrate-worker`].includes(root), 'unapproved release Worker');
+  const state = { phase: 'preflight', worker: root.split('/').at(-1), source_sha: io.sha };
   const save = phase => { state.phase = phase; io.save({ ...state }); };
   try {
     await io.approve();
     assert.match(io.sha || '', /^[a-f0-9]{40}$/);
-    const call = (suffix, init) => io.call(ROOT + suffix, init);
+    const call = (suffix, init) => io.call(root + suffix, init);
     const deployment = (await call('/deployments'))?.deployments?.[0];
     const active = activeVersion(deployment);
     assert.equal(active, io.expectedVersion, 'approved baseline version mismatch');
@@ -151,7 +153,7 @@ export async function releaseCurrentSession(io) {
     const version = await call('/versions/' + active);
     assert.equal(version.id, active, 'baseline version mismatch');
     const config = versionConfiguration(version);
-    const metadata = uploadMetadata(version, io.sha);
+    const metadata = (io.metadataFactory ?? uploadMetadata)(version, io.sha);
     // A stale build variable or temporal proximity is not source provenance.
     state.source_evidence = await io.sourceCheck(version);
     state.source_evidence.checked_at = io.now();
