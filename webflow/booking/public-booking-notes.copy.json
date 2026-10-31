@@ -1,0 +1,10 @@
+{
+  "version": "1.0.0",
+  "source_language": "th",
+  "scope": "/booking",
+  "field": "note",
+  "maximum_utf16_units": 1000,
+  "th": {"label":"หมายเหตุเพิ่มเติม (ไม่บังคับ)","placeholder":"เช่น จุดนัดพบ การแต่งตัว หรือสิ่งที่อยากให้เราดูแลเป็นพิเศษ"},
+  "en": {"label":"Additional notes (optional)","placeholder":"Meeting point, dress code, or anything you would like us to know"},
+  "zh": {"label":"补充说明（选填）","placeholder":"例如见面地点、着装要求或其他需要特别照顾的事项"}
+}
