@@ -67,8 +67,10 @@ test("opening progress remains indeterminate until the real entry decision compl
   assert.doesNotMatch(html,/const progressTimer = window\.setInterval/);
   assert.doesNotMatch(html,/loadingPercent \+ \(loadingPercent/);
   assert.doesNotMatch(html,/setLoadingPercent\(|hype-progress-number|hype-loader-img/);
-  assert.match(html,/<progress id="hype-progress" aria-label="กำลังเปิด MY MMD"><\/progress>/);
-  assert.match(html,/role="status" aria-label="กำลังเปิด MY MMD"/);
+  // Current approved HYPE uses a progressbar whose percentage is set only from verified boot work.
+  assert.match(html,/<div id="hype-loader" class="hype-loader" role="status" aria-label="กำลังยืนยันตัวตน">/);
+  assert.match(html,/<div id="hype-progress" class="loading-bar" role="progressbar" aria-label="กำลังยืนยันตัวตน" aria-valuemin="0" aria-valuemax="100">/);
+  assert.match(html,/<span id="customer-boot-progress" class="customer-boot-progress" data-confirmed-percent="0">0%<\/span>/);
 });
 
 test("MMD NOW folds natively while Worker-gated mission, quick links and Kenji remain",async()=>{
