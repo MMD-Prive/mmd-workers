@@ -56,9 +56,11 @@ function brief(value) {
     budget: boundedNumber(value.budget, 1, 1000000), spec: text(value.spec, 500),
     format: text(value.format, 40), extra: text(value.extra, 1000) };
 }
-function ownerOnly(value) {
+function ownerOnly(value, previous = {}) {
   if (!object(value)) fail("invalid_owner_details");
-  return { payoutCap: boundedNumber(value.payoutCap, 0, 1000000, true) };
+  const exclusions = Object.prototype.hasOwnProperty.call(value,"excludedCanonicalModelIds") ? value.excludedCanonicalModelIds : previous.excludedCanonicalModelIds || [];
+  if (!Array.isArray(exclusions) || exclusions.length > 50 || exclusions.some(id => !RECORD.test(id))) fail("invalid_exclusions");
+  return { payoutCap: boundedNumber(value.payoutCap, 0, 1000000, true), excludedCanonicalModelIds: [...new Set(exclusions)] };
 }
 function display(value) {
   if (!object(value)) fail("invalid_display");
@@ -155,15 +157,17 @@ function ownerView(value) {
 }
 function partnerView(value) {
   const selected = value.selection;
-  const currentModels = new Set(value.models.map(model => model.id));
-  const currentPhotos = new Set(value.models.flatMap(model => model.photos.filter(photo => photo.shareAllowed === true).map(photo => photo.id)));
+  const banned = new Set(value.ownerOnly?.excludedCanonicalModelIds || []);
+  const visibleModels = value.models.filter(model => !banned.has(model.canonicalModelId));
+  const currentModels = new Set(visibleModels.map(model => model.id));
+  const currentPhotos = new Set(visibleModels.flatMap(model => model.photos.filter(photo => photo.shareAllowed === true).map(photo => photo.id)));
   const validSelection = selected && selected.modelIds.every(id => currentModels.has(id)) && selected.photoIds.every(id => currentPhotos.has(id));
   return { ok: true, jobId: value.id, title: value.title, revision: value.revision,
     expiresAt: value.expiresAt, brief: brief(value.brief), selection: validSelection ? {
       receiptId: selected.receiptId, modelIds: selected.modelIds, photoIds: selected.photoIds,
       note: selected.note, submittedAt: selected.submittedAt,
     } : null,
-    models: value.models.map(model => ({ id: model.id, ...display(model.display), photos: model.photos
+    models: visibleModels.map(model => ({ id: model.id, ...display(model.display), photos: model.photos
       .filter(photo => photo.shareAllowed === true).map(photo => ({ id: photo.id, downloadAllowed: photo.downloadAllowed === true,
         previewPath: PARTNER_API + "/" + value.id + "/media/" + photo.id,
         ...(photo.downloadAllowed === true ? { downloadPath: PARTNER_API + "/" + value.id + "/media/" + photo.id + "/download" } : {}) })) })) };
@@ -252,8 +256,9 @@ async function importModel(request, env, cookie, entry, input) {
   compareRevision(entry.value, input);
   if (input.historyReviewed !== true) fail("history_review_required");
   if (!RECORD.test(input.canonicalModelId || "")) fail("invalid_model_source");
+  if ((entry.value.ownerOnly?.excludedCanonicalModelIds || []).includes(input.canonicalModelId)) fail("model_excluded", 403);
   const shown = display(input.display);
-  if (!Array.isArray(input.photos) || !input.photos.length || input.photos.length > 12) fail("invalid_photos");
+  if (!Array.isArray(input.photos) || !input.photos.length || input.photos.length > 30) fail("invalid_photos");
   const old = entry.value.models.find(model => model.canonicalModelId === input.canonicalModelId);
   if (!old && entry.value.models.length >= 30) fail("too_many_models");
   const unique = new Set(), specs = input.photos.map(photo => {
@@ -327,7 +332,7 @@ async function ownerRoute(request, env, parts) {
     const input = await body(request); compareRevision(value, input); const next = { ...value };
     if (own(input, "title")) next.title = text(input.title, 100, true);
     if (own(input, "brief")) next.brief = brief(input.brief);
-    if (own(input, "ownerOnly")) next.ownerOnly = ownerOnly(input.ownerOnly);
+    if (own(input, "ownerOnly")) next.ownerOnly = ownerOnly(input.ownerOnly, value.ownerOnly);
     if (own(input, "expiresAt")) next.expiresAt = expiry(input.expiresAt);
     if (own(input, "state")) {
       if (!["active", "revoked"].includes(input.state)) fail("invalid_state");

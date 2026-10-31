@@ -209,3 +209,34 @@ test('owner preview only renders approved shortlist media with full-card fit, no
     assert.equal(h.errors.length,0);
   } finally { h.dom.window.close(); }
 });
+
+test("job owner can open every available preview at once, without enabling downloads",async()=>{
+  const h=await harness();
+  try{
+    await h.choose();
+    assert.equal(h.$('selectAllPhotos').disabled,false);
+    assert.equal(h.dom.window.document.querySelectorAll('#photos .check input').length,4);
+    h.$('selectAllPhotos').click();
+    const choices=[...h.dom.window.document.querySelectorAll('#photos .check input')];
+    assert.deepEqual(choices.map(x=>x.checked),[true,false,true,false]);
+    assert.equal(h.$('historyReviewed').checked,false);
+    assert.equal(h.$('importModel').disabled,true);
+    h.toggle(h.$('historyReviewed'),true);
+    assert.equal(h.$('importModel').disabled,false);
+    assert.match(h.$('photoCount').textContent,/2 \/ 30/);
+    assert.equal(h.errors.length,0);
+  }finally{h.dom.window.close();}
+});
+test("job-specific excluded model is absent from owner search without modifying canonical registry",async()=>{
+  const item=fixture();
+  item.ownerOnly.excludedCanonicalModelIds=[canonicalModelId];
+  const h=await harness({item});
+  try{
+    h.$('addModel').click();h.$('search').value='Sample Model';
+    h.$('searchForm').dispatchEvent(new h.dom.window.Event('submit',{bubbles:true,cancelable:true}));
+    await flush();
+    assert.equal(h.dom.window.document.querySelectorAll('.search-result').length,0);
+    assert.match(h.$('searchResults').textContent,/ไม่พบ/);
+    assert.equal(h.errors.length,0);
+  }finally{h.dom.window.close();}
+});
