@@ -80,7 +80,8 @@ async function clientFixture(options, run) {
   const globalButton = { disabled: true, addEventListener(_, fn) { events.global = fn; } };
   const refresh = { addEventListener(_, fn) { events.refresh = fn; } };
   const status = { textContent: '' };
-  globalThis.document = { getElementById: () => ({ querySelector: s => s === 'button' ? button : s === '[data-refresh]' ? refresh : s === '[data-global-unlock]' ? globalButton : status }) };
+  const confirmation = { checked: options.confirm !== false };
+  globalThis.document = { getElementById: () => ({ querySelector: s => s === 'button' ? button : s === '[data-refresh]' ? refresh : s === '[data-global-unlock]' ? globalButton : s === '[data-owner-confirm]' ? confirmation : status }) };
   globalThis.window = { confirm: () => options.confirm !== false };
   const calls = []; let reads = 0; let controls = structuredClone(options.initial ?? initial());
   globalThis.fetch = async (input, init = {}) => {
@@ -205,4 +206,9 @@ test('global conflict, timeout, missing audit and changed sibling scope never cl
       assert.equal(button.disabled, true); assert.equal(globalButton.disabled, true);
     });
   }
+});
+
+test('owner confirmation is explicit inline acknowledgement and never a blocking browser dialog', () => {
+ assert.match(ownerLinePanel(), /type="checkbox" data-owner-confirm/);
+ assert.doesNotMatch(OWNER_LINE_CLIENT, /window\.confirm/);
 });
