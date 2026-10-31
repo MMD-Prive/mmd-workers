@@ -1,0 +1,101 @@
+name: Release Kenji Owner ingress panel only
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/kenji-owner-ingress-overlay*'
+      - '.github/workflows/deploy-kenji-owner-ingress-panel.yml'
+      - 'admin-worker/src/kenji-owner-line-unlock.js'
+      - 'admin-worker/kenji-owner-line-unlock.test.mjs'
+  workflow_dispatch:
+    inputs:
+      production_approved:
+        description: 'Owner approval for kenji-unpause-only code overlay; no config or business writes'
+        type: boolean
+        required: true
+        default: false
+      approval_ref:
+        description: 'Owner approval reference for this exact release'
+        type: string
+        required: true
+      approved_sha:
+        description: 'Exact full main SHA for this protected release run'
+        type: string
+        required: true
+      expected_version:
+        description: 'Fresh active admin-worker version UUID'
+        type: string
+        required: true
+      expected_deployment:
+        description: 'Fresh active admin-worker deployment UUID'
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ${{ github.event_name == 'workflow_dispatch' && 'deploy-immigrate-worker-production' || format('kenji-unpause-contracts-{0}', github.ref) }}
+  cancel-in-progress: false
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - run: npm ci
+      - run: npm install --global wrangler@4.105.0 --no-audit --no-fund
+      - name: Overlay, original release guard and delivered-browser contracts (no credentials)
+        run: |
+          node --test scripts/kenji-owner-ingress-overlay.test.mjs scripts/admin-kenji-unpause-code-only.test.mjs scripts/admin-current-session-code-only.test.mjs scripts/admin-production-approval.test.mjs admin-worker/kenji-owner-line-unlock.test.mjs admin-worker/kenji-control-actions.test.mjs
+          node scripts/kenji-owner-ingress-overlay.mjs --test-bundle
+
+  production-approval:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha
+    uses: ./.github/workflows/admin-production-approval.yml
+    with:
+      approval_ref: ${{ inputs.approval_ref }}
+      approved_sha: ${{ inputs.approved_sha }}
+
+  release:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha
+    needs: [production-approval, contracts]
+    environment: mmd-production-mutation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - run: npm install --global wrangler@4.105.0 --no-audit --no-fund
+      - name: Overlay reviewed Owner controls only; preserve all other runtime/config bytes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRODUCTION_APPROVED: ${{ inputs.production_approved }}
+          APPROVAL_REF: ${{ inputs.approval_ref }}
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+          EXPECTED_VERSION: ${{ inputs.expected_version }}
+          EXPECTED_DEPLOYMENT: ${{ inputs.expected_deployment }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          WRANGLER_SEND_METRICS: 'false'
+        run: node scripts/kenji-owner-ingress-overlay.mjs --execute-approved
+      - name: Save sanitized release receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kenji-ingress-panel-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/kenji-ingress-panel-receipt.json
+          if-no-files-found: ignore
+          retention-days: 90
