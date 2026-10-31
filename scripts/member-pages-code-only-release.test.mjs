@@ -554,7 +554,7 @@ test('release workflow is manual, exact-SHA and protected with no data-service c
 
   assert.match(source,/EXPECTED_VERSION: \$\{\{ inputs\.expected_version \}\}/);
   assert.match(source,/EXPECTED_DEPLOYMENT: \$\{\{ inputs\.expected_deployment \}\}/);
-  assert.equal((source.match(/secrets\./g)||[]).length,2);
+  assert.equal((source.match(/secrets\./g)||[]).length,3);
   assert.match(source,/CLOUDFLARE_API_TOKEN: \$\{\{ secrets\.CLOUDFLARE_API_TOKEN \}\}/);
   assert.doesNotMatch(source,/AIRTABLE|R2_API|ensure-private|ensure-payment|wrangler route|wrangler secret|synthetic_write|production public Wish/i);
   assert.match(source,/node scripts\/member-pages-code-only-release\.mjs --execute-approved/);

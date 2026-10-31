@@ -13,6 +13,7 @@ on:
           - release
           - companion-artifact
           - renewal-artifact
+          - renewal-activation
           - promote-existing
       production_approved:
         description: 'Owner authorization for the selected mode and exact SHA; not an environment approval receipt'
@@ -46,7 +47,7 @@ concurrency:
 
 jobs:
   production-approval:
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha && (inputs.execution_mode == 'approval_boundary_only' || inputs.execution_mode == 'release' || inputs.execution_mode == 'companion-artifact' || inputs.execution_mode == 'renewal-artifact' || inputs.execution_mode == 'promote-existing')
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha && (inputs.execution_mode == 'approval_boundary_only' || inputs.execution_mode == 'release' || inputs.execution_mode == 'companion-artifact' || inputs.execution_mode == 'renewal-artifact' || inputs.execution_mode == 'promote-existing' || inputs.execution_mode == 'renewal-activation')
     runs-on: ubuntu-latest
     timeout-minutes: 3
     permissions:
@@ -93,7 +94,7 @@ jobs:
         run: node scripts/member-pages-owner-approval.mjs
 
   release:
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha && (inputs.execution_mode == 'release' || inputs.execution_mode == 'companion-artifact' || inputs.execution_mode == 'renewal-artifact' || inputs.execution_mode == 'promote-existing') && inputs.expected_version != '' && inputs.expected_deployment != ''
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha && (inputs.execution_mode == 'release' || inputs.execution_mode == 'companion-artifact' || inputs.execution_mode == 'renewal-artifact' || inputs.execution_mode == 'promote-existing' || inputs.execution_mode == 'renewal-activation') && inputs.expected_version != '' && inputs.expected_deployment != ''
     needs: [production-approval]
     environment: member-pages-code-only-owner
     runs-on: ubuntu-latest
@@ -129,7 +130,7 @@ jobs:
           node-version: '22'
       - name: Verify code-only release contract
         run: |
-          node --test scripts/member-pages-owner-approval.test.mjs scripts/member-pages-artifact-delta.test.mjs scripts/member-pages-code-only-release.test.mjs scripts/member-pages-uploaded-recovery.test.mjs scripts/member-pages-promotion-only-recovery.test.mjs scripts/member-pages-recovery-adapter.test.mjs scripts/member-pages-renewal-artifact.test.mjs
+          node --test scripts/member-pages-owner-approval.test.mjs scripts/member-pages-artifact-delta.test.mjs scripts/member-pages-code-only-release.test.mjs scripts/member-pages-uploaded-recovery.test.mjs scripts/member-pages-promotion-only-recovery.test.mjs scripts/member-pages-recovery-adapter.test.mjs scripts/member-pages-renewal-artifact.test.mjs scripts/member-pages-renewal-activation.test.mjs
       - name: Verify MY MMD release source behavior
         if: inputs.execution_mode == 'release'
         run: |
@@ -147,7 +148,7 @@ jobs:
         if: inputs.execution_mode == 'renewal-artifact'
         run: node --test member-pages-worker/test/liff-member-shell.test.mjs member-pages-worker/test/liff-identity-foundation.test.mjs member-pages-worker/test/liff-renewal-card.test.mjs member-pages-worker/test/renewal-offer.test.mjs shared/membership-promotion-policy.test.mjs
       - name: Install pinned Wrangler bundler
-        if: inputs.execution_mode != 'companion-artifact' && inputs.execution_mode != 'renewal-artifact'
+        if: inputs.execution_mode != 'companion-artifact' && inputs.execution_mode != 'renewal-artifact' && inputs.execution_mode != 'renewal-activation'
         run: npm install --global wrangler@4.151.1 --no-audit --no-fund
       - name: Upload and promote reviewed code with strict binding inheritance
         if: inputs.execution_mode == 'release' || inputs.execution_mode == 'companion-artifact' || inputs.execution_mode == 'renewal-artifact'
@@ -164,6 +165,22 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           WRANGLER_SEND_METRICS: 'false'
         run: node scripts/member-pages-code-only-release.mjs --execute-approved
+      - name: Verify Renewal activation payment evidence regressions
+        if: inputs.execution_mode == 'renewal-activation'
+        run: node --test member-pages-worker/test/liff-renewal-eligibility.test.mjs member-pages-worker/test/liff-renewal-card.test.mjs member-pages-worker/test/renewal-offer.test.mjs payments-worker/renewal-payment-intent.test.mjs payments-worker/renewal-pending-readback.test.mjs
+      - name: Activate only the reviewed Renewal flag with unchanged code
+        if: inputs.execution_mode == 'renewal-activation'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APPROVAL_REF: ${{ inputs.approval_ref }}
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+          RELEASE_MODE: ${{ inputs.execution_mode }}
+          PRODUCTION_APPROVED: ${{ inputs.production_approved }}
+          EXPECTED_VERSION: ${{ inputs.expected_version }}
+          EXPECTED_DEPLOYMENT: ${{ inputs.expected_deployment }}
+          CLOUDFLARE_ACCOUNT_ID: b176eda1172b741fd2e58904cc9d77c5
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node scripts/member-pages-renewal-activation.mjs --execute-approved
       - name: Promote only the verified existing startup version
         if: inputs.execution_mode == 'promote-existing'
         env:

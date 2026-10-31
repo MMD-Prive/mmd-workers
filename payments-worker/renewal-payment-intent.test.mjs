@@ -2,10 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import worker from './index.js';
 import { handleUnifiedPaymentIntent } from './unified-payment-proof.js';
-const session='liffrenew_standard_'+'a'.repeat(24);
-const input={session_id:session,payment_stage:'membership',package_code:'standard',amount:1000,payment_ref:'FIXTURE-REF'};
 const request=body=>new Request('https://payments.local/v1/pay/verify',{method:'POST',body:JSON.stringify(body)});
-test('concurrent Renewal purchases upsert one pending canonical payment and reject conflicting retries',async()=>{
+for(const [tier,amount] of [['standard',1000],['premium',2500]]) {
+const session='liffrenew_'+tier+'_'+'a'.repeat(24);
+const input={session_id:session,payment_stage:'membership',package_code:tier,amount,payment_ref:'FIXTURE-REF'};
+test(tier+': concurrent Renewal purchases upsert one pending canonical payment and reject conflicting retries',async()=>{
   const rows=[]; const calls=[]; const original=globalThis.fetch;
   globalThis.fetch=async(url,init={})=>{
     assert.equal(new URL(url).hostname,'api.airtable.com');
@@ -36,10 +37,12 @@ test('concurrent Renewal purchases upsert one pending canonical payment and reje
   }finally{globalThis.fetch=original;}
 });
 
-test('LIFF Renewal signed handoff uses the checkout surface even with legacy Private routing',async()=>{
+test(tier+': LIFF Renewal signed handoff uses the checkout surface even with legacy Private routing',async()=>{
   const env={CONFIRM_KEY:'fixture-signing-key',PAY_SESSIONS_KV:{async put(){}}};
   const response=await handleUnifiedPaymentIntent(request(input),env,async()=>Response.json({ok:true,session_id:session,payment_ref:'FIXTURE-REF'}));
   const payload=await response.json();assert.equal(payload.ok,true);
   const url=new URL(payload.customer_payment_url);assert.equal(url.pathname,'/pay/checkout');
   assert.deepEqual([...url.searchParams.keys()],['t']);assert.equal(payload.payment_surface,'public');
 });
+
+}
