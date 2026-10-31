@@ -18,6 +18,9 @@ export const OWNER_COPY = {
   expires: 'วันและเวลาปิดลิงก์', bangkok: 'เวลาประเทศไทย', pending: 'รอยืนยัน', pendingField: 'เว้นว่างไว้ได้ หากรอคู่ค้าเติมรายละเอียด',
   scopeHint: 'ข้อมูลถึงโมเดลเก็บไว้เฉพาะหลังบ้าน ส่วนบรีฟด้านบนเป็นข้อมูลที่คู่ค้าเห็นค่ะ',
   noModels: 'พร้อมรับบรีฟแล้ว เพิ่มเฉพาะคนและรูปที่เปอร์เลือกสำหรับงานนี้ค่ะ',
+  previewPartner: 'ดูตัวอย่างหน้า Pero', previewPartnerTitle: 'ตัวอย่างหน้าที่ Pero จะเห็น',
+  previewPartnerHint: 'ตัวอย่างสำหรับเปอร์เท่านั้น ไม่ออกลิงก์ ไม่ส่งข้อมูล และไม่เปิดสิทธิ์รูปเพิ่ม',
+  previewPartnerEmpty: 'ยังไม่มีโมเดลที่เปอร์เปิดให้เลือกสำหรับงานนี้ค่ะ',
   selection: 'ตัวเลือกที่คู่ค้าส่งมา', noSelection: 'รอคู่ค้าส่งตัวเลือกค่ะ', receipt: 'อ้างอิง', submitted: 'ส่งเมื่อ', note: 'หมายเหตุ',
   openLibrary: 'คลัง Compcard', openModels: 'ค้นโมเดลหลังบ้าน',
   search: 'ค้นชื่อหรือรหัส', searchButton: 'ค้นหา', searching: 'กำลังค้นหา…', noResults: 'ไม่พบคนที่ตรงกับคำค้น ลองชื่อหรือรหัสอื่นค่ะ',
@@ -52,6 +55,30 @@ export function renderOwnerPage(nonce) {
     @media(min-width:760px){#shortlist-owner .workspace{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:16px;align-items:start}#shortlist-owner .photo-grid{grid-template-columns:repeat(3,minmax(0,1fr))}#shortlist-owner h1{font-size:29px}}@media(max-width:370px){#shortlist-owner .shell{width:calc(100% - 24px)}#shortlist-owner .card,#shortlist-owner .dialog-body{padding:16px}#shortlist-owner .fields{grid-template-columns:minmax(0,1fr)}#shortlist-owner .toolbar .btn{flex:1}#shortlist-owner .link-box{flex-wrap:wrap}#shortlist-owner .link-box textarea{flex-basis:100%}#shortlist-owner .photo-grid{gap:8px}#shortlist-owner .photo-meta{padding:8px}#shortlist-owner .sticky-action{padding-left:16px;padding-right:16px}}@media(prefers-reduced-motion:reduce){#shortlist-owner *,#shortlist-owner *:before,#shortlist-owner *:after{scroll-behavior:auto!important;transition:none!important}}
     /* Final scoped contrast protection for inherited Webflow/host styles. */
     #shortlist-owner h1,#shortlist-owner h2,#shortlist-owner h3,#shortlist-owner label,#shortlist-owner summary,#shortlist-owner input,#shortlist-owner select,#shortlist-owner textarea{color:var(--ink)!important;-webkit-text-fill-color:var(--ink)!important;background-image:none!important}#shortlist-owner .hint,#shortlist-owner .muted{color:var(--muted)!important;-webkit-text-fill-color:var(--muted)!important}#shortlist-owner .primary{color:var(--accent-ink)!important;-webkit-text-fill-color:var(--accent-ink)!important}#shortlist-owner .error,#shortlist-owner .danger{color:var(--danger)!important;-webkit-text-fill-color:var(--danger)!important}
+    #shortlist-owner .partner-preview-dialog{max-width:510px;background:#f7f3ed}
+    #shortlist-owner .partner-preview-screen{max-width:410px;margin:14px auto 0;border:1px solid #d7ccbd;border-radius:18px;overflow:hidden;background:#f4efe6;box-shadow:0 14px 35px #30251f12}
+    #shortlist-owner .pp-top{background:#30251f;color:#f5e2b5;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:18px 17px}
+    #shortlist-owner .pp-top strong{color:#f5e2b5;font:600 20px/1.1 Arial,sans-serif}
+    #shortlist-owner .pp-top span{color:#f5e2b5;font:500 10px/1.2 Arial,sans-serif;letter-spacing:.14em}
+    #shortlist-owner .pp-main{padding:20px 17px 26px}
+    #shortlist-owner .pp-kicker{margin:0 0 6px;color:#704b30;font-size:11px;letter-spacing:.13em}
+    #shortlist-owner .pp-title{font-size:27px;line-height:1.35;margin:0 0 16px;color:#382a21}
+    #shortlist-owner .pp-summary{border-radius:14px;background:#fffdf8;padding:12px 15px;border:1px solid #ded6ce}
+    #shortlist-owner .pp-row{display:grid;grid-template-columns:92px minmax(0,1fr);gap:9px;align-items:start;padding:9px 0;border-bottom:1px solid #ece3d8}
+    #shortlist-owner .pp-row:last-child{border-bottom:0}
+    #shortlist-owner .pp-row span{color:#746459;font-size:12px}
+    #shortlist-owner .pp-row strong{color:#382a21;font-size:14px;font-weight:600;overflow-wrap:anywhere}
+    #shortlist-owner .pp-subtitle{color:#382a21;font-size:20px;line-height:1.4;margin:20px 0 12px}
+    #shortlist-owner .pp-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+    #shortlist-owner .pp-card{background:#fffdf8;border:1px solid #ded6ce;border-radius:12px;overflow:hidden;min-width:0}
+    #shortlist-owner .pp-cover{aspect-ratio:4/5;background:#e4d9ca;display:grid;place-items:center;overflow:hidden}
+    #shortlist-owner .pp-cover img{width:100%;height:100%;object-fit:contain;display:block}
+    #shortlist-owner .pp-cover span{font-size:12px;color:#746459;padding:12px;text-align:center}
+    #shortlist-owner .pp-card-info{padding:11px 12px}
+    #shortlist-owner .pp-card-info strong{font-size:16px;color:#382a21;display:block;overflow-wrap:anywhere}
+    #shortlist-owner .pp-card-info p{font-size:12px;color:#746459;margin:5px 0 0}
+    #shortlist-owner .pp-empty{grid-column:1/-1;background:#fffdf8;border:1px dashed #d7ccbd;border-radius:14px;padding:24px 16px;text-align:center;color:#746459;font-size:14px}
+    @media(max-width:370px){#shortlist-owner .pp-main{padding:14px}#shortlist-owner .pp-row{grid-template-columns:75px minmax(0,1fr)}#shortlist-owner .pp-grid{gap:7px}}
   </style></head><body><div id="shortlist-owner">
   <header><div class="shell top"><div class="brand">MMD INTERNAL</div><a class="back" href="/internal/admin/control-room">${c.back} ↗</a></div></header>
   <main class="shell"><h1>${c.title}</h1><p class="intro">${c.intro}</p>
@@ -59,11 +86,12 @@ export function renderOwnerPage(nonce) {
   <div id="globalError" class="error" role="alert" hidden></div><div id="globalStatus" class="status" role="status" aria-live="polite"></div><a id="loginLink" class="btn" hidden>${c.login}</a>
   <div id="empty" class="empty" hidden>${c.empty}</div>
   <div id="jobWorkspace" hidden><div class="workspace"><div>
-    <section class="card"><div class="section-head"><div><h2 id="jobName"></h2><p id="jobExpiry" class="hint"></p></div><span id="jobState" class="tag"></span></div><dl id="briefSummary" class="summary"></dl><button id="editBrief" class="btn">${c.editBrief}</button>
+    <section class="card"><div class="section-head"><div><h2 id="jobName"></h2><p id="jobExpiry" class="hint"></p></div><span id="jobState" class="tag"></span></div><dl id="briefSummary" class="summary"></dl><button id="editBrief" class="btn">${c.editBrief}</button><button id="previewPartner" class="btn primary" type="button">${c.previewPartner}</button>
     <details><summary>${c.manage}</summary><p class="hint">${c.linkHint}</p><div id="linkBox" class="link-box" hidden><label class="sr" for="shareUrl">${c.link}</label><textarea id="shareUrl" readonly spellcheck="false"></textarea><button id="copyLink" class="btn primary">${c.copy}</button></div><div class="actions"><button id="rotateLink" class="btn">${c.rotate}</button><button id="revokeLink" class="btn danger">${c.revoke}</button></div></details></section>
     <section class="card"><div class="section-head"><h2>${c.selection}</h2><button id="reloadJob" class="btn quiet">${c.refresh}</button></div><div id="selection"></div></section>
   </div><section class="card"><div class="section-head"><h2>${c.models}</h2><button id="addModel" class="btn primary">${c.addModel}</button></div><div id="modelList"></div><div class="links"><a href="/internal/admin/compcards" target="_blank" rel="noopener noreferrer">${c.openLibrary} ↗</a><a href="/internal/admin/booking-models" target="_blank" rel="noopener noreferrer">${c.openModels} ↗</a></div></section></div></div>
   </main>
+  <dialog id="partnerPreviewDialog" class="partner-preview-dialog" aria-labelledby="partnerPreviewTitle"><div class="dialog-body"><div class="dialog-head"><h2 id="partnerPreviewTitle">${c.previewPartnerTitle}</h2><button class="btn quiet close" type="button" data-close="partnerPreviewDialog" aria-label="${c.close}">×</button></div><p class="hint">${c.previewPartnerHint}</p><div id="partnerPreviewScreen" class="partner-preview-screen" role="region" aria-label="ตัวอย่างหน้า Pero"></div></div></dialog>
   <dialog id="jobDialog" aria-labelledby="jobDialogTitle"><form id="jobForm" class="dialog-body"><div class="dialog-head"><h2 id="jobDialogTitle">${c.newJob}</h2><button class="btn quiet close" type="button" data-close="jobDialog" aria-label="${c.close}">×</button></div>
     <div class="fields">${field('title',c.jobTitle,'text','required maxlength="100" class="full"')}${field('date',c.date,'date','required')}${field('time',c.time,'time')}${field('location',c.location,'text','maxlength="160"')}${field('duration',c.duration,'text','maxlength="80"')}${field('budget',c.budget,'number','required min="1" max="1000000" step="1"')}${field('format',c.format,'text','maxlength="40"')}
     <label class="field full" for="spec"><span>${c.spec}</span><textarea id="spec" maxlength="500"></textarea></label><label class="field full" for="extra"><span>${c.extra}</span><textarea id="extra" maxlength="1000"></textarea></label>${field('expiresAt',c.expires+' · '+c.bangkok,'datetime-local','required class="full"')}</div>
@@ -102,7 +130,7 @@ function ownerClient(C) {
     } finally {clearTimeout(timer);}
   }
   function validItem(item){if(!item||!idPattern.test(item.id)||!item.revision||!Array.isArray(item.models)||!item.brief)throw new Error(C.invalidResponse);return item;}
-  function setBusy(value){busy=value;for(const id of ['saveJob','rotateLink','revokeLink','confirmAction','newJob','editBrief','addModel','refresh','reloadJob'])$(id).disabled=value;$('jobs').disabled=value;updateImport();if(current)$('revokeLink').disabled=value||current.state==='revoked';}
+  function setBusy(value){busy=value;for(const id of ['saveJob','rotateLink','revokeLink','confirmAction','newJob','editBrief','previewPartner','addModel','refresh','reloadJob'])$(id).disabled=value;$('jobs').disabled=value;updateImport();if(current)$('revokeLink').disabled=value||current.state==='revoked';}
   function photoPath(path){try{const u=new URL(path,location.origin);if(u.origin===location.origin&&u.pathname.startsWith(API+'/')&&!u.search&&!u.hash)return u.pathname;}catch{}return '';}
   function newImage(path,alt,className){const img=el('img',undefined,className);img.alt=alt;img.loading='lazy';img.decoding='async';img.referrerPolicy='no-referrer';img.src=path;return img;}
   function bindPreview(img,path,name){img.addEventListener('click',()=>{$('photoPreview').src=path;$('photoPreview').alt=name;open('photoDialog');});}
@@ -125,6 +153,30 @@ function ownerClient(C) {
       edit.addEventListener('click',()=>editSavedModel(m));remove.addEventListener('click',()=>ask(C.removeTitle,C.removeHint,async()=>{const r=await api(API+'/'+current.id+'/models/'+m.id,'DELETE',{revision:current.revision});saveCurrent(r.item);close('confirmDialog');}));actions.append(edit,remove);info.append(actions);row.append(info);list.append(row);}
     renderSelection();
   }
+  function renderPartnerPreview(){
+    const target=$('partnerPreviewScreen');target.replaceChildren();if(!current)return;
+    const top=el('div',undefined,'pp-top');top.append(el('strong','MMD Privé'),el('span','PARTNER SELECTION'));target.append(top);
+    const main=el('div',undefined,'pp-main'),b=current.brief;
+    main.append(el('p','PRIVATE · JOB SHORTLIST','pp-kicker'),el('h3','คัดไว้สำหรับงานนี้','pp-title'));
+    const summary=el('div',undefined,'pp-summary');
+    const budget=typeof b.budget==='number'&&b.budget>0?b.budget.toLocaleString('th-TH')+' บาท':'';
+    for(const [label,value] of [[C.date,b.date],[C.time,b.time],[C.location,b.location],[C.duration,b.duration],[C.budget,budget],[C.format,b.format],[C.spec,b.spec],[C.extra,b.extra]]){
+      const row=el('div',undefined,'pp-row');row.append(el('span',label),el('strong',value||C.pending));summary.append(row);
+    }
+    main.append(summary,el('h3','ตัวเลือกสำหรับงานนี้','pp-subtitle'));
+    const grid=el('div',undefined,'pp-grid');
+    if(!current.models.length)grid.append(el('p',C.previewPartnerEmpty,'pp-empty'));
+    for(const m of current.models){
+      const card=el('article',undefined,'pp-card'),cover=el('div',undefined,'pp-cover'),info=el('div',undefined,'pp-card-info');
+      const photo=(m.photos||[]).find(p=>p.shareAllowed!==false&&photoPath(p.previewPath));
+      const path=photo?photoPath(photo.previewPath):'';
+      cover.append(path?newImage(path,m.name,'pp-image'):el('span',C.noPhotos));
+      info.append(el('strong',m.name),el('p',[m.code,m.height?m.height+' ซม.':'',m.weight?m.weight+' กก.':'',m.format].filter(Boolean).join(' · ')));
+      info.append(el('p',m.status==='available'?C.available:m.status==='unavailable'?C.unavailable:C.pending));
+      card.append(cover,info);grid.append(card);
+    }
+    main.append(grid);target.append(main);
+  }
   function renderSelection(){const area=$('selection'),s=current?.selection;area.replaceChildren();if(!s){area.append(el('p',C.noSelection,'muted'));return;}const names=new Map(current.models.map(m=>[m.id,m.name]));const ol=el('ol');for(const id of s.modelIds||[])ol.append(el('li',names.get(id)||C.pending));area.append(ol);if(s.note)area.append(el('p',s.note));area.append(el('p',C.submitted+' '+formatDate(s.submittedAt)+' · '+C.receipt+' '+s.receiptId,'hint'));const chosen=new Set(s.photoIds||[]),grid=el('div',undefined,'submitted-photos');for(const m of current.models)for(const p of m.photos||[]){const path=photoPath(p.previewPath);if(chosen.has(p.id)&&path){const img=newImage(path,m.name,'');bindPreview(img,path,m.name);grid.append(img);}}area.append(grid);}
   async function loadList(){const data=await api(API);jobs=(Array.isArray(data.items)?data.items:[]).filter(j=>idPattern.test(j.id));updateJobList();$('empty').hidden=Boolean(current);}
   async function loadJob(id){if(!idPattern.test(id))return;clearStatus();const r=await api(API+'/'+id);if(current?.id!==id)shareUrl='';saveCurrent(r.item);}
@@ -145,6 +197,7 @@ function ownerClient(C) {
   for(const b of document.querySelectorAll('[data-close]'))b.addEventListener('click',()=>{if(!busy)close(b.dataset.close);});
   for(const id of ['jobDialog','modelDialog','confirmDialog'])$(id).addEventListener('cancel',e=>{if(busy)e.preventDefault();});
   $('modelDialog').addEventListener('close',()=>{searchGeneration++;sourceGeneration++;$('photoPreview').removeAttribute('src');});$('photoDialog').addEventListener('close',()=>$('photoPreview').removeAttribute('src'));
+  $('previewPartner').addEventListener('click',()=>{if(busy||!current)return;renderPartnerPreview();open('partnerPreviewDialog');});
   $('newJob').addEventListener('click',()=>fillJob(false));$('editBrief').addEventListener('click',()=>fillJob(true));$('jobForm').addEventListener('submit',saveJob);
   $('jobs').addEventListener('change',async()=>{if(busy)return;try{if($('jobs').value)await loadJob($('jobs').value);}catch(e){showError('globalError',e);}});
   $('refresh').addEventListener('click',async()=>{if(busy)return;setBusy(true);clearStatus();try{await loadList();if(current)await loadJob(current.id);}catch(e){showError('globalError',e);}finally{setBusy(false);}});
