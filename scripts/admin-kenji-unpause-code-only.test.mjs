@@ -19,3 +19,10 @@ test('live download accepts only reviewed worker.js module and refuses extras', 
  assert.equal(validateLiveParts([['worker.js',file]]),file);
  for(const parts of [[],[['admin-login-hero-worker.js',file]],[['worker.js','text']],[['worker.js',{size:0}]],[['worker.js',file],['other.js',file]]]) assert.throws(()=>validateLiveParts(parts));
 });
+
+test('repeated generic caller markers outside exact boundary stay byte-identical', () => {
+ const caller='// src/admin-login-hero-worker-core.js\ninit_other();\n';
+ const old=START+'old\n';
+ const r=patchOwner(caller+old+END+caller,START+'new\n',digest(old));
+ assert.equal(r.code,caller+START+'new\n'+END+caller);
+});

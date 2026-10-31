@@ -11,7 +11,7 @@ import { verifyProductionApproval } from './admin-production-approval.mjs';
 import { inspectEnvironment } from './admin-production-validation.mjs';
 import { digest, parseWranglerVersion } from './admin-held-viewer-code-only.mjs';
 export const START = '// src/kenji-owner-line-unlock.js\n';
-export const END = '// src/admin-login-hero-worker-core.js\n';
+export const END = '// src/admin-login-hero-worker-core.js\ninit_kenji_control_actions();\n\n// src/payment-entitlement-approval.js\n';
 export const OLD_SHA = '0f9856b26c3e8ff8ea122d01eb640c40d8cc9a2d32a5c8529b8a8e286aa21023';
 export const BASE_VERSION = '7200b410-db73-4fdf-9b85-5ae14d35d9c1';
 const UI = 'admin-worker/src/kenji-owner-line-unlock.js';
