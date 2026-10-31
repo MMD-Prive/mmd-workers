@@ -195,6 +195,13 @@ const liffLovableReturnPaths = new Set([
 export function deployRequired(event, files, beforeConfig, afterConfig, manifest = {}) {
   if (event !== 'push') return true;
   assert.ok(files.length, 'Empty or unavailable push diff; stop');
+  if (files.includes('scripts/checkpts-owner-scope-delta.mjs')) {
+    const allowed = new Set(['scripts/checkpts-owner-scope-delta.mjs',
+      'scripts/checkpts-owner-scope-delta.test.mjs',
+      'scripts/kenji-pause-release-scope.mjs', 'scripts/kenji-pause-release-scope.test.mjs']);
+    assert.ok(files.every(file => allowed.has(file)), 'CHECKPTS_OWNER_SCOPE_MIXED_DELTA: stop');
+    return false;
+  }
   if (files.includes('member-dashboard-chat-worker/src/mms-line-front-gate.js')) {
     assert.ok(files.every(file => liffLovableReturnPaths.has(file)),
       'LIFF_LOVABLE_RETURN_MIXED_DELTA: stop; separate release review required');

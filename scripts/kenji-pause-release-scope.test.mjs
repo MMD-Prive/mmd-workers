@@ -252,3 +252,11 @@ test('LINE status Lovable return skips legacy deployment only for the exact scop
     assert.throws(() => deployRequired('push', [...files, extra]), /LIFF_LOVABLE_RETURN_MIXED_DELTA/);
   }
 });
+
+test('Checkpts owner-scope artifact delta skips legacy deployment and rejects mixed scope', () => {
+  const files=['scripts/checkpts-owner-scope-delta.mjs','scripts/checkpts-owner-scope-delta.test.mjs',
+    'scripts/kenji-pause-release-scope.mjs','scripts/kenji-pause-release-scope.test.mjs'];
+  assert.equal(deployRequired('push',files),false);
+  for(const extra of [config,'member-dashboard-chat-worker/src/index.js','member-pages-worker/src/index.js'])
+    assert.throws(()=>deployRequired('push',[...files,extra]),/CHECKPTS_OWNER_SCOPE_MIXED_DELTA/);
+});
