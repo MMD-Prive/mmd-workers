@@ -27,6 +27,8 @@ jobs:
         node-version: ${{ matrix.node-version }}
         cache: 'npm'
     - run: npm ci
+    - name: Preserve approved EMs and GWs V3 galleries
+      run: node --experimental-global-webcrypto --test member-dashboard-chat-worker/test/album-v3-release.test.mjs
     - run: npm run build --if-present
     - run: node --test scripts/member-dashboard-payment-acceptance-gate.test.mjs
     - run: node --test scripts/member-pages-deploy-workflow.test.mjs
