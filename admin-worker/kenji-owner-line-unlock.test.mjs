@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { runInThisContext } from 'node:vm';
-import { handleOwnerLinePage, OWNER_LINE_CLIENT, lineUnlockReady, ownerLinePanel } from './src/kenji-owner-line-unlock.js';
+import { handleOwnerLinePage, OWNER_LINE_CLIENT, lineUnlockReady, globalUnlockReady, ownerLinePanel } from './src/kenji-owner-line-unlock.js';
 const installOwnerLineUnlock = runInThisContext(`(${OWNER_LINE_CLIENT})`);
 
 const initial = () => ({ line_oa_auto_reply: { enabled: true, version: 6 },
@@ -77,9 +77,10 @@ async function clientFixture(options, run) {
   const saved = Object.fromEntries(['document', 'window', 'fetch'].map(k => [k, globalThis[k]]));
   const events = {};
   const button = { disabled: true, addEventListener(_, fn) { events.click = fn; } };
+  const globalButton = { disabled: true, addEventListener(_, fn) { events.global = fn; } };
   const refresh = { addEventListener(_, fn) { events.refresh = fn; } };
   const status = { textContent: '' };
-  globalThis.document = { getElementById: () => ({ querySelector: s => s === 'button' ? button : s === '[data-refresh]' ? refresh : status }) };
+  globalThis.document = { getElementById: () => ({ querySelector: s => s === 'button' ? button : s === '[data-refresh]' ? refresh : s === '[data-global-unlock]' ? globalButton : status }) };
   globalThis.window = { confirm: () => options.confirm !== false };
   const calls = []; let reads = 0; let controls = structuredClone(options.initial ?? initial());
   globalThis.fetch = async (input, init = {}) => {
@@ -97,12 +98,20 @@ async function clientFixture(options, run) {
     assert.equal(input, '/v1/admin/kenji/control/runtime/kill-switch');
     if (options.postFailure) return Response.json({ ok: false, error: 'version_conflict' }, { status: 409 });
     if (options.postUnknown) throw new Error('timeout');
+    const scope = JSON.parse(init.body).scope;
+    if (scope === 'all_kenji_mutations') {
+      controls.all_kenji_mutations = { enabled: false, version: 2 };
+      if (options.afterDrift) controls.model_keyword_auto_reply.version++;
+      if (options.afterLineDrift) controls.line_oa_auto_reply.version++;
+      return Response.json({ ok: true, scope, enabled: false, version: 2,
+        ...(options.noAudit ? {} : { audit_id: 'fixture-global-audit' }) });
+    }
     controls.line_oa_auto_reply = { enabled: false, version: 7 };
     if (options.afterDrift) controls.model_keyword_auto_reply.version++;
     return Response.json({ ok: true, scope: 'line_oa_auto_reply', enabled: false, version: 7,
       ...(options.noAudit ? {} : { audit_id: 'fixture-audit' }) });
   };
-  try { await installOwnerLineUnlock(lineUnlockReady); await run({ events, button, status, calls }); }
+  try { await installOwnerLineUnlock(lineUnlockReady, globalUnlockReady); await run({ events, button, globalButton, status, calls }); }
   finally { for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete globalThis[k]; else globalThis[k] = v; } }
 }
 
@@ -149,4 +158,51 @@ test('integration stays behind existing credential gate and does not alter route
   assert(source.indexOf('const strictGate = await applyCredentialBoundAdminGate') < source.indexOf('return handleOwnerLinePage('));
   assert.match(source, /path === OWNER_LINE_PAGE && method === 'GET'/);
   assert.doesNotMatch(ownerLinePanel(), /LINE_KENJI_MODEL_ENABLED\s*=/);
+});
+
+const globallyPaused = () => ({ ...initial(), all_kenji_mutations: { enabled: true, version: 1 } });
+test('global unlock requires both LINE and Model pauses and known positive versions', () => {
+  assert.equal(globalUnlockReady(globallyPaused()), true);
+  for (const controls of [null, {}, initial(),
+    { ...globallyPaused(), line_oa_auto_reply: { enabled: false, version: 7 } },
+    { ...globallyPaused(), model_keyword_auto_reply: { enabled: false, version: 3 } },
+    { ...globallyPaused(), all_kenji_mutations: { enabled: true, version: 0 } }])
+    assert.equal(globalUnlockReady(controls), false);
+});
+test('global action is audited, versioned, fixed scope and keeps LINE and Model paused', async () => {
+  await clientFixture({ initial: globallyPaused() }, async ({ events, button, globalButton, status, calls }) => {
+    assert.equal(button.disabled, true);
+    assert.equal(globalButton.disabled, false);
+    await Promise.all([events.global(), events.global()]);
+    const posts = calls.filter(c => c.init.method === 'POST');
+    assert.equal(posts.length, 1);
+    const payload = JSON.parse(posts[0].init.body);
+    assert.deepEqual({ ...payload, reason: 'reviewed' }, { scope: 'all_kenji_mutations', enabled: false, expected_version: 1, reason: 'reviewed' });
+    assert.match(posts[0].init.headers['Idempotency-Key'], /^owner-global-unlock-[a-f0-9-]{36}$/);
+    assert.match(status.textContent, /readback สำเร็จ/);
+    assert.equal(button.disabled, true);
+    await events.refresh();
+    assert.equal(button.disabled, false);
+    assert.equal(globalButton.disabled, true);
+    await events.click();
+    assert.deepEqual(calls.filter(c => c.init.method === 'POST').map(c => JSON.parse(c.init.body).scope), ['all_kenji_mutations', 'line_oa_auto_reply']);
+  });
+});
+test('global cancel, invalid state and stale snapshot never POST', async () => {
+  for (const options of [{ confirm: false }, { readFailure: true }, { beforeDrift: true }, { initial: initial() }]) {
+    await clientFixture({ initial: globallyPaused(), ...options }, async ({ events, calls }) => {
+      await events.global();
+      assert.equal(calls.some(c => c.init.method === 'POST'), false);
+    });
+  }
+});
+test('global conflict, timeout, missing audit and changed sibling scope never claim success or retry', async () => {
+  for (const options of [{ postFailure: true }, { postUnknown: true }, { noAudit: true }, { afterDrift: true }, { afterLineDrift: true }]) {
+    await clientFixture({ initial: globallyPaused(), ...options }, async ({ events, calls, status, button, globalButton }) => {
+      await events.global(); await events.global();
+      assert.equal(calls.filter(c => c.init.method === 'POST').length, 1);
+      assert.doesNotMatch(status.textContent, /readback สำเร็จ/);
+      assert.equal(button.disabled, true); assert.equal(globalButton.disabled, true);
+    });
+  }
 });
