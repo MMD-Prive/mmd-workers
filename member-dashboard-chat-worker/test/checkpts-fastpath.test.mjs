@@ -78,8 +78,13 @@ async function run(command, options = {}) {
       calls.beforeTruth ||= { runtime: calls.runtime, matrix: calls.matrix, takeover: calls.takeover };
       afterTruth = true;
       const membershipRead = body.intent === "membership_status";
-      return Response.json(membershipRead ? options.membershipTruth || options.truth || truth() : options.truth || truth(), {
-        status: membershipRead ? options.membershipStatus || options.truthStatus || 200 : options.truthStatus || 200,
+      const snapshotRead = new URL(request.url).pathname.endsWith("/member-reply-snapshot");
+      const payload = membershipRead ? options.membershipTruth || options.truth || truth()
+        : snapshotRead ? options.snapshotTruth || options.truth || truth()
+        : options.pointsTruth || options.truth || truth();
+      return Response.json(payload, {
+        status: membershipRead ? options.membershipStatus || options.truthStatus || 200
+          : snapshotRead ? options.snapshotStatus || options.truthStatus || 200 : options.pointsStatus || options.truthStatus || 200,
       });
     } }, ...options.env };
   const background = [];
@@ -181,6 +186,7 @@ test("snapshot mode remains opt-in and cannot fall back to stale or unverified v
   const { calls } = await run("เช็คสิทธิ์", { env: { LINE_MEMBER_REPLY_SNAPSHOT_ENABLED: "true" }, truth: {}, truthStatus: 503 });
   assert.deepEqual(calls.truth, [
     { path: "/__internal/kenji/member-reply-snapshot", intent: undefined },
+    { path: "/__internal/kenji/member-truth", intent: "points_status" },
     { path: "/__internal/kenji/member-truth", intent: "membership_status" },
   ]);
   assert.equal(calls.replies.length, 1);
@@ -195,6 +201,7 @@ test("snapshot miss reads canonical membership without accepting its profile Poi
     });
     assert.deepEqual(calls.truth, [
       { path: "/__internal/kenji/member-reply-snapshot", intent: undefined },
+      { path: "/__internal/kenji/member-truth", intent: "points_status" },
       { path: "/__internal/kenji/member-truth", intent: "membership_status" },
     ]);
     const text = calls.replies[0].messages[0].text;
@@ -285,4 +292,31 @@ test("command-only activation does not enable ordinary text, partial aliases or 
     assert.equal(calls.replies.length, 0, command);
     assert.equal(calls.truth.length, 0, command);
   }
+});
+
+test("Checkpts rechecks current verified Points when the snapshot is pending", async () => {
+  const snapshotTruth = { ...truth(), points: { status: "unavailable", active_points: 999 } };
+  const { calls, body } = await run("checkpts", {
+    env: { LINE_MEMBER_REPLY_SNAPSHOT_ENABLED: "true", KENJI_LINE_MODEL_ONLY_ENABLED: "true" },
+    snapshotTruth, pointsTruth: truth(),
+  });
+  assert.deepEqual(calls.truth.map(call => call.intent), [undefined, "points_status"]);
+  assert.equal(body.saved[0].truth_status, "verified");
+  assert.match(calls.replies[0].messages[0].text, /Points: 120 Points/);
+  assert.doesNotMatch(calls.replies[0].messages[0].text, /999/);
+});
+
+test("Checkpts returns confirmed membership but not pending Points", async () => {
+  const pending = { ...truth(), points: { status: "unavailable", active_points: 999 } };
+  const { calls, body } = await run("เช็กสิทธิ์", {
+    env: { LINE_MEMBER_REPLY_SNAPSHOT_ENABLED: "true", KENJI_LINE_MODEL_ONLY_ENABLED: "true" },
+    snapshotTruth: pending, pointsTruth: pending,
+  });
+  assert.equal(calls.replies.length, 1);
+  assert.equal(body.saved[0].truth_status, "partial");
+  const reply = calls.replies[0].messages[0].text;
+  assert.match(reply, /สถานะสมาชิก: Premium/);
+  assert.ok(reply.includes("วันหมดอายุ: 01/01/2027"));
+  assert.match(reply, /Points: ยังยืนยันยอดไม่ได้/);
+  assert.doesNotMatch(reply, /999|Points: 0 Points/);
 });

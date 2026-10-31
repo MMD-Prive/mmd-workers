@@ -24,6 +24,7 @@ import {
   buildKenjiLiveTruthDecision,
   resolveKenjiLineLiveTruth,
   resolveKenjiLineSnapshotTruth,
+  resolveKenjiCheckptsTruth,
 } from "./kenji-line-live-truth.mjs";
 import {
   buildKenjiAvailabilityDecision,
@@ -750,9 +751,12 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
     const pointsConversationEnabled = Boolean(menuConversationEnabled && menuConversation.intent === "points_status");
     const pointsReplyEnabled = pointsConversationEnabled || checkptsShortcutEnabled;
     let pointsTruth = pointsReplyEnabled
-      ? enabled(env.LINE_MEMBER_REPLY_SNAPSHOT_ENABLED)
-        ? await resolveKenjiLineSnapshotTruth({ env, event })
-        : await resolveKenjiLineLiveTruth({ env, event, intent: "points_status" })
+      ? checkptsShortcut
+        ? await resolveKenjiCheckptsTruth({ env, event,
+            useSnapshot: enabled(env.LINE_MEMBER_REPLY_SNAPSHOT_ENABLED) })
+        : enabled(env.LINE_MEMBER_REPLY_SNAPSHOT_ENABLED)
+          ? await resolveKenjiLineSnapshotTruth({ env, event })
+          : await resolveKenjiLineLiveTruth({ env, event, intent: "points_status" })
       : null;
     const needsMemberName = pointsTruth?.ok === true && !text(pointsTruth.display_name);
     if (pointsReplyEnabled && pointsTruth?.ok !== true) {
