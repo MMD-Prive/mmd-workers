@@ -392,3 +392,26 @@ test("corrupt expiry or token hashes fail closed for views and media", async () 
     assert.equal((await f.partner(c.id, c.token, "media/" + "a".repeat(32))).status, 503);
   }
 });
+
+test("job-scoped Benz exclusion survives owner brief edits and rejects imported excluded model", async () => {
+  const f=fixture(), c=await f.create();
+  const excluded="recBBBBBBBBBBBBBB";
+  const patch=await f.owner(O+"/"+c.id,"PATCH",{revision:c.item.revision,ownerOnly:{payoutCap:8000,excludedCanonicalModelIds:[excluded]},brief:{...c.item.brief,format:"PN"}});
+  assert.equal(patch.status,200,await patch.clone().text());
+  const p=await patch.json();
+  assert.deepEqual(p.item.ownerOnly.excludedCanonicalModelIds,[excluded]);
+  assert.equal(p.item.brief.format,"PN");
+  const later=await f.owner(O+"/"+c.id,"PATCH",{revision:p.item.revision,ownerOnly:{payoutCap:9000}});
+  assert.equal(later.status,200);
+  const row=(await later.json()).item;
+  assert.deepEqual(row.ownerOnly.excludedCanonicalModelIds,[excluded]);
+  const blocked=await f.owner(O+"/"+c.id+"/models","POST",{...f.importInput(row.revision),canonicalModelId:excluded});
+  assert.equal(blocked.status,403);
+  assert.equal((await blocked.json()).error,"model_excluded");
+  const partnerView=await f.partner(c.id,c.token,"view");
+  assert.equal(partnerView.status,200);
+  const safe=await partnerView.json();
+  assert.equal(safe.brief.format,"PN");
+  assert.ok(!("ownerOnly" in safe));
+  assert.doesNotMatch(JSON.stringify(safe),/excludedCanonicalModelIds|9000/);
+});
