@@ -121,7 +121,9 @@ export function resolveCheckptsShortcut(liveTruth = {}, now = Date.now(), includ
   return {
     text: pointsInChatAnswer(liveTruth, now, includeCta), intent: "points_status", inferred_intent: "points_status",
     reply_source: "my_mmd_points_shortcut_v2", model_attempted: false,
-    truth_authority: POINTS_AUTHORITY, truth_status: verified ? "verified" : "unavailable",
+    truth_authority: POINTS_AUTHORITY,
+    truth_status: verified ? "verified" : liveTruth.ok === true &&
+      liveTruth.authority === POINTS_AUTHORITY && liveTruth.identity_status === "resolved" ? "partial" : "unavailable",
     live_truth_used: liveTruth.ok === true, live_truth_verified: verified,
     handoff_required: false, cta_appended: includeCta && liveTruth.ok === true &&
       liveTruth.authority === POINTS_AUTHORITY && liveTruth.identity_status === "resolved",
