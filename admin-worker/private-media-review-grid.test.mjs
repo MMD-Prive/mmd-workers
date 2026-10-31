@@ -5,7 +5,7 @@ import {JSDOM} from 'jsdom';
 const dir=new URL('../webflow/internal/admin/mmd-review/',import.meta.url);
 const html=await readFile(new URL('review.html',dir),'utf8'), js=await readFile(new URL('review.js',dir),'utf8');
 const tick=()=>new Promise(r=>setTimeout(r,15));
-async function setup({failure,broken=false,offscreen=false,fileFailure=false}={}) {
+async function setup({failure,broken=false,offscreen=false,fileFailure=false,forceQueues=false}={}) {
  const dom=new JSDOM(html,{url:'https://example.test/internal/admin/mmd-review',runScripts:'outside-only',pretendToBeVisual:true});
  const w=dom.window, requests=[],revoked=[];
  w.HTMLDialogElement.prototype.showModal=function(){this.open=true;};w.HTMLDialogElement.prototype.close=function(){this.open=false;};
@@ -18,7 +18,8 @@ async function setup({failure,broken=false,offscreen=false,fileFailure=false}={}
  if(url.endsWith('/file') && fileFailure)return {ok:false,status:503};
  if(url.endsWith('/file'))return {ok:true,headers:{get:()=>broken?'':'a'.repeat(64)},blob:async()=>({type:'image/jpeg',size:100})};
  return {ok:true,json:async()=>({ok:true,items,next_cursor:null})};};
- w.eval(js);await tick();
+ // Test-only adapter bypasses the UI serialization guard, leaving response handling unchanged.
+ w.eval(forceQueues?js.replace('  load(false);\n}());', "  window.forceQueue = function (status, more) { loading = false; q('filter').value = status; return load(more); };\n  load(false);\n}());"):js);await tick();
  w.document.querySelectorAll('.mr-thumbnail img').forEach(img=>img.dispatchEvent(new w.Event('load')));await tick();
  return {w,requests,revoked,close:()=>w.close()};
 }
@@ -78,3 +79,55 @@ test('clearing while group is loading cancels late selection',async()=>{
 });
 
 test('HTTP preview failure replaces loading text and remains unselectable',async()=>{const t=await setup({fileFailure:true});try{await selectAll(t.w);assert.equal(t.w.document.querySelector('.mr-thumbnail').textContent,'โหลดรูปไม่สำเร็จ · ลองโหลดคิวใหม่');assert.equal(t.w.document.querySelectorAll('.mr-pick input:checked').length,0);assert.equal(t.requests.filter(r=>r.url.endsWith('/decision')).length,0);}finally{t.close();}});
+
+function holdQueues(t) {
+ const original=t.w.fetch, pending=[];
+ t.w.fetch=(url,opts)=>{
+  if(!url.includes('?')) return original(url,opts);
+  return new Promise((resolve,reject)=>pending.push({resolve,reject,url}));
+ };
+ return pending;
+}
+function queueResponse(id, cursor=null) {
+ return {ok:true,json:async()=>({ok:true,items:['public','private'].map(a=>({id:id+'-'+a,model_id:'recTest',model_name:'Test',name:id+'-'+a+'.jpg',kind:a+'_pic',audience:a,status:'pending_review',reviewable:true})),next_cursor:cursor})};
+}
+for(const order of ['latest-first','old-first','stale-error']) test('forced queue responses: '+order+' preserves latest queue, controls, cursor and cleared selection',async()=>{
+ const t=await setup({forceQueues:true});try{
+  await selectAll(t.w);assert.equal(t.w.document.querySelectorAll('.mr-pick input:checked').length,2);
+  const pending=holdQueues(t);
+  const a=t.w.forceQueue('approved'),b=t.w.forceQueue('pending_review');
+  assert.equal(pending.length,2);
+  assert.equal(t.w.document.querySelectorAll('.mr-card').length,0);
+  if(order==='old-first'){
+   pending[0].resolve(queueResponse('old','stale-cursor'));await a;
+   assert.equal(t.w.document.querySelectorAll('.mr-card').length,0);
+   assert.equal(t.w.document.querySelector('#mr-filter').disabled,true);
+  }
+  pending[1].resolve(queueResponse('latest','latest-cursor'));await b;await tick();
+  // A selection made in the latest queue must also survive a stale completion.
+  t.w.document.querySelectorAll('.mr-thumbnail img').forEach(img=>img.dispatchEvent(new t.w.Event('load')));await tick();
+  await selectAll(t.w);
+  if(order==='latest-first') pending[0].resolve(queueResponse('old','stale-cursor'));
+  if(order==='stale-error') pending[0].reject(Object.assign(new Error('stale failure'),{status:401}));
+  await a;await tick();
+  assert.deepEqual([...t.w.document.querySelectorAll('.mr-card h3')].map(x=>x.textContent),['latest-public.jpg','latest-private.jpg']);
+  assert.equal(t.w.document.querySelectorAll('.mr-pick input:checked').length,2);
+  assert.equal(t.w.document.querySelector('#mr-filter').value,'pending_review');
+  assert.equal(t.w.document.querySelector('#mr-filter').disabled,false);
+  assert.match(t.w.document.querySelector('#mr-status').textContent,/แสดง 2 รายการ/);
+  const more=t.w.forceQueue('pending_review',true);
+  assert.equal(new URL(pending[2].url,'https://example.test').searchParams.get('cursor'),'latest-cursor');
+  pending[2].resolve({ok:true,json:async()=>({items:[],next_cursor:null})});await more;
+  assert.equal(t.requests.filter(r=>r.url.endsWith('/decision')).length,0);
+ }finally{t.close();}
+});
+test('pagehide invalidates an outstanding metadata response and cannot restore old cards or selection',async()=>{
+ const t=await setup({forceQueues:true});try{
+  await selectAll(t.w);const pending=holdQueues(t),a=t.w.forceQueue('approved');
+  t.w.dispatchEvent(new t.w.Event('pagehide'));
+  pending[0].resolve(queueResponse('hidden'));await a;await tick();
+  assert.equal(t.w.document.querySelectorAll('.mr-card').length,0);
+  assert.equal(t.w.document.querySelectorAll('.mr-pick input:checked').length,0);
+  assert.equal(t.requests.filter(r=>r.url.endsWith('/decision')).length,0);
+ }finally{t.close();}
+});
