@@ -1,0 +1,5 @@
+{
+  "text": "🕯️ <b>MMD Booking</b>\n🧪 <b>ทดสอบเท่านั้น</b>\nลูกค้า: <b>TEST BOOKING QA2026-10-31</b>\nโมเดล: Leo\nวันเวลา: 2 พ.ย. · 19:00\nสถานที่: Bangkok · TEST ONLY Bangkok\nสถานะ: <b>สมาชิกหมดอายุ · รอตรวจสอบ</b>\n\n<b>PREPARE ONLY</b> · รอเปอร์ตรวจและกดอนุมัติก่อนทุกครั้ง\nยังไม่ยืนยันงาน / โมเดล / การชำระเงิน",
+  "reply_markup": {"inline_keyboard": [[{"text": "เปิดงาน", "url": "https://sigil.mmdbkk.com/internal/admin/control-room?booking_ref=book_20261031011621_7058&record_id=recaU88067r3Qt2Ex"}]]},
+  "note": "ตัวอย่าง QA/expired local เท่านั้น ไม่ได้ส่ง Telegram จริง"
+}

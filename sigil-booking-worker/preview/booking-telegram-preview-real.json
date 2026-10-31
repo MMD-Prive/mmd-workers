@@ -1,0 +1,5 @@
+{
+  "text": "🕯️ <b>MMD Booking</b>\nลูกค้า: <b>คุณนนท์</b>\nโมเดล: Ken\nวันเวลา: 4 พ.ย. · 20:00 · 2 ชม.\nสถานที่: Bangkok · Sukhumvit (ตัวอย่าง)\nสถานะ: <b>รอเปอร์ตรวจสอบ</b>\n\n<b>PREPARE ONLY</b> · รอเปอร์ตรวจและกดอนุมัติก่อนทุกครั้ง\nยังไม่ยืนยันงาน / โมเดล / การชำระเงิน",
+  "reply_markup": {"inline_keyboard": [[{"text": "เปิดงาน", "url": "https://sigil.mmdbkk.com/internal/admin/control-room?booking_ref=book_demo_001&record_id=rec_demo_001"}]]},
+  "note": "ข้อมูลสมมติสำหรับ local preview เท่านั้น"
+}

@@ -1,5 +1,6 @@
 import { currentPrivateAccess } from "./current-private-access.js";
 import { customerDiscoveryAllowed, resolveDiscoveryViewer } from "./customer-discovery-policy.js";
+import { buildBookingTelegramReplyMarkup, buildBookingTelegramText } from "./booking-telegram-formatter.js";
 // sigil-booking-worker/src/index.js
 // MMD Booking / SIGIL public booking resolver
 import { resolveMemberEntitlements } from "../../auth-worker/src/member-entitlement-resolver.js";
@@ -916,7 +917,7 @@ async function notifyBookingDraft(env, { body, fields, rec, bookingRef, sessionI
 
   const threadId = str(env.TG_THREAD_BOOKING_DRAFT || env.TELEGRAM_BOOKING_THREAD_ID || env.TELEGRAM_THREAD_ID);
   const adminUrl = buildAdminBookingUrl(env, bookingRef, rec?.id || "");
-  const text = buildBookingTelegramText({ body, fields, bookingRef, sessionId, recordId: rec?.id || "", nextUrl, adminUrl });
+  const text = buildBookingTelegramText({ body, fields });
   const draftMode = token(body.search_mode || body.mode || fields["Source"]) === "sigil_search" || token(body.search_mode || body.mode) === "search" ? "search" : "booking";
   const payload = compact({
     chat_id: chatId,
@@ -929,7 +930,8 @@ async function notifyBookingDraft(env, { body, fields, rec, bookingRef, sessionI
     intent: draftMode === "search" ? "sigil_search_draft_notify" : "booking_draft_notify",
     booking_ref: bookingRef,
     session_id: sessionId,
-    airtable_record_id: rec?.id || ""
+    airtable_record_id: rec?.id || "",
+    reply_markup: buildBookingTelegramReplyMarkup(adminUrl)
   });
   try {
     const headers = { "Content-Type": "application/json" };
@@ -942,64 +944,6 @@ async function notifyBookingDraft(env, { body, fields, rec, bookingRef, sessionI
   } catch (error) {
     return { ok: false, skipped: false, error: String(error?.message || error) };
   }
-}
-
-function buildBookingTelegramText({ body, fields, bookingRef, sessionId, recordId, nextUrl, adminUrl }) {
-  const resolver = parseJsonObject(fields.resolver_payload_json);
-  const search = resolver.customer_search && typeof resolver.customer_search === "object" ? resolver.customer_search : {};
-  const mode = token(body.search_mode || search.mode || fields["Source"]) === "search" || token(fields["Source"]) === "sigil_search" ? "search" : "booking";
-  const publicJob = resolver.public_job && typeof resolver.public_job === "object" ? resolver.public_job : null;
-  const route = `${str(fields.lane || "public").toUpperCase()} / ${str(publicJob?.format || fields.job_class || search.work_lane || "travel").toUpperCase()}`;
-  const access = `${str(fields.member_status || "unknown")} · ${str(fields.access_scope || "public_only")}`;
-  const model = str(fields["Selected Model Name"] || fields.model_search_query || search.preferred_model_name || "ให้ MMD หา");
-  const duration = str(body.duration_minutes || search.duration_minutes || body.duration);
-  const date = [fields["Preferred Date"], fields["Preferred Time"], duration ? duration + " นาที" : ""].map(str).filter(Boolean).join(" · ") || "not set";
-  const place = [body.city, body.google_address].map(str).filter(Boolean).join(" · ") || "not set";
-  const customerLane = str(body.customer_lane || search.customer_lane || "-");
-  const workLane = str(body.work_lane || search.work_lane || fields.job_class || "-").toUpperCase();
-  const budgetObject = search.budget && typeof search.budget === "object" ? search.budget : {};
-  const budget = str(body.budget_thb)
-    ? Number(body.budget_thb).toLocaleString("th-TH") + " THB"
-    : str(body.budget_band || budgetObject.label || "-");
-  const spec = str(body.spec || search.spec || "-");
-  const telegramRef = str(body.telegram_post_url || search.telegram_reference || "");
-  const serviceContext = str(body.service_context || body.service || search.service_context || "");
-  const fallback = body.fallback_allowed === true || search.fallback_allowed === true ? "ได้" : "เฉพาะที่ระบุ";
-  const reviewRequested = body.review_requested === true || search.review_requested === true || resolver.review_requested === true || resolver.filters?.review_requested === true;
-  return [
-    mode === "search" ? "🔎 <b>SIGIL SEARCH · WAITING FOR PER</b>" : "📅 <b>SIGIL BOOKING · WAITING FOR PER</b>",
-    `Ref: <code>${escHtml(bookingRef)}</code>`,
-    recordId ? `Airtable: <code>${escHtml(recordId)}</code>` : "",
-    "",
-    `Client: <b>${escHtml(fields.client_nickname || fields["Contact Name"] || "ไม่ระบุ")}</b>`,
-    `Contact: ${escHtml(fields.client_contact || fields.line_or_member_id || fields["Contact Value"] || "ไม่ระบุ")}`,
-    `Status: ${escHtml(access)}`,
-    `Route: <b>${escHtml(route)}</b>`,
-    publicJob
-      ? `Public: <b>${escHtml(publicJob.format)}</b> · ลูกค้า ${Number(publicJob.customer_count)} คน · ดูแลพิเศษ ${Number(publicJob.care_count)} คน · ต้องการ Model ${Number(publicJob.model_count)} คน`
-      : `Preference: ${escHtml(customerLane)} · ${escHtml(workLane)}`,
-    publicJob?.duties ? `Duties: ${escHtml(publicJob.duties)}` : "",
-    publicJob?.special_care_names ? `Special care: ${escHtml(publicJob.special_care_names)}` : "",
-    publicJob?.model_assignment_note ? `Assignment: ${escHtml(publicJob.model_assignment_note)}` : "",
-    publicJob?.presentation_note ? `Presentation: ${escHtml(publicJob.presentation_note)}` : "",
-    !publicJob && serviceContext ? `Context: ${escHtml(serviceContext)}` : "",
-    !publicJob && Array.isArray(search.service_options) && search.service_options.length
-      ? `Options requested: ${escHtml(search.service_options.map((option) => str(option).toUpperCase()).join(" · "))} · Per review required`
-      : "",
-    mode === "search" ? `Budget: <b>${escHtml(budget)}</b>` : (budget !== "-" ? `Budget: ${escHtml(budget)}` : ""),
-    `Spec: ${escHtml(spec)}`,
-    `Preferred: ${escHtml(model)}`,
-    telegramRef ? `Telegram ref: ${escHtml(telegramRef)}` : "",
-    `Fallback: ${escHtml(fallback)}`,
-    reviewRequested ? "Review requested: YES · ใช้เฉพาะ Review ที่ผ่าน customer-safe review" : "",
-    `When: ${escHtml(date)}`,
-    `Place: ${escHtml(place)}`,
-    "",
-    "<b>HYPE: PREPARE ONLY</b> · ห้าม publish Job Board / confirm Model / confirm Rate เอง",
-    "รอ Per ตรวจและกดอนุมัติก่อนทุกครั้ง",
-    adminUrl ? `Admin: ${escHtml(adminUrl)}` : "",
-    nextUrl ? `Next: ${escHtml(nextUrl)}` : ""
-  ].filter(Boolean).join("\n");
 }
 
 function buildAdminBookingUrl(env, bookingRef, recordId) {
