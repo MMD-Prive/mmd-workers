@@ -75,7 +75,7 @@ function readQuery(url) {
   const range = (name, minimum, maximum) => {
     const raw = url.searchParams.get(name);
     if (raw === null || raw === "") return null;
-    if (!/^\\d{1,3}$/.test(raw)) return NaN;
+    if (!/^\d{1,3}$/.test(raw)) return NaN;
     const n = Number(raw);
     return Number.isSafeInteger(n) && n >= minimum && n <= maximum ? n : NaN;
   };
