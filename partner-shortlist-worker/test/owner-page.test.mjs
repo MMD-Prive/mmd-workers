@@ -174,3 +174,38 @@ test('revoke is deliberate and updates state only after server confirmation', as
     assert.equal(h.$('confirmDialog').open, false);
   } finally { h.dom.window.close(); }
 });
+
+test('owner preview opens without a partner token and never exposes payout cap or canonical ID', async () => {
+  const h = await harness();
+  try {
+    const initialWrites=h.calls.filter(c=>c.method&&c.method!=='GET').length;
+    assert.equal(h.$('partnerPreviewDialog').open,false);
+    h.$('previewPartner').click();
+    assert.equal(h.$('partnerPreviewDialog').open,true);
+    const preview=h.$('partnerPreviewScreen');
+    assert.match(preview.textContent,/Example Studio/);
+    assert.match(preview.textContent,/1200|1,200/);
+    assert.match(preview.textContent,/ยังไม่มีโมเดลที่เปอร์เปิดให้เลือก/);
+    assert.doesNotMatch(preview.textContent,/payoutCap|700|canonicalModelId|rec12345678901234/);
+    assert.equal(h.calls.filter(c=>c.method&&c.method!=='GET').length,initialWrites);
+    assert.ok(!h.dom.window.document.querySelector('#partnerPreviewScreen a'));
+    assert.equal(h.errors.length,0);
+  } finally { h.dom.window.close(); }
+});
+
+test('owner preview only renders approved shortlist media with full-card fit, no source fields', async () => {
+  const item=fixture();
+  item.models=[{id:MODEL,name:'Approved Model',code:'P01',height:179,weight:73,format:'VIP',status:'pending',canonicalModelId,
+    photos:[{id:PHOTO,shareAllowed:true,previewPath:base+'/'+ID+'/media/'+PHOTO}]}];
+  const h=await harness({item});
+  try {
+    h.$('previewPartner').click();
+    const p=h.$('partnerPreviewScreen'),photo=p.querySelector('.pp-cover img');
+    assert.ok(photo);
+    assert.equal(photo.getAttribute('src'),base+'/'+ID+'/media/'+PHOTO);
+    assert.match(p.textContent,/Approved Model/);
+    assert.doesNotMatch(p.textContent,/rec12345678901234|payoutCap|ownerOnly/);
+    assert.match(renderOwnerPage('nonce'),/\.pp-cover img\{[^}]*object-fit:contain/);
+    assert.equal(h.errors.length,0);
+  } finally { h.dom.window.close(); }
+});
