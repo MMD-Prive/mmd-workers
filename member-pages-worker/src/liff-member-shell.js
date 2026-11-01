@@ -9,6 +9,7 @@ import { createCustomerProgress, renderCustomerProgress } from "./liff-customer-
 import { loadDoubleMomentCard } from "./liff-promotion-client.js";
 import { MY_MMD_LOVABLE_DESIGN_CSS, MY_MMD_PUBLIC_BLEND_CSS, MY_MMD_VERIFICATION_CSS } from "./liff-lovable-design.js";
 import { MY_MMD_LIFF_COMPACT_V4_CSS } from "./liff-member-compact-v4-style.js";
+import { MY_MMD_LIFF_LV15_CSS } from "./liff-member-lv15-style.js";
 import { travelClientBundle, travelClientCss } from '../../shared/model-travel-client-source.mjs';
 
 const LIFF_SHELL_PATHS = new Set(["/member/liff", "/member/liff/"]);
@@ -303,9 +304,10 @@ function renderShell(config, nonce) {
 ${PERSONAL_MAIN_CSS}
 ${MY_MMD_VERIFICATION_CSS}
 ${MY_MMD_SIGIL_PRIVATE_CSS}
+  ${MY_MMD_LIFF_LV15_CSS}
 </style>
 </head>
-<body class="${config.intent === "signup" ? "signup-mode app-entered " : "context-resolving "}world-${config.world}" data-world="${config.world}" data-mmd-liff-digital="v3" data-mmd-liff-compact="v4" data-mmd-graphics="v6" data-brand-audience="unresolved">
+<body class="${config.intent === "signup" ? "signup-mode app-entered " : "context-resolving "}world-${config.world}" data-world="${config.world}" data-mmd-liff-digital="v3" data-mmd-liff-compact="v4" data-mmd-graphics="v6" data-brand-audience="unresolved" data-mmd-liff-level="15">
 ${config.intent === "signup" ? "" : renderApprovedLoader()}
 <main>
   ${renderApprovedEntry()}
@@ -1827,6 +1829,7 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
       document.getElementById("renewal-title").textContent = "ต่ออายุสมาชิก " + String(offer.package_label || "");
       addRow("ระยะเวลาที่ซื้อ", String(offer.membership_years || 1) + " ปี");
       if (offer.bonus_days) addRow("CARE BACK เพิ่ม", String(offer.bonus_days) + " วัน");
+      if (offer.bonus_months) addRow("CARE BACK เพิ่ม", String(offer.bonus_months) + " เดือน");
       if (offer.bonus_years) addRow("CARE BACK เพิ่ม", String(offer.bonus_years) + " ปี");
       addRow("เริ่มต่ออายุ", renewalDate(offer.renewal_starts_at));
       addRow("ใช้ได้ถึง (ปัจจุบัน)", renewalDate(offer.current_expires_at));
@@ -2362,3 +2365,4 @@ function shellHeaders(extra = {}) {
     ...extra,
   };
 }
+

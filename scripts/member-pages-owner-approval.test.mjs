@@ -104,7 +104,7 @@ const authorized={production_approved:true,approval_ref:'fixture',approved_sha:s
 
 test('approval-only is the explicit safe default; missing or invalid modes never release',()=>{
  assert.match(workflow,/execution_mode:[\s\S]*?type: choice\s+required: true\s+default: approval_boundary_only/);
- assert.deepEqual([...workflowJobs.keys()],['production-approval','approval-boundary-only','release']);
+ assert.deepEqual([...workflowJobs.keys()],['production-approval','approval-boundary-only','release','lv15-release','care-back-november-release']);
  for(const execution_mode of [undefined,'','invalid',true,false]) {
    for(const id of workflowJobs.keys()) assert.equal(jobCondition(id)(dispatch,{...authorized,execution_mode}),false);
  }
@@ -152,13 +152,29 @@ test('approval-only execution surface has no write credential, release command, 
  assert.deepEqual([...job.matchAll(/^          ([A-Z_]+):/gm)].map(match=>match[1]),['GH_TOKEN','APPROVAL_REF','APPROVED_SHA']);
  const header=workflow.split('\njobs:')[0];
  assert.doesNotMatch(header,/secrets\.|^env:|: write|id-token/);
- assert.equal((workflow.match(/secrets\./g)||[]).length,3);
+ assert.equal((workflow.match(/secrets\./g)||[]).length,5);
  assert.ok(workflowJobs.get('release').includes('secrets.CLOUDFLARE_API_TOKEN'));
 });
 
 test('test concurrency cannot block or bypass the production release queue',()=>{
  assert.match(workflow,/group: \$\{\{ inputs.execution_mode == 'approval_boundary_only' && 'member-pages-approval-boundary-test' \|\| 'deploy-member-pages-worker-production' \}\}/);
  assert.match(workflow,/cancel-in-progress: false/);
+});
+
+test('November artifact mode is isolated and requires every exact artifact pin behind the existing owner gate',()=>{
+ for(const execution_mode of ['care-back-november','care-back-november-resume']) {
+  const inputs={...authorized,execution_mode,patch_manifest:'scripts/fixtures/reviewed.json',expected_manifest_sha256:'a'.repeat(64),expected_module_sha256:'b'.repeat(64)};
+  assert.equal(jobCondition('production-approval')(dispatch,inputs),true);
+  assert.equal(jobCondition('care-back-november-release')(dispatch,inputs),true);
+  for(const id of ['approval-boundary-only','release','lv15-release']) assert.equal(jobCondition(id)(dispatch,inputs),false);
+  for(const key of ['expected_version','expected_deployment','patch_manifest','expected_manifest_sha256','expected_module_sha256']) assert.equal(jobCondition('care-back-november-release')(dispatch,{...inputs,[key]:''}),false);
+  assert.equal(jobCondition('care-back-november-release')(dispatch,{...inputs,production_approved:false}),false);
+ }
+ const job=workflowJobs.get('care-back-november-release');
+ assert.match(job,/needs: \[production-approval\]/);
+ assert.match(job,/environment: member-pages-code-only-owner/);
+ assert.ok(job.includes("run: node scripts/care-back-november-policy-release.mjs ${{ inputs.execution_mode == 'care-back-november-resume' && '--promote-reviewed-upload' || '--execute-approved' }}"));
+ assert.doesNotMatch(job,/--preflight|wrangler|SOURCE_DIRECTORY|release-source/);
 });
 
 test('Node 18/20/22 CI runs owner and release mocks without production credentials',()=>{
@@ -220,4 +236,24 @@ test('HTTP diagnostics expose only allowlisted numeric statuses, never caller st
  for(const status of ['403 secret-token',{toString(){throw Error('must not coerce');}},999,200,null]){
   d.mark('OWNER_APPROVAL_HTTP',status);assert.deepEqual(d.snapshot(),{stage:'OWNER_APPROVAL_HTTP',reason:'EVIDENCE_HTTP_STATUS'});
  }
+});
+
+
+test('LV15 mode is isolated behind the same owner gate and requires exact baseline inputs',()=>{
+ const inputs={...authorized,execution_mode:'lv15-artifact'};
+ assert.equal(jobCondition('production-approval')(dispatch,inputs),true);
+ assert.equal(jobCondition('lv15-release')(dispatch,inputs),true);
+ assert.equal(jobCondition('release')(dispatch,inputs),false);
+ assert.equal(jobCondition('approval-boundary-only')(dispatch,inputs),false);
+ for(const key of ['expected_version','expected_deployment','approval_ref','approved_sha'])
+  assert.equal(jobCondition('lv15-release')(dispatch,{...inputs,[key]:''}),false);
+ for(const execution_mode of ['release','renewal-artifact','renewal-activation','companion-artifact','promote-existing','approval_boundary_only'])
+  assert.equal(jobCondition('lv15-release')(dispatch,{...inputs,execution_mode}),false);
+ const job=workflowJobs.get('lv15-release');
+ assert.match(job,/needs: \[production-approval\]/);
+ assert.match(job,/environment: member-pages-code-only-owner/);
+ assert.match(job,/node scripts\/member-pages-lv15-artifact.mjs --execute-approved/);
+ assert.match(job,/node scripts\/verify-my-mmd-lv15-live.mjs --read-only/);
+ assert.doesNotMatch(job,/wrangler|secret put|AIRTABLE|permissions:[\s\S]*write/);
+ assert.equal((job.match(/secrets\./g)||[]).length,1);
 });

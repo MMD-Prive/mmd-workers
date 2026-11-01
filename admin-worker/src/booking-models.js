@@ -70,17 +70,47 @@ function readQuery(url) {
   const q = text(url.searchParams.get("q"));
   const cursor = text(url.searchParams.get("cursor"));
   const audience = url.searchParams.get("audience") || "all", attention = url.searchParams.get("attention") || "all";
-  if (q.length > 80 || /[\x00-\x1f]/.test(q) || cursor.length > 400 || (cursor && !/^[A-Za-z0-9/_=+-]+$/.test(cursor)) || !["all", "public", "private"].includes(audience) || !["all", "missing_cover", "policy_review"].includes(attention)) return null;
-  return { q, cursor, audience, attention };
+  // Structured, optional filters are shared by Booking and the owner-only Compcard model directory.
+  // Reject invalid values before calling Airtable; never interpolate untrusted filter formula text.
+  const range = (name, minimum, maximum) => {
+    const raw = url.searchParams.get(name);
+    if (raw === null || raw === "") return null;
+    if (!/^\d{1,3}$/.test(raw)) return NaN;
+    const n = Number(raw);
+    return Number.isSafeInteger(n) && n >= minimum && n <= maximum ? n : NaN;
+  };
+  const heightMin = range("height_min", 100, 230), heightMax = range("height_max", 100, 230);
+  const weightMin = range("weight_min", 30, 250), weightMax = range("weight_max", 30, 250);
+  const body = url.searchParams.get("body") || "", skin = url.searchParams.get("skin") || "";
+  if (q.length > 80 || /[\x00-\x1f]/.test(q) || cursor.length > 400
+    || (cursor && !/^[A-Za-z0-9/_=+-]+$/.test(cursor))
+    || !["all", "public", "private"].includes(audience)
+    || !["all", "missing_cover", "policy_review"].includes(attention)
+    || [heightMin,heightMax,weightMin,weightMax].some(Number.isNaN)
+    || (heightMin !== null && heightMax !== null && heightMin > heightMax)
+    || (weightMin !== null && weightMax !== null && weightMin > weightMax)
+    || !["","lean","athletic","muscular","slim","soft"].includes(body)
+    || !["","fair","light","medium","tan","deep"].includes(skin)) return null;
+  return { q, cursor, audience, attention, heightMin, heightMax, weightMin, weightMax, body, skin };
 }
 
 async function loadModels(env, query) {
   const params = new URLSearchParams({ pageSize: "20" });
   if (query.cursor) params.set("offset", query.cursor);
+  const filters = [];
   if (query.q) {
     const needle = JSON.stringify(query.q.toLowerCase());
-    params.set("filterByFormula", `OR(FIND(${needle},LOWER({working_name})),FIND(${needle},LOWER({nickname})),FIND(${needle},LOWER({unique_key})),LOWER(RECORD_ID())=${needle})`);
+    filters.push(`OR(FIND(${needle},LOWER({working_name})),FIND(${needle},LOWER({nickname})),FIND(${needle},LOWER({unique_key})),LOWER(RECORD_ID())=${needle})`);
   }
+  for (const [field, min, max] of [["height_cm", query.heightMin, query.heightMax],["weight_kg", query.weightMin, query.weightMax]]) {
+    if (min === null && max === null) continue;
+    filters.push(`{${field}}!=""`);
+    if (min !== null) filters.push(`{${field}}>=${min}`);
+    if (max !== null) filters.push(`{${field}}<=${max}`);
+  }
+  if (query.body) filters.push(`LOWER({body_type})=${JSON.stringify(query.body)}`);
+  if (query.skin) filters.push(`LOWER({skin_tone})=${JSON.stringify(query.skin)}`);
+  if (filters.length) params.set("filterByFormula", filters.length === 1 ? filters[0] : `AND(${filters.join(",")})`);
   // A page can be empty after a diagnostic filter. Keep Airtable's cursor so
   // the UI can continue instead of reporting an incomplete result as final.
   const data = await airtable(env, "/" + encodeURIComponent(modelTable(env)) + "?" + params);

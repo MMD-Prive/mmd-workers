@@ -36,21 +36,23 @@ test('Premium signup is 2,999 THB for its normal two-year term, not a one-year f
   assert.match(html,/ไม่บวกโบนัสต่ออายุให้เป็น 3 ปีโดยอัตโนมัติ/);
 });
 
-test('announcement stops exactly at November 1 Bangkok without changing monetary eligibility',()=>{
-  assert.equal(isPrivateCareBackAnnouncementVisible('2026-10-31T23:59:59.999+07:00'),true);
-  assert.equal(isPrivateCareBackAnnouncementVisible('2026-11-01T00:00:00+07:00'),false);
-  assert.equal(isPrivateCareBackAnnouncementVisible('2026-12-31T23:59:59.999+07:00'),false);
-  assert.equal(isPrivateCareBackAnnouncementVisible('2026-07-31T23:59:59.999+07:00'),false);
-  assert.equal(isPrivateCareBackAnnouncementVisible('invalid'),false);
-  assert.equal(isPrivateCareBackAnnouncementVisible(null),false);
+test('approved November announcement stops exactly at December 1 Bangkok without changing monetary eligibility',()=>{
+  assert.equal(isPrivateCareBackAnnouncementVisible('2026-10-31T23:59:59.999+07:00','november'),true);
+  assert.equal(isPrivateCareBackAnnouncementVisible('2026-11-01T00:00:00+07:00','november'),true);
+  assert.equal(isPrivateCareBackAnnouncementVisible('2026-11-30T23:59:59.999+07:00','november'),true);
+  assert.equal(isPrivateCareBackAnnouncementVisible('2026-12-01T00:00:00+07:00','november'),false);
+  assert.equal(isPrivateCareBackAnnouncementVisible('2026-12-31T23:59:59.999+07:00','november'),false);
+  assert.equal(isPrivateCareBackAnnouncementVisible('2026-07-31T23:59:59.999+07:00','november'),false);
+  assert.equal(isPrivateCareBackAnnouncementVisible('invalid','november'),false);
+  assert.equal(isPrivateCareBackAnnouncementVisible(null,'november'),false);
 });
 
-for(const [code,years,days] of [['premium',1,0],['standard',0,180]]) {
-  test(`${code}: November and the final December millisecond remain eligible for canonical CARE BACK`,()=>{
+for(const code of ['premium','standard']) {
+  test(`${code}: November and the final December millisecond use the six-month canonical CARE BACK benefit`,()=>{
     for(const time of ['2026-11-01T00:00:00+07:00','2026-12-15T12:00:00+07:00','2026-12-31T23:59:59.999+07:00']) {
       const promo=promotionAt(time,code);
-      assert.ok(promo); assert.equal(promo.bonus_years,years); assert.equal(promo.bonus_days,days);
-      assert.equal(promo.ends_before,'2026-11-01T00:00:00+07:00');
+      assert.ok(promo); assert.equal(promo.bonus_years,0); assert.equal(promo.bonus_days,0); assert.equal(promo.bonus_months,6);
+      assert.equal(promo.ends_before,'2026-12-01T00:00:00+07:00');
       assert.equal(promo.honored_before,'2027-01-01T00:00:00+07:00');
     }
     assert.equal(promotionAt('2027-01-01T00:00:00+07:00',code),null);
@@ -64,21 +66,23 @@ test('ordinary Premium signup is exactly two years and does not add a renewal bo
   assert.equal(applyMembershipPromotion(new Date('2028-10-25T05:00:00.000Z'),promo,{start_at:start}).toISOString(),'2028-10-25T05:00:00.000Z');
 });
 
-test('Premium renewal keeps one purchased year plus one CARE BACK year, not three',()=>{
+test('historical October Premium renewal keeps one purchased year plus one CARE BACK year, not three',()=>{
   assert.equal(privateRenewalBaseYears('premium'),1);
   const expiry='2027-02-28T16:59:59.999Z';
   const base=addBangkokCalendarYears(new Date(expiry),1);
-  const extended=applyMembershipPromotion(base,promotionAt('2026-12-31T23:59:59.999+07:00'),{start_at:expiry});
+  const extended=applyMembershipPromotion(base,promotionAt('2026-10-31T23:59:59.999+07:00'),{start_at:expiry});
   assert.equal(extended.toISOString(),'2029-02-28T16:59:59.999Z');
 });
 
-test('customer markup advertises October only and does not leak internal year-end window',()=>{
+test('customer markup preserves October history and uses the approved November wave without leaking year-end',()=>{
   const html=renewalViewHtml(new Date('2026-10-25T13:00:00+07:00'));
   assert.match(html,/CARE BACK MEMBERSHIP/); assert.match(html,/รอบประชาสัมพันธ์ถึง 31 ต.ค. 2569/);
   assert.match(html,/Standard เพิ่ม 180 วัน · Premium เพิ่ม 1 ปี เมื่อผ่านเงื่อนไข/);
   assert.doesNotMatch(html,/31 ธ.ค.|สิ้นปี|2027-01-01|honored_before|5 วันสุดท้าย/);
   const november=renewalViewHtml(new Date('2026-11-01T00:00:00+07:00'));
-  assert.doesNotMatch(november,/<aside class="rn-campaign"/);
+  assert.match(november,/<aside class="rn-campaign"/);
+  assert.match(november,/30 พ.ย. 2569/); assert.match(november,/รับอายุสมาชิกเพิ่ม 6 เดือน/);
+  assert.doesNotMatch(november,/31 ต.ค.|Premium เพิ่ม 1 ปี|Standard เพิ่ม 180 วัน|31 ธ.ค.|สิ้นปี|honored_before/);
   assert.match(november,/สมัครใหม่ 2,999 บาท \/ 2 ปี/);
 });
 
@@ -145,3 +149,4 @@ test('announcement helper is never referenced by payment or benefit calculation 
   assert.doesNotMatch(createRenewalView.toString(),/isPrivateCareBackAnnouncementVisible|honored_before/);
   new Function('return ('+createRenewalView.toString()+')');
 });
+

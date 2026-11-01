@@ -374,7 +374,8 @@ test("canonical status webhooks make one LINE reply and zero OpenAI calls", asyn
   }
 });
 
-test("CARE BACK requires a saved Birthday Wish before the personal coupon opens", () => {
+test("September contract: CARE BACK requires a saved Birthday Wish before the personal coupon opens", (t) => {
+  t.mock.method(Date, "now", () => Date.parse("2026-09-15T12:00:00+07:00"));
   const phrases = ["CARE BACK", "แคร์แบ็ก", "Birthday Wish", "CARE BACK ส่งสลิปแล้ว"];
   for (const phrase of phrases) {
     const event = lineTextEvent(phrase);
@@ -390,7 +391,8 @@ test("CARE BACK requires a saved Birthday Wish before the personal coupon opens"
   }
 });
 
-test("CARE BACK model-off sub-intents answer at least 40 adversarial LINE cases deterministically", () => {
+test("September contract: CARE BACK model-off sub-intents answer at least 40 adversarial LINE cases deterministically", (t) => {
+  t.mock.method(Date, "now", () => Date.parse("2026-09-15T12:00:00+07:00"));
   const cases = [
     ["CARE BACK คืออะไร", "care_back_overview", /สิทธิ์ดูแลกลับ/],
     ["แคร์แบ็กทำงานยังไง", "care_back_overview", /Birthday Wish/],
@@ -448,7 +450,8 @@ test("CARE BACK model-off sub-intents answer at least 40 adversarial LINE cases 
   }
 });
 
-test("context-free CARE BACK minimum and production-smoke phrases stay deterministic and non-authoritative", async () => {
+test("September contract: context-free CARE BACK minimum and production-smoke phrases stay deterministic and non-authoritative", async (t) => {
+  t.mock.method(Date, "now", () => Date.parse("2026-09-15T12:00:00+07:00"));
   const minimumCases = [
     ["ผมได้ 180 วันแล้วใช่ไหม", "care_back_personal_status", /ยังยืนยันจากข้อความนี้ไม่ได้/],
     ["หมดอายุแล้วได้ 150 แต้มเลยไหม", "care_back_expired_member", /150 Points ยังเป็นสิทธิ์แยก/],

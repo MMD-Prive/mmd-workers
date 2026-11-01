@@ -16,6 +16,23 @@ const truth = () => ({ ok: true, authority: AUTHORITY, identity_status: "resolve
   membership: { level: "private_premium", label: "Premium", lifecycle: "active", expire_at: "2027-01-01" },
   points: { status: "verified", active_points: 120 } });
 
+const categoryEnv = {KENJI_LINE_REPLY_CATEGORY_MODE:'approved_qa_promo',LINE_AUTO_REPLY_ENABLED:'true',LINE_KENJI_MODEL_ENABLED:'false',KENJI_LINE_APPROVED_PROMO_ENABLED:'true'};
+for (const command of ['checkpts','package','regis','apply','โปร']) test(`restricted signed intake sends once: ${command}`, async () => {
+  const {status,calls}=await run(command,{env:categoryEnv});
+  assert.equal(status,200);assert.equal(calls.replies.length,1);
+  assert.ok(calls.writes.some(w=>w.table==='MMD — Console Inbox'),'inbound intake preserved');
+  if(command==='checkpts') assert.match(calls.replies[0].messages[0].text,/Points: 120 Points/);
+});
+for (const options of [{owner:true},{kill:true},{globalKill:true},{ownerAfterTruth:true},{killAfterTruth:true}]) test(`restricted checkpts pause: ${JSON.stringify(options)}`,async()=>{
+  const {calls}=await run('checkpts',{...options,env:categoryEnv});assert.equal(calls.replies.length,0);
+});
+test('restricted native FAQ and unknown messages retain intake without reply or truth lookup',async()=>{
+  for(const command of ['มีบริการอะไรบ้าง','GWs คืออะไร','สวัสดี','จอง','checkpts ดูให้เพื่อน']){
+    const {calls}=await run(command,{env:categoryEnv});assert.equal(calls.replies.length,0);assert.equal(calls.truth.length,0);
+    assert.ok(calls.writes.some(w=>w.table==='MMD — Console Inbox'));
+  }
+});
+
 // Uses the real signed Seed + canonical intake handlers. All outbound I/O is mocked.
 async function run(command, options = {}) {
   const previousFetch = globalThis.fetch;
@@ -78,8 +95,13 @@ async function run(command, options = {}) {
       calls.beforeTruth ||= { runtime: calls.runtime, matrix: calls.matrix, takeover: calls.takeover };
       afterTruth = true;
       const membershipRead = body.intent === "membership_status";
-      return Response.json(membershipRead ? options.membershipTruth || options.truth || truth() : options.truth || truth(), {
-        status: membershipRead ? options.membershipStatus || options.truthStatus || 200 : options.truthStatus || 200,
+      const snapshotRead = new URL(request.url).pathname.endsWith("/member-reply-snapshot");
+      const payload = membershipRead ? options.membershipTruth || options.truth || truth()
+        : snapshotRead ? options.snapshotTruth || options.truth || truth()
+        : options.pointsTruth || options.truth || truth();
+      return Response.json(payload, {
+        status: membershipRead ? options.membershipStatus || options.truthStatus || 200
+          : snapshotRead ? options.snapshotStatus || options.truthStatus || 200 : options.pointsStatus || options.truthStatus || 200,
       });
     } }, ...options.env };
   const background = [];
@@ -181,6 +203,7 @@ test("snapshot mode remains opt-in and cannot fall back to stale or unverified v
   const { calls } = await run("เช็คสิทธิ์", { env: { LINE_MEMBER_REPLY_SNAPSHOT_ENABLED: "true" }, truth: {}, truthStatus: 503 });
   assert.deepEqual(calls.truth, [
     { path: "/__internal/kenji/member-reply-snapshot", intent: undefined },
+    { path: "/__internal/kenji/member-truth", intent: "points_status" },
     { path: "/__internal/kenji/member-truth", intent: "membership_status" },
   ]);
   assert.equal(calls.replies.length, 1);
@@ -195,6 +218,7 @@ test("snapshot miss reads canonical membership without accepting its profile Poi
     });
     assert.deepEqual(calls.truth, [
       { path: "/__internal/kenji/member-reply-snapshot", intent: undefined },
+      { path: "/__internal/kenji/member-truth", intent: "points_status" },
       { path: "/__internal/kenji/member-truth", intent: "membership_status" },
     ]);
     const text = calls.replies[0].messages[0].text;
@@ -298,4 +322,31 @@ test("bounded membership expiry questions use the same new Checkpts lane with ge
   }
   for(const command of ['ต่ออายุ','สมัครสมาชิก','วันหมดอายุของเพื่อน','เหลือกี่วัน โอนแล้ว','สวัสดี'])
     assert.equal(isCheckptsShortcut(event(command)),false);
+});
+
+test("Checkpts rechecks current verified Points when the snapshot is pending", async () => {
+  const snapshotTruth = { ...truth(), points: { status: "unavailable", active_points: 999 } };
+  const { calls, body } = await run("checkpts", {
+    env: { LINE_MEMBER_REPLY_SNAPSHOT_ENABLED: "true", KENJI_LINE_MODEL_ONLY_ENABLED: "true" },
+    snapshotTruth, pointsTruth: truth(),
+  });
+  assert.deepEqual(calls.truth.map(call => call.intent), [undefined, "points_status"]);
+  assert.equal(body.saved[0].truth_status, "verified");
+  assert.match(calls.replies[0].messages[0].text, /Points: 120 Points/);
+  assert.doesNotMatch(calls.replies[0].messages[0].text, /999/);
+});
+
+test("Checkpts returns confirmed membership but not pending Points", async () => {
+  const pending = { ...truth(), points: { status: "unavailable", active_points: 999 } };
+  const { calls, body } = await run("เช็กสิทธิ์", {
+    env: { LINE_MEMBER_REPLY_SNAPSHOT_ENABLED: "true", KENJI_LINE_MODEL_ONLY_ENABLED: "true" },
+    snapshotTruth: pending, pointsTruth: pending,
+  });
+  assert.equal(calls.replies.length, 1);
+  assert.equal(body.saved[0].truth_status, "partial");
+  const reply = calls.replies[0].messages[0].text;
+  assert.match(reply, /สถานะสมาชิก: Premium/);
+  assert.ok(reply.includes("วันหมดอายุ: 01/01/2027"));
+  assert.match(reply, /Points: ยังยืนยันยอดไม่ได้/);
+  assert.doesNotMatch(reply, /999|Points: 0 Points/);
 });

@@ -1,3 +1,5 @@
+import { restrictedReplyCategories } from './kenji-reply-category-gate.mjs';
+import { careBackOctoberReply } from './kenji-care-back-october.mjs';
 import { deliverTravelNotice } from '../../shared/model-travel-line.mjs';
 import {
   isRenewalRoute,
@@ -146,9 +148,10 @@ function isEnabled(value) {
 }
 
 export function kenjiLineModelOnlyAllowsReply({ intent = "", modelIntent = {} } = {}) {
-  const canonicalIntent = asString(intent);
-  if (canonicalIntent === "model_lookup" || canonicalIntent === "model_access_verification") return true;
-  return Boolean(modelIntent?.campaign_trigger && asString(modelIntent?.query));
+  const canonicalIntent = String(intent || '').trim();
+  if (['promotion_overview', 'care_back_overview', 'care_back_dates', 'care_back_new_member', 'care_back_new_standard', 'care_back_new_premium', 'care_back_current_member', 'care_back_expired_member', 'care_back_membership_price'].includes(canonicalIntent)) return true;
+  if (canonicalIntent === 'model_lookup' || canonicalIntent === 'model_access_verification') return true;
+  return Boolean(modelIntent?.campaign_trigger && String(modelIntent?.query || '').trim());
 }
 
 function parseHashAllowlist(value) {
@@ -974,6 +977,8 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
     ? continuityIntent
     : inferredIntent;
   intent = resolvePrivateMembershipFollowup(text, intent, options?.continuity);
+  const careBackPublicCommon = careBackOctoberReply(intent, String(event?.message?.text || ''), Date.now());
+  if (careBackPublicCommon) return `${careBackPublicCommon.text}\n${careBackPublicCommon.label} → ${careBackPublicCommon.route}`;
   const priorIntent = asString(options?.continuity?.matrix?.last_customer_intent).toLowerCase();
   if (/^\s*\d[\d,]*(?:\s*(?:บาท|thb))?\s*(?:ครับ|ค่ะ|นะ)?\s*$/i.test(text) && [
     "membership_interest", "membership_experience", "membership_budget", "membership_pricing",
@@ -1565,10 +1570,12 @@ export async function deliverLineText(env = {}, lineUserId, text, options = {}) 
 }
 
 export async function deliverLinePublicMenu(env = {}, lineUserId, options = {}) {
+  if (restrictedReplyCategories(env)) return {ok:false,suppressed:true,error:'reply_category_silent'};
   return deliverLineText(env, lineUserId, PUBLIC_MENU_TEXT, options);
 }
 
 async function sendLineReply(env = {}, replyToken, text, options = {}) {
+  if (restrictedReplyCategories(env)) return {ok:false,suppressed:true,error:'reply_category_silent'};
   const token = asString(env.LINE_CHANNEL_ACCESS_TOKEN);
   const safeText = sanitizeLineText(text);
   const reply = asString(replyToken);

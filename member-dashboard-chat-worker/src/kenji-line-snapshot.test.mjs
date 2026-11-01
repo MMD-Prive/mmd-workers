@@ -32,3 +32,22 @@ test("a missing snapshot cannot become an inferred balance", async () => {
   assert.match(answer, /Points: ยังยืนยันยอดไม่ได้/);
   assert.doesNotMatch(answer, /320/);
 });
+
+test("Checkpts refuses to join a conflicting snapshot with a different live membership", async () => {
+  const env = { MEMBER_PAGES_WORKER: { fetch: async request => {
+    const snapshot = new URL(request.url).pathname.endsWith("/member-reply-snapshot");
+    return Response.json(snapshot
+      ? { ok: true, authority: "my_mmd_entitlement_resolver_v1", identity_status: "resolved",
+          membership: { level: "private_standard", label: "Standard", lifecycle: "active", expire_at: "2027-01-01" },
+          points: { status: "unavailable", active_points: null } }
+      : { ok: true, authority: "my_mmd_entitlement_resolver_v1", identity_status: "resolved",
+          membership: { level: "private_premium", label: "Premium", lifecycle: "active", expire_at: "2027-01-01" },
+          points: { status: "verified", active_points: 500 } });
+  } } };
+  const { resolveKenjiCheckptsTruth } = await import("./kenji-line-live-truth.mjs");
+  const result = await resolveKenjiCheckptsTruth({ env, event });
+  const answer = resolveCheckptsShortcut(result).text;
+  assert.match(answer, /สถานะสมาชิก: Standard/);
+  assert.match(answer, /Points: ยังยืนยันยอดไม่ได้/);
+  assert.doesNotMatch(answer, /500 Points/);
+});

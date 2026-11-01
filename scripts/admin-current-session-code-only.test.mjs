@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { readFileSync } from 'node:fs';
-import { activeVersion, createBuildEvidence, createTransport, releaseCurrentSession, ROOT, uploadMetadata, validateBundleFiles, validateReceiptLinks, validateSourceState, ZONE } from './admin-current-session-code-only.mjs';
+import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, readdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createHash } from 'node:crypto';
+import { parseWranglerVersion, pinKenjiShellAssets, buildCurrentSessionBundle, BASELINE_CI_RECEIPT, baselineSourceEvidence, readBaselineCiGithub, validateBaselineCiReceipt, verifyBaselineSourceForRelease, activeVersion, createBuildEvidence, createTransport, releaseCurrentSession, ROOT, uploadMetadata, validateBundleFiles, validateReceiptLinks, validateSourceState, ZONE } from './admin-current-session-code-only.mjs';
 
 const id = n => `${String(n).padStart(8, '0')}-0000-4000-8000-000000000000`;
 const sha = 'a'.repeat(40);
@@ -46,8 +49,10 @@ test('receipt chain rejects missing and mismatched upload/deployment evidence', 
   assert.throws(() => validateReceiptLinks({ source: { ...source, dirty_tree: true }, build, upload, deployment }), /dirty source/);
 });
 function fixture(options = {}) {
-  const initial = { id: id(1), strategy: 'percentage', versions: [{ version_id: id(2), percentage: 100 }] };
-  const version = { id: id(2), resources: {
+  const baselineVersion = options.baselineVersion || id(2);
+  const baselineDeployment = options.baselineDeployment || id(1);
+  const initial = { id: baselineDeployment, strategy: 'percentage', versions: [{ version_id: baselineVersion, percentage: 100 }] };
+  const version = { id: baselineVersion, resources: {
     bindings: [{ name: 'MODEL_SESSION_SIGNING_SECRET', type: 'secret_text' },
       { name: 'MODE', type: 'plain_text', text: 'unchanged-fixture' },
       { name: 'DATABASE', type: 'kv_namespace', namespace_id: 'fixture-namespace' }],
@@ -57,7 +62,7 @@ function fixture(options = {}) {
   let uploaded = false, promoted = false, approvals = 0;
   const requests = [], receipts = [];
   const io = {
-    sha, expectedVersion: id(2), expectedDeployment: id(1),
+    sha, expectedVersion: baselineVersion, expectedDeployment: baselineDeployment,
     sourceCheck: async () => { if (options.sourceError) throw new Error('source provenance missing'); return { commit_sha: sha, dirty_tree: false, method: 'fixture' }; },
     buildEvidence: async code => createBuildEvidence({ code, releaseId: '1001.1', nodeVersion: 'v22.1.0',
       wranglerVersion: '4.105.0', lockfile: new Uint8Array([4]), wranglerConfig: new Uint8Array([5]) }),
@@ -81,8 +86,8 @@ function fixture(options = {}) {
         const current = promoted ? { ...initial, id: id(4), versions: [{ version_id: id(3), percentage: 100 }] } : initial;
         result = path.endsWith('/deployments') ? { deployments: [clone(current)] } : clone(current);
       } else if (path === ROOT + '/versions') {
-        result = { items: (uploaded ? [id(3), id(2)] : [id(2)]).map(id => ({ id })) };
-      } else if (path === ROOT + '/versions/' + id(2)) result = clone(version);
+        result = { items: (uploaded ? [id(3), baselineVersion] : [baselineVersion]).map(id => ({ id })) };
+      } else if (path === ROOT + '/versions/' + baselineVersion) result = clone(version);
       else if (path === ROOT + '/versions/' + id(3)) result = {
         ...clone(version), id: id(3), annotations: { 'workers/commit_sha': sha },
         resources: { ...clone(version.resources), script: { ...clone(version.resources.script), etag: 'new-code' } },
@@ -241,4 +246,300 @@ test('workflow is manual, exact-SHA, independently protected, and not the broad 
   assert.match(source, /node scripts\/admin-current-session-code-only.mjs --execute-approved/);
   assert.match(source, /current-session-code-only-receipt-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}/);
   assert.match(source, /retention-days: 90/);
+});
+
+// Synthetic records exercise the verifier; these are NOT historical CI receipts.
+const ci = BASELINE_CI_RECEIPT;
+function ciFixture() {
+  const version = { id: ci.versionId };
+  const deployment = { id: ci.deploymentId, strategy: 'percentage', versions: [{ version_id: ci.versionId, percentage: 100 }] };
+  const run = { id: ci.runId, run_attempt: 1, workflow_id: ci.workflowId, path: ci.workflowPath,
+    event: 'workflow_dispatch', head_branch: 'main', head_sha: ci.sourceSha, status: 'completed', conclusion: 'success',
+    repository: { id: ci.repositoryId, full_name: ci.repository }, head_repository: { id: ci.repositoryId, full_name: ci.repository } };
+  const job = { id: ci.jobId, run_id: ci.runId, run_attempt: 1, head_sha: ci.sourceSha,
+    name: ci.jobName, status: 'completed', conclusion: 'success', steps: [
+      'Check out repository', 'Run tests and source validation', 'Pin Kenji admin shell assets to deploy SHA',
+      'Validate Cloudflare version upload', 'Upload admin-worker version', 'Resolve uploaded version ID',
+      'Deploy uploaded admin-worker version', 'Require verified live deployment',
+    ].map(name => ({ name, conclusion: 'success' })).concat({ name: 'Apply Durable Object migration with direct deploy', conclusion: 'skipped' }) };
+  const lines = [
+    '[command]/usr/bin/git log -1 --format=%H', ci.sourceSha,
+    `Pinned Kenji admin shell JS/CSS to ${ci.sourceSha}`,
+    `Worker Version ID: ${ci.versionId}`,
+    `Resolved version ${ci.versionId} from versions upload output`,
+    JSON.stringify({ ok: true, worker: 'admin-worker', version: ci.versionId, deployment: ci.deploymentId }),
+  ];
+  const log = lines.map((line, i) => `2026-11-01T10:13:0${i}.000Z ${line}`).join('\n');
+  const data = { version, deployment, run, job, log };
+  const reads = [];
+  const readGithub = async path => {
+    reads.push(path);
+    if (path === `repos/${ci.repository}/actions/runs/${ci.runId}`) return data.run;
+    if (path === `repos/${ci.repository}/actions/jobs/${ci.jobId}`) return data.job;
+    if (path === `repos/${ci.repository}/actions/jobs/${ci.jobId}/logs`) return data.log;
+    throw new Error('unexpected fixture endpoint');
+  };
+  return { data, reads, readGithub };
+}
+
+test('audited CI receipt links exact run/attempt/job, checkout, build pin, upload and active deployment', async () => {
+  const f = ciFixture();
+  const evidence = await baselineSourceEvidence(f.data.version, f.data.deployment, f.readGithub);
+  assert.equal(evidence.method, 'audited-github-ci-receipt');
+  assert.equal(evidence.baseline_source_sha, ci.sourceSha);
+  assert.equal(evidence.baseline_ci.version_id, ci.versionId);
+  assert.equal(evidence.baseline_ci.deployment_id, ci.deploymentId);
+  assert.equal(evidence.baseline_ci.artifact_digest_verified, false);
+  assert.equal(f.reads.length, 3);
+  assert.equal(JSON.stringify(evidence).includes('Worker Version ID:'), false, 'never retain raw log content');
+});
+
+for (const [name, mutate] of [
+  ['wrong version', d => { d.version.id = id(99); }],
+  ['wrong deployment', d => { d.deployment.id = id(99); }],
+  ['wrong allocation', d => { d.deployment.versions[0].version_id = id(99); }],
+  ['split traffic', d => { d.deployment.versions[0].percentage = 50; }],
+  ['wrong repository', d => { d.run.repository.full_name = 'other/repo'; }],
+  ['wrong repository ID', d => { d.run.repository.id++; }],
+  ['fork', d => { d.run.head_repository.id++; }],
+  ['wrong run', d => { d.run.id++; }],
+  ['rerun attempt', d => { d.run.run_attempt++; }],
+  ['wrong workflow', d => { d.run.workflow_id++; }],
+  ['wrong workflow path', d => { d.run.path = 'another.yml'; }],
+  ['automatic event', d => { d.run.event = 'push'; }],
+  ['wrong branch', d => { d.run.head_branch = 'feature'; }],
+  ['wrong source', d => { d.run.head_sha = sha; }],
+  ['run incomplete', d => { d.run.status = 'in_progress'; }],
+  ['run failed', d => { d.run.conclusion = 'failure'; }],
+  ['wrong job', d => { d.job.id++; }],
+  ['wrong job run', d => { d.job.run_id++; }],
+  ['wrong job attempt', d => { d.job.run_attempt++; }],
+  ['wrong job source', d => { d.job.head_sha = sha; }],
+  ['wrong job name', d => { d.job.name = 'test'; }],
+  ['job incomplete', d => { d.job.status = 'in_progress'; }],
+  ['job failed', d => { d.job.conclusion = 'failure'; }],
+  ['critical step absent', d => { d.job.steps.shift(); }],
+  ['critical step failed', d => { d.job.steps[0].conclusion = 'failure'; }],
+  ['migration fallback', d => { d.job.steps.at(-1).conclusion = 'success'; }],
+  ['missing logs', d => { d.log = ''; }],
+  ['oversized logs', d => { d.log = 'x'.repeat(2 * 1024 * 1024 + 1); }],
+  ['checkout mismatch', d => { d.log = d.log.replace(`Z ${ci.sourceSha}`, `Z ${sha}`); }],
+  ['wrong build pin', d => { d.log = d.log.replace(`JS/CSS to ${ci.sourceSha}`, `JS/CSS to ${sha}`); }],
+  ['wrong upload', d => { d.log = d.log.replace(`Worker Version ID: ${ci.versionId}`, `Worker Version ID: ${id(99)}`); }],
+  ['wrong resolved version', d => { d.log = d.log.replace(`Resolved version ${ci.versionId}`, `Resolved version ${id(99)}`); }],
+  ['wrong promotion', d => { d.log = d.log.replace(`"deployment":"${ci.deploymentId}"`, `"deployment":"${id(99)}"`); }],
+  ['duplicate receipt', d => { d.log += '\n' + d.log.split('\n').at(-1); }],
+  ['upload record missing', d => { d.log = d.log.split('\n').filter(l => !l.includes('Worker Version ID:')).join('\n'); }],
+  ['comment is not receipt', d => { d.log = d.log.replace('Worker Version ID:', '# Worker Version ID:'); }],
+  ['temporal correlation only', d => { d.log = `2026-11-01T10:13:00.000Z ${ci.sourceSha} ${ci.versionId} ${ci.deploymentId}`; }],
+  ['reordered receipts', d => { d.log = d.log.split('\n').reverse().join('\n'); }],
+]) test(`CI baseline ${name}: reject before build or upload`, async () => {
+  const c = ciFixture(); mutate(c.data);
+  assert.throws(() => validateBaselineCiReceipt(c.data));
+  const f = fixture({ baselineVersion: ci.versionId, baselineDeployment: ci.deploymentId });
+  let builds = 0; f.io.bundle = async () => { builds++; return new Uint8Array([1]); };
+  f.io.sourceCheck = (version, deployment) => baselineSourceEvidence(version, deployment, c.readGithub);
+  // Feed mismatched baseline observations too, rather than substituting a fixture's valid pair.
+  if (['wrong version', 'wrong deployment', 'wrong allocation', 'split traffic'].includes(name)) {
+    f.io.sourceCheck = () => baselineSourceEvidence(c.data.version, c.data.deployment, c.readGithub);
+  }
+  await assert.rejects(releaseCurrentSession(f.io));
+  assert.equal(builds, 0); assert.equal(f.writes().length, 0);
+});
+
+test('annotation path remains strict; unknown unannotated baseline never reads CI', async () => {
+  let reads = 0; const read = async () => { reads++; throw Error('unexpected'); };
+  assert.deepEqual(await baselineSourceEvidence({ annotations: { 'workers/commit_sha': sha } }, {}, read),
+    { method: 'version-commit-annotation', baseline_source_sha: sha });
+  await assert.rejects(baselineSourceEvidence({ id: id(99) }, {}, read));
+  await assert.rejects(baselineSourceEvidence({ annotations: { 'workers/commit_sha': '' } }, {}, read));
+  assert.equal(reads, 0);
+});
+
+test('receipt-read failure never falls back or leaks upstream errors', async () => {
+  const c = ciFixture(); const f = fixture({ baselineVersion: ci.versionId, baselineDeployment: ci.deploymentId });
+  let reads = 0;
+  f.io.sourceCheck = (version, deployment) => baselineSourceEvidence(version, deployment, async () => { reads++; throw Error('fixture unavailable'); });
+  await assert.rejects(releaseCurrentSession(f.io)); assert.equal(reads, 1); assert.equal(f.writes().length, 0);
+  assert.throws(() => readBaselineCiGithub('repos/other/repo/actions/jobs/1/logs'), /unapproved baseline receipt endpoint/);
+});
+
+test('CI receipt path still requires clean exact source, ancestry and unchanged source configuration', async () => {
+  for (const mode of ['ok', 'dirty', 'wrong-candidate', 'unrelated', 'changed-config']) {
+    const c = ciFixture(), calls = [];
+    const git = (...args) => { calls.push(args); if (mode === 'unrelated' && args[0] === 'merge-base') throw Error('not ancestor');
+      return args[0] === 'diff' && mode === 'changed-config' ? 'configuration changed' : ''; };
+    const run = () => verifyBaselineSourceForRelease({ version: c.data.version, deployment: c.data.deployment,
+      sourceState: { commit_sha: mode === 'wrong-candidate' ? 'b'.repeat(40) : sha, dirty_tree: mode === 'dirty' },
+      sha, git, readGithub: c.readGithub });
+    if (mode === 'ok') {
+      const evidence = await run(); assert.equal(evidence.method, 'audited-github-ci-receipt');
+      assert.deepEqual(calls, [['merge-base', '--is-ancestor', ci.sourceSha, sha], ['diff', ci.sourceSha, sha, '--', 'admin-worker/wrangler.toml']]);
+    } else await assert.rejects(run());
+  }
+});
+
+test('verified CI baseline retains complete new artifact/upload/deployment receipts and every approval gate', async () => {
+  const c = ciFixture(); const f = fixture({ baselineVersion: ci.versionId, baselineDeployment: ci.deploymentId });
+  f.io.sourceCheck = async (version, deployment) => ({ commit_sha: sha, dirty_tree: false,
+    ...await baselineSourceEvidence(version, deployment, c.readGithub) });
+  const result = await releaseCurrentSession(f.io);
+  assert.equal(result.phase, 'complete'); assert.equal(result.source_evidence.baseline_ci.artifact_digest_verified, false);
+  assert.equal(result.build_evidence.artifact.digest.algorithm, 'sha256');
+  assert.equal(f.writes().length, 2);
+  assert.equal(result.upload_response.version_id, result.deployment_evidence.version_id);
+  assert.equal(JSON.stringify(result).includes('Worker Version ID:'), false);
+  for (const rejectApproval of [1, 2, 3]) {
+    const f = fixture({ baselineVersion: ci.versionId, baselineDeployment: ci.deploymentId, rejectApproval });
+    f.io.sourceCheck = async (version, deployment) => ({ commit_sha: sha, dirty_tree: false,
+      ...await baselineSourceEvidence(version, deployment, c.readGithub) });
+    await assert.rejects(releaseCurrentSession(f.io));
+    assert.equal(f.writes().length, rejectApproval === 3 ? 1 : 0);
+  }
+});
+
+test('receipt reader permits only three GET endpoints, captures logs in memory and sanitizes failures', () => {
+  const previous = process.env.GH_TOKEN;
+  try {
+    process.env.GH_TOKEN = 'fixture-token-not-a-secret';
+    for (const path of [`repos/${ci.repository}/actions/runs/${ci.runId}`,
+      `repos/${ci.repository}/actions/jobs/${ci.jobId}`, `repos/${ci.repository}/actions/jobs/${ci.jobId}/logs`]) {
+      const raw = path.endsWith('/logs');
+      const output = readBaselineCiGithub(path, (command, args, options) => {
+        assert.equal(command, 'gh');
+        assert.deepEqual(args, ['api', '--hostname', 'github.com', '--method', 'GET',
+          ...(raw ? ['--allow-escape-sequences'] : []), path]);
+        assert.deepEqual(options.stdio, ['ignore', 'pipe', 'ignore']);
+        assert.equal(options.env.GH_DEBUG, '');
+        return raw ? 'fixture raw log' : '{"id":1}';
+      });
+      assert.deepEqual(output, raw ? 'fixture raw log' : {id:1});
+    }
+    assert.throws(() => readBaselineCiGithub(`repos/${ci.repository}/actions/jobs/${ci.jobId}/logs`,
+      () => { throw Error('private-upstream-body'); }), error => !error.message.includes('private-upstream-body'));
+    assert.throws(() => readBaselineCiGithub(`repos/${ci.repository}/actions/runs/${ci.runId}`, () => 'invalid private-body'),
+      error => !error.message.includes('private-body'));
+    for (const path of ['https://outside.invalid', `repos/${ci.repository}/actions/runs/1`, `${ci.jobId}/rerun`]) {
+      let called = false;
+      assert.throws(() => readBaselineCiGithub(path, () => {called=true;}), /unapproved baseline receipt endpoint/);
+      assert.equal(called, false);
+    }
+    delete process.env.GH_TOKEN;
+    assert.throws(() => readBaselineCiGithub(`repos/${ci.repository}/actions/runs/${ci.runId}`), /credential required/);
+  } finally {
+    if (previous === undefined) delete process.env.GH_TOKEN; else process.env.GH_TOKEN = previous;
+  }
+});
+
+test('unexpected data in a receipt never appears in a verifier error or output evidence', () => {
+  const f = ciFixture();
+  f.data.log = f.data.log.replace(`"deployment":"${ci.deploymentId}"`, `"deployment":"${ci.deploymentId}","payload":"private-marker"`);
+  assert.throws(() => validateBaselineCiReceipt(f.data), error => !error.message.includes('private-marker'));
+});
+
+const shellCss = 'https://models.mmdbkk.com/webflow/internal/admin/kenji/kenji-admin-v1.css';
+const shellJs = 'https://models.mmdbkk.com/webflow/internal/admin/kenji/kenji-admin-v1.js';
+const shellModule = () => Buffer.from(`const css="${shellCss}"; const js='${shellJs}'; export default {};`);
+test('shell pin preserves both asset paths, changing only their source SHA query', () => {
+  const input = shellModule(); const original = Buffer.from(input);
+  const result = pinKenjiShellAssets(input, sha);
+  assert.equal(result.toString(), input.toString().replace(shellCss, shellCss + '?v=' + sha).replace(shellJs, shellJs + '?v=' + sha));
+  assert.deepEqual(input, original, 'input remains untouched');
+  const quoted = Buffer.from('const css=`' + shellCss + '`;const js=`' + shellJs + '`;');
+  assert.ok(pinKenjiShellAssets(quoted, sha).toString().includes(shellJs + '?v=' + sha));
+});
+for (const [name, input] of [
+  ['missing CSS', () => Buffer.from(`const js="${shellJs}";`)],
+  ['missing JS', () => Buffer.from(`const css="${shellCss}";`)],
+  ['duplicate marker', () => Buffer.concat([shellModule(), Buffer.from(`const duplicate="${shellCss}";`)])],
+  ['old pin', () => Buffer.from(shellModule().toString().replace(shellCss, shellCss + '?v=' + 'b'.repeat(40)))],
+  ['wrong path suffix', () => Buffer.from(shellModule().toString().replace(shellJs, shellJs + '.backup'))],
+  ['non UTF8', () => Buffer.concat([shellModule(), Buffer.from([255])])],
+]) test(`shell pin rejects ${name}`, () => assert.throws(() => pinKenjiShellAssets(input(), sha)));
+test('shell pin rejects absent, short or malformed SHA', () => {
+  for (const value of [undefined, '', 'abc123', 'g'.repeat(40)]) assert.throws(() => pinKenjiShellAssets(shellModule(), value));
+});
+test('local bundle pins before digest without editing source or invoking a real upload', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'mmd-shell-pin-test-'));
+  try {
+    const sourceBefore = readFileSync('admin-worker/src/index.js');
+    let calls = 0;
+    const baseline = {resources:{script_runtime:{compatibility_date:'2026-01-01'}}};
+    const execute = (command, args, options) => {
+      calls++; assert.equal(command, 'wrangler');
+      assert.deepEqual(args.slice(0,3), ['versions','upload','--dry-run']);
+      assert.equal(options.env.CLOUDFLARE_API_TOKEN, '');
+      assert.equal(options.env.CLOUDFLARE_API_KEY, '');
+      assert.equal(options.stdio, 'ignore');
+      mkdirSync(join(dir,'bundle')); writeFileSync(join(dir,'bundle','admin-login-hero-worker.js'), shellModule());
+    };
+    assert.throws(() => buildCurrentSessionBundle(baseline, dir, '', execute));
+    assert.equal(calls, 0);
+    const code = buildCurrentSessionBundle(baseline, dir, sha, execute);
+    assert.equal(calls, 1);
+    assert.deepEqual(readFileSync('admin-worker/src/index.js'), sourceBefore);
+    assert.deepEqual(readdirSync(dir).sort(), ['bundle','bundle.json']);
+    assert.deepEqual(readFileSync(join(dir,'bundle','admin-login-hero-worker.js')), shellModule());
+    assert.ok(code.toString().includes(shellCss + '?v=' + sha));
+    const build = createBuildEvidence({code,releaseId:'1001.1',nodeVersion:'v22.1.0',wranglerVersion:'4.105.0',
+      lockfile:Buffer.from('lock'),wranglerConfig:readFileSync(join(dir,'bundle.json')),shellAssetPinSha:sha});
+    assert.equal(build.artifact.digest.value, createHash('sha256').update(code).digest('hex'));
+    assert.notEqual(build.artifact.digest.value, createHash('sha256').update(shellModule()).digest('hex'));
+    assert.equal(build.build_transformations[0].source_sha, sha);
+    assert.equal(JSON.stringify(build).includes(shellCss), false);
+  } finally { rmSync(dir,{recursive:true,force:true}); }
+});
+test('pin failure stops release before any upload and leaves gates intact', async () => {
+  const f=fixture(); let receivedSha;
+  f.io.bundle=async (_version,sourceSha) => { receivedSha=sourceSha; return pinKenjiShellAssets(Buffer.from('export default {};'),sourceSha); };
+  await assert.rejects(releaseCurrentSession(f.io), /shell asset marker/);
+  assert.equal(receivedSha,sha); assert.equal(f.writes().length,0);
+});
+test('receipt rejects a shell pin linked to another source', async () => {
+  const f=fixture();
+  const original=f.io.buildEvidence;
+  f.io.buildEvidence=async (code,sourceSha) => {
+    assert.equal(sourceSha,sha);
+    return {...await original(code),build_transformations:[{kind:'kenji-shell-assets-pinned-to-source-sha',
+      source_sha:'b'.repeat(40),stage:'compiled-module-before-digest'}]};
+  };
+  const build=await f.io.buildEvidence(new Uint8Array([1]),sha);
+  assert.throws(() => validateReceiptLinks({source:{commit_sha:sha,dirty_tree:false},build}), /shell asset pin/);
+  await assert.rejects(releaseCurrentSession(f.io), /shell asset pin/);
+  assert.equal(f.writes().length,0);
+});
+
+for (const output of ['4.105.0', '4.105.0\n', 'wrangler 4.105.0\r\n', ' ⛅️ wrangler 4.105.0\n───────────────────\n', '\x1b[32mwrangler 4.105.0\x1b[0m']) {
+  test('Wrangler parser accepts supported pinned output ' + JSON.stringify(output), () => {
+    assert.equal(parseWranglerVersion(output), '4.105.0');
+  });
+}
+for (const output of ['', undefined, '4.106.0', 'wrangler 4.104.0', '4.105.0-beta.1',
+  '4.105.0\n4.106.0', 'private-token 4.105.0', '4.105.0\nprivate-token', 'x'.repeat(4097)]) {
+  test('Wrangler invalid output fails closed without exposing raw output ' + String(output).slice(0,30), async () => {
+    const f=fixture();
+    f.io.buildEvidence=async () => parseWranglerVersion(output);
+    await assert.rejects(releaseCurrentSession(f.io), error => !error.message.includes('private-token'));
+    assert.equal(f.writes().length,0);
+    const receipt=f.receipts.at(-1);
+    assert.equal(receipt.phase,'stopped'); assert.equal(receipt.stopped_after,'preflight');
+    assert.equal(receipt.failure_stage,'build_evidence');
+    assert.equal(receipt.reason_code, /^(?:wrangler )?4\.10[46]\.0$/.test(output || '') ? 'WRANGLER_VERSION_MISMATCH' : 'WRANGLER_VERSION_UNRECOGNIZED');
+    assert.equal(JSON.stringify(receipt).includes('private-token'),false);
+  });
+}
+test('unknown upstream errors use a fixed code, never their message/code/body', async () => {
+  const f=fixture();
+  f.io.bundle=async () => {throw Object.assign(Error('private-upstream-token'),{code:'secret-code',body:'private-body'});};
+  await assert.rejects(releaseCurrentSession(f.io));
+  const receipt=f.receipts.at(-1);
+  assert.equal(receipt.reason_code,'RELEASE_STAGE_FAILED'); assert.equal(receipt.failure_stage,'local_bundle');
+  assert.equal(/private-|secret-code/.test(JSON.stringify(receipt)),false); assert.equal(f.writes().length,0);
+});
+test('safe reason codes retain upload outcome unknown without retry', async () => {
+  const f=fixture({uploadError:true});
+  await assert.rejects(releaseCurrentSession(f.io));
+  assert.equal(f.receipts.at(-1).stopped_after,'upload-attempted-outcome-unknown');
+  assert.equal(f.receipts.at(-1).failure_stage,'upload');
+  assert.equal(f.receipts.at(-1).reason_code,'RELEASE_STAGE_FAILED'); assert.equal(f.writes().length,1);
 });

@@ -241,7 +241,7 @@ export async function resolveWriteThroughPlan(env = {}, body = {}, options = {})
     start_at: startAt,
     proposed_expire_at: expireAt,
     membership_term: promotion?.total_years === 2 ? "2_years" : promotion
-      ? `${baseYears === 2 ? "2_years" : "1_year"}_plus_${promotion.bonus_years ? `${promotion.bonus_years}_year` : `${promotion.bonus_days}_days`}`
+      ? `${baseYears === 2 ? "2_years" : "1_year"}_plus_${promotion.bonus_years ? `${promotion.bonus_years}_year` : promotion.bonus_months ? `${promotion.bonus_months}_months` : `${promotion.bonus_days}_days`}`
       : baseYears === 2 ? "2_years" : "1_year",
     membership_expiry_rule: promotion?.total_years === 2
       ? `2_years_from_${futureExpiry ? "current_expiry" : "verified_payment"}_${promotion.code}`
@@ -270,6 +270,7 @@ function entitlementFields(plan) {
     target_package_label: plan.target_package_label,
     start_at: plan.start_at,
     expire_at: plan.proposed_expire_at,
+    membership_term: plan.membership_term,
     membership_expiry_rule: plan.membership_expiry_rule,
     source_ref: `payment:${plan.payment_ref}`,
     payment_ref: plan.payment_ref,
@@ -521,3 +522,4 @@ function code(value) { return clean(value, 180).toLowerCase().replace(/[^a-z0-9]
 function text(value, max = 240) { return clean(value, max).replace(/[\u0000-\u001F\u007F]/g, " ").slice(0, max); }
 function clean(value, max = 2000) { return String(value == null ? "" : value).trim().slice(0, max); }
 function compact(value) { return Object.fromEntries(Object.entries(value).filter(([, v]) => v !== "" && v !== null && v !== undefined)); }
+

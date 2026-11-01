@@ -61,6 +61,7 @@ function boundedTruth(payload = {}) {
   const former = payload?.former_private_membership && typeof payload.former_private_membership === "object" ? payload.former_private_membership : null;
   const points = payload?.points && typeof payload.points === "object" ? payload.points : {};
   const verifiedPoints = hasVerifiedPoints(points);
+  const renewalPromotion = payload.renewal?.promotion || payload.renewal || {};
   return {
     ok: true,
     authority: AUTHORITY,
@@ -93,7 +94,10 @@ function boundedTruth(payload = {}) {
       Number.isSafeInteger(payload.renewal.membership_years) && payload.renewal.membership_years > 0 &&
       payload.renewal.discount_verified === true
       ? { status: "ready", package_code: payload.renewal.package_code,
-        amount_thb: payload.renewal.amount_thb, membership_years: payload.renewal.membership_years, discount_verified: true }
+        amount_thb: payload.renewal.amount_thb, membership_years: payload.renewal.membership_years, discount_verified: true,
+        bonus_years: Number.isSafeInteger(renewalPromotion.bonus_years) && renewalPromotion.bonus_years > 0 ? renewalPromotion.bonus_years : 0,
+        bonus_months: Number.isSafeInteger(renewalPromotion.bonus_months) && renewalPromotion.bonus_months > 0 ? renewalPromotion.bonus_months : 0,
+        bonus_days: Number.isSafeInteger(renewalPromotion.bonus_days) && renewalPromotion.bonus_days > 0 ? renewalPromotion.bonus_days : 0 }
       : { status: "review_required" },
   };
 }
@@ -152,6 +156,27 @@ export async function resolveKenjiLineLiveTruth({ env = {}, event = {}, intent =
   } finally {
     clearTimeout(timer);
   }
+}
+
+// Retry only a pending exact Checkpts snapshot against the canonical payment-backed
+// ledger. Conflicting verified membership snapshots never share a Points balance.
+export async function resolveKenjiCheckptsTruth({ env = {}, event = {}, useSnapshot = true } = {}) {
+  if (!useSnapshot) return resolveKenjiLineLiveTruth({ env, event, intent: "points_status" });
+  const snapshot = await resolveKenjiLineSnapshotTruth({ env, event });
+  if (snapshot.ok === true && snapshot.authority === AUTHORITY &&
+      snapshot.identity_status === "resolved" && hasVerifiedPoints(snapshot.points)) return snapshot;
+  const fresh = await resolveKenjiLineLiveTruth({ env, event, intent: "points_status" });
+  if (fresh.ok === true && fresh.authority === AUTHORITY && fresh.identity_status === "resolved" &&
+      hasVerifiedPoints(fresh.points)) {
+    if (snapshot.ok !== true) return fresh;
+    const fingerprint = (v) => [v?.membership?.level, v?.membership?.lifecycle,
+      v?.membership?.expire_at].map(text).join("|");
+    if (snapshot.authority === AUTHORITY && snapshot.identity_status === "resolved" &&
+        fingerprint(snapshot) === fingerprint(fresh)) return fresh;
+    return { ...snapshot, points: { status: "unavailable", active_points: null } };
+  }
+  // Preserve independently confirmed membership even when Points remain pending.
+  return snapshot.ok === true ? snapshot : fresh;
 }
 
 export async function resolveKenjiLineSnapshotTruth({ env = {}, event = {} } = {}) {
@@ -242,11 +267,15 @@ export function buildKenjiLiveTruthDecision(intent = "", liveTruth = {}, continu
     const trusted = boundedTruth(liveTruth);
     const quote = trusted?.renewal;
     const ready = quote?.status === "ready";
+    const extraTerm = ready ? [
+      quote.bonus_months ? `CARE BACK เพิ่ม ${quote.bonus_months} เดือน` : "",
+      quote.bonus_days ? `CARE BACK เพิ่ม ${quote.bonus_days} วัน` : "",
+    ].filter(Boolean).join("\n") : "";
     return {
       text: ready ? `${membershipStatusText(trusted.membership)}\n${MMD_MEMBERSHIP_STATUS_COPY_TH.renewal_offer({
         label: quote.package_code === "standard" ? "Standard" : "Premium",
         amount: quote.amount_thb.toLocaleString("th-TH"), years: quote.bonus_years ? MMD_MEMBERSHIP_STATUS_COPY_TH.renewal_term_bonus({years:quote.membership_years,bonus:quote.bonus_years}) : quote.membership_years,
-      })}\n${MMD_MEMBERSHIP_STATUS_COPY_TH.renewal_payment_pending}` : MMD_MEMBERSHIP_STATUS_COPY_TH.renewal_pending,
+      })}${extraTerm ? "\n" + extraTerm : ""}\n${MMD_MEMBERSHIP_STATUS_COPY_TH.renewal_payment_pending}` : MMD_MEMBERSHIP_STATUS_COPY_TH.renewal_pending,
       reply_source: ready ? "live_truth" : "live_truth_unavailable",
       truth_status: ready ? "verified" : "unavailable", truth_authority: AUTHORITY,
       handoff_required: true, handoff_reason: ready ? "renewal:payment_destination_required" : "renewal:evidence_required",
@@ -351,3 +380,4 @@ export function buildKenjiLiveTruthDecision(intent = "", liveTruth = {}, continu
 }
 
 export const KENJI_LIVE_TRUTH_AUTHORITY = AUTHORITY;
+

@@ -1,3 +1,5 @@
+import { restrictedReplyCategories, categoryReplyTransportAllowed } from './kenji-reply-category-gate.mjs';
+import { runApprovedCategoryTurn } from './kenji-category-turn.mjs';
 import { emsAlbumNavigationReply } from "../../shared/ems-album-navigation.mjs";
 import {isGwsAlbumQuestion,GWS_ALBUMS_URL} from './my-mmd-gws-albums.mjs';
 import { isEmsAlbumQuestion, EMS_ALBUMS_URL } from "./my-mmd-ems-albums.mjs";
@@ -24,6 +26,7 @@ import {
   buildKenjiLiveTruthDecision,
   resolveKenjiLineLiveTruth,
   resolveKenjiLineSnapshotTruth,
+  resolveKenjiCheckptsTruth,
 } from "./kenji-line-live-truth.mjs";
 import {
   buildKenjiAvailabilityDecision,
@@ -544,6 +547,7 @@ export async function writeKenjiAiMessageEvent({ env = {}, event = {}, decision 
 }
 
 async function sendReply(env = {}, replyToken = "", replyText = "", replyButton = null) {
+  if (!categoryReplyTransportAllowed(env, replyToken, replyText, replyButton)) return {ok:false,suppressed:true,error:'reply_category_silent'};
   const token = text(env.LINE_CHANNEL_ACCESS_TOKEN);
   const reply = text(replyToken);
   const answer = text(replyText).slice(0, 1600);
@@ -660,6 +664,18 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
   const saved = [];
 
   for (const [index, event] of events.entries()) {
+    if (restrictedReplyCategories(env)) {
+      const turn = await runApprovedCategoryTurn(env,event,runtime,{
+        continuity:()=>resolveKenjiLineContinuity({env,event,currentIntent:'approved_qa'}),
+        runtime:()=>requestKenjiRuntimeStatus(env),
+        owner:continuity=>getLineOwnerTakeoverState(env,event.source.userId,continuity),
+        send:sendReply,
+      });
+      await writeKenjiAiMessageEvent({env,event,...turn}).catch(()=>null);
+      if (turn.delivered) await recordDeliveredKenjiLineReply({env,event,replyText:turn.decision.text}).catch(()=>null);
+      saved.push({ok:true,type:event?.type,replied:turn.delivered,reply_source:turn.decision.reply_source});
+      continue;
+    }
     const directUser = isDirectUserEvent(event);
     // Per-event scope: never turn on the shared env or the entire webhook batch.
     const ownerContextTest = await ownerContextTestAllowed(env, event, runtime);
@@ -750,9 +766,12 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
     const pointsConversationEnabled = Boolean(menuConversationEnabled && menuConversation.intent === "points_status");
     const pointsReplyEnabled = pointsConversationEnabled || checkptsShortcutEnabled;
     let pointsTruth = pointsReplyEnabled
-      ? enabled(env.LINE_MEMBER_REPLY_SNAPSHOT_ENABLED)
-        ? await resolveKenjiLineSnapshotTruth({ env, event })
-        : await resolveKenjiLineLiveTruth({ env, event, intent: "points_status" })
+      ? checkptsShortcut
+        ? await resolveKenjiCheckptsTruth({ env, event,
+            useSnapshot: enabled(env.LINE_MEMBER_REPLY_SNAPSHOT_ENABLED) })
+        : enabled(env.LINE_MEMBER_REPLY_SNAPSHOT_ENABLED)
+          ? await resolveKenjiLineSnapshotTruth({ env, event })
+          : await resolveKenjiLineLiveTruth({ env, event, intent: "points_status" })
       : null;
     const needsMemberName = pointsTruth?.ok === true && !text(pointsTruth.display_name);
     if (pointsReplyEnabled && pointsTruth?.ok !== true) {

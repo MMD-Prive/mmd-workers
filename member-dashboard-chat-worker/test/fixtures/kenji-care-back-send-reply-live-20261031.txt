@@ -1,0 +1,23 @@
+async function sendReply(env = {}, replyToken2 = "", replyText = "", replyButton = null, extraMessages = []) {
+  const token6 = text28(env.LINE_CHANNEL_ACCESS_TOKEN);
+  const reply = text28(replyToken2);
+  const answer = text28(replyText).slice(0, 1600);
+  if (!token6 || !reply || !answer) return { ok: false, error: "reply_not_configured" };
+  try {
+    const response = await fetch(LINE_REPLY_URL3, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token6}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({ replyToken: reply, messages: [{
+        type: "text",
+        text: answer,
+        ...[EMS_ALBUMS_URL, GWS_ALBUMS_URL].includes(replyButton?.uri) ? { quickReply: { items: [{ type: "action", action: { type: "uri", label: replyButton.uri === GWS_ALBUMS_URL ? "\u0E14\u0E39\u0E2D\u0E31\u0E25\u0E1A\u0E31\u0E49\u0E21 GWs" : "\u0E14\u0E39\u0E2D\u0E31\u0E25\u0E1A\u0E31\u0E49\u0E21 EMs", uri: replyButton.uri } }] } } : {}
+      }, ...extraMessages.slice(0, 2)] })
+    });
+    return response.ok ? { ok: true, status: response.status } : { ok: false, status: response.status, error: "line_reply_failed" };
+  } catch (_) {
+    return { ok: false, error: "line_reply_request_failed" };
+  }
+}

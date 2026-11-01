@@ -1,0 +1,34 @@
+{
+  "schema": "mmd.care_back_poster_assets.v1",
+  "account_id": "b176eda1172b741fd2e58904cc9d77c5",
+  "bucket": "mmd-models",
+  "public_origin": "https://models.mmdbkk.com",
+  "source_filename": "ChatGPT Image 4 ต.ค. 2569 15_22_38.png",
+  "original_bytes_preserved": true,
+  "preview_conversion": "Mechanical RGB JPEG at maximum 960 pixels, quality 90; no creative change.",
+  "published": false,
+  "assets": [
+    {
+      "role": "original",
+      "file": "assets/promotions/care-back/2026-10/care-back-d68fb1a288cf9f0bbd3f8cb300017c49a3939bbb8bb529be71ff5303755ca87e.png",
+      "object_key": "promotions/care-back/2026-10/care-back-d68fb1a288cf9f0bbd3f8cb300017c49a3939bbb8bb529be71ff5303755ca87e.png",
+      "url": "https://models.mmdbkk.com/promotions/care-back/2026-10/care-back-d68fb1a288cf9f0bbd3f8cb300017c49a3939bbb8bb529be71ff5303755ca87e.png",
+      "sha256": "d68fb1a288cf9f0bbd3f8cb300017c49a3939bbb8bb529be71ff5303755ca87e",
+      "size_bytes": 2770549,
+      "content_type": "image/png",
+      "width": 1448,
+      "height": 1086
+    },
+    {
+      "role": "preview",
+      "file": "assets/promotions/care-back/2026-10/care-back-preview-19d2e063bdbf95adb6447cf6278b4813307aeda160dc4f21e5f5f33fbb46f4d6.jpg",
+      "object_key": "promotions/care-back/2026-10/care-back-preview-19d2e063bdbf95adb6447cf6278b4813307aeda160dc4f21e5f5f33fbb46f4d6.jpg",
+      "url": "https://models.mmdbkk.com/promotions/care-back/2026-10/care-back-preview-19d2e063bdbf95adb6447cf6278b4813307aeda160dc4f21e5f5f33fbb46f4d6.jpg",
+      "sha256": "19d2e063bdbf95adb6447cf6278b4813307aeda160dc4f21e5f5f33fbb46f4d6",
+      "size_bytes": 173648,
+      "content_type": "image/jpeg",
+      "width": 960,
+      "height": 720
+    }
+  ]
+}

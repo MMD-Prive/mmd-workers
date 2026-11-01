@@ -1,0 +1,30 @@
+name: Partner shortlist
+on:
+  pull_request:
+    paths:
+      - 'partner-shortlist-worker/**'
+      - 'webflow/partner/model-selection/**'
+      - '.github/workflows/partner-shortlist-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'partner-shortlist-worker/**'
+      - 'webflow/partner/model-selection/**'
+      - '.github/workflows/partner-shortlist-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: node --check partner-shortlist-worker/src/worker.js
+      - run: node --check partner-shortlist-worker/src/index.js
+      - run: node --check partner-shortlist-worker/src/owner-page.js
+      - run: node --test partner-shortlist-worker/test/*.test.mjs webflow/partner/model-selection/*.test.mjs
