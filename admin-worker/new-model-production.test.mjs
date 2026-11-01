@@ -39,8 +39,8 @@ test('registry failure leaves no success receipt; retry completes with the same 
  assert.equal([...f.objects.keys()].some(k=>k.includes('/receipts/')),false);f.setFail(false);
  assert.equal((await stageMedia(f.env,candidate,actor,async()=>bytes,f)).state,'pending_review');assert.equal(f.records.length,1);
 });
-test('edited versions create separate intake receipts',async()=>{
- const f=fixture();await stageMedia(f.env,candidate,actor,async()=>bytes,f);await stageMedia(f.env,{...candidate,version:'2'},actor,async()=>bytes,f);assert.equal(f.records.length,2);
+test('changed media contents create separate intake receipts',async()=>{
+ const f=fixture();await stageMedia(f.env,candidate,actor,async()=>bytes,f);await stageMedia(f.env,{...candidate,version:'2'},actor,async()=>new Uint8Array([255,216,255,2]),f);assert.equal(f.records.length,2);
 });
 test('concurrent clicks acquire a single claim and create a single review',async()=>{
  const f=fixture();let release;const wait=new Promise(r=>release=r);
@@ -73,11 +73,12 @@ test('actual flush scanner includes Review/Hidden, stages in resumable owner bat
     const file={id:folder.id+'_photo',name:'photo.jpg',mimeType:'image/jpeg',parents:[folder.id],owners:[{emailAddress:email}],version:'1',size:'4'};map.set(file.id,file);
    }
  }
+ let edited=false;
  const http=async value=>{
   const u=new URL(value);
   if(u.pathname.endsWith('/about'))return Response.json({user:{emailAddress:email}});
   const id=decodeURIComponent(u.pathname.split('/').at(-1));
-  if(u.searchParams.get('alt')==='media')return new Response(bytes);
+  if(u.searchParams.get('alt')==='media')return new Response(edited?new Uint8Array([255,216,255,2]):bytes);
   if(u.searchParams.has('q')){const parent=u.searchParams.get('q').match(/^'([^']+)'/)[1];const files=[...map.values()].filter(x=>x.parents?.includes(parent));if(roots.some(r=>r.id===parent)&&!u.searchParams.has('pageToken'))return Response.json({files:files.slice(0,1),nextPageToken:'second'});return Response.json({files:u.searchParams.has('pageToken')?files.slice(1):files});}
   return Response.json(map.get(id));
  };
@@ -94,7 +95,7 @@ test('actual flush scanner includes Review/Hidden, stages in resumable owner bat
  assert.ok(queue.items.some(x=>x.visibility==='hidden'));
  assert.ok(queue.items.some(x=>x.visibility==='review'));
  // A temporary failed write resumes from the prepared original; later files and repeat clicks stay safe.
- for(const file of map.values())if(file.version)file.version='2';
+ edited=true;for(const file of map.values())if(file.version)file.version='2';
  let rejectFirst=true;
  f.env.AIRTABLE_HTTP={fetch:async(url,init)=>{if(init?.method==='POST'&&rejectFirst){rejectFirst=false;return Response.json({}, {status:503});}return Response.json(await f.registry(f.env,new URL(url).search,init));}};
  data=await call({action:'stage_all'});batches=0;
@@ -191,4 +192,22 @@ test('cached Drive credentials refresh after a 401 without replacing the saved r
  assert.equal((await handle(flushRequest({action:'stage_all',run_id:runId}),{...env},deps)).status,200);assert.equal(tokens.at(-1),'Bearer 2');
  assert.equal((await handle(flushRequest({action:'stage_all',run_id:runId}),{...env,FLUSH_GOOGLE_DRIVE_CLIENT_SECRET:'rotated-test'},deps)).status,200);assert.equal(tokens.at(-1),'Bearer 3');
  assert.equal([...f.objects.keys()].filter(k=>k.startsWith(PREFIX+'runs/')).length,1);
+});
+test('metadata-only Drive revisions reuse the canonical review and original bytes',async()=>{
+ const f=fixture();await stageMedia(f.env,candidate,actor,async()=>bytes,f);f.records[0].fields.request_status='approved';
+ const changed={...candidate,version:'2'};const result=await stageMedia(f.env,changed,actor,async()=>bytes,f);
+ assert.equal(result.state,'already_staged');assert.equal(f.records.length,1);assert.equal(f.records[0].fields.request_status,'approved');
+ assert.equal([...f.objects.keys()].filter(k=>k.startsWith(PREFIX+'originals/')).length,1);
+ assert.equal([...f.objects.keys()].filter(k=>k.startsWith(PREFIX+'receipts/')).length,2);
+ assert.equal((await stageMedia(f.env,changed,actor,async()=>{throw Error('must not redownload');},f)).state,'already_staged');
+});
+test('concurrent revisions of the same file share a claim before content deduplication',async()=>{
+ const f=fixture();let entered,release;const start=new Promise(r=>entered=r),wait=new Promise(r=>release=r);
+ const first=stageMedia(f.env,candidate,actor,async()=>{entered();await wait;return bytes;},f);await start;
+ const changed={...candidate,version:'2'};assert.equal((await stageMedia(f.env,changed,actor,async()=>bytes,f)).state,'busy_or_recovery_required');
+ release();await first;assert.equal((await stageMedia(f.env,changed,actor,async()=>bytes,f)).state,'already_staged');assert.equal(f.records.length,1);
+});
+test('identical bytes in a different visibility lane still require a separate review',async()=>{
+ const f=fixture();await stageMedia(f.env,candidate,actor,async()=>bytes,f);
+ assert.equal((await stageMedia(f.env,{...candidate,visibility:'review'},actor,async()=>bytes,f)).state,'pending_review');assert.equal(f.records.length,2);
 });
