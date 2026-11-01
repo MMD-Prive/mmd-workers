@@ -169,9 +169,11 @@ test('large repeat runs bound receipt checks and do not require Google OAuth',as
  const candidates=Array.from({length:40},(_,i)=>({...candidate,root_id:roots[0].id,file_id:'file'+i}));
  for(const c of candidates)await stageMedia(f.env,c,actor,async()=>bytes,f);
  await f.env.PRIVATE_MODEL_MEDIA.put(PREFIX+'runs/'+runId+'.json',JSON.stringify({actor_id:'per',created_at:Date.now(),candidates,rows:[],scan_index:8}));
+ let active=0,peak=0;
+ for(const method of ['get','head']){const original=f.env.PRIVATE_MODEL_MEDIA[method];f.env.PRIVATE_MODEL_MEDIA[method]=async(...args)=>{active++;peak=Math.max(peak,active);try{await new Promise(r=>setImmediate(r));return await original(...args);}finally{active--;}};}
  let authCalls=0,steps=0,data;
  do{const r=await handle(flushRequest({action:'stage_all',run_id:runId}),f.env,{readActor:async()=>({id:'per',role:'owner'}),getAccessToken:async()=>{authCalls++;throw Error('OAuth must not be used');}});assert.equal(r.status,200);data=await r.json();assert.ok(data.completed_count<=8*++steps);}while(data.continue_required);
- assert.equal(steps,5);assert.equal(data.completed_count,40);assert.equal(authCalls,0);assert.equal(f.records.length,40);
+ assert.equal(steps,5);assert.equal(data.completed_count,40);assert.equal(authCalls,0);assert.equal(f.records.length,40);assert.ok(peak>1&&peak<=8);
 });
 test('a lost start response reuses the client run ID and cannot replace another actor run',async()=>{
  const {handleModelMediaFlushPreview:handle}=await loadFlush(),f=fixture(),runId=crypto.randomUUID();let available=false;

@@ -227,15 +227,21 @@ async function continueStaging(env, actor, runId, getToken, http, sourceRoots) {
     if(!await save())return changed();
     return respond({ok:true,mode:"private_staging",run_id:runId,continue_required:true,state:"scanning",total_candidates:run.candidates.length,completed_count:0,results:[],catalogue:run.rows.filter(r=>r.lane==="catalogue"),mmd_now:[],source_scan_complete:false,publication:false,checked_at:new Date().toISOString()});
   }
+  const startIndex=run.next_index || 0;
+  const checked=await Promise.all(run.candidates.slice(startIndex,startIndex+8).map(async candidate=>{
+    const id=await hash(JSON.stringify([candidate.root_id,candidate.file_id,candidate.version,candidate.visibility]));
+    const object=await storage(env).get(PREFIX+"receipts/"+id+".json"),receipt=object?await object.json():null;
+    const head=receipt?await storage(env).head(receipt.key):null;
+    return {id,complete:receipt?.id===id&&head?.customMetadata?.sha256===receipt?.sha256&&head?.customMetadata?.intake_id===(receipt?.canonical_intake_id||id)};
+  }));
   const results=[];let remaining=false, attempted=0,visited=0,retryAfter=0;
   run.failures ||= [];
   for(let index=run.next_index || 0;index<run.candidates.length;index++) {
     if(visited++>=8){remaining=true;break;}
     const candidate=run.candidates[index];
     // Completed receipts make retries and repeated clicks idempotent.
-    const id=await hash(JSON.stringify([candidate.root_id,candidate.file_id,candidate.version,candidate.visibility]));
-    const receiptObj=await storage(env).get(PREFIX+"receipts/"+id+".json");
-    if(receiptObj){const receipt=await receiptObj.json();const head=await storage(env).head(receipt.key);if(receipt.id===id&&head?.customMetadata?.sha256===receipt.sha256&&head?.customMetadata?.intake_id===(receipt.canonical_intake_id||id)){run.next_index=index+1;continue;}}
+    const {id,complete}=checked[index-startIndex];
+    if(complete){run.next_index=index+1;continue;}
     if(attempted>=1){remaining=true;break;} attempted++;
     try {
       results.push(await stageMedia(env,candidate,actor,async c=>{
