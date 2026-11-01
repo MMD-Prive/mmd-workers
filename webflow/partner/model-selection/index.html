@@ -60,6 +60,55 @@ input,select,textarea{border-color:#cbbdad}
 @media(min-width:700px){.intro{min-height:244px;padding:32px}.intro-copy{max-width:58%}.partner-art{inset:0 0 0 48%}}
 @media(max-width:350px){.intro{padding:20px 16px}.intro-copy{max-width:72%}.intro h1{font-size:25px}.brand-logo{width:110px}.brand{gap:8px}.brand small{padding-left:8px;max-width:76px}.private{font-size:11px}}
 
+
+/* Booking design synthesis: Public ivory/red + SIGIL v15 brass + LV12 cards.
+   Presentation only; API, access scope and model media remain authoritative. */
+:root{--ink:#262322;--muted:#69635f;--paper:#faf9f6;--card:#fff;--line:#e3ded7;--brown:#8d1d30;--soft:#f5efec;--gold:#fff7ec;--brass:#c6a879}
+body{background:radial-gradient(ellipse at 0 42%,#f0e6df66,transparent 55%),var(--paper)}
+.wrap{width:min(100% - 32px,1120px)}
+.top{background:#15191b;border-bottom:1px solid #c6a87933}
+.top-row{min-height:68px}.brand-logo{width:122px;height:45px}.brand small{color:#d7c7ae;border-color:#c6a87944;font-size:9px;letter-spacing:.12em}
+.private{font-size:11px;gap:7px}
+.intro{min-height:248px;margin:22px 0 0;border-radius:20px;padding:26px 22px;background:#101417;align-items:flex-end}
+.partner-art{inset:0 0 0 30%}.partner-art img{object-position:60% 30%}
+.intro:after{background:linear-gradient(90deg,#101417fc 0%,#101417dd 34%,#10141745 75%),linear-gradient(0deg,#101417e0,transparent 65%)}
+.intro-copy{max-width:76%;position:relative}
+#mmd-selection .intro h1{font-weight:500;font-size:clamp(28px,5.3vw,48px);letter-spacing:-.045em;margin:12px 0 10px;line-height:1.35}
+.intro .eyebrow{font-size:10px;letter-spacing:.08em}.intro p{font-size:14px;line-height:1.75;max-width:330px}
+.intro .expiry{margin-top:17px;font-size:12px}
+.selection-journey{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));padding:16px 0;margin:0 0 24px;list-style:none;border-bottom:1px solid var(--line);gap:10px}
+.selection-journey li{display:flex;gap:9px;align-items:center;min-width:0;font-size:12px;line-height:1.5}
+.selection-journey li+li{border-left:1px solid var(--line);padding-left:10px}
+.selection-journey span{font:italic 14px Georgia,serif;color:var(--brown);flex:none}
+.selection-journey strong{font-weight:500}
+.brief{padding:20px;border:1px solid var(--line);border-radius:16px;box-shadow:none;margin-bottom:26px}
+.brief h2{font-size:21px;font-weight:500;letter-spacing:-.025em}.kicker{font-size:10px;letter-spacing:.12em;margin-bottom:10px}
+.brief-foot{padding-top:13px;line-height:1.7}.brief-more{border-color:var(--line)}
+#modelsHeading{font:400 clamp(27px,5vw,38px)/1.2 Georgia,"Times New Roman",serif;letter-spacing:-.045em}
+#modelSearch{padding:20px;margin:18px 0 8px;border-top:1px solid var(--line);position:relative;background:#fff}
+#modelSearch:before{content:"";position:absolute;width:30px;height:2px;top:-1px;left:20px;background:var(--brass)}
+#modelSearch strong{font-size:18px;font-weight:500}
+#modelSearch .hint{margin:7px 0 19px;font-size:13px;line-height:1.8}
+.field{font-size:13px;font-weight:500}
+input,select,textarea{border-color:#d9d3cb;border-radius:8px;min-height:49px;background:#fdfcf9}
+input:focus,select:focus,textarea:focus{border-color:var(--brown)}
+#modelSearch .primary{margin-top:20px}
+.primary,.selected .choose{background:#8d1d30;color:#fff9f4;border-radius:8px;font-weight:500}
+#mmd-selection :is(.primary,.selected .choose){color:#fff9f4;-webkit-text-fill-color:#fff9f4}
+.secondary,.choose{border-radius:8px}.chip{font-size:13px;border-radius:8px;padding-inline:14px}
+.chip[aria-pressed=true]{background:#f5eaeb;border-color:#b47883}
+#mmd-selection .chip[aria-pressed=true]{color:#7d1d2c;-webkit-text-fill-color:#7d1d2c}
+.grid{gap:12px}.model{border-radius:12px;box-shadow:none;border-color:var(--line)}.model.selected{border-color:#8d1d30;box-shadow:0 0 0 1px #8d1d30}
+.portrait{background:#ede9e1}.model-body{padding:13px}.model-name{font:400 24px/1.25 Georgia,Anuphan,serif}
+.metrics{font-size:13px}.availability{font-size:12px}.choose{font-size:13px}
+.empty{border:1px solid var(--line);border-radius:14px;padding:32px 22px;background:linear-gradient(145deg,#fff,#f6f2ec)}
+.empty h3{font-size:18px;font-weight:500}.empty p{font-size:14px;line-height:1.8;max-width:440px;margin:10px auto 0}
+.sticky{background:#fffdf9f5;box-shadow:0 -4px 25px #231e1806;border-color:var(--line)}.sticky .primary{min-width:126px}.selection-meta strong{font-weight:500}
+.gate{border-radius:16px;box-shadow:none;border-top:2px solid var(--brass)}
+.footer-brand{font-size:9px;letter-spacing:.08em}
+@media(min-width:700px){.top-row{min-height:76px}.intro{min-height:310px;padding:36px 38px;margin-top:28px;border-radius:24px}.intro-copy{max-width:60%}.partner-art{inset:0 0 0 42%}.selection-journey{padding:20px 8px;margin-bottom:30px}.selection-journey li{font-size:14px;gap:16px}.selection-journey li+li{padding-left:24px}.brief{padding:24px}#modelSearch{padding:24px}.grid{gap:20px}#modelSearch .fields{grid-template-columns:repeat(4,minmax(0,1fr))}#modelSearch .field.full{grid-column:1/-1}#modelSearch .primary{width:auto;min-width:200px;margin-left:auto}.model-body{padding:18px}.sticky .primary{min-width:200px}}
+@media(max-width:350px){.intro{min-height:236px;padding:22px 18px}.intro-copy{max-width:84%}.intro p{font-size:13px}.selection-journey{gap:6px}.selection-journey li{gap:6px;font-size:11px}.selection-journey li+li{padding-left:7px}.brief,#modelSearch{padding:17px}.brand small{font-size:8px}.grid{gap:9px}.model-body{padding:11px}.model-name{font-size:22px}.sticky .primary{min-width:112px}.private{font-size:10px}}
+
 </style>
 </head>
 <body id="mmd-selection">
@@ -69,6 +118,7 @@ input,select,textarea{border-color:#cbbdad}
 <section class="gate" id="gate" aria-live="polite"><svg aria-hidden="true"><use href="#lock"/></svg><h1 id="gateTitle"><span data-i18n-text="partner.modelSelection.gate.title">เปิดลิงก์เฉพาะงาน</span></h1><p id="gateMessage"><span data-i18n-text="partner.modelSelection.gate.fullLink">ใช้ลิงก์ฉบับเต็มที่เปอร์ส่งให้ เพื่อดูรูปและรายละเอียดของงานนี้ค่ะ</span></p><button id="retryGate" class="secondary wide" hidden><span data-i18n-text="partner.modelSelection.gate.retry">ลองเปิดอีกครั้ง</span></button></section>
 <div id="workspace" hidden>
 <section class="intro"><div class="partner-art" aria-hidden="true"><img src="https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90/6a6afec4834ec91b0d3474bd_Yuki%20Model%20Referral-p-800.webp" alt="" width="800" height="1000" fetchpriority="high"></div><div class="intro-copy"><span class="eyebrow" id="jobTitle"></span><h1><span data-i18n-text="partner.modelSelection.intro.title">คัดไว้สำหรับงานนี้</span></h1><p><span data-i18n-text="partner.modelSelection.intro.description">ดูรูป เลือกคนที่สนใจ แล้วส่งตัวเลือกให้เปอร์เช็กคิวค่ะ</span></p><div class="expiry"><svg aria-hidden="true"><use href="#clock"/></svg><span id="expiryText"></span></div></div></section>
+<ol class="selection-journey" aria-label="ขั้นตอนเลือกโมเดล"><li><span>01</span><strong>บรีฟงาน</strong></li><li><span>02</span><strong>ค้นหาโมเดล</strong></li><li><span>03</span><strong>ส่งตัวเลือก</strong></li></ol>
 <div class="error" id="loadError" role="alert" hidden></div>
 <div class="notice" id="updatedNotice" role="status" hidden><span data-i18n-text="partner.modelSelection.notice.updated">ข้อมูลของงานนี้มีการอัปเดตค่ะ ตัวเลือกที่คุณกำลังเลือกยังอยู่ในหน้านี้</span></div>
 <section class="brief" aria-labelledby="briefHeading"><span class="kicker"><span data-i18n-text="partner.modelSelection.brief.kicker">01 · บรีฟงาน</span></span><div class="section-top"><h2 id="briefHeading"></h2><button type="button" class="text-btn" id="editBrief"><span data-i18n-text="partner.modelSelection.brief.edit">เพิ่มรายละเอียด ↗</span></button></div><details class="brief-more"><summary><span data-i18n-text="partner.modelSelection.brief.expand">ดูบรีฟทั้งหมด</span></summary><div class="brief-values" id="briefValues"></div></details><p class="brief-foot" id="briefFoot"></p></section>
