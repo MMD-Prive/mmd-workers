@@ -112,3 +112,15 @@ test('dependency failure reports a bounded phase/code without leaking exception 
  const r=await handle(new Request('https://mmdbkk.com/v1/admin/model-media/flush-preview',{method:'POST',headers:{origin:'https://mmdbkk.com'},body:'{"action":"stage_all"}'}),{}, {readActor:async()=>({id:'per',role:'owner'}),getAccessToken:async()=>{throw Object.assign(Error('PRIVATE_SENTINEL'),{code:'drive_oauth_unavailable'});}});
  const data=await r.json();assert.equal(r.status,503);assert.equal(data.failed_phase,'oauth');assert.equal(data.reason,'drive_oauth_unavailable');assert.ok(!JSON.stringify(data).includes('PRIVATE_SENTINEL'));
 });
+
+test('dedicated FLUSH OAuth is isolated from shared credentials and partial config fails closed',async()=>{
+ const {readFile}=await import('node:fs/promises');const moduleUrl=new URL('./src/new-model-production.mjs',import.meta.url).href;
+ let source=await readFile(new URL('./src/model-media-flush-preview.js',import.meta.url),'utf8');source=source.replace(/from '\.\/new-model-production.mjs'/g,`from '${moduleUrl}'`).replace(/^import .* from "\.\/[^\n]+;\n/gm,'');
+ source='const isOwnerActor=actor=>actor?.role==="owner";const libraryDriveToken=async env=>{if(env.GOOGLE_DRIVE_CLIENT_ID!=="test-client"||env.GOOGLE_DRIVE_CLIENT_SECRET!=="test-secret"||env.GOOGLE_DRIVE_REFRESH_TOKEN!=="test-refresh"||env.GOOGLE_SERVICE_ACCOUNT_JSON!==""||env.COMPCARD_DRIVE_OWNER_EMAIL!=="malemodel.bkk@gmail.com")throw Error("isolation_failed");return "fixture";};\n'+source;
+ const {handleModelMediaFlushPreview:handle}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
+ const request=()=>new Request('https://mmdbkk.com/v1/admin/model-media/flush-preview',{method:'POST',headers:{origin:'https://mmdbkk.com'},body:'{"action":"preview_all"}'});
+ const env={FLUSH_GOOGLE_DRIVE_CLIENT_ID:'test-client',FLUSH_GOOGLE_DRIVE_CLIENT_SECRET:'test-secret',FLUSH_GOOGLE_DRIVE_REFRESH_TOKEN:'test-refresh',GOOGLE_DRIVE_CLIENT_ID:'shared-client',GOOGLE_SERVICE_ACCOUNT_JSON:'shared-service-account'};
+ const http=async value=>{const u=new URL(value);if(u.pathname.endsWith('/about'))return Response.json({user:{emailAddress:'malemodel.bkk@gmail.com'}});if(u.pathname.includes('/files/'))return Response.json({id:u.pathname.split('/').at(-1),mimeType:'application/vnd.google-apps.folder',owners:[{emailAddress:'malemodel.bkk@gmail.com'}]});return Response.json({files:[]});};
+ const deps={readActor:async()=>({id:'per',role:'owner'}),http};assert.equal((await handle(request(),env,deps)).status,200);assert.equal(env.GOOGLE_DRIVE_CLIENT_ID,'shared-client');assert.equal(env.GOOGLE_SERVICE_ACCOUNT_JSON,'shared-service-account');
+ const partial=await handle(request(),{FLUSH_GOOGLE_DRIVE_CLIENT_ID:'test-client'},deps);assert.equal(partial.status,503);assert.equal((await partial.json()).reason,'drive_credentials_not_configured');
+});

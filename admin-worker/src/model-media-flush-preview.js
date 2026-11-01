@@ -120,6 +120,17 @@ async function scanRoot(source, token, http, candidates = null) {
   };
 }
 
+async function flushDriveToken(env) {
+  const keys = ["FLUSH_GOOGLE_DRIVE_CLIENT_ID", "FLUSH_GOOGLE_DRIVE_CLIENT_SECRET", "FLUSH_GOOGLE_DRIVE_REFRESH_TOKEN"];
+  if (!keys.some(key => env[key])) return libraryDriveToken(env);
+  if (!keys.every(key => typeof env[key] === "string" && env[key].trim())) throw Object.assign(new Error("flush_oauth_configuration_incomplete"), {code:"drive_credentials_not_configured"});
+  // Only this intake uses the dedicated read-only OAuth client. Shared credentials are preserved.
+  return libraryDriveToken({...env, GOOGLE_SERVICE_ACCOUNT_JSON:"", COMPCARD_DRIVE_OWNER_EMAIL:MODEL_MEDIA_SOURCE_EMAIL,
+    GOOGLE_DRIVE_CLIENT_ID:env.FLUSH_GOOGLE_DRIVE_CLIENT_ID,
+    GOOGLE_DRIVE_CLIENT_SECRET:env.FLUSH_GOOGLE_DRIVE_CLIENT_SECRET,
+    GOOGLE_DRIVE_REFRESH_TOKEN:env.FLUSH_GOOGLE_DRIVE_REFRESH_TOKEN});
+}
+
 export async function handleModelMediaFlushPreview(request, env = {}, deps = {}) {
   if (!isModelMediaFlushPreviewRequest(request)) return respond({ ok: false, error: "not_found" }, 404);
   const url = new URL(request.url);
@@ -146,7 +157,7 @@ export async function handleModelMediaFlushPreview(request, env = {}, deps = {})
   const http = deps.http || env.GOOGLE_DRIVE_HTTP?.fetch?.bind(env.GOOGLE_DRIVE_HTTP) || fetch;
   let phase = "oauth";
   try {
-    const token = await (deps.getAccessToken || libraryDriveToken)(env);
+    const token = await (deps.getAccessToken || flushDriveToken)(env);
     phase = "account_check";
     const about = await googleJson("/about", { fields: "user(emailAddress)" }, token, http);
     if (!owner(about.user?.emailAddress)) return respond({ ok: false, error: "source_account_mismatch" }, 503);
