@@ -20,6 +20,28 @@ export const APPROVAL_ENVIRONMENTS = Object.freeze({
   'member-pages-worker': 'member-pages-code-only-owner',
   'payments-worker': 'mmd-production-mutation',
 });
+// These two uploads stopped before promotion on 2026-11-01. Recovery is an
+// explicit fresh approved dispatch, bound to the original immutable artifacts
+// and sanitized receipts, and has no version-upload transport permission.
+export const REVIEWED_UPLOADS = Object.freeze({
+  'payments-worker': Object.freeze({
+    version: 'f05c4a1c-e4e4-4a91-8160-5ee3743cb7b9',
+    tooling_sha: 'faf8b345a707fb9e83252dddf2bf1e042cf15889',
+    manifest_sha256: 'a54d425b0487f1eac6a0ca13155c2306b9d1d004c817e34f96b682ea751f73fc',
+    configuration_sha256: '14fa0aea4fd87f39ba3eae00db9b18da1c39fe9bd61e0b78dd27ffce59bbe894',
+    settings_sha256: 'd13e83ebe9194fdbde48d1d4a9e2f1fd0b9c653ced072a1aa27fb746062c0e80',
+    boundary_sha256: 'af4da01186dd1c318601e3823f10c7d0a5f50ea139dc6ee7cc65aebd3799989e',
+  }),
+  'member-pages-worker': Object.freeze({
+    version: '85da9919-e1c8-425d-94e8-fb0a5ff7a0c4',
+    tooling_sha: 'faf8b345a707fb9e83252dddf2bf1e042cf15889',
+    manifest_sha256: '4b58baff72792b60b0a9de4ed199add23ed48560530781c4b338d8f0c0f8d6d9',
+    configuration_sha256: '03ef14cc0c227fa7e9f5f0a67efba7ec970e19d0be7b94e3e36857cd0fe24c8d',
+    settings_sha256: 'bb2196b4790bfa7d72473caef52468c66432b712f98eecef4569698ea2939b42',
+    boundary_sha256: 'd044df544c19b61be7da556846d804b3549c278200c95942172595ff785516cb',
+  }),
+});
+const MODES = ['inspect', 'execute-approved', 'promote-reviewed-upload'];
 const SHA = /^[a-f0-9]{40}$/;
 const SHA256 = /^[a-f0-9]{64}$/;
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
@@ -134,7 +156,7 @@ export function checkModuleSyntax(modules, run = execFileSync) {
 }
 
 export function validateReleaseInputs(env, mode = 'inspect') {
-  assert.ok(['inspect', 'execute-approved'].includes(mode), 'unsupported execution mode');
+  assert.ok(MODES.includes(mode), 'unsupported execution mode');
   const worker = workerName(env.CARE_BACK_WORKER);
   assert.equal(env.CLOUDFLARE_ACCOUNT_ID, ACCOUNT, 'wrong account');
   assert.equal(env.GITHUB_EVENT_NAME, 'workflow_dispatch', 'manual dispatch required');
@@ -153,10 +175,13 @@ export function validateReleaseInputs(env, mode = 'inspect') {
   assert.match(env.EXPECTED_MODULE_SHA256 || '', SHA256);
   assert.match(env.EXPECTED_MANIFEST_SHA256 || '', SHA256);
   assert.ok(env.PATCH_MANIFEST && env.GH_TOKEN, 'manifest and GitHub evidence token required');
-  if (mode === 'execute-approved') {
+  if (mode !== 'inspect') {
     assert.equal(env.PRODUCTION_APPROVED, 'true', 'explicit execution approval required');
     assert.ok(env.APPROVAL_REF?.trim(), 'approval reference required');
     assert.equal(env.PRODUCTION_ENVIRONMENT_NAME, APPROVAL_ENVIRONMENTS[worker], 'wrong protected release environment');
+  }
+  if (mode === 'promote-reviewed-upload') {
+    assert.equal(env.EXPECTED_MANIFEST_SHA256, REVIEWED_UPLOADS[worker].manifest_sha256, 'unreviewed recovery manifest');
   }
   return { worker, mode, releaseSha: env.GITHUB_SHA };
 }
@@ -189,7 +214,7 @@ export async function verifyPolicyCheckout(env, manifestPath, request = fetch, g
   return { release_sha: env.APPROVED_SHA, manifest_sha256: env.EXPECTED_MANIFEST_SHA256 };
 }
 
-export function createPolicyTransport(token, worker, { allowWrites = false, request = fetch } = {}) {
+export function createPolicyTransport(token, worker, { allowWrites = false, promoteOnly = false, request = fetch } = {}) {
   assert.ok(token, 'Cloudflare credential required');
   workerName(worker);
   const root = scriptRoot(worker);
@@ -199,8 +224,8 @@ export function createPolicyTransport(token, worker, { allowWrites = false, requ
     const read = new RegExp('^' + root + '/(deployments(?:/' + id + ')?|versions(?:/' + id + ')?|script-settings|schedules|subdomain)$', 'i').test(path)
       || new RegExp('^' + versions + '/' + id + '(?:\\?include=modules)?$', 'i').test(path)
       || path === '/zones/' + ZONE + '/workers/routes';
-    const write = allowWrites === true && method === 'POST'
-      && [root + '/versions?bindings_inherit=strict', root + '/deployments'].includes(path);
+    const writes = promoteOnly ? [root + '/deployments'] : [root + '/versions?bindings_inherit=strict', root + '/deployments'];
+    const write = allowWrites === true && method === 'POST' && writes.includes(path);
     assert.ok((method === 'GET' && read) || write, 'call outside bounded policy transport');
     let response;
     try {
@@ -215,14 +240,18 @@ export function createPolicyTransport(token, worker, { allowWrites = false, requ
   };
 }
 
-export async function releasePolicyPatch(io) {
+export async function releasePolicyPatch(io, { reviewedUploads = REVIEWED_UPLOADS } = {}) {
   const mode = io.mode || 'inspect';
-  assert.ok(['inspect', 'execute-approved'].includes(mode));
+  assert.ok(MODES.includes(mode));
   assert.match(io.releaseSha || '', SHA);
   const manifest = parsePatchManifest(io.manifestBytes, io.expectedManifestHash, io.worker);
   assert.equal(manifest.baseline_version, io.expectedVersion, 'version pin mismatch');
   assert.equal(manifest.baseline_deployment, io.expectedDeployment, 'deployment pin mismatch');
   assert.equal(manifest.modules.find(m => m.name === manifest.main_module).before_sha256, io.expectedModuleHash, 'main module pin mismatch');
+  const recovery = mode === 'promote-reviewed-upload' ? reviewedUploads[manifest.worker] : null;
+  if (mode === 'promote-reviewed-upload') assert.ok(recovery, 'reviewed upload contract required');
+  if (recovery) assert.equal(io.expectedManifestHash, recovery.manifest_sha256, 'unreviewed recovery manifest');
+  const expectedLatest = recovery?.version || manifest.baseline_version;
   const state = { phase: 'preflight', worker: manifest.worker, mode, release_sha: io.releaseSha,
     manifest_sha256: io.expectedManifestHash, baseline_version: io.expectedVersion,
     baseline_deployment: io.expectedDeployment };
@@ -233,7 +262,7 @@ export async function releasePolicyPatch(io) {
     state.stage = 'source-check';
     await io.sourceCheck();
     state.stage = 'approval-check';
-    if (mode === 'execute-approved') await io.approve();
+    if (mode !== 'inspect') await io.approve();
     state.stage = 'baseline-read';
     const deployment = (await call('/deployments'))?.deployments?.[0];
     assert.equal(activeVersion(deployment), manifest.baseline_version, 'active version drift');
@@ -244,7 +273,8 @@ export async function releasePolicyPatch(io) {
       call('/schedules'), call('/subdomain'), call('/versions'),
     ]);
     assert.equal(baseline.id, manifest.baseline_version, 'version readback identity mismatch');
-    assert.equal(versions?.items?.[0]?.id, manifest.baseline_version, 'latest version is not the active baseline');
+    assert.equal(versions?.items?.[0]?.id, expectedLatest, 'latest version differs from reviewed release');
+    if (recovery) assert.equal(versions?.items?.[1]?.id, manifest.baseline_version, 'reviewed upload predecessor changed');
     state.stage = 'configuration-check';
     const config = versionConfiguration(baseline);
     assert.ok(Array.isArray(routes) && Array.isArray(schedules?.schedules), 'boundary inventory incomplete');
@@ -253,7 +283,7 @@ export async function releasePolicyPatch(io) {
     metadata.main_module = manifest.main_module;
     delete metadata.annotations['workers/commit_sha'];
     metadata.annotations['workers/message'] = 'CARE BACK November exact artifact delta; base=' + manifest.baseline_version
-      + '; manifest=' + io.expectedManifestHash + '; tooling=' + io.releaseSha;
+      + '; manifest=' + io.expectedManifestHash + '; tooling=' + (recovery?.tooling_sha || io.releaseSha);
     state.stage = 'exact-artifact-patch';
     const candidate = buildPolicyModules(artifact, manifest);
     state.stage = 'whole-module-syntax';
@@ -261,6 +291,13 @@ export async function releasePolicyPatch(io) {
     state.configuration_sha256 = objectHash(config);
     state.settings_sha256 = objectHash(settings);
     state.boundary_sha256 = objectHash(boundary);
+    if (recovery) {
+      state.stage = 'original-upload-receipt-check';
+      for (const key of ['configuration_sha256', 'settings_sha256', 'boundary_sha256']) {
+        assert.equal(state[key], recovery[key], 'original upload receipt drift: ' + key);
+      }
+      state.uploaded_tooling_sha = recovery.tooling_sha;
+    }
     const unchanged = async (expectedDeployment, latestId) => {
       const [deploymentsNow, versionsNow, settingsNow, routesNow, schedulesNow, subdomainNow] = await Promise.all([
         call('/deployments'), call('/versions'), call('/script-settings'),
@@ -274,19 +311,24 @@ export async function releasePolicyPatch(io) {
       same({ routes: ordered(routesNow), schedules: ordered(schedulesNow.schedules), subdomain: subdomainNow }, boundary, 'routes, schedules or subdomain changed');
     };
     state.stage = 'baseline-recheck';
-    await unchanged(deployment, manifest.baseline_version);
+    await unchanged(deployment, expectedLatest);
     if (mode === 'inspect') { save('inspected'); return { ...state }; }
 
-    state.stage = 'upload-approval';
-    await io.sourceCheck();
-    await io.approve();
-    await unchanged(deployment, manifest.baseline_version);
-    const form = new FormData();
-    form.set('metadata', JSON.stringify(metadata));
-    for (const module of candidate) form.set(module.name, new Blob([module.bytes], { type: 'application/javascript+module' }), module.name);
-    save('upload-attempted-outcome-unknown');
-    state.stage = 'upload';
-    const uploaded = await call('/versions?bindings_inherit=strict', { method: 'POST', body: form });
+    let uploaded;
+    if (recovery) {
+      uploaded = { id: recovery.version };
+    } else {
+      state.stage = 'upload-approval';
+      await io.sourceCheck();
+      await io.approve();
+      await unchanged(deployment, manifest.baseline_version);
+      const form = new FormData();
+      form.set('metadata', JSON.stringify(metadata));
+      for (const module of candidate) form.set(module.name, new Blob([module.bytes], { type: 'application/javascript+module' }), module.name);
+      save('upload-attempted-outcome-unknown');
+      state.stage = 'upload';
+      uploaded = await call('/versions?bindings_inherit=strict', { method: 'POST', body: form });
+    }
     assert.match(uploaded?.id || '', UUID, 'upload identity missing');
     assert.notEqual(uploaded.id, manifest.baseline_version, 'upload identity did not change');
     state.uploaded_version = uploaded.id;
@@ -296,11 +338,17 @@ export async function releasePolicyPatch(io) {
       call('/versions/' + uploaded.id), io.call(modulesPath(uploaded.id)),
       io.call(versionRoot(manifest.worker) + '/' + uploaded.id), call('/versions'),
     ]);
+    state.stage = 'uploaded-configuration-check';
     assert.equal(uploadedVersion.id, uploaded.id, 'uploaded version identity mismatch');
     same(versionConfiguration(uploadedVersion), config, 'uploaded configuration changed');
+    state.stage = 'uploaded-annotations-check';
     assert.equal(annotations?.id, uploaded.id, 'annotation identity mismatch');
-    same(versionAnnotations(annotations), metadata.annotations, 'uploaded annotations changed');
+    // Cloudflare adds this exact server-owned marker to a version upload.
+    // All authored annotations and every other key still compare exactly.
+    same(versionAnnotations(annotations), { ...metadata.annotations, 'workers/triggered_by': 'version_upload' }, 'uploaded annotations changed');
+    state.stage = 'uploaded-modules-check';
     verifyCandidateModules(uploadedArtifact, uploaded.id, manifest);
+    state.stage = 'uploaded-predecessor-check';
     assert.equal(latest?.items?.[0]?.id, uploaded.id, 'uploaded version is not latest');
     assert.equal(latest?.items?.[1]?.id, manifest.baseline_version, 'uploaded predecessor changed');
 
@@ -337,8 +385,8 @@ export async function releasePolicyPatch(io) {
 }
 
 export async function main(argv = process.argv.slice(2), env = process.env) {
-  assert.ok(argv.length <= 1 && (!argv.length || ['--inspect', '--execute-approved'].includes(argv[0])), 'unsupported arguments');
-  const mode = argv[0] === '--execute-approved' ? 'execute-approved' : 'inspect';
+  assert.ok(argv.length <= 1 && (!argv.length || MODES.map(mode => '--' + mode).includes(argv[0])), 'unsupported arguments');
+  const mode = argv[0]?.slice(2) || 'inspect';
   const input = validateReleaseInputs(env, mode);
   const manifestPath = resolve(env.PATCH_MANIFEST);
   const receipt = resolve(env.RUNNER_TEMP || '/tmp', 'care-back-november-' + input.worker + '-receipt.json');
@@ -349,7 +397,9 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     expectedDeployment: env.EXPECTED_DEPLOYMENT,
     sourceCheck: () => verifyPolicyCheckout(env, manifestPath),
     approve: () => verifyPolicyApproval(env),
-    call: createPolicyTransport(env.CLOUDFLARE_API_TOKEN, input.worker, { allowWrites: mode === 'execute-approved' }),
+    call: createPolicyTransport(env.CLOUDFLARE_API_TOKEN, input.worker, {
+      allowWrites: mode !== 'inspect', promoteOnly: mode === 'promote-reviewed-upload',
+    }),
     save: value => writeFileSync(receipt, JSON.stringify(value, null, 2), { mode: 0o600 }),
   });
 }

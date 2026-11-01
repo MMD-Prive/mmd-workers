@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
-  PATCH_SCHEMA, sha256, parsePatchManifest, buildPolicyModules, checkModuleSyntax,
+  PATCH_SCHEMA, REVIEWED_UPLOADS, sha256, parsePatchManifest, buildPolicyModules, checkModuleSyntax,
   validateReleaseInputs, verifyPolicyApproval, createPolicyTransport, releasePolicyPatch,
 } from './care-back-november-policy-release.mjs';
 
@@ -86,7 +86,7 @@ function harness({ worker = 'payments-worker', mode = 'inspect', mutate = () => 
         assert.equal(metadata.compatibility_date, config.resources.script_runtime.compatibility_date);
         assert.equal(metadata.annotations['workers/commit_sha'], undefined);
         assert.equal(metadata.main_module, 'worker.js');
-        state.annotations = metadata.annotations;
+        state.annotations = { ...metadata.annotations, 'workers/triggered_by': 'version_upload' };
         state.uploaded = { id: B, ...structuredClone(config) };
         state.uploadedArtifact = { id: B, main_module: 'worker.js', modules: [] };
         for (const [name, file] of init.body.entries()) {
@@ -319,6 +319,10 @@ for (const [label, change] of [
   ['configuration', s => s.uploaded.resources.bindings[0].text = 'changed'],
   ['module bytes', s => s.uploadedArtifact.modules[0].content_base64 = Buffer.from('export default {};').toString('base64')],
   ['annotations', s => s.annotations['workers/message'] = 'changed'],
+  ['server trigger', s => s.annotations['workers/triggered_by'] = 'deployment'],
+  ['missing server trigger', s => delete s.annotations['workers/triggered_by']],
+  ['unexpected commit provenance', s => s.annotations['workers/commit_sha'] = SHA],
+  ['unknown annotation', s => s.annotations['workers/unreviewed'] = 'extra'],
   ['predecessor', s => s.latest = [B, OTHER, A]],
 ]) test('uploaded ' + label + ' drift prevents promotion and is never retried', async () => {
   const h = harness({ mode: 'execute-approved', mutate(event, s) { if (event === 'uploaded') change(s); } });
@@ -351,11 +355,121 @@ test('workflow keeps Member Pages in the existing approved path and payment rele
   const memberJob = member.slice(member.indexOf('  care-back-november-release:'));
   assert.match(memberJob, /needs: \[production-approval\]/);
   assert.match(memberJob, /environment: member-pages-code-only-owner/);
-  assert.match(memberJob, /care-back-november-policy-release\.mjs --execute-approved/);
+  assert.match(memberJob, /care-back-november-policy-release\.mjs/);
+  assert.match(memberJob, /--promote-reviewed-upload/);
+  assert.match(memberJob, /--execute-approved/);
   assert.doesNotMatch(memberJob, /wrangler|versions upload|versions deploy/);
   assert.match(separate, /default: inspect/);
   assert.match(separate, /uses: \.\/\.github\/workflows\/admin-production-approval\.yml/);
   assert.match(separate, /inputs\.worker == 'payments-worker'/);
   assert.match(separate, /environment: mmd-production-mutation/);
+  assert.match(separate, /options: \[inspect, release, promote-reviewed-upload\]/);
+  assert.match(member, /- care-back-november-resume/);
+});
+
+async function recoveryHarness(worker = 'payments-worker', mutateResume = () => {}) {
+  let recovering = false;
+  const h = harness({ worker, mode: 'execute-approved', mutate(event, state) {
+    if (recovering) mutateResume(event, state);
+  } });
+  const approve = h.io.approve;
+  h.io.approve = async () => {
+    await approve();
+    if (h.state.approvals === 3) throw new Error('fixture stopped before promotion');
+  };
+  await assert.rejects(releasePolicyPatch(h.io), /fixture stopped before promotion/);
+  const receipt = h.state.receipts.at(-1);
+  const contract = {
+    version: B, tooling_sha: SHA, manifest_sha256: h.io.expectedManifestHash,
+    configuration_sha256: receipt.configuration_sha256,
+    settings_sha256: receipt.settings_sha256,
+    boundary_sha256: receipt.boundary_sha256,
+  };
+  h.io.approve = approve;
+  h.io.mode = 'promote-reviewed-upload';
+  h.io.releaseSha = 'b'.repeat(40);
+  h.state.calls = []; h.state.receipts = []; h.state.approvals = 0; h.state.sourceChecks = 0;
+  recovering = true;
+  return { ...h, options: { reviewedUploads: { [worker]: contract } }, contract };
+}
+
+for (const worker of ['payments-worker', 'member-pages-worker']) test(worker + ' explicit recovery verifies the existing upload and performs only one promotion', async () => {
+  const h = await recoveryHarness(worker);
+  const result = await releasePolicyPatch(h.io, h.options);
+  assert.equal(result.phase, 'complete');
+  assert.equal(result.uploaded_version, B);
+  assert.equal(result.uploaded_tooling_sha, SHA);
+  assert.equal(result.release_sha, 'b'.repeat(40));
+  assert.deepEqual(posts(h).map(c => c.path), [h.root + '/deployments']);
+  assert.equal(h.state.approvals, 2);
+  assert.equal(h.state.sourceChecks, 2);
+});
+
+for (const [label, change] of [
+  ['active deployment', h => h.state.deployment.id = OTHER],
+  ['foreign latest upload', h => h.state.latest = [OTHER, B, A]],
+  ['predecessor', h => h.state.latest = [B, OTHER, A]],
+  ['original configuration receipt', h => h.contract.configuration_sha256 = 'f'.repeat(64)],
+  ['settings since original upload', h => h.state.settings.logpush = true],
+  ['routes since original upload', h => h.state.routes[0].pattern = 'changed.example.test/*'],
+  ['uploaded configuration', h => h.state.uploaded.resources.bindings[0].text = 'changed'],
+  ['uploaded module bytes', h => h.state.uploadedArtifact.modules[0].content_base64 = Buffer.from('export default {};').toString('base64')],
+  ['uploaded module inventory', h => h.state.uploadedArtifact.modules.pop()],
+  ['original upload provenance', h => h.state.annotations['workers/message'] += '-changed'],
+  ['server annotation', h => h.state.annotations['workers/triggered_by'] = 'deployment'],
+]) test('recovery ' + label + ' drift stops with zero writes', async () => {
+  const h = await recoveryHarness(); change(h);
+  await assert.rejects(releasePolicyPatch(h.io, h.options));
+  assert.equal(posts(h).length, 0);
+});
+
+for (const [event, count] of [['approval', 1], ['approval', 2], ['source', 1], ['source', 2]]) test('recovery checks ' + event + ' at check ' + count, async () => {
+  const h = await recoveryHarness('payments-worker', (current, state) => {
+    if (current === event && (event === 'approval' ? state.approvals : state.sourceChecks) === count) throw new Error('fixture recovery rejected');
+  });
+  await assert.rejects(releasePolicyPatch(h.io, h.options), /fixture recovery rejected/);
+  assert.equal(posts(h).length, 0);
+});
+
+test('unknown recovery promotion outcome is journaled without retry or upload', async () => {
+  const h = await recoveryHarness('payments-worker', event => {
+    if (event.startsWith('POST') && event.endsWith('/deployments')) throw new Error('fixture promotion outcome unknown');
+  });
+  await assert.rejects(releasePolicyPatch(h.io, h.options), /fixture promotion outcome unknown/);
+  assert.deepEqual(posts(h).map(c => c.path), [h.root + '/deployments']);
+  assert.equal(h.state.receipts.at(-1).stopped_after, 'promotion-attempted-outcome-unknown');
+});
+
+test('recovery transport cannot upload, even when execution is approved', async () => {
+  const paths = [];
+  const root = '/accounts/' + ACCOUNT + '/workers/scripts/payments-worker';
+  const call = createPolicyTransport('fixture', 'payments-worker', {
+    allowWrites: true, promoteOnly: true,
+    request: async url => { paths.push(url); return Response.json({ success: true, result: {} }); },
+  });
+  await assert.rejects(call(root + '/versions?bindings_inherit=strict', { method: 'POST', body: new FormData() }));
+  await call(root + '/deployments', { method: 'POST', body: '{}' });
+  assert.deepEqual(paths, ['https://api.cloudflare.com/client/v4' + root + '/deployments']);
+});
+
+test('production recovery pins exactly the two reviewed manifests and still requires fresh owner approval', async () => {
+  for (const [worker, file] of [
+    ['payments-worker', 'care-back-november-payments-20261101.json'],
+    ['member-pages-worker', 'care-back-november-memberpages-20261101.json'],
+  ]) {
+    const contract = REVIEWED_UPLOADS[worker];
+    assert.ok(Object.isFrozen(contract));
+    assert.equal(sha256(readFileSync(new URL('./fixtures/' + file, import.meta.url))), contract.manifest_sha256);
+    for (const key of ['configuration_sha256', 'settings_sha256', 'boundary_sha256']) assert.match(contract[key], /^[a-f0-9]{64}$/);
+    const e = { ...env(worker), EXPECTED_MANIFEST_SHA256: contract.manifest_sha256 };
+    assert.equal(validateReleaseInputs(e, 'promote-reviewed-upload').mode, 'promote-reviewed-upload');
+    for (const change of [
+      { EXPECTED_MANIFEST_SHA256: 'f'.repeat(64) }, { PRODUCTION_APPROVED: 'false' },
+      { GITHUB_RUN_ATTEMPT: '2' }, { APPROVED_SHA: 'b'.repeat(40) },
+    ]) assert.throws(() => validateReleaseInputs({ ...e, ...change }, 'promote-reviewed-upload'));
+  }
+  const h = await recoveryHarness();
+  await assert.rejects(releasePolicyPatch(h.io), /unreviewed recovery manifest/);
+  assert.equal(posts(h).length, 0);
 });
 

@@ -8,7 +8,7 @@ on:
         type: choice
         required: true
         default: inspect
-        options: [inspect, release]
+        options: [inspect, release, promote-reviewed-upload]
       worker:
         description: 'Exact target Worker; this workflow may release payments-worker only'
         type: choice
@@ -101,7 +101,7 @@ jobs:
           retention-days: 14
 
   verify-protection:
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.actor == 'mmdprive' && github.triggering_actor == 'mmdprive' && github.run_attempt == 1 && inputs.approved_sha == github.sha && inputs.execution_mode == 'release' && inputs.worker == 'payments-worker' && inputs.production_approved == true && inputs.approval_ref != ''
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.actor == 'mmdprive' && github.triggering_actor == 'mmdprive' && github.run_attempt == 1 && inputs.approved_sha == github.sha && (inputs.execution_mode == 'release' || inputs.execution_mode == 'promote-reviewed-upload') && inputs.worker == 'payments-worker' && inputs.production_approved == true && inputs.approval_ref != ''
     uses: ./.github/workflows/admin-production-approval.yml
     with:
       approval_ref: ${{ inputs.approval_ref }}
@@ -110,7 +110,7 @@ jobs:
 
   release-payments:
     needs: [verify-protection]
-    if: needs.verify-protection.result == 'success' && inputs.execution_mode == 'release' && inputs.worker == 'payments-worker'
+    if: needs.verify-protection.result == 'success' && (inputs.execution_mode == 'release' || inputs.execution_mode == 'promote-reviewed-upload') && inputs.worker == 'payments-worker'
     environment: mmd-production-mutation
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -124,13 +124,13 @@ jobs:
           node-version: '22'
       - name: Verify guarded transport and existing payment behavior
         run: node --test scripts/care-back-november-policy-release.test.mjs scripts/care-back-november-payments-manifest.test.mjs scripts/admin-production-approval.test.mjs shared/membership-promotion-policy.test.mjs payments-worker/reviewed-membership-write-through.test.mjs payments-worker/canonical-web-renewal-settlement.test.mjs payments-worker/reviewed-proof-line-recovery.test.mjs
-      - name: Upload and promote the exact reviewed delta with strict binding inheritance
+      - name: Release reviewed delta or promote the exact previously uploaded version
         env:
           GH_TOKEN: ${{ github.token }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           PRODUCTION_APPROVED: ${{ inputs.production_approved }}
           PRODUCTION_ENVIRONMENT_NAME: mmd-production-mutation
-        run: node scripts/care-back-november-policy-release.mjs --execute-approved
+        run: node scripts/care-back-november-policy-release.mjs ${{ inputs.execution_mode == 'promote-reviewed-upload' && '--promote-reviewed-upload' || '--execute-approved' }}
       - name: Save sanitized release receipt
         if: always()
         uses: actions/upload-artifact@v4
