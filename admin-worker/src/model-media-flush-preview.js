@@ -144,11 +144,14 @@ export async function handleModelMediaFlushPreview(request, env = {}, deps = {})
     return respond({ ok: false, error: "source_account_mismatch" }, 503);
   }
   const http = deps.http || env.GOOGLE_DRIVE_HTTP?.fetch?.bind(env.GOOGLE_DRIVE_HTTP) || fetch;
+  let phase = "oauth";
   try {
     const token = await (deps.getAccessToken || libraryDriveToken)(env);
+    phase = "account_check";
     const about = await googleJson("/about", { fields: "user(emailAddress)" }, token, http);
     if (!owner(about.user?.emailAddress)) return respond({ ok: false, error: "source_account_mismatch" }, 503);
 
+    phase = "scan";
     if (input.action === "stage_all" && input.run_id) {
       return await continueStaging(env, actor, input.run_id, token, http, sourceRoots);
     }
@@ -163,6 +166,7 @@ export async function handleModelMediaFlushPreview(request, env = {}, deps = {})
       rows.push(...part);
     }
     if (candidates) {
+      phase = "staging_manifest";
       const runId = crypto.randomUUID();
       await storage(env).put(PREFIX+"runs/"+runId+".json",JSON.stringify({actor_id:actor.id,created_at:Date.now(),candidates,rows}),{onlyIf:{etagDoesNotMatch:"*"},httpMetadata:{contentType:"application/json",cacheControl:"private, no-store"}});
       return await continueStaging(env, actor, runId, token, http, sourceRoots);
@@ -179,8 +183,10 @@ export async function handleModelMediaFlushPreview(request, env = {}, deps = {})
       next: "owner_review_and_canonical_model_matching_required_before_ingest",
       checked_at: new Date().toISOString(),
     });
-  } catch {
-    return respond({ ok: false, error: "drive_source_unavailable", mode: "preview_only", writes: false }, 503);
+  } catch (error) {
+    const code = String(error?.code || "");
+    const reason = /^(?:drive_(?:credentials_not_configured|oauth_unavailable|account_mismatch|transport_(?:redirect|timeout|receiver|network)_unavailable)|private_staging_unavailable|review_registry_unavailable)$/.test(code) ? code : "dependency_unavailable";
+    return respond({ ok: false, error: "media_flush_unavailable", failed_phase: phase, reason, mode: input.action === "stage_all" ? "private_staging" : "preview_only", writes: phase === "staging_manifest" ? "unknown" : false }, 503);
   }
 }
 
