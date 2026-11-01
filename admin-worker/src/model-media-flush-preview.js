@@ -1,4 +1,4 @@
-import { stageMedia, storage, readBytes, reviewQueue, PREFIX, hash } from './new-model-production.mjs';
+import { stageMedia, storage, readBytes, reviewQueue, PREFIX, hash, MAX_BYTES } from './new-model-production.mjs';
 // Owner-triggered private staging and review intake. Never publishes media.
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
 import { isOwnerActor } from "./owner-my-mmd-recovery-diagnostic.js";
@@ -215,15 +215,17 @@ async function continueStaging(env, actor, runId, token, http, sourceRoots) {
     await storage(env).put(key,JSON.stringify(run),{httpMetadata:{contentType:"application/json",cacheControl:"private, no-store"}});
     return respond({ok:true,mode:"private_staging",run_id:runId,continue_required:true,state:"scanning",total_candidates:run.candidates.length,completed_count:0,results:[],catalogue:run.rows.filter(r=>r.lane==="catalogue"),mmd_now:[],source_scan_complete:false,publication:false,checked_at:new Date().toISOString()});
   }
-  const results=[];let remaining=false, attempted=0;
+  const results=[],jobs=[];let remaining=false, attempted=0,batchBytes=0,visited=0;
   run.failures ||= [];
   for(let index=run.next_index || 0;index<run.candidates.length;index++) {
     const candidate=run.candidates[index];
+    if(visited++>=12){remaining=true;break;}
     // Completed receipts make retries and repeated clicks idempotent.
     const id=await hash(JSON.stringify([candidate.root_id,candidate.file_id,candidate.version,candidate.visibility]));
     const receiptObj=await storage(env).get(PREFIX+"receipts/"+id+".json");
     if(receiptObj){const receipt=await receiptObj.json();const head=await storage(env).head(receipt.key);if(receipt.id===id&&head?.customMetadata?.sha256===receipt.sha256){run.next_index=index+1;continue;}}
-    if(attempted>=1){remaining=true;break;} attempted++;
+    if(attempted>=3 || (attempted>0 && batchBytes+candidate.size>MAX_BYTES)){remaining=true;break;} attempted++;batchBytes+=Math.min(MAX_BYTES,Math.max(0,candidate.size || 0));
+    jobs.push((async()=>{
     try {
       results.push(await stageMedia(env,candidate,actor,async c=>{
         if(!c.version)throw Error("source_version_missing");
@@ -242,8 +244,10 @@ async function continueStaging(env, actor, runId, token, http, sourceRoots) {
       }));
     } catch {results.push({id,state:"failed_retry_required"});}
     if(results.some(r=>r.id===id&&!["pending_review","already_staged"].includes(r.state))&&!run.failures.includes(id))run.failures.push(id);
+    })());
     run.next_index=index+1;
   }
+  await Promise.all(jobs);
   await storage(env).put(key,JSON.stringify(run),{httpMetadata:{contentType:"application/json",cacheControl:"private, no-store"}});
   const failures=run.failures.length>0;
   return respond({ok:true,mode:"private_staging",run_id:runId,continue_required:remaining,state:remaining?"staging":failures?"partial_failure":"pending_review",failed_count:run.failures.length,total_candidates:run.candidates.length,completed_count:run.next_index || 0,results,
