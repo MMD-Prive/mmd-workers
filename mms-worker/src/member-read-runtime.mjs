@@ -1,8 +1,8 @@
+import { mmsReadRecords, readSharedMmsJob, requestBookingState, mapMmsReads } from "./shared-booking-state.mjs";
 const MEMBER_PREBOOKINGS_PATH = "/internal/mms/member/prebookings";
 const INTERNAL_HOST = "mms.internal";
 const MEMBER_REF_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{2,119}$/;
 const PREBOOKING_ID_RE = /^mmspre_[a-f0-9]{24}$/;
-const AIRTABLE_API = "https://api.airtable.com/v0";
 
 export function isMmsMemberReadRequest(urlOrPath = "") {
   const path = typeof urlOrPath === "string" ? urlOrPath : urlOrPath?.pathname;
@@ -21,16 +21,25 @@ export async function handleMmsMemberReadRequest(request, env = {}) {
   }
 
   try {
-    const records = await listMemberPrebookings(env, memberRef);
-    const travelRead = await readLiveTravelEtas(env, records);
-    return json({ ok: true, data: { requests: records.map((record) => customerSafeRequest(record, travelRead)).filter(Boolean) } });
+    const signal = AbortSignal.any([request.signal, AbortSignal.timeout(6000)]);
+    const records = await listMemberPrebookings(env, memberRef, signal);
+    const seen = new Set();
+    for (const record of records) {
+      const f = record?.fields;
+      if (f?.["Member Ref"] !== memberRef) throw serviceError(503, "MMS_MEMBER_SCOPE_CONFLICT");
+      const id = safeId(f["Prebooking ID"]);
+      if (!id || !safeDate(f["Service Date"]) || seen.has(id)) throw serviceError(503, "MMS_PREBOOKINGS_RESPONSE_INVALID");
+      seen.add(id);
+    }
+    const travelRead = await readLiveTravelEtas(env, records, signal);
+    return json({ ok: true, data: { requests: records.map((record) => customerSafeRequest(record, travelRead)) } });
   } catch (error) {
     console.error(JSON.stringify({ event: "mms_member_prebooking_read_failed", code: error?.code || "READ_FAILED" }));
     return json({ ok: false, error: { code: error?.code || "MMS_PREBOOKING_READ_FAILED", message: "MMS requests are temporarily unavailable." } }, Number(error?.status) || 502);
   }
 }
 
-async function listMemberPrebookings(env, memberRef) {
+async function listMemberPrebookings(env, memberRef, signal) {
   const token = String(env.AIRTABLE_API_TOKEN || "").trim();
   const baseId = String(env.AIRTABLE_BASE_ID || "").trim();
   const tableId = String(env.AIRTABLE_PREBOOKINGS_TABLE_ID || "").trim();
@@ -45,46 +54,40 @@ async function listMemberPrebookings(env, memberRef) {
   query.set("sort[0][direction]", "desc");
 
   const response = await fetch(`https://api.airtable.com/v0/${baseId}/${tableId}?${query}`, {
-    headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+    headers: { Authorization: `Bearer ${token}`, Accept: "application/json" }, signal,
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw serviceError(502, "AIRTABLE_REQUEST_FAILED");
-  return Array.isArray(payload.records) ? payload.records : [];
+  if (!Array.isArray(payload.records) || payload.offset) throw serviceError(503, "MMS_PREBOOKINGS_RESPONSE_INVALID");
+  return payload.records;
 }
 
-async function readLiveTravelEtas(env, prebookings) {
-  const ids = (Array.isArray(prebookings) ? prebookings : []).map((record) => safeId(record?.fields?.["Prebooking ID"])).filter(Boolean);
-  const jobsTable = String(env.AIRTABLE_JOBS_TABLE_ID || "").trim();
-  const token = String(env.AIRTABLE_API_TOKEN || "").trim();
-  const baseId = String(env.AIRTABLE_BASE_ID || "").trim();
-  if (!ids.length) return { byPrebooking: new Map(), checking: false };
-  if (!token || !/^app[A-Za-z0-9]{14}$/.test(baseId) || !/^tbl[A-Za-z0-9]{14}$/.test(jobsTable)) {
-    return { byPrebooking: new Map(), checking: true };
-  }
+async function readLiveTravelEtas(env, prebookings, signal) {
+  const requests = new Map(prebookings.map(record => [safeId(record.fields?.['Prebooking ID']), record]).filter(([id]) => id));
+  if (!requests.size) return { byPrebooking: new Map(), checking: false };
   try {
-    const clauses = ids.slice(0, 50).map((id) => `{Prebooking ID}='${id}'`);
-    const formula = clauses.length === 1 ? clauses[0] : `OR(${clauses.join(",")})`;
-    const query = new URLSearchParams({ pageSize: "100", maxRecords: "100", filterByFormula: formula });
-    const response = await fetch(`${AIRTABLE_API}/${encodeURIComponent(baseId)}/${encodeURIComponent(jobsTable)}?${query}`, {
-      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
-    });
-    if (!response.ok) return { byPrebooking: new Map(), checking: true };
-    const payload = await response.json().catch(() => ({}));
-    const result = new Map();
-    for (const record of Array.isArray(payload.records) ? payload.records : []) {
-      const fields = record?.fields || {};
-      const status = String(fields["Job Status"]?.name || fields["Job Status"] || "").trim().toLowerCase();
-      if (status !== "accepted") continue;
-      const id = safeId(fields["Prebooking ID"]);
-      if (!id) continue;
-      if (String(fields["Travel Label"] || "").trim() !== "กำลังเดินทาง") continue;
-      const minutes = etaMinutesFromLabel(String(fields["ETA Label"] || ""));
-      result.set(id, Number.isInteger(minutes) && minutes > 0 ? { status: "en_route", minutes } : { status: "checking" });
+    const clauses = [...requests.keys()].map(id => `{Prebooking ID}='${id}'`);
+    const records = await mmsReadRecords(env, 'JOBS', clauses.length === 1 ? clauses[0] : `OR(${clauses.join(',')})`, signal);
+    const groups = new Map();
+    for (const record of records) {
+      const id = safeId(record.fields?.['Prebooking ID']);
+      if (!requests.has(id)) throw new Error('MMS_JOB_SCOPE_CONFLICT');
+      if (record.fields?.['Member Ref'] && record.fields['Member Ref'] !== requests.get(id).fields['Member Ref']) throw new Error('MMS_JOB_SCOPE_CONFLICT');
+      groups.set(id, [...(groups.get(id) || []), record]);
     }
-    return { byPrebooking: result, checking: false };
-  } catch {
-    return { byPrebooking: new Map(), checking: true };
-  }
+    const entries = await mapMmsReads([...groups], async ([id, jobs]) => {
+      if (jobs.length !== 1) return [id, { bookingState: requestBookingState('', false), status: 'checking' }];
+      const shared = await readSharedMmsJob(env, jobs[0], { prebooking: requests.get(id), signal });
+      const fields = shared.record.fields;
+      const enRoute = shared.state === 'ACCEPTED' && fields['Travel Label'] === 'กำลังเดินทาง';
+      const minutes = enRoute ? etaMinutesFromLabel(fields['ETA Label']) : null;
+      return [id, { bookingState: shared.bookingState,
+        ...(shared.state === 'CHECKING' || enRoute && !minutes ? { status: 'checking' } : {}),
+        ...(enRoute && minutes ? { status: 'en_route', minutes } : {}),
+      }];
+    });
+    return { byPrebooking: new Map(entries), checking: false };
+  } catch { return { byPrebooking: new Map(), checking: true }; }
 }
 
 function customerSafeRequest(record, travelRead = { byPrebooking: new Map(), checking: false }) {
@@ -93,6 +96,7 @@ function customerSafeRequest(record, travelRead = { byPrebooking: new Map(), che
   const date = safeDate(fields["Service Date"]);
   if (!id || !date) return null;
 
+  const shared = travelRead.byPrebooking.get(id)?.bookingState || requestBookingState(fields.Status, !travelRead.checking);
   return compact({
     request_id: id,
     prebooking_id: id,
@@ -100,7 +104,9 @@ function customerSafeRequest(record, travelRead = { byPrebooking: new Map(), che
     request_type: "mms_prebooking",
     service_family: "mms",
     title: "MMS Pre-booking",
-    status: safeStatus(fields.Status),
+    status: shared.status,
+    request_status: safeStatus(fields.Status),
+    bookingState: shared,
     service_date: date,
     service_time: safeTime(fields["Service Time"]),
     zone: safeText(fields.Zone, 80),
@@ -139,7 +145,7 @@ function safeId(value) {
 }
 function safeDate(value) {
   const text = String(value || "").trim().slice(0, 10);
-  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : "";
+  return /^\d{4}-\d{2}-\d{2}$/.test(text) && Number.isFinite(Date.parse(text)) && new Date(text).toISOString().slice(0, 10) === text ? text : "";
 }
 function safeTime(value) {
   const text = String(value || "").trim().slice(0, 5);

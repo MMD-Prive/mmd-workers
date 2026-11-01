@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { handleMmsMemberReadRequest, isMmsMemberReadRequest } from "../src/member-read-runtime.mjs";
 
 const env = {
+  MMS_DISPATCH_COORDINATOR: { idFromName: id => id, get: () => ({ snapshot: async id => ({ job: { job_id: id, state: "ACCEPTED", winner_therapist_id: "mmst_fixture" } }) }) },
   AIRTABLE_API_TOKEN: "test-token",
   AIRTABLE_BASE_ID: "appsV1ILPRfIjkaYg",
   AIRTABLE_PREBOOKINGS_TABLE_ID: "tblnSw3MY79MwWONe",
@@ -63,7 +64,9 @@ test("returns only customer-safe prebookings for the verified member reference",
       request_type: "mms_prebooking",
       service_family: "mms",
       title: "MMS Pre-booking",
-      status: "coordination_pending",
+      status: "pending",
+      request_status: "coordination_pending",
+      bookingState: { schema: "mms_booking_state_v1", status: "pending", label: "รอประสานและยืนยันนัด", assignment: "pending", service: "checking", confirmation: "checking", payment: "checking", source: "prebooking" },
       service_date: "2026-09-04",
       service_time: "19:30",
       zone: "Sukhumvit",
@@ -99,7 +102,7 @@ test("returns only numeric ETA for a verified member while a job is accepted and
       "Prebooking ID": "mmspre_1234567890abcdef12345678", "Member Ref": "member_001", "Service Date": "2026-09-04", "Status": "Confirmed",
     } }] });
     return Response.json({ records: [{ fields: {
-      "Prebooking ID": "mmspre_1234567890abcdef12345678", "Job Status": "Accepted", "Travel Label": "กำลังเดินทาง",
+      "Prebooking ID": "mmspre_1234567890abcdef12345678", "Job Status": "Accepted", "Job ID": "mmsjob_" + "a".repeat(24), "Accepted Therapist ID": "mmst_fixture", "Travel Label": "กำลังเดินทาง",
       "ETA Label": "1 ชม. 5 นาที", "Exact Address Private": "private destination", "Therapist GPS": "private coordinate",
     } }] });
   };
@@ -147,7 +150,7 @@ test("keeps a departure with no ETA in checking state instead of publishing a fa
       "Prebooking ID": "mmspre_1234567890abcdef12345678", "Member Ref": "member_001", "Service Date": "2026-09-04", Status: "Confirmed",
     } }] });
     return Response.json({ records: [{ fields: {
-      "Prebooking ID": "mmspre_1234567890abcdef12345678", "Job Status": "Accepted", "Travel Label": "กำลังเดินทาง", "ETA Label": "",
+      "Prebooking ID": "mmspre_1234567890abcdef12345678", "Job Status": "Accepted", "Job ID": "mmsjob_" + "a".repeat(24), "Accepted Therapist ID": "mmst_fixture", "Travel Label": "กำลังเดินทาง", "ETA Label": "",
     } }] });
   };
   try {

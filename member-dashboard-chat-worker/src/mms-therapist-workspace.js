@@ -162,7 +162,7 @@ export function therapistClient() {
     if (!Array.isArray(data)) throw new Error("INVALID_DATA");
     if (!data.length) { list.append(node("p", tab === "offers" ? "ยังไม่มีงานเสนอให้คุณครับ" : "ยังไม่มีงานที่คุณรับครับ", "card")); return; }
     for (const item of data) {
-      const card = node("article", null, "card"); card.append(node("h3", item.serviceLabel), node("p", [item.scheduledLabel, item.durationLabel, item.areaLabel].filter(Boolean).join(" · ")), node("p", stateLabel(item.state), "badge"), node("p", item.payoutLabel ? "ส่วนแบ่งของคุณ: " + item.payoutLabel : "ส่วนแบ่ง: รอพี่เปอร์สรุป"));
+      const card = node("article", null, "card"); card.append(node("h3", item.serviceLabel), node("p", [item.scheduledLabel, item.durationLabel, item.areaLabel].filter(Boolean).join(" · ")), node("p", item.bookingState?.label || stateLabel(item.state), "badge"), node("p", item.payoutLabel ? "ส่วนแบ่งของคุณ: " + item.payoutLabel : "ส่วนแบ่ง: รอพี่เปอร์สรุป"));
       card.append(button("ดูรายละเอียด", () => detail(item.jobId, tab))); list.append(card);
     }
   }
@@ -171,7 +171,7 @@ export function therapistClient() {
     if (!/^mmsjob_[a-f0-9]{24}$/.test(id)) throw new Error("INVALID_JOB_ID");
     const item = await api(A + "/" + lane + "/" + id);
     const panel = $("detail"); panel.replaceChildren(); panel.hidden = false;
-    panel.append(node("h2", item.serviceLabel), node("p", stateLabel(item.state)), node("p", [item.scheduledLabel, item.durationLabel, item.areaLabel].filter(Boolean).join(" · ")));
+    panel.append(node("h2", item.serviceLabel), node("p", item.bookingState?.label || stateLabel(item.state)), node("p", [item.scheduledLabel, item.durationLabel, item.areaLabel].filter(Boolean).join(" · ")));
     if (item.pricing) {
       const q = item.pricing;
       const money = (v) => Number(v).toLocaleString("th-TH", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
