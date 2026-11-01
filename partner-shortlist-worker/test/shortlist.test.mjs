@@ -417,7 +417,7 @@ test("job-scoped Benz exclusion survives owner brief edits and rejects imported 
 });
 
 
-test('Standard scope starts once, reveals only filtered models and denies excluded media', async()=>{
+test('Standard scope starts once, shows initial candidates and denies excluded media', async()=>{
  const f=fixture(), c=await f.create();
  let response=await f.owner(O+'/'+c.id,'PATCH',{revision:1,policy:'standard-pn-60m'});
  let item=(await response.json()).item;
@@ -428,14 +428,14 @@ test('Standard scope starts once, reveals only filtered models and denies exclud
  assert.equal(noReview.status,400);
  item=await f.addModel({...c,item:rotated.item},{qualification:{category:'standard',pn:true,straight:true,accepting:true}});
  let view=await (await f.partner(c.id,token)).json();
- assert.equal(view.models.length,0);
+ assert.equal(view.models.length,1);
  const expires=view.expiresAt;
  assert.ok(Date.parse(expires)-Date.now()<=3600000);
  assert.equal((await (await f.partner(c.id,token)).json()).expiresAt,expires);
  view=await (await f.partner(c.id,token,'view?search=1&heightMin=181&heightMax=185')).json();
  assert.equal(view.models.length,1);assert.equal(view.models[0].match,'near');
  const photo=view.models[0].photos[0].id;
- assert.equal((await f.partner(c.id,token,'media/'+photo)).status,404);
+ assert.equal((await f.partner(c.id,token,'media/'+photo)).status,200);
  assert.equal((await f.partner(c.id,token,'media/'+photo+'?search=1&heightMin=181')).status,200);
  assert.equal((await f.partner(c.id,token,'view?search=1&tier=premium')).status,400);
  assert.equal((await (await f.partner(c.id,token,'view?search=1&heightMin=190')).json()).models.length,0);

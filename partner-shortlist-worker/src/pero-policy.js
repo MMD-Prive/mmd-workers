@@ -6,9 +6,10 @@ export const scoped = value => value.id === PERO_JOB || value.policy === 'standa
 export function eligible(model, value) {
   return model.canonicalModelId !== BENZ_T
     && !(value.ownerOnly?.excludedCanonicalModelIds || []).includes(model.canonicalModelId)
-    && model.qualification?.category === 'standard' && model.qualification?.pn === true
-    && model.qualification?.straight === true && model.qualification?.accepting === true
-    && model.historyReviewedAt && model.display.status !== 'unavailable';
+    && model.qualification?.category === 'standard'
+    && model.qualification?.straight === true
+    && model.qualification?.pn !== false && model.qualification?.accepting !== false
+    && model.display.status !== 'unavailable';
 }
 export function filters(params) {
   const allowed = new Set(['search','q','heightMin','heightMax','weightMin','weightMax','body','skin']);
@@ -28,7 +29,7 @@ function distance(value,min,max) {
   return Math.max(min===null?0:min-value,max===null?0:value-max,0);
 }
 export function matches(value, f) {
-  if(!f.active)return [];
+  if(!f.active)return value.models.filter(m=>eligible(m,value)).map(m=>({...m,match:'exact'}));
   return value.models.filter(m=>eligible(m,value)).map(m=>{
     const d=m.display, q=m.qualification;
     if(f.q&&!`${d.name} ${d.code}`.toLowerCase().includes(f.q))return null;
