@@ -213,3 +213,47 @@ test('identical bytes in a different visibility lane still require a separate re
  const f=fixture();await stageMedia(f.env,candidate,actor,async()=>bytes,f);
  assert.equal((await stageMedia(f.env,{...candidate,visibility:'review'},actor,async()=>bytes,f)).state,'pending_review');assert.equal(f.records.length,2);
 });
+
+// Queue regression tests use synthetic identities and bytes only.
+const queueApi=await import('./src/new-model-production.mjs');
+function queueFixture(){
+ const f=fixture(),id='rec00000000000001',intake='a'.repeat(64),sha='b'.repeat(64),model={id:'rec00000000000002',fields:{working_name:'NMP Synthetic Model',unique_key:'NMP-TEST'}};
+ const payload={schema:'mmd.new_model_production.v1',intake_id:intake,source:{root_id:'root',category:'standard',visibility:'review',mimeType:'image/jpeg'},private_staging_key:PREFIX+'originals/'+intake+'/'+sha,sha256:sha,bytes:4,requires_per_approval:true,canonical_model_matching_required:true,public_safe:false,private_safe:false};
+ let record={id,fields:{request_id:'nmp_'+intake,request_status:'pending_review',payload_json:JSON.stringify(payload)}};let patches=0,outage=false;
+ const registry=async(env,suffix,init={})=>{if(init.method==='PATCH'){if(outage)throw Error('synthetic outage');patches++;Object.assign(record.fields,JSON.parse(init.body).fields);}return suffix.startsWith('?')?{records:[structuredClone(record)]}:structuredClone(record);};
+ const deps={allowedRootIds:['root'],registry,models:async()=>structuredClone(model)};
+ return {...f,id,payload,model,deps,get record(){return record;},get patches(){return patches;},setOutage(v){outage=v;}};
+}
+test('all 797 queue records are reachable across eight Airtable pages without exposing private storage keys',async()=>{
+ let reads=0;const ids=new Set();let cursor;
+ do{const result=await reviewQueue({}, {allowedRootIds:['root'],cursor,registry:async(env,suffix)=>{const q=new URLSearchParams(suffix.slice(1));assert.match(q.get('filterByFormula'),/FIND\('root'/);const start=Number(q.get('offset')||0);reads++;return {records:Array.from({length:Math.min(100,797-start)},(_,i)=>({id:'rec'+(start+i),fields:{payload_json:JSON.stringify({schema:'mmd.new_model_production.v1',intake_id:String(start+i),source:{root_id:'root',category:'standard',visibility:'review',mimeType:'image/jpeg'},private_staging_key:'NEVER_EXPOSE'})}})),...(start+100<797?{offset:String(start+100)}:{})};}});for(const row of result.items){ids.add(row.id);assert.equal(row.private_staging_key,undefined);}cursor=result.cursor;}while(cursor);
+ assert.equal(ids.size,797);assert.equal(reads,8);
+});
+test('draft pairing and Hidden classification preserve immutable provenance, pending status and empty authoritative links',async()=>{
+ const f=queueFixture(),before=structuredClone(f.payload),queue=await reviewQueue(f.env,f.deps);
+ const input={record_id:f.id,revision:queue.items[0].revision,visibility:'hidden',model_id:f.model.id};
+ const saved=await queueApi.saveReviewDraft(f.env,input,actor,f.deps);assert.equal(saved.item.model.name,'NMP Synthetic Model');assert.equal(saved.item.visibility,'hidden');assert.equal(saved.item.source_visibility,'review');assert.equal(saved.publication,false);
+ const payload=JSON.parse(f.record.fields.payload_json);assert.deepEqual(payload.source,before.source);for(const key of ['public_safe','private_safe'])assert.equal(payload[key],false);assert.equal(f.record.fields.request_status,'pending_review');assert.equal(f.record.fields.Model,undefined);assert.equal(f.record.fields.linked_media_assets,undefined);
+ await queueApi.saveReviewDraft(f.env,{...input,revision:saved.item.revision},actor,f.deps);assert.equal(f.patches,1);
+ await assert.rejects(queueApi.saveReviewDraft(f.env,{...input,visibility:'review'},actor,f.deps),/review_conflict/);
+});
+test('failed draft save remains retryable; cross-root, approved and invalid-model requests fail closed',async()=>{
+ const f=queueFixture(),queue=await reviewQueue(f.env,f.deps),input={record_id:f.id,revision:queue.items[0].revision,visibility:'hidden',model_id:null};
+ f.setOutage(true);await assert.rejects(queueApi.saveReviewDraft(f.env,input,actor,f.deps),/outage/);assert.equal(JSON.parse(f.record.fields.payload_json).review_draft,undefined);
+ f.setOutage(false);await queueApi.saveReviewDraft(f.env,input,actor,f.deps);assert.equal(f.patches,1);
+ await assert.rejects(queueApi.reviewMedia(f.env,{record_id:f.id},{...f.deps,allowedRootIds:['other']}),/review_not_pending/);
+ f.record.fields.request_status='approved';await assert.rejects(queueApi.reviewMedia(f.env,{record_id:f.id},f.deps),/review_not_pending/);
+ await assert.rejects(queueApi.saveReviewDraft(f.env,{...input,model_id:'arbitrary'},actor,f.deps),/review_input_invalid/);
+});
+test('private media streams validated JPEG/MP4 only and rejects mismatched object metadata',async()=>{
+ const f=queueFixture();let payload=JSON.parse(f.record.fields.payload_json);
+ const object={size:4,customMetadata:{sha256:payload.sha256,intake_id:payload.intake_id,visibility:'review'},httpMetadata:{contentType:'image/jpeg'}};
+ f.env.PRIVATE_MODEL_MEDIA.get=async()=>({...object,body:new ReadableStream({start(c){c.enqueue(bytes);c.close();}})});
+ const response=await queueApi.reviewMedia(f.env,{record_id:f.id},f.deps);assert.equal(response.headers.get('cache-control'),'private, no-store');assert.equal(response.headers.get('content-type'),'image/jpeg');assert.deepEqual(new Uint8Array(await response.arrayBuffer()),bytes);
+ payload.source.mimeType='video/mp4';f.record.fields.payload_json=JSON.stringify(payload);object.httpMetadata.contentType='video/mp4';assert.equal((await queueApi.reviewMedia(f.env,{record_id:f.id},f.deps)).headers.get('content-type'),'video/mp4');
+ object.customMetadata.sha256='bad';await assert.rejects(queueApi.reviewMedia(f.env,{record_id:f.id},f.deps),/private_media_invalid/);
+});
+test('model lookup uses real canonical field names, escapes query and returns only identity labels',async()=>{
+ let target;const env={AIRTABLE_BASE_ID:'base',AIRTABLE_API_KEY:'test',AIRTABLE_HTTP:{fetch:async url=>{target=new URL(url);return Response.json({records:[{id:'rec00000000000002',fields:{working_name:'Synthetic',unique_key:'NMP',phone:'PRIVATE'}}]});}}};
+ const result=await queueApi.reviewModels(env,{query:"NMP'"});assert.match(target.searchParams.get('filterByFormula'),/working_name/);assert.ok(target.searchParams.get('filterByFormula').includes("NMP'".toLowerCase().replace("'","\\'")));assert.deepEqual(Object.keys(result.items[0]),['id','name','key']);assert.deepEqual(target.searchParams.getAll('fields[]'),['working_name','nickname','unique_key']);
+});

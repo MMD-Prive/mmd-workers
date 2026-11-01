@@ -1,4 +1,4 @@
-import { stageMedia, storage, readBytes, reviewQueue, PREFIX, hash } from './new-model-production.mjs';
+import { stageMedia, storage, readBytes, reviewQueue, reviewMedia, reviewModels, saveReviewDraft, PREFIX, hash } from './new-model-production.mjs';
 // Owner-triggered private staging and review intake. Never publishes media.
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
 import { isOwnerActor } from "./owner-my-mmd-recovery-diagnostic.js";
@@ -152,13 +152,17 @@ export async function handleModelMediaFlushPreview(request, env = {}, deps = {})
   const actor = await (deps.readActor || readCredentialBoundAdminActor)(request, env);
   if (!isOwnerActor(actor)) return respond({ ok: false, error: "owner_required" }, 403);
   const input = await request.json().catch(() => null);
-  if (!input || !["preview_all", "stage_all", "review_queue"].includes(input.action) || Object.keys(input).some(k => !["action", "run_id"].includes(k)) || (input.run_id && !/^[a-f0-9-]{36}$/.test(input.run_id))) {
+  if (!input || !["preview_all", "stage_all", "review_queue", "review_media", "review_models", "review_save"].includes(input.action) || Object.keys(input).some(k => !({preview_all:['action'],stage_all:['action','run_id'],review_queue:['action','cursor'],review_media:['action','record_id'],review_models:['action','query'],review_save:['action','record_id','revision','visibility','model_id']}[input.action]||[]).includes(k)) || (input.run_id && !/^[a-f0-9-]{36}$/.test(input.run_id))) {
     return respond({ ok: false, error: "preview_action_required" }, 400);
   }
   const sourceRoots = deps.sourceRoots || MODEL_MEDIA_SOURCE_ROOTS.filter(source => source.lane === "catalogue");
-  if (input.action === "review_queue") {
-    try { return respond({ok:true,...await reviewQueue(env, {allowedRootIds:sourceRoots.map(source=>source.id)})}); }
-    catch { return respond({ok:false,error:"review_queue_unavailable"},503); }
+  if(input.action.startsWith('review_')) {
+    const options={allowedRootIds:sourceRoots.map(source=>source.id),cursor:input.cursor,...deps.reviewDeps};
+    try {
+      if(input.action==='review_media')return await reviewMedia(env,input,options);
+      const result=input.action==='review_queue'?await reviewQueue(env,options):input.action==='review_models'?await reviewModels(env,input,options):await saveReviewDraft(env,input,actor,options);
+      return respond({ok:true,...result});
+    }catch(e){const code=e.code||'review_unavailable';return respond({ok:false,error:code},/conflict|busy|not_pending/.test(code)?409:/invalid/.test(code)?400:503);}
   }
   // Never silently switch to a fallback Google account when OAuth is unavailable.
   if (env.COMPCARD_DRIVE_OWNER_EMAIL && !owner(env.COMPCARD_DRIVE_OWNER_EMAIL)) {

@@ -36,7 +36,7 @@ export default {
         return json({ ok: false, error: "same_origin_required" }, 403);
       }
       const input = await request.json().catch(() => null);
-      if (!input || !["preview_all", "stage_all", "review_queue"].includes(input.action) || Object.keys(input).some(k => !["action", "run_id"].includes(k))) return json({ok:false,error:"media_action_invalid"},400);
+      if (!input || !["preview_all", "stage_all", "review_queue", "review_media", "review_models", "review_save"].includes(input.action) || Object.keys(input).some(k => !({preview_all:['action'],stage_all:['action','run_id'],review_queue:['action','cursor'],review_media:['action','record_id'],review_models:['action','query'],review_save:['action','record_id','revision','visibility','model_id']}[input.action]||[]).includes(k))) return json({ok:false,error:"media_action_invalid"},400);
       const headers = new Headers({ "accept": "application/json", "content-type": "application/json", "origin": url.origin });
       for (const key of ["cookie", "user-agent"]) {
         const value = request.headers.get(key);
@@ -332,7 +332,7 @@ const MEDIA_FLUSH_CLIENT_LAYER = String.raw`;(()=>{'use strict';
         const data=await r.json().catch(()=>null);
         if(r.ok&&data?.ok===true)return data;
         if(r.status===401||r.status===403)throw Object.assign(Error('กรุณาเข้าสู่ระบบ Owner'),{terminal:true});
-        if(r.status===409){remember(null);throw Object.assign(Error('รอบเดิมหมดอายุ · กดตรวจสื่อใหม่'),{terminal:true});}
+        if(r.status===409){if(input.action==='stage_all'){remember(null);throw Object.assign(Error('รอบเดิมหมดอายุ · กดตรวจสื่อใหม่'),{terminal:true});}throw Object.assign(Error('รายการเปลี่ยนแปลงหรือกำลังบันทึก · เปิดคิวใหม่ก่อนลองอีกครั้ง'),{terminal:true});}
         throw Object.assign(Error(data?.error||('HTTP '+r.status)),{terminal:r.status<500&&r.status!==429});
       }catch(e){if(e.terminal)throw e;failure=e;}
       finally{clearTimeout(timer);}
@@ -362,14 +362,71 @@ const MEDIA_FLUSH_CLIENT_LAYER = String.raw`;(()=>{'use strict';
       status.textContent=loading?(last?.state==='scanning'?'กำลังตรวจโฟลเดอร์ต้นทาง · '+String(last.catalogue?.length||0)+'/8 แบบ':last?.mode==='private_staging'?'กำลังรับสื่อ · '+String(last.completed_count||0)+'/'+String(last.total_candidates||0):'กำลังตรวจโฟลเดอร์ต้นทาง…'):error?error:last?('ตรวจเมื่อ '+new Date(last.checked_at).toLocaleString('th-TH')+' · '+(last.mode==='private_staging'?(last.state==='pending_review'?'รับสื่อแล้ว '+String(last.completed_count||0)+'/'+String(last.total_candidates||0)+' · รอตรวจอนุมัติ':last.state==='partial_failure'?'รับสื่อได้บางส่วน · ต้องลองใหม่ '+String(last.failed_count||0)+' รายการ':'กำลังรับสื่อ')+(last.source_scan_complete?'':' · ตรวจต้นทางได้บางส่วน'):last.state==='inventory_checked'?'ตรวจครบตามขอบเขต':'บางรายการยังตรวจไม่ครบ')):'กดเมื่อต้องการตรวจรูปที่อัปเดต';
       results.replaceChildren();
       if(!last)return;
-      for(const item of [...(last.catalogue||[]),...(last.mmd_now||[]),...(last.review_queue||[]).map(x=>({label:x.category+' · '+x.visibility,state:'pending_review'}))]) {
+      for(const item of [...(last.catalogue||[]),...(last.mmd_now||[])]) {
         const li=document.createElement('li'),label=document.createElement('span'),value=document.createElement('span');
         label.textContent=item.label||item.key||'';
         value.textContent=last.mode==='private_staging'&&item.state==='inventory_checked'?'ตรวจต้นทางแล้ว':item.state==='inventory_checked'?(String(item.images||0)+' รูป · '+String(item.videos||0)+' วิดีโอ'):item.state==='pending_review'?'รออนุมัติ / จับคู่โมเดล':item.state==='source_id_unresolved'?'รอระบุต้นทาง':item.state==='topic_id_unresolved'?'รอข้อมูล Topic':item.state==='incomplete_scan'?'ตรวจได้บางส่วน':item.state==='source_unverified'?'ต้นทางไม่ผ่านการตรวจ':item.state==='scanning'?'กำลังตรวจต้นทาง':'ตรวจไม่ได้';
         li.append(label,value);results.append(li);
       }
     };
-    refreshPanel=render;
+    // All queue reads and proposals remain inside the authenticated FLUSH endpoint.
+    const queueBox=document.createElement('section');panel.append(queueBox);
+    const queueTitle=document.createElement('h3');queueTitle.textContent='คิวรออนุมัติ · ดูสื่อและเสนอคู่โมเดล';
+    const queueLoad=document.createElement('button');queueLoad.type='button';queueLoad.textContent='เปิดคิวรออนุมัติ';
+    const lane=document.createElement('select');lane.setAttribute('aria-label','กรอง Review/Hidden');
+    for(const [value,label] of [['all','ทั้งหมด'],['review','Review'],['hidden','Hidden']]){const option=document.createElement('option');option.value=value;option.textContent=label;lane.append(option);}lane.value='all';
+    const category=document.createElement('select');category.setAttribute('aria-label','กรองประเภทโมเดล');
+    for(const value of ['all','standard','premium','ems','gws','travel','extreme','farang','up_country']){const option=document.createElement('option');option.value=value;option.textContent=value==='all'?'ครบ 8 แบบ':value;category.append(option);}category.value='all';
+    const matching=document.createElement('select');matching.setAttribute('aria-label','กรองการจับคู่');
+    for(const [value,label] of [['all','ทุกสถานะการจับคู่'],['unmatched','ยังไม่เสนอคู่'],['matched','เสนอคู่แล้ว']]){const o=document.createElement('option');o.value=value;o.textContent=label;matching.append(o);}matching.value='all';
+    const queueStatus=document.createElement('p');queueStatus.setAttribute('role','status');
+    const queueList=document.createElement('ul'),pager=document.createElement('div'),previous=document.createElement('button'),next=document.createElement('button');previous.textContent='ก่อนหน้า';next.textContent='ถัดไป';previous.type=next.type='button';pager.append(previous,next);
+    const viewer=document.createElement('div');viewer.setAttribute('data-flush-viewer','');
+    queueBox.append(queueTitle,queueLoad,lane,category,matching,queueStatus,queueList,pager,viewer);
+    let rows=[],page=0,loaded=false,queueBusy=false,mediaUrl=null,selection=0;
+    function clearViewer(){selection++;if(mediaUrl)URL.revokeObjectURL(mediaUrl);mediaUrl=null;viewer.replaceChildren();}
+    function drawQueue(){
+      const filtered=rows.filter(r=>(lane.value==='all'||r.visibility===lane.value)&&(category.value==='all'||r.category===category.value)&&(matching.value==='all'||(matching.value==='matched'?Boolean(r.model):!r.model)));
+      const pages=Math.max(1,Math.ceil(filtered.length/25));page=Math.min(page,pages-1);queueList.replaceChildren();
+      queueStatus.textContent=(loaded?'โหลดครบ ':'กำลังโหลด ')+rows.length+' รายการ · Review '+rows.filter(r=>r.visibility==='review').length+' / Hidden '+rows.filter(r=>r.visibility==='hidden').length+' · แสดง '+filtered.length+' รายการ · หน้า '+(page+1)+'/'+pages+' · ทุกชิ้นรออนุมัติ';
+      previous.disabled=page===0||queueBusy;next.disabled=page>=pages-1||queueBusy;
+      for(const row of filtered.slice(page*25,page*25+25)){
+        const li=document.createElement('li'),label=document.createElement('span'),open=document.createElement('button');open.type='button';open.textContent='ดูสื่อ / จับคู่';label.textContent=row.category+' · '+row.visibility+' · '+(row.mime?.startsWith('video/')?'วิดีโอ':'รูป')+' · '+(row.model?'คู่ที่เสนอ: '+row.model.name:'ยังไม่เสนอคู่')+' · '+row.intake_id.slice(0,10);open.onclick=()=>openReview(row);li.append(label,open);queueList.append(li);
+      }
+    }
+    async function loadQueue(){
+      if(queueBusy)return;queueBusy=true;queueLoad.disabled=true;rows=[];loaded=false;page=0;clearViewer();
+      try{let cursor=null;const seen=new Set(),ids=new Set();do{const data=await post({action:'review_queue',...(cursor?{cursor}:{})});for(const row of data.items||[])if(!ids.has(row.id)){ids.add(row.id);rows.push(row);}cursor=data.cursor;if(cursor&&seen.has(cursor))throw Error('คิวอ่านซ้ำ กรุณาลองใหม่');if(cursor)seen.add(cursor);drawQueue();}while(cursor);loaded=true;drawQueue();}
+      catch(e){queueStatus.textContent='อ่านคิวไม่ครบ · '+String(e.message||e)+' · กดเปิดคิวเพื่อลองใหม่';}
+      finally{queueBusy=false;queueLoad.disabled=false;previous.disabled=page===0;}
+    }
+    async function openReview(row){
+      clearViewer();const ticket=selection;
+      const heading=document.createElement('h4');heading.textContent=row.category+' · '+row.intake_id.slice(0,12)+' · รออนุมัติ';
+      const close=document.createElement('button');close.type='button';close.textContent='ปิดสื่อ';close.onclick=clearViewer;
+      const message=document.createElement('p');message.setAttribute('role','status');message.textContent='กำลังเปิดสื่อส่วนตัว…';
+      viewer.append(heading,close,message);
+      try{
+        const response=await fetch('/v1/admin/ai-ops/media/flush',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'content-type':'application/json'},body:JSON.stringify({action:'review_media',record_id:row.id}),signal:AbortSignal.timeout(45000)});
+        if(!response.ok)throw Error('เปิดสื่อไม่ได้ กรุณาเข้าสู่ระบบแล้วลองใหม่');
+        const blob=await response.blob();if(ticket!==selection)return;
+        mediaUrl=URL.createObjectURL(blob);const media=document.createElement(row.mime.startsWith('video/')?'video':'img');media.src=mediaUrl;media.style.maxWidth='100%';media.style.maxHeight='420px';if(row.mime.startsWith('video/')){media.controls=true;media.preload='metadata';}else media.alt='สื่อส่วนตัวในคิวรออนุมัติ';viewer.append(media);message.textContent='ดูเพื่อพิจารณาเท่านั้น · ยังไม่อนุมัติหรือเผยแพร่';
+      }catch(e){if(ticket===selection)message.textContent=String(e.message||e);}
+      if(ticket!==selection)return;
+      const visibility=document.createElement('select');visibility.setAttribute('aria-label','แยก Review/Hidden');for(const v of ['review','hidden']){const o=document.createElement('option');o.value=v;o.textContent=v==='review'?'Review':'Hidden';visibility.append(o);}visibility.value=row.visibility;
+      const source=document.createElement('p');source.textContent='โฟลเดอร์ต้นทาง: '+row.source_visibility+' · การแยกที่นี่เป็นข้อเสนอ ไม่ย้ายต้นฉบับ';
+      const query=document.createElement('input');query.type='search';query.placeholder='ค้นชื่อหรือรหัสโมเดลอย่างน้อย 2 ตัว';query.setAttribute('aria-label','ค้นหาโมเดล');
+      const search=document.createElement('button');search.type='button';search.textContent='ค้นหาโมเดล';
+      const choices=document.createElement('div'),chosen=document.createElement('p');let selected=row.model;
+      const showChosen=()=>{chosen.textContent=selected?'คู่ที่เสนอ: '+selected.name+' · '+selected.key:'ยังไม่เสนอคู่โมเดล';};showChosen();
+      const clear=document.createElement('button');clear.type='button';clear.textContent='ล้างคู่ที่เสนอ';clear.onclick=()=>{selected=null;showChosen();};
+      search.onclick=async()=>{search.disabled=true;choices.replaceChildren();try{const data=await post({action:'review_models',query:query.value});if(ticket!==selection)return;for(const model of data.items){const pick=document.createElement('button');pick.type='button';pick.textContent=model.name+' · '+model.key;pick.onclick=()=>{selected=model;showChosen();};choices.append(pick);}message.textContent=data.items.length?'เลือกคู่ด้วยตนเอง · ระบบไม่ระบุตัวตนจากภาพ':'ไม่พบโมเดล ลองชื่อหรือรหัสอื่น';}catch(e){message.textContent=String(e.message||e);}finally{search.disabled=false;}};
+      const save=document.createElement('button');save.type='button';save.textContent='บันทึกข้อเสนอ · ยังรออนุมัติ';
+      save.onclick=async()=>{save.disabled=true;try{const data=await post({action:'review_save',record_id:row.id,revision:row.revision,visibility:visibility.value,model_id:selected?.id||null});if(ticket!==selection)return;Object.assign(row,data.item);drawQueue();message.textContent='บันทึกข้อเสนอแล้ว · ยังรออนุมัติและยังไม่เผยแพร่';}catch(e){message.textContent='บันทึกไม่สำเร็จ · '+String(e.message||e)+' · เปิดคิวใหม่ก่อนลองอีกครั้ง';}finally{save.disabled=false;}};
+      viewer.append(source,visibility,query,search,choices,chosen,clear,save);
+    }
+    queueLoad.onclick=loadQueue;lane.onchange=category.onchange=matching.onchange=()=>{page=0;clearViewer();drawQueue();};previous.onclick=()=>{page--;clearViewer();drawQueue();};next.onclick=()=>{page++;clearViewer();drawQueue();};
+        refreshPanel=render;
     async function flush(forceNew=false){
       if(loading)return;
       if(forceNew||!resumeRunId)remember(crypto.randomUUID());
@@ -380,8 +437,7 @@ const MEDIA_FLUSH_CLIENT_LAYER = String.raw`;(()=>{'use strict';
           data=await post({action:'stage_all',run_id:resumeRunId});last=data;refreshPanel();
           if(data.retry_after_ms){if(++retries>12)throw Error('งานยังไม่พร้อม · กดรับต่อรอบเดิมได้');await pause(Math.min(30000,data.retry_after_ms));}else retries=0;
         }while(data.continue_required);
-        try{const queue=await post({action:'review_queue'});last.review_queue=queue.items;last.review_queue_incomplete=queue.incomplete;foot.textContent=queue.incomplete?'รับแล้วและรออนุมัติ · แสดงคิวบางส่วน ดูรายการทั้งหมดใน Airtable':'รับแล้วและรออนุมัติ · กดตรวจสื่อใหม่เมื่อมีสื่อเพิ่มหรือแก้ไข';}
-        catch{foot.textContent='รับรอบนี้แล้ว แต่อ่านคิวไม่ได้ · กดซ้ำเพื่อตรวจต่อได้';}
+        foot.textContent='รับแล้วและรออนุมัติ · กดเปิดคิวรออนุมัติเพื่อดูสื่อและเสนอคู่โมเดล';
       }catch(e){error='FLUSH หยุดชั่วคราว · '+String(e.message||e)+' · กดรับต่อรอบเดิมได้';}
       finally{loading=false;refreshPanel();}
     }
