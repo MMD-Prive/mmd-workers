@@ -132,6 +132,7 @@ async function readTruth(env, userId, intent = "rights_check") {
   return response.ok ? response.json() : {};
 }
 async function deliver(env, event, answer) {
+  if (env.KENJI_LINE_REPLY_CATEGORY_MODE === 'approved_qa_promo') return false;
   if (!env.LINE_CHANNEL_ACCESS_TOKEN) return false;
   const response = await fetch("https://api.line.me/v2/bot/message/reply", { method: "POST", headers: { authorization: `Bearer ${env.LINE_CHANNEL_ACCESS_TOKEN}`, "content-type": "application/json" },
     body: JSON.stringify({ replyToken: event.replyToken, messages: [{ type: "text", text: answer.slice(0, 1600) }] }), signal: AbortSignal.timeout(3000) });

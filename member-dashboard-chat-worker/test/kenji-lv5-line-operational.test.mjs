@@ -8,7 +8,9 @@ import {
   isKenjiLv5LineOperationalCandidate,
   parseKenjiLv5LineIntent,
   renderKenjiLv5LineReply,
+  resolveKenjiLv5LineOperationalDecision,
 } from "../src/kenji-lv5-line-operational.mjs";
+import { computeFixedCustomerDeposit } from "../../payments-worker/canonical-confirm-link.js";
 import { renderKenjiLv5ModelGateReply } from "../src/kenji-lv5-line-model-gate.mjs";
 import { KENJI_LV5_HYPE_INTERNALS } from "../src/kenji-lv5-hype-alert.mjs";
 import { KENJI_LV5_LINE_REQUEST_INTERNALS } from "../src/kenji-lv5-line-operational-request.mjs";
@@ -72,12 +74,31 @@ test("P3 supports relative Bangkok dates and non-office-hour Thai time", () => {
   assert.equal(extractOperationalTime("บ่ายสอง"), "14:00");
 });
 
-test("customer asking whether full payment is required gets the 30 percent deposit policy", () => {\n  const parsed = parseKenjiLv5LineIntent(event("จ่ายเต็มเลยเหรอครับ"), "payment_status", NOW);\n  assert.equal(parsed.type, "payment_terms");\n  const reply = renderKenjiLv5LineReply({}, parsed);\n  assert.match(reply, /มัดจำ 30%/);\n  assert.match(reply, /ยอดคงเหลือ/);\n  assert.doesNotMatch(reply, /ส่งสลิป|ยังไม่พบสถานะชำระเงิน/);\n});\n\ntest("customer asking whether full payment is required gets the minimum-deposit policy", () => {
+test("customer asking whether full payment is required gets the 30 percent deposit policy", () => {
   const parsed = parseKenjiLv5LineIntent(event("จ่ายเต็มเลยเหรอครับ"), "payment_status", NOW);
   assert.equal(parsed.type, "payment_terms");
   const reply = renderKenjiLv5LineReply({}, parsed);
-  assert.match(reply, /มัดจำขั้นต่ำ 30%/);
-  assert.match(reply, /มากกว่า 30%/);
+  // Policy copy follows the canonical baseline; transaction-specific balance
+  // and a chosen deposit amount belong to the payment contract, not this turn.
+  const baselinePercent = computeFixedCustomerDeposit(10000) / 100;
+  assert.equal(baselinePercent, 30);
+  assert.equal(reply, `มัดจำ ${baselinePercent}% ครับ`);
+  assert.doesNotMatch(reply, /ส่งสลิป|ยังไม่พบสถานะชำระเงิน/);
+});
+
+test("deposit reply is policy-only and does not claim transaction truth", async () => {
+  const parsed = parseKenjiLv5LineIntent(event("จ่ายเต็มเลยเหรอครับ"), "payment_status", NOW);
+  assert.equal(parsed.type, "payment_terms");
+  const reply = renderKenjiLv5LineReply({}, parsed);
+  assert.equal(reply, "มัดจำ 30% ครับ");
+  const decision = await resolveKenjiLv5LineOperationalDecision({
+    event: event("จ่ายเต็มเลยเหรอครับ"), currentIntent: "payment_status", now: NOW,
+  });
+  assert.equal(decision.truth_authority, "payments-worker/canonical-confirm-link");
+  assert.equal(decision.truth_status, "policy");
+  assert.equal(decision.live_truth_used, false);
+  assert.equal(decision.live_truth_verified, false);
+  assert.doesNotMatch(reply, /ยอดคงเหลือ|ชำระสำเร็จ|ตรวจสอบแล้ว|จ่ายครบแล้ว/);
   assert.doesNotMatch(reply, /ส่งสลิป|ยังไม่พบสถานะชำระเงิน/);
 });
 

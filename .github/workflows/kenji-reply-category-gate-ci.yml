@@ -1,0 +1,34 @@
+name: Kenji reply category gate CI
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'member-dashboard-chat-worker/src/**'
+      - 'member-dashboard-chat-worker/test/**'
+      - 'payments-worker/canonical-confirm-link*'
+      - '.github/workflows/kenji-reply-category-gate-ci.yml'
+permissions:
+  contents: read
+jobs:
+  focused-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Focused mocked category and canonical contract tests
+        run: >-
+          node --experimental-global-webcrypto --test
+          member-dashboard-chat-worker/test/kenji-category-source.test.mjs
+          member-dashboard-chat-worker/test/kenji-model-only-owner-lock.test.mjs
+          member-dashboard-chat-worker/test/checkpts-fastpath.test.mjs
+          member-dashboard-chat-worker/test/kenji-seed-runtime-cutover.test.mjs
+          member-dashboard-chat-worker/test/kenji-care-back-booking-precedence.test.mjs
+          member-dashboard-chat-worker/test/kenji-care-back-october.test.mjs
+          member-dashboard-chat-worker/test/kenji-lv5-line-operational.test.mjs
+          member-dashboard-chat-worker/test/kenji-svip-photo-reveal.test.mjs
+          member-dashboard-chat-worker/test/kenji-svip-photo-hype-alert.test.mjs
+          member-dashboard-chat-worker/test/mms-membership-front-gate.test.mjs
+          payments-worker/canonical-confirm-link.test.mjs
