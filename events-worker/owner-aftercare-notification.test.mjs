@@ -1,0 +1,41 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {memoryR2} from '../shared/test/payment-memory-r2.mjs';
+import {notifyAftercareOwner,drainAftercareOwner} from './src/owner-aftercare-notification.js';
+import {listNotificationReviews,resolveNotificationReview} from '../admin-worker/src/notification-manual-review.js';
+test('aftercare manual recovery uses latest evidence and owner inspection',async t=>{
+  const record={id:'recFixture',fields:{session_id:'fixture-session',model_session_state:'under_review',customer_aftercare_json:'synthetic evidence'}};
+  let sends=0,unknown=true;
+  const env={AIRTABLE_BASE_ID:'fixture',AIRTABLE_API_KEY:'synthetic',SESSION_COMPLETION_STATE:memoryR2(),MODEL_RECONFIRM_OWNER_CHAT_ID:'12345',AUTH_SERVICE_EVENTS_TO_TELEGRAM:'synthetic',TELEGRAM_INTERNAL_SEND_URL:'https://telegram.test/send',AIRTABLE_HTTP:{fetch:async()=>Response.json({records:[record]})}};
+  t.mock.method(globalThis,'fetch',async()=>{sends++;if(unknown)throw Error('synthetic lost response');return Response.json({telegram:{ok:true}});});
+  await notifyAftercareOwner(env,record,'customer_completion_approved');
+  const lane='customer-aftercare-owner',item=(await listNotificationReviews(env,{lane})).items[0];
+  assert.equal(item.can_resend,true);unknown=false;
+  const body={lane,id:item.id,snapshot:item.snapshot,decision:'not_received',note:'Checked synthetic owner chat'},actor={id:'synthetic-owner',role:'owner'};
+  record.fields.customer_aftercare_json='changed synthetic evidence';
+  await assert.rejects(resolveNotificationReview(env,body,actor),/aftercare_context_changed/);assert.equal(sends,1);
+  record.fields.customer_aftercare_json='synthetic evidence';
+  assert.equal((await resolveNotificationReview(env,body,actor)).delivered,true);
+  await drainAftercareOwner(env,Date.now()+360000);assert.equal(sends,2);
+});
+test('aftercare accepted with response lost never resends',async t=>{
+  const record={id:'recFixture',fields:{session_id:'fixture-session',model_session_state:'under_review',customer_aftercare_json:'synthetic evidence'}};
+  let accepted=0;
+  const env={AIRTABLE_BASE_ID:'fixture',AIRTABLE_API_KEY:'synthetic',SESSION_COMPLETION_STATE:memoryR2(),MODEL_RECONFIRM_OWNER_CHAT_ID:'12345',AUTH_SERVICE_EVENTS_TO_TELEGRAM:'synthetic',TELEGRAM_INTERNAL_SEND_URL:'https://telegram.test/send',AIRTABLE_HTTP:{fetch:async()=>Response.json({records:[record]})}};
+  t.mock.method(globalThis,'fetch',async()=>{accepted++;throw new Error('synthetic response lost');});
+  assert.equal((await notifyAftercareOwner(env,record,'customer_completion_approved')).status,'manual_review');
+  await drainAftercareOwner(env,Date.now()+360000);
+  await notifyAftercareOwner(env,record,'customer_completion_approved');
+  assert.equal(accepted,1);
+});
+test('approval and review owner notices retry durably with one receipt and no raw review data',async t=>{
+  const record={id:'recFixture',fields:{session_id:'fixture-session',model_session_state:'under_review',customer_aftercare_json:'private synthetic evidence'}};
+  let offline=true,sends=0;
+  const env={AIRTABLE_BASE_ID:'fixture',AIRTABLE_API_KEY:'synthetic',SESSION_COMPLETION_STATE:memoryR2(),MODEL_RECONFIRM_OWNER_CHAT_ID:'12345',AUTH_SERVICE_EVENTS_TO_TELEGRAM:'synthetic',TELEGRAM_INTERNAL_SEND_URL:'https://telegram.test/send',AIRTABLE_HTTP:{fetch:async()=>Response.json({records:[record]})}};
+  t.mock.method(globalThis,'fetch',async(input,init)=>{const request=input instanceof Request?input:new Request(input,init);sends++;const body=await request.json();assert.equal(body.text.includes('private synthetic evidence'),false);return Response.json({telegram:{ok:!offline,...(offline?{error:{ok:false,error_code:429}}:{})}});});
+  assert.equal((await notifyAftercareOwner(env,record,'customer_completion_approved')).ok,false);
+  offline=false;assert.equal((await drainAftercareOwner(env,Date.now()+61000)).delivered,1);assert.equal(sends,2);
+  await drainAftercareOwner(env,Date.now()+120000);assert.equal(sends,2);
+  offline=true;await notifyAftercareOwner(env,record,'customer_review_received');record.fields.customer_aftercare_json='changed evidence';offline=false;
+  assert.equal((await drainAftercareOwner(env,Date.now()+61000)).manual_review,1);assert.equal(sends,3);
+});

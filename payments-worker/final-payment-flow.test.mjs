@@ -178,6 +178,27 @@ test("private final-payment routes reject missing service auth", async () => {
   assert.equal(h.sessionPatches.length, 0);
 });
 
+test('verified final payment promotes the canonical Model Console field, not booking status',async()=>{
+  const h=harness();
+  h.sessionByName.fields.model_session_state='met_customer';
+  h.sessionByName.fields.status='confirmed';
+  await handleFinalPaymentFlow(request(FINAL_PAYMENT_ACTIVATE_PATH),h.env);
+  h.payment.fields[PAYMENT_IDS.status]='Paid';
+  h.payment.fields[PAYMENT_IDS.verification]='verified';
+  const response=await handleFinalPaymentFlow(request(FINAL_PAYMENT_STATUS_PATH),h.env);
+  assert.equal(response.status,200);
+  assert.equal(h.sessionByName.fields.model_session_state,'final_payment_confirmed');
+  assert.equal(h.sessionByName.fields.status,'confirmed');
+});
+
+test('pending final payment never promotes the Model Console lifecycle',async()=>{
+  const h=harness();h.sessionByName.fields.model_session_state='met_customer';
+  await handleFinalPaymentFlow(request(FINAL_PAYMENT_ACTIVATE_PATH),h.env);
+  const response=await handleFinalPaymentFlow(request(FINAL_PAYMENT_STATUS_PATH),h.env);
+  assert.equal((await response.json()).final_payment_confirmed,false);
+  assert.equal(h.sessionByName.fields.model_session_state,'met_customer');
+});
+
 test("arrival activation fails closed when canonical service amount is missing", async () => {
   const h = harness();
   delete h.sessionById.fields[SESSION_IDS.amount];

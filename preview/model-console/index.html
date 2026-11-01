@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>MMD · Session Flow Preview</title>
+  <style>
+    :root{color-scheme:light;--ink:#1c2528;--muted:#5c696e;--line:#d5dddf;--accent:#11695f;--paper:#f3f6f6}
+    *{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:14px/1.6 system-ui,"Noto Sans Thai",sans-serif;letter-spacing:0}button,select{font:inherit}button,a,select{-webkit-tap-highlight-color:transparent}button{min-height:42px;border:1px solid #aab8bc;background:white;color:var(--ink);padding:8px 14px;border-radius:5px;cursor:pointer}button:disabled{opacity:.4;cursor:default}button.primary{background:var(--accent);color:white;border-color:var(--accent)}button:hover:not(:disabled){filter:brightness(.96)}:focus-visible{outline:3px solid #188f9c;outline-offset:3px}
+    .brandbar{background:#172528;color:white;padding:14px 24px;display:flex;gap:20px;align-items:center;justify-content:space-between;flex-wrap:wrap}.brandbar strong{font-size:18px;font-weight:600}.brandbar span{font-size:12px;color:#c4dddd}.dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#88d2b5;margin-right:7px}.controls{padding:20px 24px 14px;border-bottom:1px solid var(--line);background:white;display:grid;grid-template-columns:minmax(250px,1fr) auto;gap:12px 24px;align-items:end}.controls label{display:grid;gap:6px;color:var(--muted);font-size:12px}.controls select{width:100%;min-height:45px;padding:9px 12px;background:var(--paper);color:var(--ink);border:1px solid #abb9bd;border-radius:5px;font-size:15px}.nav{display:flex;gap:8px;align-items:center}.current{padding:10px 24px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:13px}.current time{font-variant-numeric:tabular-nums;color:var(--muted)}.status{color:var(--accent);font-weight:600}.screens{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;padding:0 24px 24px;align-items:start}.role{min-width:0}.role-header{display:flex;justify-content:space-between;align-items:center;gap:10px;min-height:52px;border-bottom:2px solid #b9c6c9}.role-header h2{font-size:16px;margin:0}.role-header a{color:var(--accent);font-size:12px;text-decoration:none;white-space:nowrap}.notice{min-height:136px;padding:14px 0;display:flex;flex-direction:column;justify-content:center;gap:8px}.notice:empty{min-height:30px}.channel{color:var(--muted);font-size:11px;font-weight:600}.message{background:#e5eeeb;border-left:3px solid #54877a;padding:12px;font-size:13px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:270px;overflow:auto}.message.owner{background:#e9edf3;border-color:#617997}.message.pending{color:var(--muted);background:transparent;border-color:var(--line)}.notice button{align-self:flex-start;font-size:13px}.frame{border:1px solid #cbd5d8;border-radius:6px;overflow:hidden;background:white;height:790px}.frame iframe{display:block;width:100%;height:100%;border:0;background:white}.origin{padding:8px 0;font-size:11px;color:var(--muted);overflow-wrap:anywhere}.footer{margin:0 24px 24px;padding-top:14px;border-top:1px solid var(--line);display:flex;flex-wrap:wrap;gap:10px 24px;color:var(--muted);font-size:12px}.toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);padding:12px 20px;background:#223237;color:white;border-radius:5px;z-index:20;max-width:calc(100% - 32px);text-align:center}.viewtabs{display:none}
+    @media(min-width:1700px){.screens,.controls,.current{padding-left:max(24px,calc((100vw - 1640px)/2));padding-right:max(24px,calc((100vw - 1640px)/2))}.frame{height:870px}}
+    @media(max-width:1000px){.controls{grid-template-columns:1fr}.nav{justify-content:space-between}.viewtabs{display:flex;gap:8px;padding:0 16px 14px;flex-wrap:wrap}.viewtabs button[aria-pressed=true]{background:var(--ink);color:white}.screens{grid-template-columns:1fr;padding:0 16px 18px}.role:not(.selected){display:none}.frame{height:800px}.notice{min-height:0}.brandbar,.controls,.current{padding-left:16px;padding-right:16px}.footer{margin-left:16px;margin-right:16px}}
+    @media(max-width:400px){.nav button{padding:8px 10px}.brandbar{gap:4px}.controls{padding-top:14px}.brandbar strong{font-size:17px}.frame{height:760px}}
+  </style>
+</head>
+<body>
+<header class="brandbar"><strong>MMD · SESSION FLOW</strong><span><i class="dot"></i>LOCAL PREVIEW · ข้อมูลจำลอง · ไม่มีการส่งจริง</span></header>
+<section class="controls" aria-label="สถานการณ์ preview"><label>สถานะงานจาก runtime<select id="step" aria-label="เลือกช่วงของงาน" disabled></select></label><div class="nav"><span id="count"></span><button id="back" aria-label="ขั้นก่อนหน้า" hidden>ก่อนหน้า</button><button id="next" hidden>ถัดไป</button></div></section>
+<div class="current"><span id="state" class="status" aria-live="polite"></span><time id="time"></time></div>
+<nav class="viewtabs" aria-label="เลือกฝั่ง"><button data-role="customer" aria-pressed="false">ลูกค้า</button><button data-role="model" aria-pressed="true">นายแบบ</button><button data-role="owner" aria-pressed="false">เปอร์</button></nav>
+<section aria-label="จำลอง retry" style="padding:16px 24px;border-block:1px solid #cbd5d8;background:white">
+<h2 style="font-size:16px;margin:0 0 12px">ทดสอบแจ้งเตือน · ข้อมูลจำลอง</h2>
+<div style="display:flex;gap:8px;flex-wrap:wrap"><button data-retry-demo="retry" class="primary">ตรวจคิว retry</button></div>
+<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button data-fault="reset">เริ่มรอบใหม่</button><button data-fault="notice">จำลองเวลาแจ้งเตือน 18:00</button><button data-fault="arm-owner">ครั้งหน้า: เตือนเปอร์ response หาย</button><button data-fault="arm-payout">ครั้งหน้า: ส่งบัญชี response หาย</button><button data-fault="change-account">เปลี่ยนบัญชีจำลอง ไม่รีเซ็ตงาน</button><button data-fault="advance-day">เลื่อนเป็นวันนัด ไม่รีเซ็ตงาน</button><button data-fault="review-payment">ตรวจหลักฐานชำระจำลองผ่าน Payments Worker</button><button data-fault="proof">ตรวจหลักฐานการส่ง</button></div>
+<pre id="retry-proof" role="status" style="white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.7 system-ui;margin-bottom:0">ยังไม่ได้เลือกเคส</pre></section>
+<main class="screens">
+  <section class="role" data-panel="customer"><header class="role-header"><h2>ลูกค้า · MY MMD</h2><a id="customer-open" target="_blank" rel="noopener">เปิดเต็มหน้า ↗</a></header><div class="notice" data-notice="customer"></div><div class="frame"><iframe title="ฝั่งลูกค้า" id="customer"></iframe></div><div class="origin" id="customer-origin"></div></section>
+  <section class="role selected" data-panel="model"><header class="role-header"><h2>นายแบบ · MY MODEL / CONSOLE</h2><a id="model-open" href="/sigil/model/console?t=preview-only-not-a-token" target="_blank" rel="noopener">เปิดเต็มหน้า ↗</a></header><div class="notice" data-notice="model"></div><div class="frame"><iframe title="ฝั่งนายแบบ" id="model"></iframe></div><div class="origin">Source: MY MODEL + Console · ปุ่มรับทราบจาก source จริง · API ใช้ข้อมูลจำลอง</div></section>
+  <section class="role" data-panel="owner"><header class="role-header"><h2>เปอร์ · TRAVEL & COMPLETION</h2><a href="/internal/admin/jobs/completion" target="_blank" rel="noopener">เปิดเต็มหน้า ↗</a></header><div class="notice" data-notice="owner"></div><div class="frame"><iframe title="ฝั่งเปอร์" id="owner"></iframe></div><div class="origin">Source: สถานะ Session + Events ETA · ตรวจจบงานและจ่ายเงินแยกกัน</div></section>
+</main>
+<footer class="footer"><span>LINE / Telegram: กล่องข้อความจำลอง</span><span>Approval / Review / Payout: โค้ดปัจจุบัน + ที่เก็บข้อมูลในหน่วยความจำ</span><span>ไม่เชื่อม Airtable จริง · ไม่มี push / deploy / โอนเงินจริง</span></footer>
+<div class="toast" id="toast" role="status" hidden></div>
+<script>
+const $=s=>document.querySelector(s), token='preview-only-not-a-token';let current,serial=-1,selectedRole='model';
+const roleTitles={customer:'ลูกค้า',model:'นายแบบ',owner:'เปอร์'};
+function role(name){selectedRole=name;document.querySelectorAll('[data-panel]').forEach(e=>e.classList.toggle('selected',e.dataset.panel===name));document.querySelectorAll('[data-role]').forEach(e=>e.setAttribute('aria-pressed',String(e.dataset.role===name)));}
+document.querySelectorAll('[data-role]').forEach(button=>button.onclick=()=>role(button.dataset.role));
+document.querySelectorAll('[data-fault]').forEach(button=>button.onclick=async()=>{const response=await fetch('/__preview/fault',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:button.dataset.fault})}),data=await response.json();document.getElementById('retry-proof').textContent=JSON.stringify(data,null,2);await load(true);});
+document.querySelectorAll('[data-retry-demo]').forEach(button=>button.onclick=async()=>{
+  const buttons=[...document.querySelectorAll('[data-retry-demo]')];buttons.forEach(b=>b.disabled=true);
+  try{const response=await fetch('/__preview/retry-demo',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:button.dataset.retryDemo})}),data=await response.json();if(!response.ok||!data.ok)throw Error(data.error||'demo_failed');
+    document.getElementById('retry-proof').textContent='เคส: '+data.scenario+' · เรียกตัวส่ง '+data.attempts+' ครั้ง · รับสำเร็จ '+data.delivered+' ครั้ง\n'+data.log.join('\n')+'\nใบรับจาก outbox: '+JSON.stringify(data.journals);role('owner');await load(true);
+  }catch(error){document.getElementById('retry-proof').textContent='ยังยืนยันผลไม่ได้: '+error.message;}finally{buttons.forEach(b=>b.disabled=false);}
+});
+function toast(value){$('#toast').textContent=value;$('#toast').hidden=false;setTimeout(()=>$('#toast').hidden=true,4000);}
+async function select(index){await fetch('/__preview/step',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({index})});await load(true);}
+$('#step').onchange=()=>select($('#step').value);$('#back').onclick=()=>select(current.index-1);$('#next').onclick=()=>{const id=current.steps[current.index].id;select(['paid','hold'].includes(id)?0:id==='ack'?current.steps.findIndex(s=>s.id==='day'):current.index+1);};
+function notices(data){for(const roleName of ['customer','model','owner']){
+const host=$('[data-notice='+roleName+']');host.replaceChildren();const items=data.messages.filter(x=>x.role===roleName);const item=items.at(-1);
+const label=document.createElement('span');label.className='channel';label.textContent=item?.channel||roleTitles[roleName]+' · สถานะ';host.append(label);
+const message=document.createElement('div');message.className='message '+roleName+(item?'':' pending');message.textContent=item?.text||({customer:'ติดตามสถานะงานได้จาก MY MMD',model:'อัปเดตเฉพาะเมื่อเกิดขึ้นจริง · ปุ่มตาม allowed_actions',owner:data.state==='closed'?'ปิดงานแล้ว · มีเลขอ้างอิงการโอนจำลอง':'รอลูกค้าอนุมัติและตรวจจบงานก่อนจ่าย'})[roleName];host.append(message);
+}}
+async function load(force=false){const data=await fetch('/__preview/state').then(r=>r.json());if(!force&&data.revision===serial)return;serial=data.revision;current=data;
+if(!$('#step').options.length)data.steps.forEach((x,index)=>{const o=document.createElement('option');o.value=index;o.textContent=x.label;$('#step').append(o);});
+$('#step').value=data.index;$('#count').textContent=(data.index+1)+' / '+data.steps.length;$('#state').textContent=data.steps[data.index].label+' · '+data.state;$('#time').textContent=data.steps[data.index].time+' ICT';$('#back').disabled=data.index===0;$('#next').textContent=['hold','paid'].includes(data.steps[data.index].id)?'เริ่มใหม่ ↻':'ถัดไป →';
+const after=['separated','under_review','payout_pending','closed'].includes(data.state),customerPath=after?'/aftercare':'/sigil/confirm/job-confirmation';
+const modelPath=['notice','overdue','ack'].includes(data.steps[data.index].id)?'/sigil/model/dashboard':'/sigil/model/console';$('#model-open').href=modelPath+'?t='+token;
+for(const [name,pathname] of [['customer',customerPath],['model',modelPath],['owner','/internal/admin/jobs/completion']]){
+const frame=$('#'+name);frame.src=pathname+'?t='+token+'&preview_revision='+serial+(name==='customer'&&after?(['separated','approved'].includes(data.steps[data.index].id)?'#completionApproval':'#aftercareForm'):'');
+}$('#customer-open').href=customerPath+'?t='+token;$('#customer-origin').textContent=after?'Source: Aftercare V2 · CSS + fonts + logo จากชุด build จริง':'Source: Customer Atelier + Customer Session Tracker V2';notices(data);
+}
+window.addEventListener('message',event=>{if(event.origin!==location.origin)return;if(event.data?.type==='mmd-preview-changed')setTimeout(()=>load(),350);if(event.data?.type==='mmd-preview-link')toast('Preview ไม่เปิดบริการภายนอก: '+event.data.label);});
+load();setInterval(()=>load(),1500);
+</script>
+</body></html>

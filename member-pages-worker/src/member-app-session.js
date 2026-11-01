@@ -1,5 +1,6 @@
 const AIRTABLE_API = "https://api.airtable.com/v0";
-import { projectTravel, resolveTravelEta, travelJson, travelPhotoResponse } from '../../shared/model-travel-store.mjs';
+import { readTravelSession } from '../../shared/model-travel-store.mjs';
+import { assertTravelCustomer, cancelTravelSubmission, commitTravelSubmission, meetingBinding, prepareTravelSubmission, projectTravel, readBoundedTravelBody, resolveTravelEta, saveMeetingDetails, travelJson, travelPhotoResponse, uploadTravelPhoto } from '../../shared/model-travel-store.mjs';
 import { travelClock, travelEtaFromEvents } from '../../shared/model-travel-eta.mjs';
 import { customerSessionLifecycle as lifecycleOf } from '../../shared/model-travel-lifecycle.mjs';
 const DEFAULT_SESSIONS_TABLE = "Sessions";
@@ -20,15 +21,58 @@ export async function handleMemberAppSessionApi(request, env = {}, readSession) 
   const path = normalizePath(new URL(request.url).pathname);
   if (path === `${SESSION_PATH}travel` || path === `${SESSION_PATH}travel/photo`) {
     try {
-      if (request.method !== 'GET') return travelJson({ ok: false, error: 'method_not_allowed' }, 405);
-      const identity = await readSession(request, env);
-      if (!identity?.lineUserId) return travelJson({ ok: false, error: 'member_session_required' }, 401);
-      const params = new URL(request.url).searchParams;
-      const id = params.get('session_id');
-      if (params.has('client_id') || params.has('member_id') || params.has('line_user_id') || params.getAll('session_id').length !== 1 || !/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,159}$/.test(id || '')) return travelJson({ ok: false, error: 'invalid_session_selector' }, 400);
-      const record = await findOwnedSessionById(env, identity, id);
+      const method = request.method, url = new URL(request.url);
+      if (!['GET', 'POST', 'PUT'].includes(method) || (path.endsWith('/photo') && method !== 'GET')) return travelJson({ ok: false, error: 'method_not_allowed' }, 405);
+      let identity = await readSession(request, env);
+      const authorization=request.headers.get('authorization');
+      let signedId=null;
+      if(authorization){
+        if(!/^Bearer [^\s]{1,12000}$/.test(authorization))return travelJson({ok:false,error:'confirmation_token_invalid'},401);
+        if(!env.PAYMENTS_WORKER?.fetch)return travelJson({ok:false,error:'confirmation_verifier_unavailable'},503);
+        const verified=await env.PAYMENTS_WORKER.fetch(new Request(new URL('/v1/confirm/details',request.url),{method:'POST',headers:{'content-type':'application/json',origin:url.origin},body:JSON.stringify({t:authorization.slice(7),expected_role:'customer'}),signal:AbortSignal.timeout(10000)}));
+        const subject=await verified.json().catch(()=>null);
+        if(!verified.ok||subject?.ok!==true||subject.role!=='customer'||!subject.session_id)return travelJson({ok:false,error:'confirmation_token_invalid'},401);
+        signedId=subject.session_id;
+      }
+      if (!signedId&&!identity?.lineUserId) return travelJson({ ok: false, error: 'member_session_required' }, 401);
+      if (method !== 'GET' && identity?.readGraceOnly === true) return travelJson({ok:false,error:'member_session_refresh_required'},401);
+      if (method !== 'GET' && (request.headers.get('origin') !== url.origin || request.headers.get('sec-fetch-site') === 'cross-site')) return travelJson({ ok: false, error: 'origin_not_allowed' }, 403);
+      let body = null;
+      if (method === 'POST') {
+        try { body = JSON.parse(new TextDecoder().decode(await readBoundedTravelBody(request, 8192))); }
+        catch (error) { return travelJson({ok:false,error:error.code || 'invalid_json'}, error.status || 400); }
+      }
+      const params = url.searchParams, id = body?.session_id || params.get('session_id');
+      const selectors = ['client_id', 'member_id', 'line_user_id', 'model_id', 'model_record_id', 'sender_role', 'sender_id', 'role'];
+      if (selectors.some(key => params.has(key) || Object.hasOwn(body || {}, key)) || params.getAll('session_id').length > 1
+        || (body?.session_id && params.has('session_id') && body.session_id !== params.get('session_id'))
+        || !/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,159}$/.test(id || '')) return travelJson({ ok: false, error: 'invalid_session_selector' }, 400);
+      if(signedId&&signedId!==id)return travelJson({ok:false,error:'confirmation_session_mismatch'},403);
+      const record = signedId?await readTravelSession(env,id):await findOwnedSessionById(env, identity, id);
       if (!record) return travelJson({ ok: false, error: 'session_not_found' }, 404);
-      return path.endsWith('/photo') ? await travelPhotoResponse(env, record, params.get('media_id')) : travelJson(await projectTravel(env, record));
+      if(signedId){
+        if(identity?.lineUserId)assertTravelCustomer(record,identity);
+        else identity={lineUserId:record.fields.line_user_id,memberId:Array.isArray(record.fields.member_id)?record.fields.member_id[0]:record.fields.member_id};
+      }
+      assertTravelCustomer(record, identity);
+      if (path.endsWith('/photo')) return await travelPhotoResponse(env, record, params.get('media_id'));
+      if (method === 'GET') {
+        const data = await projectTravel(env, record, 'customer');
+        if (identity.readGraceOnly === true) {data.can_send = false;data.can_edit_meeting=false;}
+        return travelJson(data);
+      }
+      if (method === 'PUT') {
+        if (params.getAll('index').length !== 1 || !/^[0-2]$/.test(params.get('index') || '')) return travelJson({ok:false,error:'travel_photo_invalid'},400);
+        return travelJson(await uploadTravelPhoto(env, record, identity, params.get('id'), Number(params.get('index')), request, Date.now(), 'customer'));
+      }
+      if (body?.action === 'prepare') return travelJson(await prepareTravelSubmission(env, record, identity, body, Date.now(), 'customer'));
+      if (body?.action === 'save_meeting_details') {
+        if(body.context_binding!==await meetingBinding(env,record))return travelJson({ok:false,error:'travel_binding_changed'},409);
+        return travelJson(await saveMeetingDetails(env,record,identity,body.details));
+      }
+      if (body?.action === 'commit') return travelJson(await commitTravelSubmission(env, record, identity, body.id, Date.now(), 'customer'));
+      if (body?.action === 'cancel') return travelJson(await cancelTravelSubmission(env, record, identity, body.id, Date.now(), 'customer'));
+      return travelJson({ok:false,error:'travel_action_invalid'},400);
     } catch (error) { return travelJson({ ok: false, error: error.code || 'travel_unavailable' }, error.status || 503); }
   }
   const allowed = path === `${SESSION_PATH}ack` ? "POST" : "GET";

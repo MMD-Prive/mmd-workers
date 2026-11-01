@@ -7,6 +7,7 @@ import worker from "./src/index.js";
 
 const CONFIRM_KEY = "test_confirm_key_runtime_v1a";
 const AUTH_SERVICE_ADMIN_TO_PAYMENTS = "test_admin_to_payments_runtime_v1a";
+const bangkokToday = () => new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
 const BASE_ENV = {
   CONFIRM_KEY,
   AUTH_SERVICE_ADMIN_TO_PAYMENTS,
@@ -69,6 +70,7 @@ function makeSession(state) {
       model_session_state: state,
       model_name: "Book EI",
       job_type: "LIVE JOB",
+      client_name: "คุณเอ · ชื่อที่ใช้ในงาน",
       job_date: "2026-09-17",
       start_time: "2026-09-17T18:00:00.000Z",
       end_time: "2026-09-17T22:00:00.000Z",
@@ -299,8 +301,11 @@ test("GET /v1/model/session/current returns owned job details, model payout, sta
     assert.equal(body.session.normalized_state, "confirmed");
     assert.equal(body.session.page, "assigned");
     assert.equal(body.session.route, "/model/session/assigned");
-    assert.deepEqual(body.session.allowed_actions, ["start_travel"]);
+    assert.deepEqual(body.session.allowed_actions, []);
     assert.equal(body.session.job_type, "LIVE JOB");
+    assert.equal(body.session.client_name, "คุณเอ · ชื่อที่ใช้ในงาน");
+    assert.equal(body.session.customer_phone, undefined);
+    assert.equal(body.session.bank_account, undefined);
     assert.equal(body.session.job_date, "2026-09-17");
     assert.equal(body.session.start_time, "2026-09-17T18:00:00.000Z");
     assert.equal(body.session.end_time, "2026-09-17T22:00:00.000Z");
@@ -480,6 +485,7 @@ test("valid transition: confirmed + start_travel -> en_route", async () => {
   const t = await signedModelT();
   const mock = installRuntimeFetchMock({ initialState: "confirmed" });
   try {
+    mock.session.fields.job_date = bangkokToday();
     const { response, body } = await postAction(t, "start_travel");
     assert.equal(response.status, 200);
     assert.equal(body.session.normalized_state, "en_route");
@@ -492,12 +498,27 @@ test("legacy action alias: confirmed + go_en_route -> en_route", async () => {
   const t = await signedModelT();
   const mock = installRuntimeFetchMock({ initialState: "confirmed" });
   try {
+    mock.session.fields.job_date = bangkokToday();
     const { response, body } = await postAction(t, "go_en_route");
     assert.equal(response.status, 200);
     assert.equal(body.session.normalized_state, "en_route");
   } finally {
     mock.restore();
   }
+});
+
+test("D-1 travel is hidden and rejected without a state write", async () => {
+  const t = await signedModelT();
+  const mock = installRuntimeFetchMock({ initialState: "confirmed" });
+  try {
+    mock.session.fields.job_date = new Date(Date.parse(`${bangkokToday()}T00:00:00Z`) + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const current = await getCurrent(t);
+    assert.deepEqual(current.body.session.allowed_actions, []);
+    const action = await postAction(t, "start_travel");
+    assert.equal(action.response.status, 409);
+    assert.equal(action.body.error, "travel_not_on_job_day");
+    assert.equal(mock.calls.filter(call => call.method === "PATCH").length, 0);
+  } finally { mock.restore(); }
 });
 
 test("valid transition: en_route + mark_arrived -> arrived", async () => {
@@ -602,6 +623,7 @@ test("allowed_actions is a UI hint but POST revalidates current server state", a
   const t = await signedModelT();
   const mock = installRuntimeFetchMock({ initialState: "confirmed" });
   try {
+    mock.session.fields.job_date = bangkokToday();
     const current = await getCurrent(t);
     assert.deepEqual(current.body.session.allowed_actions, ["start_travel"]);
 

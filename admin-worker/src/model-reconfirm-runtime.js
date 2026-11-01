@@ -250,7 +250,7 @@ export function buildReconfirmSchedule(jobDate) {
   const ymd = base.toISOString().slice(0, 10);
   return {
     status: "scheduled",
-    required_at: `${ymd}T16:00:00+07:00`,
+    required_at: `${ymd}T18:00:00+07:00`,
     reminder_at: `${ymd}T18:00:00+07:00`,
     overdue_at: `${ymd}T19:00:00+07:00`,
     acknowledged_at: null,
@@ -324,6 +324,13 @@ function noticeAge(reconfirm, now) {
   const at = Date.parse(reconfirm.notified_at);
   return Number.isFinite(at) && at <= now ? now - at : -1;
 }
+function isLegacyReconfirmSchedule(reconfirm, schedule) {
+  if (!reconfirm || !schedule) return false;
+  const day = schedule.required_at.slice(0, 10);
+  return reconfirm.required_at === `${day}T16:00:00+07:00` &&
+    reconfirm.reminder_at === schedule.reminder_at &&
+    reconfirm.overdue_at === schedule.overdue_at;
+}
 async function reconfirmRetryKey(record, step) {
   const hash = await reconfirmRevision({ record:record.id, snapshot:reconfirmSnapshot(record.fields), step });
   return `${hash.slice(0,8)}-${hash.slice(8,12)}-4${hash.slice(13,16)}-8${hash.slice(17,20)}-${hash.slice(20,32)}`;
@@ -346,7 +353,8 @@ async function freshForDispatch(env, record, now, counters) {
     reason = result.action === "current" ? "" : result.reason;
     const schedule = buildReconfirmSchedule(sessionJobDate(env, fresh.record.fields));
     const reconfirm = reconfirmFromFields(env, fresh.record.fields, now);
-    if (!reason && reconfirm && ["required_at","reminder_at","overdue_at"].some(k=>Date.parse(reconfirm[k])!==Date.parse(schedule?.[k]))) reason="reconfirm_schedule_superseded";
+    if (!reason && reconfirm && !isLegacyReconfirmSchedule(reconfirm, schedule) &&
+        ["required_at","reminder_at","overdue_at"].some(k=>Date.parse(reconfirm[k])!==Date.parse(schedule?.[k]))) reason="reconfirm_schedule_superseded";
     if (!reason && result.resolved_at && reconfirm?.acknowledged_at && Date.parse(reconfirm.acknowledged_at)<Date.parse(result.resolved_at)) reason="reconfirm_ack_superseded";
     // One more read after resolution lookup; no send based on an earlier snapshot.
     if (!reason) {
@@ -362,14 +370,16 @@ async function freshForDispatch(env, record, now, counters) {
   return false;
 }
 
-// The three D-1 steps (16:00 notify, 18:00 reminder, 19:00 ops alert). Shared by the legacy sweep and guard v2.
+// D-1 notice at 18:00 and owner alert at 19:00. Older persisted 16:00 schedules remain readable.
 // `guard` is only passed by guard v2; without it the behavior is exactly the legacy one.
 async function runReconfirmSteps(env, record, reconfirm, now, counters, guard = null) {
   const requiredMs = Date.parse(reconfirm.required_at);
   const reminderMs = Date.parse(reconfirm.reminder_at);
   const overdueMs = Date.parse(reconfirm.overdue_at);
+  const currentSchedule = buildReconfirmSchedule(sessionJobDate(env, record.fields || {}));
+  const effectiveRequiredMs = Math.max(requiredMs, Date.parse(currentSchedule?.required_at));
 
-  if (Number.isFinite(requiredMs) && now >= requiredMs && !reconfirm.notified_at) {
+  if (Number.isFinite(effectiveRequiredMs) && now >= effectiveRequiredMs && !reconfirm.notified_at) {
     if (!await freshForDispatch(env, record, now, counters)) return;
     const sent = await pushModelReconfirm(env, record, false);
     if (sent.ok) {
@@ -386,7 +396,7 @@ async function runReconfirmSteps(env, record, reconfirm, now, counters, guard = 
     reconfirm = reconfirmFromFields(env, record.fields || {}, now) || reconfirm;
   }
 
-  if (Number.isFinite(reminderMs) && now >= reminderMs && !reconfirm.reminder_notified_at && reconfirm.status !== "acknowledged" && noticeAge(reconfirm, now) >= 2 * 3600000) {
+  if (Number.isFinite(reminderMs) && now >= reminderMs && now < overdueMs && !reconfirm.reminder_notified_at && reconfirm.status !== "acknowledged" && noticeAge(reconfirm, now) >= 2 * 3600000) {
     if (!await freshForDispatch(env, record, now, counters)) return;
     const sent = await pushModelReconfirm(env, record, true);
     if (sent.ok) {
@@ -401,7 +411,7 @@ async function runReconfirmSteps(env, record, reconfirm, now, counters, guard = 
     reconfirm = reconfirmFromFields(env, record.fields || {}, now) || reconfirm;
   }
 
-  if (Number.isFinite(overdueMs) && now >= overdueMs && !reconfirm.ops_alerted_at && reconfirm.status !== "acknowledged" && noticeAge(reconfirm, now) >= 3 * 3600000) {
+  if (Number.isFinite(overdueMs) && now >= overdueMs && !reconfirm.ops_alerted_at && reconfirm.status !== "acknowledged" && reconfirm.notified_at) {
     if (!await freshForDispatch(env, record, now, counters)) return;
     const alert = await sendOpsReconfirmOverdue(env, record);
     if (alert.ok) {
@@ -483,8 +493,9 @@ async function runGuardedReconfirmSweep(env, { now, maxRecords }) {
       reconfirm = reconfirmFromFields(env, record.fields, now);
     }
     if (!reconfirm || reconfirm.status === "acknowledged") { counters.skipped += 1; continue; }
-    // Never notify before the canonical D-1 16:00 ICT moment.
-    const requiredMs = Date.parse(reconfirm.required_at);
+    // Legacy persisted 16:00 schedules must also wait until D-1 18:00 ICT.
+    const schedule = buildReconfirmSchedule(sessionJobDate(env, record.fields || {}));
+    const requiredMs = Math.max(Date.parse(reconfirm.required_at), Date.parse(schedule?.required_at));
     if (Number.isFinite(requiredMs) && now < requiredMs) { counters.skipped += 1; continue; }
 
     counters.processed += 1;
@@ -552,6 +563,7 @@ export async function sendOwnerFallback(env, destination, { text, sessionId = ""
   try {
     const response = await fetch(endpoint, {
       method: "POST",
+      signal: AbortSignal.timeout(10000),
       headers: { "content-type": "application/json", "x-internal-token": token },
       body: JSON.stringify(payload),
     });
@@ -636,6 +648,10 @@ function reconfirmFromFields(env, fields, nowMs) {
     risk_level: clean(fields?.[names.riskLevel]) || "normal",
     backup_required: truthy(fields?.[names.backupRequired]),
   };
+  const currentSchedule = buildReconfirmSchedule(sessionJobDate(env, fields));
+  if (!reconfirm.notified_at && !reconfirm.acknowledged_at && isLegacyReconfirmSchedule(reconfirm, currentSchedule)) {
+    reconfirm.required_at = currentSchedule.required_at;
+  }
   reconfirm.status = reconfirm.status === "acknowledged" ? "acknowledged" : deriveReconfirmStatus(reconfirm, nowMs);
   return reconfirm;
 }
@@ -844,10 +860,8 @@ async function pushModelReconfirm(env, sessionRecord, reminder) {
 }
 
 async function sendOpsReconfirmOverdue(env, sessionRecord) {
-  const endpoint = clean(env.TELEGRAM_INTERNAL_SEND_URL);
-  const serviceToken = clean(env.AUTH_SERVICE_EVENTS_TO_TELEGRAM || env.AUTH_SERVICE_STUDIO_TO_TELEGRAM);
-  const chatId = clean(env.TELEGRAM_BOOKING_CHAT_ID || env.TELEGRAM_ADMIN_CHAT_ID || env.TELEGRAM_CHAT_ID);
-  if (!endpoint || !serviceToken || !chatId) return { ok: false, error: "reconfirm_ops_notify_config_missing" };
+  const destination = resolveOwnerDestination(env);
+  if (!destination) return { ok: false, error: "owner_destination_missing" };
 
   const fields = sessionRecord.fields || {};
   const sessionId = sessionIdFromFields(env, fields) || sessionRecord.id;
@@ -864,27 +878,7 @@ async function sendOpsReconfirmOverdue(env, sessionRecord) {
     "งานยังไม่ถูกยกเลิก และยังไม่แจ้งลูกค้าว่างานมีปัญหา",
   ].join("\n");
 
-  const threadId = clean(env.TG_THREAD_BOOKING || env.TG_THREAD_ALERTS_EXCEPTIONS || env.TG_THREAD_ALERT || env.TELEGRAM_THREAD_ID);
-  const payload = {
-    chat_id: chatId,
-    text,
-    parse_mode: "HTML",
-    disable_web_page_preview: true,
-    source: "events-worker",
-    intent: "model_reconfirm_overdue",
-    session_id: sessionId,
-  };
-  if (threadId) {
-    payload.message_thread_id = threadId;
-    payload.thread_id = threadId;
-  }
-
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-internal-token": serviceToken },
-    body: JSON.stringify(payload),
-  });
-  return response.ok ? { ok: true } : { ok: false, error: `telegram_http_${response.status}` };
+  return sendOwnerFallback(env, destination, { text, sessionId, intent: "model_reconfirm_overdue" });
 }
 
 async function resolveModelLineUserId(env, sessionFieldsValue) {

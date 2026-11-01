@@ -60,7 +60,7 @@
   const q = selector => root.querySelector(selector);
   const text = (selector, value) => { const node = q(selector); if (node) node.textContent = value; };
   const form = q('[data-mss-profile-form]'), workspace = q('[data-mm-workspace]');
-  let profile = null, busy = false, alive = true;
+  let profile = null, busy = false, alive = true, jobSession = null, jobGeneration = 0, acknowledging = false;
   const controllers = new Set();
   async function request(path, options = {}) {
     const controller = new AbortController(); controllers.add(controller);
@@ -77,12 +77,18 @@
     text('#mmverify-title', title); text('[data-mm-copy]', copy);
   }
   function clearJob() {
+    if(typeof renderModelJobBrief==='function')renderModelJobBrief(root,null);
+    jobSession = null;
+    q('[data-mm-reconfirm]').hidden = true;
+    q('[data-mm-reconfirm-ack]').disabled = true;
+    text('[data-mm-reconfirm-time]', ''); text('[data-mm-reconfirm-location]', ''); text('[data-mm-reconfirm-status]', '');
     root.dataset.modelBrandLane = 'public';
     q('[data-mm-console]').href = '/sigil/model/console';
     text('[data-mm-job]', 'ยังตรวจงานไม่สำเร็จ');
     text('[data-mm-job-copy]', 'ยังสรุปไม่ได้ว่าไม่มีงาน ลองตรวจอีกครั้งหรือให้ MMD ช่วย');
   }
   function locked(error) {
+    jobGeneration += 1;
     profile = null; workspace.hidden = true; form.reset();
     q('[data-mm-gallery]').replaceChildren();
     global.dispatchEvent(new CustomEvent('mmd:model-workspace-locked'));
@@ -120,21 +126,55 @@
     text('[data-mss-rate]', model.minimum_rate_90m ? new Intl.NumberFormat('th-TH', {style:'currency',currency:'THB',maximumFractionDigits:0}).format(model.minimum_rate_90m) : '—');
     global.dispatchEvent(new CustomEvent('mmd:model-profile-ready', { detail: { ok: true } }));
   }
+  const reconfirmAction = 'acknowledge_reconfirm';
+  function reconfirmed(session) {
+    return session?.reconfirm?.status === 'acknowledged' && Number.isFinite(Date.parse(session.reconfirm.acknowledged_at));
+  }
+  function canReconfirm(session) {
+    return ['confirmed','accepted'].includes(session?.normalized_state || session?.state) && ['scheduled','pending','overdue'].includes(session.reconfirm?.status) &&
+      Array.isArray(session.allowed_actions) && session.allowed_actions.includes(reconfirmAction);
+  }
+  function jobFingerprint(session) {
+    return JSON.stringify([session?.session_id,session?.job_date,session?.start_time,session?.end_time,session?.location_name,
+      session?.job_type,session?.reconfirm?.required_at,session?.reconfirm?.notified_at]);
+  }
+  function renderReconfirm(session) {
+    const panel=q('[data-mm-reconfirm]'), button=q('[data-mm-reconfirm-ack]');
+    const eligible=['confirmed','accepted'].includes(session?.normalized_state || session?.state) && session.reconfirm && (canReconfirm(session) || reconfirmed(session));
+    panel.hidden=!eligible; button.disabled=acknowledging || !canReconfirm(session);
+    if(!eligible)return;
+    const start=String(session.start_time||''), date=new Date(start.includes('T')?start:session.job_date);
+    const dateText=Number.isFinite(date.getTime())?new Intl.DateTimeFormat('th-TH',{timeZone:'Asia/Bangkok',dateStyle:'medium',...(start.includes('T')?{timeStyle:'short'}:{})}).format(date):session.job_date||'';
+    text('[data-mm-reconfirm-time]',[dateText,!start.includes('T')?start:''].filter(Boolean).join(' · ')||'ยังไม่ระบุ');
+    text('[data-mm-reconfirm-location]', session.location_name || 'ยังไม่ระบุ');
+    button.textContent=reconfirmed(session)?'รับทราบแล้ว':'รับทราบงานแล้ว';
+    text('[data-mm-reconfirm-status]',reconfirmed(session)?'ระบบบันทึกการรับทราบแล้วครับ':acknowledging?'กำลังยืนยันกับระบบ…':session.reconfirm.status==='overdue'?'เลยเวลารับทราบแล้ว เปอร์จะช่วยตรวจสอบครับ':'ตรวจรายละเอียดงานให้ครบ แล้วกดรับทราบครับ');
+  }
+  function showJob(data) {
+    const session=data.session,params=new URLSearchParams(global.location.search);
+    jobSession=session;
+    if(typeof renderModelJobBrief==='function')renderModelJobBrief(root,session);
+    root.dataset.modelBrandLane=world(data,params.get('session_id')||'');
+    text('[data-mm-job]', 'มีงานของคุณใน Console');
+    text('[data-mm-job-copy]', 'ดูบรีฟ ยอดเงินถึงตัวคุณ และอัปเดตตามขั้นตอนจริงใน Console');
+    const link=new URL('/sigil/model/console',global.location.origin);
+    if(params.get('t'))link.searchParams.set('t',params.get('t'));
+    q('[data-mm-console]').href=link.href;
+    renderReconfirm(session);
+    global.dispatchEvent(new CustomEvent('mmd:model-session-ready',{detail:data}));
+  }
   async function currentJob() {
+    const generation=++jobGeneration,identity=profile;
     clearJob();
     const params = new URLSearchParams(global.location.search), url = new URL('/v1/model/session/current', global.location.origin);
     if (params.get('t')) url.searchParams.set('t', params.get('t'));
     try {
       const data = await request(url.href), session = data.session;
+      if(generation!==jobGeneration || profile!==identity)return;
       if (!session?.session_id || (params.get('session_id') && params.get('session_id') !== session.session_id)) throw new Error('current_session_review_required');
-      root.dataset.modelBrandLane = world(data, params.get('session_id') || '');
-      text('[data-mm-job]', 'มีงานของคุณใน Console');
-      text('[data-mm-job-copy]', 'ดูบรีฟ ยอดเงินถึงตัวคุณ และอัปเดตตามขั้นตอนจริงใน Console');
-      const consoleLink = new URL('/sigil/model/console', global.location.origin);
-      if (params.get('t')) consoleLink.searchParams.set('t', params.get('t'));
-      q('[data-mm-console]').href = consoleLink.href;
-      global.dispatchEvent(new CustomEvent('mmd:model-session-ready', {detail:data}));
+      showJob(data);
     } catch (error) {
+      if(generation!==jobGeneration || profile!==identity)return;
       if (error.status === 404 && ['session_not_found', 'active_session_not_found'].includes(error.message)) {
         text('[data-mm-job]', 'ยังไม่มีงานที่กำลังใช้งาน');
         text('[data-mm-job-copy]', 'บัญชีเชื่อมแล้ว จัดการโปรไฟล์หรือเปิด Jobs Today ต่อได้');
@@ -144,6 +184,31 @@
       } else if (classify(error) === 'login') locked(error);
     }
   }
+  q('[data-mm-reconfirm-ack]').addEventListener('click',async()=>{
+    if(acknowledging || busy || !profile || !alive || !canReconfirm(jobSession))return;
+    const session=jobSession,identity=profile,generation=jobGeneration;
+    const current=()=>alive && profile===identity && jobGeneration===generation && jobSession===session;
+    acknowledging=true;renderReconfirm(session);
+    try {
+      const params=new URLSearchParams(global.location.search),url=new URL('/v1/model/session/current',global.location.origin);
+      if(params.get('t'))url.searchParams.set('t',params.get('t'));
+      const fresh=await request(url.href);
+      if(!current())return;
+      if(fresh.session?.session_id!==session.session_id)throw new Error('session_mismatch');
+      if(reconfirmed(fresh.session)){showJob(fresh);return;}
+      if(!canReconfirm(fresh.session) || jobFingerprint(fresh.session)!==jobFingerprint(session))throw new Error('reconfirm_snapshot_changed');
+      const body={action:reconfirmAction,session_id:session.session_id};
+      if(params.get('t'))body.t=params.get('t');
+      const saved=await request('/v1/model/session/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+      if(!current())return;
+      if(saved.session?.session_id!==session.session_id || !reconfirmed(saved.session))throw new Error('reconfirm_acknowledgement_unconfirmed');
+      showJob(saved);
+    } catch(error) {
+      if(!current())return;
+      if(['login','denied'].includes(classify(error)))locked(error);
+      else {clearJob();text('[data-mm-job-copy]','ยังยืนยันการรับทราบไม่ได้ กดตรวจสถานะอีกครั้งก่อนลองใหม่ครับ');}
+    } finally {acknowledging=false;if(alive&&profile===identity&&jobSession)renderReconfirm(jobSession);}
+  });
   async function boot() {
     if (busy || !alive) return; busy = true; q('[data-mm-refresh]').disabled = true;
     try {

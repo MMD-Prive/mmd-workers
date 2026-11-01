@@ -1,5 +1,10 @@
 import { readCanonicalCurrentSession, canonicalModelIds } from "./model-current-session.js";
+import {readModelPayout} from './model-payout-read.js';
+import {readModelCustomerPayment} from './model-customer-payment-read.js';
 import { normalizeModelDecline } from "../../shared/model-decline-options.mjs";
+import {normalizeWrongLocation} from "../../shared/model-meeting-details.mjs";
+import {notifyOwnerWrongLocation} from './model-travel-owner.js';
+import {meetingBinding} from '../../shared/model-travel-store.mjs';
 import { notifyTravelEvent } from "./model-travel-notification.js";
 import { requestMemberReplyRefresh } from "../../shared/member-reply-refresh.mjs";
 import { validateJobServicePricing, withJobServicePricingNote } from "./job-service-pricing.js";
@@ -53,6 +58,7 @@ import {
 } from "./unified-model-drive-link.js";
 import {
   getAllowedModelSessionActions,
+  isBangkokJobDay,
   normalizeModelSessionAction,
   normalizeSessionState,
   resolveModelSessionPage,
@@ -187,6 +193,7 @@ const MODEL_SESSION_MODEL_ALLOWED_ACTIONS = new Set([
   "confirm_separated",
   "start_work",
   "go_en_route",
+  "report_wrong_location",
 ]);
 
 export default {
@@ -2280,6 +2287,7 @@ function modelSessionTables(env = {}) {
         status: str(env.AT_SESSIONS__STATUS || "status"),
         modelRecordId: str(env.AT_SESSIONS__MODEL_RECORD_ID || "Assigned Model"),
         modelName: str(env.AT_SESSIONS__MODEL_NAME || "model_name"),
+        clientName: str(env.AT_SESSIONS__CLIENT_NAME || "client_name"),
         jobType: str(env.AT_SESSIONS__JOB_TYPE || "job_type"),
         jobDate: str(env.AT_SESSIONS__JOB_DATE || "job_date"),
         startTime: str(env.AT_SESSIONS__START_TIME || "start_time"),
@@ -2612,15 +2620,19 @@ function modelSessionResponseSession(tables, record) {
   const packageCode = str(fields[names.packageCode] || "");
   const modelWorkLane = str(fields[names.modelWorkLane] || "");
   const safePayModelThb = Number.isFinite(payModelThb) && payModelThb > 0 ? payModelThb : null;
+  const jobDate = str(fields[names.jobDate] || "");
+  const allowedActions = getAllowedModelSessionActions(normalized).filter(action =>
+    action !== "start_travel" || isBangkokJobDay(jobDate));
   return {
     session_id: str(fields[names.sessionId] || ""),
     state: stateInfo.state,
     normalized_state: normalized,
     page: modelSessionPageSlug(page),
     route: page?.path || "",
-    allowed_actions: getAllowedModelSessionActions(normalized),
+    allowed_actions: allowedActions,
     job_type: str(fields[names.jobType] || ""),
-    job_date: str(fields[names.jobDate] || ""),
+    client_name: str(fields[names.clientName] || ""),
+    job_date: jobDate,
     start_time: str(fields[names.startTime] || ""),
     end_time: str(fields[names.endTime] || ""),
     location_name: str(fields[names.locationName] || ""),
@@ -2923,9 +2935,12 @@ async function handleModelSessionCurrent(req, env) {
   }
 
   const extension = await findPublicExtensionForSession(env, context.session);
+  const view=modelSessionResponseSession(context.tables, context.session);
+  view.payout=await readModelPayout(env,context.session,view);
+  view.customer_payment=await readModelCustomerPayment(env,context.session,view);
   return modelSessionJson({
     ok: true,
-    session: modelSessionResponseSession(context.tables, context.session),
+    session: view,
     extension_request: publicExtensionModelProjection(extension),
   });
 }
@@ -3012,18 +3027,22 @@ async function handleModelSessionAction(req, env) {
 
   const decline = action === "decline_job" ? normalizeModelDecline(body) : null;
   if (decline && !decline.ok) return modelSessionJson({ ok: false, error: decline.error }, 400);
+  let locationReport=null;
+  if (action==='report_wrong_location') {
+    try {locationReport=normalizeWrongLocation(body?.report);} catch(error) {return modelSessionJson({ok:false,error:error.code || 'location_report_invalid'},400);}
+  }
   if (action !== "decline_job" && Object.prototype.hasOwnProperty.call(body || {}, "availability_options")) {
     return modelSessionJson({ ok: false, error: "decline_options_invalid" }, 400);
   }
 
-  const reread = await resolveModelSessionContext(req, env, body);
+  let reread = await resolveModelSessionContext(req, env, body);
   if (!reread.ok) return modelSessionJson({ ok: false, error: reread.error }, reread.status);
 
   if (reread.session.id !== authContext.session.id || !modelSessionActionTargetsContext(body, reread)) {
     return modelSessionJson({ ok: false, error: "session_context_changed" }, 409);
   }
 
-  const stateInfo = modelSessionStateFromRecord(reread.tables, reread.session);
+  let stateInfo = modelSessionStateFromRecord(reread.tables, reread.session);
   if (!stateInfo.field || !normalizeSessionState(stateInfo.state)) {
     return modelSessionJson({ ok: false, error: "schema_not_ready" }, 503);
   }
@@ -3036,6 +3055,27 @@ async function handleModelSessionAction(req, env) {
   }
 
   const currentSession = modelSessionResponseSession(reread.tables, reread.session);
+  let locationEta=null;
+  if (locationReport) {
+    const modelId=str(reread.payload.model_record_id),models=canonicalModelIds(reread.session);
+    if (!modelId || models.length!==1 || models[0]!==modelId || body.session_id!==currentSession.session_id || !currentSession.location_name || body.context_binding!==await meetingBinding(env,reread.session)) return modelSessionJson({ok:false,error:'location_report_context_invalid'},409);
+    const serviceToken=str(env.AUTH_SERVICE_ADMIN_TO_EVENTS || env.CONFIRM_KEY);
+    if (!serviceToken || !env.EVENTS_WORKER?.fetch) return modelSessionJson({ok:false,error:'eta_service_not_ready'},503);
+    let upstream;
+    try {upstream=await env.EVENTS_WORKER.fetch(new Request('https://events-worker.internal/__internal/model/session/eta',{
+      method:'POST',headers:{'content-type':'application/json','X-Internal-Token':serviceToken},
+      body:JSON.stringify({session_id:currentSession.session_id,model_record_id:modelId,eta_minutes:locationReport.eta_minutes,location_report:locationReport,agreed_location:currentSession.location_name}),signal:AbortSignal.timeout(10000),
+    }));locationEta=await upstream.json();} catch {return modelSessionJson({ok:false,error:'location_report_unconfirmed'},503);}
+    if (!upstream.ok || locationEta?.ok!==true) return modelSessionJson({ok:false,error:locationEta?.error || 'location_report_unconfirmed'},upstream.status>=400?upstream.status:503);
+    const fresh=await resolveModelSessionContext(req,env,body);
+    if (!fresh.ok) return modelSessionJson({ok:false,error:fresh.error},fresh.status);
+    const freshState=modelSessionStateFromRecord(fresh.tables,fresh.session),freshView=modelSessionResponseSession(fresh.tables,fresh.session);
+    if (fresh.session.id!==reread.session.id || freshView.location_name!==currentSession.location_name || !resolveModelSessionTransition(action,freshState.state).ok) return modelSessionJson({ok:false,error:'location_report_session_changed'},409);
+    reread=fresh;stateInfo=freshState;
+  }
+  if (action === "start_travel" && !isBangkokJobDay(currentSession.job_date)) {
+    return modelSessionJson({ ok: false, error: "travel_not_on_job_day" }, 409);
+  }
   if (action === "mark_arrived") {
     const activation = await activateFinalPaymentAfterArrival(env, currentSession);
     if (!activation.ok) return modelSessionJson({ ok: false, error: activation.error }, 503);
@@ -3051,11 +3091,16 @@ async function handleModelSessionAction(req, env) {
     patch[reasonField] = decline.reason;
   }
 
-  const updated = await airtablePatchById(env, reread.tables.sessions.table, reread.session.id, patch);
+  const updated = locationEta?.idempotent && normalizeSessionState(stateInfo.state)==='en_route'
+    ? {ok:true,id:reread.session.id,fields:reread.session.fields}
+    : await airtablePatchById(env, reread.tables.sessions.table, reread.session.id, patch);
   if (!updated.ok) return modelSessionJson({ ok: false, error: "schema_not_ready" }, 503);
 
-  const notification = ["start_travel", "mark_nearby", "mark_arrived"].includes(action)
-    ? await notifyTravelEvent(env, { id: updated.id, fields: { ...reread.session.fields, ...updated.fields } }, action, action)
+  const notification = ["start_travel", "mark_nearby", "mark_arrived", "confirm_separated", "report_wrong_location"].includes(action)
+    ? await notifyTravelEvent(env, { id: updated.id, fields: { ...reread.session.fields, ...updated.fields } }, locationReport?locationReport.report_id:action, action)
+    : null;
+  const ownerNotification = locationReport
+    ? await notifyOwnerWrongLocation(env, {id:updated.id, fields:{...reread.session.fields, ...updated.fields}}, locationReport, locationEta)
     : null;
 
   const memberReplyRefreshQueued = ["mark_work_finished", "confirm_separated"].includes(action)
@@ -3068,7 +3113,9 @@ async function handleModelSessionAction(req, env) {
   return modelSessionJson({
     ok: true,
     session: modelSessionResponseSession(reread.tables, { id: updated.id, fields: updated.fields }),
+    ...(locationEta?{location_report:locationReport,eta:locationEta}:{}),
     ...(notification ? { notification } : {}),
+    ...(ownerNotification ? { owner_notification:ownerNotification } : {}),
     ...(memberReplyRefreshQueued !== null ? { member_reply_refresh_queued: memberReplyRefreshQueued } : {}),
   });
 }

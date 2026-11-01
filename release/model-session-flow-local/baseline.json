@@ -1,0 +1,1390 @@
+{
+  "observed_at": "2026-10-30T22:37:16.231Z",
+  "mode": "GET_ONLY",
+  "workers": [
+    {
+      "worker": "payments-worker",
+      "active_version": "e1dc0aca-5a45-43df-b03b-e00026316de5",
+      "version_number": 411,
+      "deployment_id": "7cf0eb25-881b-4bad-a879-1c42175e79c6",
+      "bindings": [
+        {
+          "name": "AIRTABLE_API_KEY",
+          "type": "secret_text"
+        },
+        {
+          "name": "AIRTABLE_BASE_ID",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_TABLE_ACTIVITY_LOGS",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_TABLE_BOOKINGS",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_TABLE_CLIENTS",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_TABLE_CONSOLE_INBOX",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_TABLE_CUSTOMER_CHANGE_REQUESTS",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_TABLE_INTERNAL_NOTES",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_TABLE_JOBS",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_TABLE_MEMBER_PACKAGES",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_TABLE_MEMBERS",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_TABLE_MEMBERSHIP_APPLICATIONS",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_TABLE_MODEL_PARTNERS",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_TABLE_MODELS",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_TABLE_PACKAGES",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_TABLE_PAYMENT_INSTRUCTIONS",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_TABLE_PAYMENT_PROOFS",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_TABLE_PAYMENTS",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_TABLE_POINTS_LEDGER",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_TABLE_SESSIONS",
+          "type": "plain_text"
+        },
+        {
+          "name": "ALLOWED_ORIGINS",
+          "type": "plain_text"
+        },
+        {
+          "name": "AT_PAYMENTS__AMOUNT",
+          "type": "plain_text"
+        },
+        {
+          "name": "AT_PAYMENTS__CREATED_AT",
+          "type": "plain_text"
+        },
+        {
+          "name": "AT_PAYMENTS__NOTES",
+          "type": "plain_text"
+        },
+        {
+          "name": "AT_PAYMENTS__PACKAGE_CODE",
+          "type": "plain_text"
+        },
+        {
+          "name": "AT_PAYMENTS__PAYMENT_DATE",
+          "type": "plain_text"
+        },
+        {
+          "name": "AT_PAYMENTS__PAYMENT_INTENT_STATUS",
+          "type": "plain_text"
+        },
+        {
+          "name": "AT_PAYMENTS__PAYMENT_METHOD",
+          "type": "plain_text"
+        },
+        {
+          "name": "AT_PAYMENTS__PAYMENT_REF",
+          "type": "plain_text"
+        },
+        {
+          "name": "AT_PAYMENTS__PAYMENT_STAGE",
+          "type": "plain_text"
+        },
+        {
+          "name": "AT_PAYMENTS__PAYMENT_STATUS",
+          "type": "plain_text"
+        },
+        {
+          "name": "AT_PAYMENTS__PAYMENT_TYPE",
+          "type": "plain_text"
+        },
+        {
+          "name": "AT_PAYMENTS__RECEIPT_PHOTO",
+          "type": "plain_text"
+        },
+        {
+          "name": "AT_PAYMENTS__SESSION_ID",
+          "type": "plain_text"
+        },
+        {
+          "name": "AT_PAYMENTS__VERIFICATION_STATUS",
+          "type": "plain_text"
+        },
+        {
+          "name": "AT_SESSIONS__AMOUNT_THB",
+          "type": "plain_text"
+        },
+        {
+          "name": "AT_SESSIONS__CUSTOMER_ACK_AT",
+          "type": "plain_text"
+        },
+        {
+          "name": "AT_SESSIONS__MEMBERSHIP_ACTION",
+          "type": "plain_text"
+        },
+        {
+          "name": "AT_SESSIONS__MEMBERSTACK_ID",
+          "type": "plain_text"
+        },
+        {
+          "name": "AT_SESSIONS__MODEL_ACK_AT",
+          "type": "plain_text"
+        },
+        {
+          "name": "AT_SESSIONS__PACKAGE_CODE",
+          "type": "plain_text"
+        },
+        {
+          "name": "AT_SESSIONS__PAYMENT_REF",
+          "type": "plain_text"
+        },
+        {
+          "name": "AT_SESSIONS__PAYMENT_STATUS",
+          "type": "plain_text"
+        },
+        {
+          "name": "AT_SESSIONS__SESSION_ID",
+          "type": "plain_text"
+        },
+        {
+          "name": "AT_SESSIONS__STATUS",
+          "type": "plain_text"
+        },
+        {
+          "name": "AUTH_SERVICE_ADMIN_TO_PAYMENTS",
+          "type": "secret_text"
+        },
+        {
+          "name": "AUTH_SERVICE_EVENTS_TO_PAYMENTS",
+          "type": "secret_text"
+        },
+        {
+          "name": "AUTH_SERVICE_IMMIGRATE_TO_PAYMENTS",
+          "type": "secret_text"
+        },
+        {
+          "name": "AUTH_SERVICE_PARTNERS_TO_PAYMENTS",
+          "type": "secret_text"
+        },
+        {
+          "name": "AUTH_SERVICE_PAYMENTS_TO_ADMIN",
+          "type": "secret_text"
+        },
+        {
+          "name": "AUTH_SERVICE_PAYMENTS_TO_MEMBER_PAGES",
+          "type": "secret_text"
+        },
+        {
+          "name": "AUTH_SERVICE_PAYMENTS_TO_TELEGRAM",
+          "type": "secret_text"
+        },
+        {
+          "name": "CONFIRM_BASE_URL",
+          "type": "plain_text"
+        },
+        {
+          "name": "CONFIRM_KEY",
+          "type": "secret_text"
+        },
+        {
+          "name": "INTERNAL_SERVICE_SECRET",
+          "type": "secret_text"
+        },
+        {
+          "name": "INTERNAL_TOKEN",
+          "type": "secret_text"
+        },
+        {
+          "name": "KBANK_SANDBOX_CONSUMER_ID",
+          "type": "secret_text"
+        },
+        {
+          "name": "KBANK_SANDBOX_CONSUMER_SECRET",
+          "type": "secret_text"
+        },
+        {
+          "name": "KBANK_SANDBOX_COORDINATOR",
+          "type": "durable_object_namespace"
+        },
+        {
+          "name": "KBANK_SANDBOX_ENABLED",
+          "type": "plain_text"
+        },
+        {
+          "name": "LINE_CHANNEL_ACCESS_TOKEN",
+          "type": "secret_text"
+        },
+        {
+          "name": "LINE_CHANNEL_SECRET",
+          "type": "secret_text"
+        },
+        {
+          "name": "MMD_SHOP_WORKER",
+          "type": "service",
+          "service": "himai-chat-worker"
+        },
+        {
+          "name": "PAYMENT_CONFIRMATION_SIGNING_SECRET",
+          "type": "secret_text"
+        },
+        {
+          "name": "PAYMENT_SLIP_EVIDENCE",
+          "type": "r2_bucket",
+          "bucket_name": "mmd-line-slip-evidence"
+        },
+        {
+          "name": "PAY_SESSIONS_KV",
+          "type": "kv_namespace"
+        },
+        {
+          "name": "PAY_SESSIONS_TTL_DAYS",
+          "type": "plain_text"
+        },
+        {
+          "name": "PAY_TOKEN_TTL_SECONDS",
+          "type": "plain_text"
+        },
+        {
+          "name": "POINTS_PHASE1_COORDINATOR",
+          "type": "durable_object_namespace"
+        },
+        {
+          "name": "POINTS_RATE",
+          "type": "plain_text"
+        },
+        {
+          "name": "POSTHOG_PROJECT_TOKEN",
+          "type": "plain_text"
+        },
+        {
+          "name": "SESSION_PAID_PROJECTION_COORDINATOR",
+          "type": "durable_object_namespace"
+        },
+        {
+          "name": "TELEGRAM_BOT_TOKEN",
+          "type": "secret_text"
+        },
+        {
+          "name": "TELEGRAM_CHAT_ID",
+          "type": "plain_text"
+        },
+        {
+          "name": "TELEGRAM_WORKER",
+          "type": "service",
+          "service": "telegram-worker"
+        },
+        {
+          "name": "TG_BOT_TOKEN",
+          "type": "secret_text"
+        },
+        {
+          "name": "TG_THREAD_ALERTS",
+          "type": "plain_text"
+        },
+        {
+          "name": "TG_THREAD_CONFIRM",
+          "type": "plain_text"
+        },
+        {
+          "name": "TG_THREAD_MEMBERSHIP",
+          "type": "plain_text"
+        },
+        {
+          "name": "TG_THREAD_MMD_SHOP_ALERTS",
+          "type": "plain_text"
+        },
+        {
+          "name": "TG_THREAD_MMD_SHOP_PAYMENTS",
+          "type": "plain_text"
+        },
+        {
+          "name": "TG_THREAD_PAYMENT",
+          "type": "plain_text"
+        },
+        {
+          "name": "TG_THREAD_PAYMENTS_CONFIRM",
+          "type": "plain_text"
+        },
+        {
+          "name": "TG_THREAD_PAYMENTS_MEMBERSHIP",
+          "type": "plain_text"
+        },
+        {
+          "name": "TG_THREAD_POINTS",
+          "type": "plain_text"
+        },
+        {
+          "name": "TOKEN_SECRET",
+          "type": "secret_text"
+        },
+        {
+          "name": "TURNSTILE_SECRET",
+          "type": "secret_text"
+        },
+        {
+          "name": "WEB_BASE_URL",
+          "type": "plain_text"
+        }
+      ],
+      "runtime": {
+        "migration_tag": "session-paid-projection-v1",
+        "compatibility_date": "2026-01-20",
+        "usage_model": "standard"
+      },
+      "crons": [
+        "*/5 * * * *"
+      ]
+    },
+    {
+      "worker": "events-worker",
+      "active_version": "dd7a25a1-9bea-4808-8cb2-8492b176477b",
+      "version_number": 94,
+      "deployment_id": "19a2d5fc-f9b5-475d-a917-6ba191320765",
+      "bindings": [
+        {
+          "name": "ADMIN_WORKER_BASE",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_API_KEY",
+          "type": "secret_text"
+        },
+        {
+          "name": "AIRTABLE_BASE_ID",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_TABLE_MODELS",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_TABLE_SESSIONS",
+          "type": "plain_text"
+        },
+        {
+          "name": "AUTH_SERVICE_EVENTS_TO_PAYMENTS",
+          "type": "secret_text"
+        },
+        {
+          "name": "AUTH_SERVICE_EVENTS_TO_REALTIME",
+          "type": "secret_text"
+        },
+        {
+          "name": "AUTH_SERVICE_EVENTS_TO_TELEGRAM",
+          "type": "secret_text"
+        },
+        {
+          "name": "CONFIRM_KEY",
+          "type": "secret_text"
+        },
+        {
+          "name": "EVENTS_WORKER_BUILD_SHA",
+          "type": "plain_text"
+        },
+        {
+          "name": "HYPE_CADENCE_START_DATE",
+          "type": "plain_text"
+        },
+        {
+          "name": "HYPE_COMPCARD_ENABLED",
+          "type": "plain_text"
+        },
+        {
+          "name": "HYPE_COMPCARD_SEND_AT_ICT",
+          "type": "plain_text"
+        },
+        {
+          "name": "HYPE_COMPCARD_STATE",
+          "type": "r2_bucket",
+          "bucket_name": "mmd-hype-compcard-state"
+        },
+        {
+          "name": "HYPE_INTAKE_ENABLED",
+          "type": "plain_text"
+        },
+        {
+          "name": "HYPE_INTAKE_READY_FOLDER_ID",
+          "type": "plain_text"
+        },
+        {
+          "name": "HYPE_PROMOTION_ENABLED",
+          "type": "plain_text"
+        },
+        {
+          "name": "HYPE_PROMOTION_SEND_AT_ICT",
+          "type": "plain_text"
+        },
+        {
+          "name": "HYPE_PROMOTION_WEEKDAYS",
+          "type": "plain_text"
+        },
+        {
+          "name": "HYPE_STANDARD_ENABLED",
+          "type": "plain_text"
+        },
+        {
+          "name": "HYPE_STANDARD_SEND_AT_ICT",
+          "type": "plain_text"
+        },
+        {
+          "name": "INTERNAL_TOKEN",
+          "type": "secret_text"
+        },
+        {
+          "name": "MODEL_LIFF_PUBLISHED_ID",
+          "type": "plain_text"
+        },
+        {
+          "name": "MODEL_LINE_CHANNEL_ACCESS_TOKEN",
+          "type": "secret_text"
+        },
+        {
+          "name": "MODEL_RECONFIRM_ENABLED",
+          "type": "plain_text"
+        },
+        {
+          "name": "MODEL_RECONFIRM_GUARD_V2",
+          "type": "plain_text"
+        },
+        {
+          "name": "MODEL_RECONFIRM_OWNER_CHAT_ID",
+          "type": "secret_text"
+        },
+        {
+          "name": "PAYMENTS_WORKER_BASE",
+          "type": "plain_text"
+        },
+        {
+          "name": "RT_BASE_URL",
+          "type": "plain_text"
+        },
+        {
+          "name": "TELEGRAM_BOT_TOKEN",
+          "type": "secret_text"
+        },
+        {
+          "name": "TELEGRAM_INTERNAL_SEND_URL",
+          "type": "secret_text"
+        },
+        {
+          "name": "TELEGRAM_ROUTER",
+          "type": "service",
+          "service": "telegram-worker"
+        },
+        {
+          "name": "TELEGRAM_WEBHOOK_SECRET_TOKEN",
+          "type": "secret_text"
+        },
+        {
+          "name": "TELEGRAM_WORKER_BASE",
+          "type": "plain_text"
+        },
+        {
+          "name": "TURNSTILE_SECRET",
+          "type": "secret_text"
+        }
+      ],
+      "runtime": {
+        "compatibility_date": "2026-02-27",
+        "usage_model": "standard"
+      },
+      "crons": [
+        "*/15 * * * *"
+      ]
+    },
+    {
+      "worker": "admin-worker",
+      "active_version": "47111ca8-7653-4db6-84e5-128767aa1b2f",
+      "version_number": 1662,
+      "deployment_id": "a46819ed-901d-474d-881d-74eb6547fde9",
+      "bindings": [
+        {
+          "name": "ADMIN_BEARER",
+          "type": "secret_text"
+        },
+        {
+          "name": "ADMIN_LOGIN_CREDENTIAL",
+          "type": "secret_text"
+        },
+        {
+          "name": "ADMIN_SESSION_SECRET",
+          "type": "secret_text"
+        },
+        {
+          "name": "ADMIN_WORKER_BUILD_SHA",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_API_KEY",
+          "type": "secret_text"
+        },
+        {
+          "name": "AIRTABLE_BASE_ID",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_CLIENT_NAME_FIELD",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_PAT",
+          "type": "secret_text"
+        },
+        {
+          "name": "AIRTABLE_TABLE_AI_MESSAGE_EVENTS_ID",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_TABLE_CLIENTS_ID",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_TABLE_CONSOLE_INBOX_ID",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_TABLE_DEMO_LINKS",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_TABLE_MEMBER_ENTITLEMENTS_ID",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_TABLE_MEMBERS",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_TABLE_MEMBERS_ID",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_TABLE_MODEL_JOB_DAY_RULES_ACKS",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_TABLE_MODEL_MEDIA",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_TABLE_MODEL_OFFER_RULES_ID",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_TABLE_MODEL_PAYOUT_ADJUSTMENTS",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_TABLE_MODEL_REFERRAL_INBOX_ID",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_TABLE_MODEL_REVIEW_REQUESTS_ID",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_TABLE_MODELS",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_TABLE_PAYMENT_PROOFS_ID",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_TABLE_PRIVATE_MODEL_ACCESS_DECISIONS",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_TABLE_SESSION_EXTENSION_REQUESTS",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_TABLE_SESSIONS",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_TABLE_STUDIO_INTAKE",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_TABLE_STUDIO_PUBLISH",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_TABLE_STUDIO_REVIEW",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_TOKEN",
+          "type": "secret_text"
+        },
+        {
+          "name": "ALLOWED_ORIGINS",
+          "type": "plain_text"
+        },
+        {
+          "name": "AT_SESSIONS__MODEL_NAME",
+          "type": "plain_text"
+        },
+        {
+          "name": "AT_SESSIONS__MODEL_RECORD_ID",
+          "type": "plain_text"
+        },
+        {
+          "name": "AT_SESSIONS__PAYMENT_REF",
+          "type": "plain_text"
+        },
+        {
+          "name": "AT_SESSIONS__SESSION_ID",
+          "type": "plain_text"
+        },
+        {
+          "name": "AT_SESSIONS__STATE",
+          "type": "plain_text"
+        },
+        {
+          "name": "AT_SESSIONS__STATUS",
+          "type": "plain_text"
+        },
+        {
+          "name": "AUTH_SERVICE_ADMIN_TO_PAYMENTS",
+          "type": "secret_text"
+        },
+        {
+          "name": "AUTH_SERVICE_STUDIO_TO_TELEGRAM",
+          "type": "secret_text"
+        },
+        {
+          "name": "CAL_API_KEY",
+          "type": "secret_text"
+        },
+        {
+          "name": "CAL_SYNC_WORKER",
+          "type": "service",
+          "service": "cal-sync-worker"
+        },
+        {
+          "name": "CLOUDFLARE_API_TOKEN",
+          "type": "secret_text"
+        },
+        {
+          "name": "COMPCARD_DRIVE_ROOTS_JSON",
+          "type": "secret_text"
+        },
+        {
+          "name": "CONFIRM_KEY",
+          "type": "secret_text"
+        },
+        {
+          "name": "EVENTS_WORKER",
+          "type": "service",
+          "service": "events-worker"
+        },
+        {
+          "name": "GOOGLE_DRIVE_CLIENT_ID",
+          "type": "secret_text"
+        },
+        {
+          "name": "GOOGLE_DRIVE_CLIENT_SECRET",
+          "type": "secret_text"
+        },
+        {
+          "name": "GOOGLE_DRIVE_REFRESH_TOKEN",
+          "type": "secret_text"
+        },
+        {
+          "name": "HYPE_JOB_DAILY_CHAT_ID",
+          "type": "secret_text"
+        },
+        {
+          "name": "HYPE_JOB_DAILY_ENABLED",
+          "type": "plain_text"
+        },
+        {
+          "name": "HYPE_JOB_DAILY_RUN_STATE",
+          "type": "durable_object_namespace"
+        },
+        {
+          "name": "INTERNAL_LOVABLE_ORIGIN",
+          "type": "plain_text"
+        },
+        {
+          "name": "INTERNAL_TOKEN",
+          "type": "secret_text"
+        },
+        {
+          "name": "JOB_BOARD_COMPCARDS",
+          "type": "r2_bucket",
+          "bucket_name": "mmd-public-access-evidence"
+        },
+        {
+          "name": "JOB_EDIT_COORDINATOR",
+          "type": "durable_object_namespace"
+        },
+        {
+          "name": "KENJI_CONTINUITY_PHASE4_MODE",
+          "type": "plain_text"
+        },
+        {
+          "name": "KENJI_INTERNAL_TOKEN",
+          "type": "secret_text"
+        },
+        {
+          "name": "KENJI_KNOWLEDGE_COORDINATOR",
+          "type": "durable_object_namespace"
+        },
+        {
+          "name": "KENJI_RECOMMENDATION_MODE",
+          "type": "plain_text"
+        },
+        {
+          "name": "LINE_MINIAPP_DEV_CHANNEL_ID",
+          "type": "plain_text"
+        },
+        {
+          "name": "LINE_MINIAPP_PUBLISHED_CHANNEL_ID",
+          "type": "plain_text"
+        },
+        {
+          "name": "LINE_MINIAPP_REVIEW_CHANNEL_ID",
+          "type": "plain_text"
+        },
+        {
+          "name": "LINE_OFC_BACKFILL_COORDINATOR",
+          "type": "durable_object_namespace"
+        },
+        {
+          "name": "LINE_SLIP_EVIDENCE",
+          "type": "r2_bucket",
+          "bucket_name": "mmd-line-slip-evidence"
+        },
+        {
+          "name": "LINE_WEBHOOK_DEBUG",
+          "type": "plain_text"
+        },
+        {
+          "name": "LINK_SIGNING_SECRET",
+          "type": "secret_text"
+        },
+        {
+          "name": "MEMBER_DASHBOARD_CHAT_WORKER",
+          "type": "service",
+          "service": "member-dashboard-chat-worker"
+        },
+        {
+          "name": "MEMBER_PAGES_MEMBER_WALLET",
+          "type": "service",
+          "service": "member-pages-worker"
+        },
+        {
+          "name": "MEMBER_PAGES_RESOLVER_DIAGNOSTIC",
+          "type": "service",
+          "service": "member-pages-worker"
+        },
+        {
+          "name": "MEMBER_PAGES_SHOP_ORDERS",
+          "type": "service",
+          "service": "member-pages-worker"
+        },
+        {
+          "name": "MEMBERSTACK_API_KEY",
+          "type": "secret_text"
+        },
+        {
+          "name": "MEMBERSTACK_SECRET_KEY",
+          "type": "secret_text"
+        },
+        {
+          "name": "MMD_MODEL_ASSETS",
+          "type": "r2_bucket",
+          "bucket_name": "mmd-models"
+        },
+        {
+          "name": "MMD_MODEL_DRIVE_METADATA_SYNC_ENABLED",
+          "type": "plain_text"
+        },
+        {
+          "name": "MMD_RENEWAL_TEST_KEY",
+          "type": "secret_text"
+        },
+        {
+          "name": "MMD_SHOP_WORKER",
+          "type": "service",
+          "service": "himai-chat-worker"
+        },
+        {
+          "name": "MMS_PARTNER_ACCESS_CODE",
+          "type": "secret_text"
+        },
+        {
+          "name": "MMS_PARTNER_AUTH",
+          "type": "durable_object_namespace"
+        },
+        {
+          "name": "MMS_WORKER",
+          "type": "service",
+          "service": "mms-worker"
+        },
+        {
+          "name": "MODEL_ACTIVATION_COORDINATOR",
+          "type": "durable_object_namespace"
+        },
+        {
+          "name": "MODEL_CARD_AUTO_ENABLED",
+          "type": "plain_text"
+        },
+        {
+          "name": "MODEL_CARD_BROWSER",
+          "type": "browser"
+        },
+        {
+          "name": "MODEL_CARD_COORDINATOR",
+          "type": "durable_object_namespace"
+        },
+        {
+          "name": "MODEL_CARD_MMD_LOGO_KEY",
+          "type": "plain_text"
+        },
+        {
+          "name": "MODEL_CARD_PROVINCE_BY_MODEL_JSON",
+          "type": "plain_text"
+        },
+        {
+          "name": "MODEL_CARD_SIGIL_LOGO_KEY",
+          "type": "plain_text"
+        },
+        {
+          "name": "MODEL_DASHBOARD_ORIGIN",
+          "type": "plain_text"
+        },
+        {
+          "name": "MODEL_DISCOVERY_COORDINATOR",
+          "type": "durable_object_namespace"
+        },
+        {
+          "name": "MODEL_DRIVE_DIRECTORY",
+          "type": "service",
+          "service": "member-pages-worker"
+        },
+        {
+          "name": "MODEL_LIFF_DEV_ID",
+          "type": "plain_text"
+        },
+        {
+          "name": "MODEL_LIFF_PUBLISHED_ID",
+          "type": "plain_text"
+        },
+        {
+          "name": "MODEL_LIFF_REVIEW_ID",
+          "type": "plain_text"
+        },
+        {
+          "name": "MODEL_LIFF_SESSION_TTL_SECONDS",
+          "type": "plain_text"
+        },
+        {
+          "name": "MODEL_LOCATION_COORDINATOR",
+          "type": "durable_object_namespace"
+        },
+        {
+          "name": "MODEL_LOCATION_CUSTOMER_READ_ENABLED",
+          "type": "plain_text"
+        },
+        {
+          "name": "MODEL_LOCATION_INGEST_ENABLED",
+          "type": "plain_text"
+        },
+        {
+          "name": "MODEL_LOCATION_RETENTION_SECONDS",
+          "type": "plain_text"
+        },
+        {
+          "name": "MODEL_MEDIA_SLOT_COORDINATOR",
+          "type": "durable_object_namespace"
+        },
+        {
+          "name": "MODEL_R2_CATEGORY_PATHS",
+          "type": "plain_text"
+        },
+        {
+          "name": "MODEL_R2_LOOKUP_ENABLED",
+          "type": "plain_text"
+        },
+        {
+          "name": "MODEL_R2_ROOT_PREFIX",
+          "type": "plain_text"
+        },
+        {
+          "name": "MODEL_R2_USE_SOURCE_OWNER_AS_PREFIX",
+          "type": "plain_text"
+        },
+        {
+          "name": "MODEL_RECONFIRM_GUARD_V2",
+          "type": "plain_text"
+        },
+        {
+          "name": "MODEL_RECONFIRM_OWNER_CHAT_ID",
+          "type": "secret_text"
+        },
+        {
+          "name": "MODEL_SESSION_SIGNING_SECRET",
+          "type": "secret_text"
+        },
+        {
+          "name": "MODEL_SOURCE_OWNER_DEFAULT",
+          "type": "plain_text"
+        },
+        {
+          "name": "OAPLUS_API_KEY",
+          "type": "secret_text"
+        },
+        {
+          "name": "PARTNERS_WORKER",
+          "type": "service",
+          "service": "partners-worker"
+        },
+        {
+          "name": "PAYMENT_CONFIRMATION_SIGNING_SECRET",
+          "type": "secret_text"
+        },
+        {
+          "name": "PAYMENT_REVIEW_TOKEN",
+          "type": "secret_text"
+        },
+        {
+          "name": "PAYMENTS_BASE_URL",
+          "type": "plain_text"
+        },
+        {
+          "name": "PAYMENTS_WORKER",
+          "type": "service",
+          "service": "payments-worker"
+        },
+        {
+          "name": "PREMIUM_GROUP_CLEANUP_DRY_RUN",
+          "type": "plain_text"
+        },
+        {
+          "name": "PREMIUM_GROUP_ELIGIBILITY_CLEANUP_ENABLED",
+          "type": "plain_text"
+        },
+        {
+          "name": "PREMIUM_GROUP_PROMO_GRACE_UNTIL",
+          "type": "plain_text"
+        },
+        {
+          "name": "PRICING_REVIEW_TELEGRAM_EWVON_ID",
+          "type": "plain_text"
+        },
+        {
+          "name": "PRICING_REVIEW_TELEGRAM_PER_ID",
+          "type": "plain_text"
+        },
+        {
+          "name": "PRICING_TIMEOUT_MINUTES",
+          "type": "plain_text"
+        },
+        {
+          "name": "PRICING_TIMEOUT_SEND_TO_CUSTOMER",
+          "type": "plain_text"
+        },
+        {
+          "name": "PRIVATE_MODEL_MEDIA",
+          "type": "r2_bucket",
+          "bucket_name": "mmd-private-model-media"
+        },
+        {
+          "name": "PUBLIC_JOB_BOARD_WORKER",
+          "type": "service",
+          "service": "public-access-worker"
+        },
+        {
+          "name": "PUBLIC_MODEL_UPLOADS_R2",
+          "type": "r2_bucket",
+          "bucket_name": "mmd-private-public-model-uploads"
+        },
+        {
+          "name": "SIGIL_AVAILABILITY_SNAPSHOTS",
+          "type": "kv_namespace"
+        },
+        {
+          "name": "SLIP_EXTRACTOR",
+          "type": "service",
+          "service": "mmd-slip-extractor"
+        },
+        {
+          "name": "STUDIO_ASSET_SIGNING_SECRET",
+          "type": "secret_text"
+        },
+        {
+          "name": "STUDIO_DRIVE_INTAKE_ROOT_ID",
+          "type": "plain_text"
+        },
+        {
+          "name": "TELEGRAM_BOT_TOKEN",
+          "type": "secret_text"
+        },
+        {
+          "name": "TELEGRAM_CHAT_ID",
+          "type": "plain_text"
+        },
+        {
+          "name": "TELEGRAM_INTERNAL_SEND_URL",
+          "type": "plain_text"
+        },
+        {
+          "name": "TELEGRAM_ROUTER",
+          "type": "service",
+          "service": "telegram-worker"
+        },
+        {
+          "name": "TELEGRAM_STUDIO_CHAT_ID",
+          "type": "plain_text"
+        },
+        {
+          "name": "TELEGRAM_STUDIO_NOTIFY_ENABLED",
+          "type": "plain_text"
+        },
+        {
+          "name": "TELEGRAM_WEBHOOK_SECRET_TOKEN",
+          "type": "secret_text"
+        },
+        {
+          "name": "TG_THREAD_ALERTS_EXCEPTIONS",
+          "type": "plain_text"
+        },
+        {
+          "name": "TG_THREAD_CONFIRM",
+          "type": "plain_text"
+        },
+        {
+          "name": "TG_THREAD_PAYMENT",
+          "type": "plain_text"
+        },
+        {
+          "name": "TG_THREAD_PAYMENTS_CONFIRM",
+          "type": "plain_text"
+        },
+        {
+          "name": "TG_THREAD_PRICING_REVIEW",
+          "type": "plain_text"
+        },
+        {
+          "name": "TG_THREAD_STUDIO_ALERT",
+          "type": "plain_text"
+        },
+        {
+          "name": "TURNSTILE_SECRET",
+          "type": "secret_text"
+        },
+        {
+          "name": "WEBFLOW_CMS_TOKEN",
+          "type": "secret_text"
+        }
+      ],
+      "runtime": {
+        "migration_tag": "model-discovery-v1",
+        "compatibility_date": "2026-01-01",
+        "usage_model": "standard"
+      },
+      "crons": [
+        "*/5 * * * *"
+      ]
+    },
+    {
+      "worker": "member-pages-worker",
+      "active_version": "8622968e-a098-478f-be83-4e3841643709",
+      "version_number": 560,
+      "deployment_id": "70d5bcc6-4287-45d0-9923-4466dae0a9f4",
+      "bindings": [
+        {
+          "name": "ADMIN_BEARER",
+          "type": "secret_text"
+        },
+        {
+          "name": "AIRTABLE_API_KEY",
+          "type": "secret_text"
+        },
+        {
+          "name": "AIRTABLE_BASE_ID",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_REQUEST_TIMEOUT_MS",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_TABLE_CARE_BACK_BIRTHDAY_WISHES",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_TABLE_CARE_BACK_CLAIMS",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_TABLE_CARE_BACK_PROMO_CODES",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_TABLE_CONSOLE_INBOX",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_TABLE_JOBS",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_TABLE_MODEL_PAYOUT_ADJUSTMENTS",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_TABLE_PAYMENTS",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_TABLE_SESSION_EXTENSION_REQUESTS",
+          "type": "plain_text"
+        },
+        {
+          "name": "AIRTABLE_TABLE_SESSIONS",
+          "type": "plain_text"
+        },
+        {
+          "name": "AUTH_SERVICE_AUTH_TO_MEMBER_PAGES",
+          "type": "secret_text"
+        },
+        {
+          "name": "AUTH_SERVICE_PAYMENTS_TO_MEMBER_PAGES",
+          "type": "secret_text"
+        },
+        {
+          "name": "AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES",
+          "type": "secret_text"
+        },
+        {
+          "name": "CARE_BACK_WISH_COORDINATOR",
+          "type": "durable_object_namespace"
+        },
+        {
+          "name": "CUSTOMER_REQUEST_EVIDENCE",
+          "type": "r2_bucket",
+          "bucket_name": "mmd-customer-request-evidence"
+        },
+        {
+          "name": "DRIVE_FALLBACK_MEMBERSHIP_OWNER_EMAIL",
+          "type": "plain_text"
+        },
+        {
+          "name": "DRIVE_FALLBACK_PREMIUM_PACKAGE_FOLDER_ID",
+          "type": "plain_text"
+        },
+        {
+          "name": "DRIVE_FALLBACK_STANDARD_PACKAGE_FOLDER_ID",
+          "type": "plain_text"
+        },
+        {
+          "name": "DRIVE_MEMBERSHIP_OWNER_EMAIL",
+          "type": "plain_text"
+        },
+        {
+          "name": "DRIVE_PREMIUM_PACKAGE_FOLDER_ID",
+          "type": "plain_text"
+        },
+        {
+          "name": "DRIVE_STANDARD_PACKAGE_FOLDER_ID",
+          "type": "plain_text"
+        },
+        {
+          "name": "GOOGLE_DRIVE_CLIENT_ID",
+          "type": "secret_text"
+        },
+        {
+          "name": "GOOGLE_DRIVE_CLIENT_SECRET",
+          "type": "secret_text"
+        },
+        {
+          "name": "GOOGLE_DRIVE_FALLBACK_REFRESH_TOKEN",
+          "type": "secret_text"
+        },
+        {
+          "name": "GOOGLE_DRIVE_REFRESH_TOKEN",
+          "type": "secret_text"
+        },
+        {
+          "name": "HISTORY_RECOVERY_COLLECT_ALLOWLIST",
+          "type": "plain_text"
+        },
+        {
+          "name": "INTERNAL_SERVICE_SECRET",
+          "type": "secret_text"
+        },
+        {
+          "name": "LIFF_IDENTITY_KV",
+          "type": "kv_namespace"
+        },
+        {
+          "name": "LIFF_MEMBER_RESOLVER_TIMEOUT_MS",
+          "type": "plain_text"
+        },
+        {
+          "name": "LIFF_PROMOTION_PURCHASE_ENABLED",
+          "type": "plain_text"
+        },
+        {
+          "name": "LIFF_REMEMBERED_LOGIN_DEVICE",
+          "type": "durable_object_namespace"
+        },
+        {
+          "name": "LIFF_RENEWAL_CARD_ENABLED",
+          "type": "plain_text"
+        },
+        {
+          "name": "LIFF_SESSION_SECRET",
+          "type": "secret_text"
+        },
+        {
+          "name": "LIFF_VERIFY_TIMEOUT_MS",
+          "type": "plain_text"
+        },
+        {
+          "name": "LINE_BACKUP_CHANNEL_ID",
+          "type": "plain_text"
+        },
+        {
+          "name": "LINE_DASHBOARD_CHANNEL_ID",
+          "type": "plain_text"
+        },
+        {
+          "name": "LINE_ID_HASH_SECRET",
+          "type": "secret_text"
+        },
+        {
+          "name": "LINE_ID_TOKEN_VERIFY_URL",
+          "type": "plain_text"
+        },
+        {
+          "name": "LINE_LIFF_ID",
+          "type": "plain_text"
+        },
+        {
+          "name": "LINE_LOGIN_CHANNEL_ID",
+          "type": "secret_text"
+        },
+        {
+          "name": "MEMBER_REPLY_DB",
+          "type": "d1"
+        },
+        {
+          "name": "MEMBER_REPLY_SNAPSHOT_DRAIN_ALLOWLIST",
+          "type": "plain_text"
+        },
+        {
+          "name": "MEMBER_STATUS_RESOLVER",
+          "type": "service",
+          "service": "mmd-auth-worker"
+        },
+        {
+          "name": "MEMBER_STATUS_RESOLVER_SECRET",
+          "type": "secret_text"
+        },
+        {
+          "name": "MMD_MODEL_ASSETS",
+          "type": "r2_bucket",
+          "bucket_name": "mmd-models"
+        },
+        {
+          "name": "MMS_WORKER",
+          "type": "service",
+          "service": "mms-worker"
+        },
+        {
+          "name": "PAYMENTS_WORKER",
+          "type": "service",
+          "service": "payments-worker"
+        },
+        {
+          "name": "POSTHOG_PROJECT_TOKEN",
+          "type": "plain_text"
+        },
+        {
+          "name": "PRIVATE_MODEL_MEDIA",
+          "type": "r2_bucket",
+          "bucket_name": "mmd-private-model-media"
+        },
+        {
+          "name": "PRIVATE_PREVIEW_GATE",
+          "type": "durable_object_namespace"
+        },
+        {
+          "name": "PUBLIC_MODEL_UPLOADS_R2",
+          "type": "r2_bucket",
+          "bucket_name": "mmd-private-public-model-uploads"
+        },
+        {
+          "name": "SIGIL_BOOKING_WORKER",
+          "type": "service",
+          "service": "sigil-booking-worker"
+        },
+        {
+          "name": "TELEGRAM_BOT_TOKEN",
+          "type": "secret_text"
+        },
+        {
+          "name": "TELEGRAM_WEBHOOK_SECRET_TOKEN",
+          "type": "secret_text"
+        },
+        {
+          "name": "WEBFLOW_CMS_TOKEN",
+          "type": "secret_text"
+        }
+      ],
+      "runtime": {
+        "migration_tag": "v3-remembered-login-device",
+        "compatibility_date": "2026-06-20",
+        "usage_model": "standard"
+      },
+      "crons": [
+        "2 21 * * *",
+        "*/5 * * * *"
+      ]
+    }
+  ]
+}

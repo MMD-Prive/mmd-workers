@@ -1,6 +1,9 @@
 import baseWorker from "./index.js";
+import {drainAftercareOwner} from './owner-aftercare-notification.js';
 import { runModelReconfirmSweep, sendModelNewJobNotification } from "../../admin-worker/src/model-reconfirm-runtime.js";
 import { runCompcardDailyScheduled } from "./compcard-daily.js";
+import {normalizeWrongLocation} from '../../shared/model-meeting-details.mjs';
+import {agreedMeetingLocation, assertTravelModel, readTravelSession, travelBinding} from '../../shared/model-travel-store.mjs';
 import {
   handleCustomerAftercare,
   isCustomerAftercareRequest,
@@ -55,21 +58,50 @@ export default {
     if (!sessionId) return json({ ok: false, error: "session_id_required" }, 400);
     if (!etaMinutes) return json({ ok: false, error: "eta_minutes_invalid", min: 1, max: 240 }, 400);
 
+    let locationReport=null,locationBinding='';
+    if (Object.hasOwn(body,'location_report')) {
+      try {
+        locationReport=normalizeWrongLocation(body.location_report);
+        if (locationReport.eta_minutes!==etaMinutes) return json({ok:false,error:'eta_minutes_invalid'},400);
+        const session=await readTravelSession(env,sessionId);
+        assertTravelModel(session,body.model_record_id,true);
+        if (!agreedMeetingLocation(env,session) || agreedMeetingLocation(env,session)!==body.agreed_location) return json({ok:false,error:'location_report_context_changed'},409);
+        locationBinding=await travelBinding(session);
+      } catch(error) {return json({ok:false,error:error.code || 'location_report_unavailable'},error.status || 503);}
+    }
+
     const job = await findJobBySessionId(env, sessionId);
     if (!job.ok) return json({ ok: false, error: job.error }, job.status);
 
-    const updatedAt = new Date().toISOString();
+    let updatedAt = new Date().toISOString();
     const existingEvents = parseEvents(job.record.fields?.events_json);
+    let replay=null;
+    if (locationReport) {
+      const raw=job.record.fields?.events_json;
+      try {if (raw && (!Array.isArray(typeof raw==='string'?JSON.parse(raw):raw) || String(raw).length>64000)) throw Error('invalid');}
+      catch {return json({ok:false,error:'eta_history_unavailable'},503);}
+      replay=existingEvents.findLast(event=>event.location_issue?.report_id===locationReport.report_id);
+      if (replay) {
+        const prior=replay.location_issue;
+        if (prior.binding!==locationBinding || prior.current_place!==locationReport.current_place || prior.transport_mode!==locationReport.transport_mode || prior.agreed_location!==body.agreed_location || replay.eta_minutes!==etaMinutes) return json({ok:false,error:'location_report_conflict'},409);
+        updatedAt=replay.ts;
+      }
+      try {
+        const fresh=await readTravelSession(env,sessionId);assertTravelModel(fresh,body.model_record_id,true);
+        if (await travelBinding(fresh)!==locationBinding || agreedMeetingLocation(env,fresh)!==body.agreed_location) return json({ok:false,error:'location_report_context_changed'},409);
+      } catch(error) {return json({ok:false,error:error.code || 'location_report_unavailable'},error.status || 503);}
+    }
     const event = {
       ts: updatedAt,
       event: "eta_update",
       by: "model",
       eta_minutes: etaMinutes,
       source: "mmd_model_dashboard",
+      ...(locationReport?{location_issue:{...locationReport,binding:locationBinding,agreed_location:body.agreed_location}}:{}),
     };
     const nextEvents = appendEtaEvent(existingEvents, event);
 
-    const patched = await patchJob(env, job.record.id, {
+    const patched = replay?{ok:true,record:job.record}:await patchJob(env, job.record.id, {
       events_json: JSON.stringify(nextEvents),
       last_update_at: updatedAt,
     });
@@ -84,6 +116,7 @@ export default {
       eta_updated_at: updatedAt,
       eta_arrival_at: new Date(Date.parse(updatedAt) + etaMinutes * 60000).toISOString(),
       server_now: new Date().toISOString(),
+      ...(locationReport?{idempotent:Boolean(replay)}:{}),
     }, 200);
   },
 
@@ -99,7 +132,7 @@ export default {
       ? baseWorker.scheduled(controller, env, ctx)
       : Promise.resolve();
     const compcardJob = runCompcardDailyScheduled(env, controller);
-    const job = Promise.allSettled([reconfirmJob, legacyJob, compcardJob]);
+    const job = Promise.allSettled([reconfirmJob, legacyJob, compcardJob,drainAftercareOwner(env,scheduledAt)]);
     if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(job);
     else await job;
   },

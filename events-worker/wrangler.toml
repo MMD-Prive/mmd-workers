@@ -54,6 +54,10 @@ HYPE_INTAKE_READY_FOLDER_ID = "1CPnNgAY2sKRyh5u0nfr9WpexFV6A_HT6"
 
 # Private receipts and immutable daily plans. Do not use the public model-asset bucket.
 [[r2_buckets]]
+binding = "SESSION_COMPLETION_STATE"
+bucket_name = "mmd-private-model-media"
+
+[[r2_buckets]]
 binding = "HYPE_COMPCARD_STATE"
 bucket_name = "mmd-hype-compcard-state"
 

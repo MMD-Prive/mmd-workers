@@ -246,7 +246,7 @@ async function syncDerivedBalance(env, sessionRecordId, summary) {
 }
 
 function resolveLifecycleField(fields = {}) {
-  for (const candidate of ["session_state", "state", "status"]) {
+  for (const candidate of ["model_session_state", "fld57fhdWqIcOy4Jp", "session_state", "state", "status"]) {
     if (Object.prototype.hasOwnProperty.call(fields, candidate)) return candidate;
   }
   return "status";

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { collectReconfirmDecisions, runModelReconfirmSweep } from "./src/model-reconfirm-runtime.js";
 
-const NOW = Date.parse("2026-10-17T16:00:00+07:00");
+const NOW = Date.parse("2026-10-17T18:00:00+07:00");
 const M1 = "recMODELAAAAAAAAAA";
 const M2 = "recMODELBBBBBBBBBB";
 const LINE1 = `U${"a".repeat(32)}`;
@@ -102,7 +102,7 @@ test("canonical-linked legacy Confirmed record is a read-only preview candidate"
 });
 
 for (const guard of ["false", "true"]) {
-  test(`observed schema gets the 16:00 notice once, with no lifecycle writes (guard ${guard})`, async t => {
+  test(`observed schema gets the 18:00 notice once, with no lifecycle writes (guard ${guard})`, async t => {
     const h = harness(t);
     const before = structuredClone(h.record.fields);
     const env = { ...ENV, MODEL_RECONFIRM_GUARD_V2: guard };
@@ -202,20 +202,16 @@ test("canonical confirmed wins over stale legacy status without rewriting either
   assert.equal(h.record.fields["Session Status"], "Cancelled");
 });
 
-test("18:00 and 19:00 remain deduped after canonical initial delivery", async t => {
+test("19:00 sends one owner alert without a second model notice", async t => {
   const h = harness(t);
   await runModelReconfirmSweep(ENV, { now: NOW });
-  await runModelReconfirmSweep(ENV, { now: NOW + 2 * 3_600_000 });
-  await runModelReconfirmSweep(ENV, { now: NOW + 2 * 3_600_000 + 15 * 60_000 });
-  assert.equal(h.log.line.length, 2);
-  const [reminder, card] = h.log.line[1].messages;
-  assert.match(reminder.text, /MY MODEL · Reminder/);
-  assert.deepEqual(card, h.log.line[0].messages[1]);
+  await runModelReconfirmSweep(ENV, { now: NOW + 45 * 60_000 });
+  assert.equal(h.log.line.length, 1);
+  assert.equal(h.log.telegram.length, 0);
   assert.equal(h.record.fields.reconfirm_acknowledged_at || null, null);
-  assert.notEqual(h.log.retryKeys[0], h.log.retryKeys[1]);
-  await runModelReconfirmSweep(ENV, { now: NOW + 3 * 3_600_000 });
-  await runModelReconfirmSweep(ENV, { now: NOW + 3 * 3_600_000 + 15 * 60_000 });
-  assert.equal(h.log.line.length, 2);
+  await runModelReconfirmSweep(ENV, { now: NOW + 3_600_000 });
+  await runModelReconfirmSweep(ENV, { now: NOW + 3_600_000 + 15 * 60_000 });
+  assert.equal(h.log.line.length, 1);
   assert.equal(h.log.telegram.length, 1);
   assert.equal(h.log.telegram[0].intent, "model_reconfirm_overdue");
 });
@@ -224,8 +220,35 @@ test("canonical acknowledgement suppresses later reminder and escalation", async
   const h = harness(t);
   await runModelReconfirmSweep(ENV, { now: NOW });
   h.record.fields.reconfirm_acknowledged_at = new Date(NOW + 60_000).toISOString();
-  await runModelReconfirmSweep(ENV, { now: NOW + 3 * 3_600_000 });
+  await runModelReconfirmSweep(ENV, { now: NOW + 3_600_000 });
   assert.equal(h.log.line.length, 1);
   assert.equal(h.log.telegram.length, 0);
+});
+
+test("persisted 16:00 schedule waits until 18:00, then alerts owner at 19:00", async t => {
+  const h = harness(t, session({
+    reconfirm_status: "scheduled",
+    reconfirm_required_at: "2026-10-17T16:00:00+07:00",
+    reconfirm_reminder_at: "2026-10-17T18:00:00+07:00",
+    reconfirm_overdue_at: "2026-10-17T19:00:00+07:00",
+  }));
+  await runModelReconfirmSweep(ENV, { now: NOW - 60 * 60_000 });
+  assert.equal(h.log.line.length, 0);
+  await runModelReconfirmSweep(ENV, { now: NOW });
+  assert.equal(h.log.line.length, 1);
+  await runModelReconfirmSweep(ENV, { now: NOW + 60 * 60_000 });
+  assert.equal(h.log.line.length, 1);
+  assert.equal(h.log.telegram.length, 1);
+  assert.equal(h.log.telegram[0].chat_id, OWNER);
+});
+
+test("overdue alert does not fall back to a generic Telegram chat", async t => {
+  const h = harness(t);
+  const env = { ...ENV, MODEL_RECONFIRM_OWNER_CHAT_ID: "", TELEGRAM_CHAT_ID: OWNER };
+  await runModelReconfirmSweep(env, { now: NOW });
+  await runModelReconfirmSweep(env, { now: NOW + 60 * 60_000 });
+  assert.equal(h.log.line.length, 1);
+  assert.equal(h.log.telegram.length, 0);
+  assert.equal(h.record.fields.reconfirm_ops_alerted_at || null, null);
 });
 

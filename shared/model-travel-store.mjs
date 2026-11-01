@@ -1,12 +1,14 @@
 import { travelEtaFromEvents } from './model-travel-eta.mjs';
 import { customerSessionLifecycle } from './model-travel-lifecycle.mjs';
 import { notificationDigest } from './payment-notification-outbox.mjs';
+import {normalizeMeetingDetails, normalizeTravelTransport} from './model-meeting-details.mjs';
 
 export const TRAVEL_LIMIT = 3;
 export const TRAVEL_TEXT_MAX = 500;
 export const TRAVEL_IMAGE_MAX = 5 * 1024 * 1024;
 const TTL = 10 * 60000;
 const ACTIVE = new Set(['en_route', 'nearby']);
+const CUSTOMER_UPDATES = new Set(['en_route', 'nearby', 'arrived']);
 const ref = value => typeof value === 'string' ? value.trim() : '';
 export const travelError = (code, status = 409) => Object.assign(new Error(code), { code, status });
 export const travelJson = (value, status = 200) => Response.json(value, { status, headers: { 'cache-control': 'private, no-store', 'x-content-type-options': 'nosniff' } });
@@ -45,10 +47,39 @@ export function travelState(record) {
 // Keep canonical alias/conflict handling without falling back to that field.
 function canWriteTravel(record) {
   const fields = record?.fields || {};
-  return ACTIVE.has(customerSessionLifecycle({
+  return CUSTOMER_UPDATES.has(customerSessionLifecycle({
     model_session_state: fields.model_session_state,
     session_state: fields.session_state,
   }));
+}
+
+function canEditMeeting(record) {
+  const fields=record?.fields || {};
+  return ['confirmed','en_route','nearby','arrived'].includes(customerSessionLifecycle({model_session_state:fields.model_session_state,session_state:fields.session_state}));
+}
+export const agreedMeetingLocation = (env,record) => ref(record?.fields?.[env.AT_SESSIONS__LOCATION_NAME || 'location_name']);
+export const meetingBinding = async (env,record) => notificationDigest(JSON.stringify([await travelBinding(record),agreedMeetingLocation(env,record)]));
+
+export async function saveMeetingDetails(env,record,identity,input) {
+  assertTravelCustomer(record,identity);
+  if (identity.readGraceOnly || !canEditMeeting(record) || !agreedMeetingLocation(env,record)) throw travelError('meeting_details_not_allowed');
+  const details=normalizeMeetingDetails(input),binding=await meetingBinding(env,record);
+  const fresh=await readTravelSession(env,record.fields.session_id);
+  assertTravelCustomer(fresh,identity);
+  if (!canEditMeeting(fresh) || await meetingBinding(env,fresh)!==binding) throw travelError('travel_binding_changed');
+  await mutate(env,record.fields.session_id,value=>{value.meeting_details={binding,details,updated_at:new Date().toISOString()};});
+  return {ok:true};
+}
+
+export async function saveTravelTransport(env,record,modelId,input) {
+  assertTravelModel(record,modelId);
+  if (!canEditMeeting(record)) throw travelError('meeting_details_not_allowed');
+  const details=normalizeTravelTransport(input),binding=await travelBinding(record);
+  const fresh=await readTravelSession(env,record.fields.session_id);
+  assertTravelModel(fresh,modelId);
+  if (!canEditMeeting(fresh) || await travelBinding(fresh)!==binding) throw travelError('travel_binding_changed');
+  await mutate(env,record.fields.session_id,value=>{value.transport_details={binding,details,updated_at:new Date().toISOString()};});
+  return {ok:true};
 }
 
 // Shared by the legacy current/context projection and the private travel API.
@@ -60,7 +91,10 @@ export async function resolveTravelEta(env, record, now = Date.now()) {
     const sessionId=record.fields.session_id;
     const jobs=await travelRecords(env,env.AIRTABLE_TABLE_JOBS||'Jobs',sessionId);
     if(jobs.length!==1||jobs[0].fields?.session_id!==sessionId)throw travelError('travel_job_unavailable');
-    return travelEtaFromEvents(jobs[0].fields.events_json,now);
+    let binding='';try {binding=await travelBinding(record);}catch {}
+    const eta=travelEtaFromEvents(jobs[0].fields.events_json,now,binding);
+    if(eta.location_report?.agreed_location!==agreedMeetingLocation(env,record))delete eta.location_report;
+    return eta;
   } catch { return {...inactive,status:'unavailable'}; }
 }
 
@@ -77,6 +111,26 @@ export function assertTravelModel(record, modelId, write = false) {
   const models = record?.fields?.['Canonical Model'];
   if (!Array.isArray(models) || models.length !== 1 || models[0] !== modelId) throw travelError('travel_forbidden', 403);
   if (write && !canWriteTravel(record)) throw travelError('travel_not_allowed');
+}
+
+export function assertTravelCustomer(record, identity, write = false) {
+  const fields = record?.fields || {}, line = ref(fields.line_user_id);
+  const members = Array.isArray(fields.member_id) ? fields.member_id : fields.member_id ? [fields.member_id] : [];
+  if (!/^U[0-9a-f]{32}$/i.test(identity?.lineUserId || '') || members.length > 1
+    || (line && line !== identity.lineUserId)
+    || (members[0] && identity.memberId && members[0] !== identity.memberId)
+    || !(line === identity.lineUserId || (members[0] && members[0] === identity.memberId))) throw travelError('travel_forbidden', 403);
+  if (write && identity.readGraceOnly === true) throw travelError('member_session_refresh_required', 401);
+  if (write && !canWriteTravel(record)) throw travelError('travel_not_allowed');
+}
+
+const senderRole = entry => entry.sender_role || 'model';
+const senderId = entry => entry.sender_id || entry.model_id;
+async function authorizedSender(record, actor, role, write = true) {
+  if (role === 'model') { assertTravelModel(record, actor, write); return actor; }
+  if (role !== 'customer') throw travelError('travel_forbidden', 403);
+  assertTravelCustomer(record, actor, write);
+  return 'customer:' + await travelBinding(record);
 }
 
 const rootOf = async sessionId => `job-travel/v1/${await notificationDigest(sessionId)}/`;
@@ -106,15 +160,15 @@ async function mutate(env, sessionId, change) {
   throw travelError('travel_busy_retry_same_key', 503);
 }
 
-function counts(entries, now) {
-  const retained = Object.values(entries).filter(e => e.state === 'saved' || (e.state === 'reserved' && e.expires_at > now));
+function counts(entries, now, role = 'model') {
+  const retained = Object.values(entries).filter(e => senderRole(e) === role && (e.state === 'saved' || (e.state === 'reserved' && e.expires_at > now)));
   const saved = retained.filter(e => e.state === 'saved');
   const messages = retained.filter(e => Boolean(e.text)).length, photos = retained.reduce((n, e) => n + e.photos.length, 0);
   return { messages_used: saved.filter(e => Boolean(e.text)).length, photos_used: saved.reduce((n, e) => n + e.photos.length, 0), messages_remaining: Math.max(0, TRAVEL_LIMIT - messages), photos_remaining: Math.max(0, TRAVEL_LIMIT - photos) };
 }
 
-export async function prepareTravelSubmission(env, record, modelId, input, now = Date.now()) {
-  assertTravelModel(record, modelId, true);
+export async function prepareTravelSubmission(env, record, actor, input, now = Date.now(), role = 'model') {
+  const actorId = await authorizedSender(record, actor, role);
   if (typeof input?.key !== 'string' || !/^[a-zA-Z0-9_-]{16,80}$/.test(input.key)) throw travelError('travel_key_invalid', 400);
   if (typeof input.text !== 'string' || input.text.length > TRAVEL_TEXT_MAX) throw travelError('travel_text_invalid', 400);
   const text = input.text.trim();
@@ -125,27 +179,27 @@ export async function prepareTravelSubmission(env, record, modelId, input, now =
   });
   if (!text && !photos.length) throw travelError('travel_submission_empty', 400);
   const binding = await travelBinding(record), sessionId = record.fields.session_id;
-  const id = await notificationDigest(`${modelId}:${sessionId}:${input.key}`), digest = await notificationDigest(JSON.stringify({ text, photos }));
+  const id = await notificationDigest(`${actorId}:${sessionId}:${input.key}`), digest = await notificationDigest(JSON.stringify({ text, photos }));
   await cleanupTravelReservations(env, sessionId, now);
   const data = await mutate(env, sessionId, value => {
     const existing = value.entries[id];
     if (existing) {
-      if (existing.digest !== digest || existing.binding !== binding || existing.model_id !== modelId) throw travelError('travel_key_conflict');
+      if (existing.digest !== digest || existing.binding !== binding || senderRole(existing) !== role || senderId(existing) !== actorId) throw travelError('travel_key_conflict');
       return existing;
     }
     if (Object.keys(value.entries).length >= 64) throw travelError('travel_attempt_limit', 429);
-    const used = counts(value.entries, now);
+    const used = counts(value.entries, now, role);
     if ((text && !used.messages_remaining) || photos.length > used.photos_remaining) throw travelError('travel_quota_reached');
-    return value.entries[id] = { id, key: input.key, digest, model_id: modelId, binding, text, photos, state: 'reserved', expires_at: now + TTL, created_at: new Date(now).toISOString() };
+    return value.entries[id] = { id, key: input.key, digest, sender_role: role, sender_id: actorId, ...(role === 'model' ? {model_id: actorId} : {}), binding, text, photos, state: 'reserved', expires_at: now + TTL, created_at: new Date(now).toISOString() };
   });
-  return { id, state: data.result.state, expires_at: data.result.expires_at, ...counts(data.value.entries, now) };
+  return { id, state: data.result.state, expires_at: data.result.expires_at, ...counts(data.value.entries, now, role) };
 }
 
-async function entryFor(env, record, modelId, id, now, write = true) {
-  assertTravelModel(record, modelId, write);
+async function entryFor(env, record, actor, id, now, write = true, role = 'model') {
+  const actorId = await authorizedSender(record, actor, role, write);
   if (!validId(id)) throw travelError('travel_submission_invalid', 400);
   const data = await ledger(env, record.fields.session_id), entry = data.value.entries[id];
-  if (!entry || entry.model_id !== modelId || entry.binding !== await travelBinding(record)) throw travelError('travel_submission_unavailable', 404);
+  if (!entry || senderRole(entry) !== role || senderId(entry) !== actorId || entry.binding !== await travelBinding(record)) throw travelError('travel_submission_unavailable', 404);
   if (write && entry.state !== 'saved' && (entry.state !== 'reserved' || entry.expires_at <= now)) throw travelError('travel_reservation_expired');
   return { ...data, entry };
 }
@@ -206,8 +260,8 @@ export function validateTravelJpeg(bytes) {
   bad();
 }
 
-export async function uploadTravelPhoto(env, record, modelId, id, index, request, now = Date.now()) {
-  const data = await entryFor(env, record, modelId, id, now), spec = data.entry.photos[index];
+export async function uploadTravelPhoto(env, record, actor, id, index, request, now = Date.now(), role = 'model') {
+  const data = await entryFor(env, record, actor, id, now, true, role), spec = data.entry.photos[index];
   if (!Number.isInteger(index) || !spec || request.headers.get('content-type') !== 'image/jpeg') throw travelError('travel_photo_invalid', 400);
   if (data.entry.state === 'saved') return { id, state: 'saved' };
   const bytes = await readBoundedTravelBody(request, Math.min(TRAVEL_IMAGE_MAX, spec.size));
@@ -221,13 +275,13 @@ export async function uploadTravelPhoto(env, record, modelId, id, index, request
   });
   // A cancellation/expiry never resurrects an upload. Deterministic object
   // references remain in the ledger, so cleanup can recover after a crash.
-  try { await entryFor(env, record, modelId, id, Date.now()); }
+  try { await entryFor(env, record, actor, id, Date.now(), true, role); }
   catch (error) { await data.bucket.delete(key); throw error; }
   return { id, index, state: 'uploaded' };
 }
 
-export async function commitTravelSubmission(env, record, modelId, id, now = Date.now()) {
-  const data = await entryFor(env, record, modelId, id, now);
+export async function commitTravelSubmission(env, record, actor, id, now = Date.now(), role = 'model') {
+  const data = await entryFor(env, record, actor, id, now, true, role);
   if (data.entry.state === 'saved') return { id, state: 'saved', duplicate: true };
   for (const [index, spec] of data.entry.photos.entries()) {
     const object = await data.bucket.head(objectKey(data.root, id, index));
@@ -235,7 +289,7 @@ export async function commitTravelSubmission(env, record, modelId, id, now = Dat
   }
   // Ownership and lifecycle are read afresh immediately before the commit.
   const fresh = await readTravelSession(env, record.fields.session_id);
-  assertTravelModel(fresh, modelId, true);
+  await authorizedSender(fresh, actor, role);
   if (await travelBinding(fresh) !== data.entry.binding) throw travelError('travel_binding_changed');
   await mutate(env, record.fields.session_id, value => {
     const entry = value.entries[id];
@@ -247,8 +301,8 @@ export async function commitTravelSubmission(env, record, modelId, id, now = Dat
   return { id, state: 'saved', duplicate: false };
 }
 
-export async function cancelTravelSubmission(env, record, modelId, id, now = Date.now()) {
-  await entryFor(env, record, modelId, id, now, false);
+export async function cancelTravelSubmission(env, record, actor, id, now = Date.now(), role = 'model') {
+  await entryFor(env, record, actor, id, now, false, role);
   await mutate(env, record.fields.session_id, value => {
     const entry = value.entries[id];
     if (entry.state === 'saved') throw travelError('travel_already_saved');
@@ -275,13 +329,20 @@ export async function projectTravel(env, record, role = 'customer', now = Date.n
   await cleanupTravelReservations(env, sessionId, now);
   const data = await ledger(env, sessionId);
   const eta = await resolveTravelEta(env, record, now);
-  const entries = Object.values(data.value.entries).filter(e => e.binding === binding && (e.state === 'saved' || role === 'model'));
+  const entries = Object.values(data.value.entries).filter(e => e.binding === binding && (e.state === 'saved' || senderRole(e) === role));
+  entries.sort((a, b) => Date.parse(a.saved_at || a.created_at) - Date.parse(b.saved_at || b.created_at) || a.id.localeCompare(b.id));
   return {
     ok: true, session_id: sessionId, state, revision: data.value.revision, binding, server_now: new Date(now).toISOString(),
-    eta, can_send: role === 'model' && canWriteTravel(record), text_max: TRAVEL_TEXT_MAX, image_max_bytes: TRAVEL_IMAGE_MAX,
-    ...(role === 'model' ? counts(data.value.entries, now) : {}),
-    submissions: entries.map(e => ({ id: e.id, state: e.state, text: e.text, saved_at: e.saved_at || null,
-      ...(role === 'model' ? { request_key: e.key } : {}),
+    eta, can_send: ['model', 'customer'].includes(role) && canWriteTravel(record), text_max: TRAVEL_TEXT_MAX, image_max_bytes: TRAVEL_IMAGE_MAX,
+    ...counts(data.value.entries, now, role),
+    appointment_location:agreedMeetingLocation(env,record),
+    context_binding:await meetingBinding(env,record),
+    can_edit_meeting:role==='customer' && canEditMeeting(record) && Boolean(agreedMeetingLocation(env,record)),can_edit_transport:role==='model' && canEditMeeting(record),
+    can_report_wrong_location:role==='model' && canWriteTravel(record) && Boolean(agreedMeetingLocation(env,record)),
+    meeting_details:data.value.meeting_details?.binding===await meetingBinding(env,record)?data.value.meeting_details.details:null,
+    transport_details:data.value.transport_details?.binding===binding?data.value.transport_details.details:null,
+    submissions: entries.map(e => ({ id: e.id, state: e.state, sender_role: senderRole(e), text: e.text, saved_at: e.saved_at || null,
+      ...(senderRole(e) === role ? { request_key: e.key } : {}),
       photos: e.photos.map((_, index) => ({ id: `${e.id}_${index}` })),
     })),
   };

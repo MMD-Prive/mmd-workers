@@ -16,6 +16,8 @@ import { handleHypeJobDailyOwnerRequest, isHypeJobDailyOwnerRequest } from "./hy
 import { handlePremiumGroupCleanupOwnerRequest, isPremiumGroupCleanupOwnerRequest } from "./premium-group-cleanup/owner.js";
 import { handleModelReconfirmOwnerRequest, isModelReconfirmOwnerRequest } from "./model-reconfirm-owner.js";
 import { drainApprovedJobLinkNotifications } from "./payment-approved-job-link-dispatch.js";
+import {drainOwnerTravelAlerts} from './model-travel-owner.js';
+import {drainOwnerPayoutInstructions} from './model-payout-destination.js';
 import { reconcilePendingMembershipRecoveries } from "./membership-payment-pending-recovery.js";
 import { observeGenuineLiffAcceptance } from "./membership-genuine-liff-acceptance-observer.js";
 import { isBookingModelsRequest, handleBookingModels } from "./booking-models.js";
@@ -259,6 +261,7 @@ const adminLoginHeroWorker = {
     if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(hypeJobDaily);
     else await hypeJobDaily;
     await drainApprovedJobLinkNotifications(runtimeEnv);
+    await Promise.allSettled([drainOwnerTravelAlerts(runtimeEnv),drainOwnerPayoutInstructions(runtimeEnv)]);
     await reconcilePendingMembershipRecoveries(runtimeEnv);
     await observeGenuineLiffAcceptance(runtimeEnv);
     if (typeof worker.scheduled === "function") await worker.scheduled(event, runtimeEnv, ctx);

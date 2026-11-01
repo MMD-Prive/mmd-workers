@@ -1,4 +1,4 @@
-import { assertTravelModel, cancelTravelSubmission, commitTravelSubmission, prepareTravelSubmission, projectTravel, readBoundedTravelBody, readTravelSession, travelError, travelJson, travelPhotoResponse, uploadTravelPhoto } from '../../shared/model-travel-store.mjs';
+import { assertTravelModel, cancelTravelSubmission, commitTravelSubmission, meetingBinding, prepareTravelSubmission, projectTravel, readBoundedTravelBody, readTravelSession, saveTravelTransport, travelError, travelJson, travelPhotoResponse, uploadTravelPhoto } from '../../shared/model-travel-store.mjs';
 import { notifyTravelEvent, travelDeliveryStatus } from './model-travel-notification.js';
 
 export const MODEL_TRAVEL_PATH = '/v1/model/session/travel';
@@ -17,7 +17,8 @@ export async function handleModelTravelApi(request, env, authenticate, originAll
       catch (error) { throw error.code ? error : travelError('invalid_json', 400); }
     }
     const sessionId = body?.session_id || url.searchParams.get('session_id');
-    if (url.searchParams.getAll('session_id').length > 1 || ['model_id','model_record_id','client_id','line_user_id'].some(key=>url.searchParams.has(key))) throw travelError('travel_selector_invalid',400);
+    if (url.searchParams.getAll('session_id').length > 1 || ['model_id','model_record_id','client_id','member_id','line_user_id','sender_role','sender_id','role'].some(key=>url.searchParams.has(key) || Object.hasOwn(body || {}, key))
+      || (body?.session_id && url.searchParams.has('session_id') && body.session_id !== url.searchParams.get('session_id'))) throw travelError('travel_selector_invalid',400);
     const record = await readTravelSession(env, sessionId), modelId = auth.payload.model_record_id;
     assertTravelModel(record, modelId);
     if (url.pathname.endsWith('/photo')) {
@@ -26,7 +27,7 @@ export async function handleModelTravelApi(request, env, authenticate, originAll
     }
     if (method === 'GET') {
       const data = await projectTravel(env, record, 'model');
-      for (const entry of data.submissions) if (entry.state === 'saved') entry.delivery = await travelDeliveryStatus(env, record, entry.id);
+      for (const entry of data.submissions) if (entry.state === 'saved' && entry.sender_role === 'model') entry.delivery = await travelDeliveryStatus(env, record, entry.id);
       return travelJson(data);
     }
     if (method === 'PUT') {
@@ -34,6 +35,10 @@ export async function handleModelTravelApi(request, env, authenticate, originAll
       return travelJson(await uploadTravelPhoto(env, record, modelId, url.searchParams.get('id'), Number(url.searchParams.get('index')), request));
     }
     if (body?.action === 'prepare') return travelJson(await prepareTravelSubmission(env, record, modelId, body));
+    if (body?.action === 'save_transport') {
+      if(body.context_binding!==await meetingBinding(env,record))throw travelError('travel_binding_changed');
+      return travelJson(await saveTravelTransport(env,record,modelId,body.details));
+    }
     if (body?.action === 'cancel') return travelJson(await cancelTravelSubmission(env, record, modelId, body.id));
     if (body?.action === 'commit') {
       const result = await commitTravelSubmission(env, record, modelId, body.id);

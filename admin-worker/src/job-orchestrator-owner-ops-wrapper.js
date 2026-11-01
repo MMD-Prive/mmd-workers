@@ -1,4 +1,7 @@
 import delegatedWorker from "./cancellation-credit-recovery.js";
+import { COMPLETION_OWNER_PAGE, completionOwnerPage } from "./session-completion-owner-page.js";
+import { OWNER_TRAVEL_PATH, ownerTravelResponse } from "./model-travel-owner.js";
+import { MANUAL_REVIEW_PATH, listNotificationReviews, resolveNotificationReview } from './notification-manual-review.js';
 import {
   OWNER_JOB_ACTIONS_PATH,
   applyOwnerJobAction,
@@ -400,6 +403,28 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const method = String(request.method || "GET").toUpperCase();
+    if(url.pathname===MANUAL_REVIEW_PATH){
+      if(!['GET','POST'].includes(method))return json({ok:false,error:'method_not_allowed'},405);
+      if(method==='POST'&&(request.headers.get('origin')!==url.origin||request.headers.get('sec-fetch-site')==='cross-site'))return json({ok:false,error:'origin_not_allowed'},403);
+      const actor=await readOwnerActor(request,env,ctx);
+      if(!actor)return json({ok:false,error:'owner_admin_session_required'},401);
+      try{
+        if(method==='GET')return json(await listNotificationReviews(env,{lane:url.searchParams.get('lane')||undefined,cursor:url.searchParams.get('cursor')||''}));
+        if(Number(request.headers.get('content-length'))>4096)return json({ok:false,error:'request_too_large'},413);
+        const raw=await request.text();
+        if(new TextEncoder().encode(raw).length>4096)return json({ok:false,error:'request_too_large'},413);
+        return json(await resolveNotificationReview(env,JSON.parse(raw),actor));
+      }catch(error){return json({ok:false,error:clean(error.status?error.message:'notification_review_unavailable',160)},error.status||503);}
+    }
+    if (url.pathname === OWNER_TRAVEL_PATH) {
+      const actor = await readOwnerActor(request, env, ctx);
+      return actor ? ownerTravelResponse(request, env) : json({ok:false,error:"owner_admin_session_required"},401);
+    }
+    if (url.pathname === COMPLETION_OWNER_PAGE) {
+      if (method !== "GET") return json({ok:false,error:"method_not_allowed"},405);
+      const actor = await readOwnerActor(request,env,ctx);
+      return actor ? completionOwnerPage() : json({ok:false,error:"owner_admin_session_required"},401);
+    }
     const calendarPath = url.pathname.replace(/\/$/, "");
     if ([CALENDAR_PAGE_PATH, CALENDAR_API_PATH, CALENDAR_RECONCILE_API_PATH, CALENDAR_MODEL_PHOTO_API_PATH, CALENDAR_THERAPIST_PHOTO_API_PATH, CALENDAR_AVAILABILITY_COHORT_START_API_PATH, CALENDAR_AVAILABILITY_REMINDER_API_PATH, CALENDAR_AVAILABILITY_REMINDER_PREFLIGHT_API_PATH, CALENDAR_AVAILABILITY_ACTIVATION_API_PATH].includes(calendarPath)) {
       url.pathname = calendarPath;
@@ -407,6 +432,7 @@ export default {
     }
 
     if (isOwnerJobActionsRequest(url, method)) {
+      if (method === "POST" && request.headers.get("origin") !== url.origin) return json({ok:false,error:"origin_not_allowed"},403);
       const actor = await readOwnerActor(request, env, ctx);
       if (!actor) return json({ ok: false, error: "owner_admin_session_required", authority: "model_session_contract_v1" }, 401);
       try {
@@ -415,7 +441,7 @@ export default {
         if (!body || typeof body !== "object" || Array.isArray(body)) return json({ ok: false, error: "invalid_owner_action_request" }, 400);
         return ownerActionHttpResponse(await applyOwnerJobAction(env, body, actor));
       } catch (error) {
-        return json({ ok: false, error: "owner_job_action_failed", detail: clean(error?.message, 160), authority: "model_session_contract_v1" }, 500);
+        return json({ ok: false, error: "owner_job_action_failed", detail: clean(error?.message, 160), authority: "model_session_contract_v1" }, Number(error?.status) || 500);
       }
     }
 

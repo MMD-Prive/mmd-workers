@@ -105,3 +105,6 @@
   #sigil-model-console-v3[data-console-atelier] .smcv3-hero__content{width:52%;max-width:600px;margin-left:max(0px,calc((100vw - 1280px)/2));padding:40px 32px}
   #sigil-model-console-v3[data-console-atelier] .smcv3-hero .smcv3-head{padding-left:max(32px,calc((100vw - 1080px)/2))!important;padding-right:max(32px,calc((100vw - 1080px)/2))!important}
 }
+/* Customer updates use the same Thai/UI faces as the authenticated MY MODEL home. */
+#sigil-model-console-v3[data-console-atelier] .mt9{font-family:"Outfit","Noto Sans Thai",sans-serif;font-synthesis:none;letter-spacing:0}
+#sigil-model-console-v3[data-console-atelier] .mt9 :is(h3,summary,textarea,input,button){font-family:inherit;font-weight:500;letter-spacing:0}

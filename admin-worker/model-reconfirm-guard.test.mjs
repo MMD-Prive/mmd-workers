@@ -12,7 +12,7 @@ const realFetch = globalThis.fetch;
 globalThis.fetch = async (url) => { throw new Error(`REAL_NETWORK_CALL_BLOCKED ${String(url?.url || url)}`); };
 test.after(() => { globalThis.fetch = realFetch; });
 
-const NOW = Date.parse("2026-09-30T16:05:00+07:00"); // D-1 16:05 for a 2026-10-01 job
+const NOW = Date.parse("2026-09-30T18:05:00+07:00"); // D-1 18:05 for a 2026-10-01 job
 const LINE_ID = `U${"a".repeat(32)}`;
 const M1 = "recMODELAAAAAAAAAA";
 const M2 = "recMODELBBBBBBBBBB";
@@ -227,8 +227,8 @@ test("S9 guard ON: cancelled and completed jobs are skipped even for the target 
   assert.equal(h.log.line.length + h.log.telegram.length, 0);
 });
 
-test("S10 guard ON: nothing is sent before D-1 16:00 ICT", async () => {
+test("S10 guard ON: nothing is sent before D-1 18:00 ICT", async () => {
   const h = harness([session("recS10AAAAAAAAAAAA")]);
-  await runModelReconfirmSweep(env({ MODEL_RECONFIRM_GUARD_V2: "true" }), { now: Date.parse("2026-09-30T15:45:00+07:00") });
+  await runModelReconfirmSweep(env({ MODEL_RECONFIRM_GUARD_V2: "true" }), { now: Date.parse("2026-09-30T17:45:00+07:00") });
   assert.equal(h.log.line.length + h.log.telegram.length, 0);
 });
