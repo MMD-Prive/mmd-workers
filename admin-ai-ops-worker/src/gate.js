@@ -319,7 +319,7 @@ const MEDIA_FLUSH_CLIENT_LAYER = String.raw`;(()=>{'use strict';
   style.textContent='[data-mmd-media-flush]{margin:10px 0;border:1px solid #e9b17d;border-radius:12px;background:#fff8ef;color:#26211c;padding:12px;font:500 12px/1.45 -apple-system,BlinkMacSystemFont,"Noto Sans Thai",sans-serif}[data-mmd-media-flush] summary{cursor:pointer;font-weight:800;font-size:12px;color:#71360f}[data-mmd-media-flush] p{margin:7px 0;color:#765b46}[data-mmd-media-flush] button{background:#edaa70;border:1px solid #c67739;border-radius:9px;color:#2d1b0d;font-weight:800;min-height:44px;padding:10px 14px;cursor:pointer}[data-mmd-media-flush] button:disabled{opacity:.6;cursor:wait}[data-mmd-media-flush] ul{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:4px}[data-mmd-media-flush] li{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid #ecdfd1;padding:5px 0;color:#3a3029;font-size:11px}[data-mmd-media-flush] .muted{font-size:10px;color:#856e5f}[data-mmd-media-flush] [role=status]{display:block;margin-top:8px;color:#654832;font-size:11px;white-space:pre-wrap}';
   document.head.appendChild(style);
   const storageKey='mmd.flush.run.v2';
-  let last=null,loading=false,error='',resumeRunId=null,refreshPanel=()=>{},panelOpen=false;
+  let last=null,loading=false,error='',resumeRunId=null,refreshPanel=()=>{},panelOpen=false,queuePanel=null;
   try{const id=sessionStorage.getItem(storageKey);if(/^[a-f0-9-]{36}$/.test(id||''))resumeRunId=id;}catch{}
   function remember(id){resumeRunId=id;try{id?sessionStorage.setItem(storageKey,id):sessionStorage.removeItem(storageKey);}catch{}}
   const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
@@ -370,7 +370,8 @@ const MEDIA_FLUSH_CLIENT_LAYER = String.raw`;(()=>{'use strict';
       }
     };
     // All queue reads and proposals remain inside the authenticated FLUSH endpoint.
-    const queueBox=document.createElement('section');panel.append(queueBox);
+    if(queuePanel)panel.append(queuePanel);else {
+    const queueBox=document.createElement('section');queuePanel=queueBox;panel.append(queueBox);
     const queueTitle=document.createElement('h3');queueTitle.textContent='คิวรออนุมัติ · ดูสื่อและเสนอคู่โมเดล';
     const queueLoad=document.createElement('button');queueLoad.type='button';queueLoad.textContent='เปิดคิวรออนุมัติ';
     const lane=document.createElement('select');lane.setAttribute('aria-label','กรอง Review/Hidden');
@@ -426,7 +427,8 @@ const MEDIA_FLUSH_CLIENT_LAYER = String.raw`;(()=>{'use strict';
       viewer.append(source,visibility,query,search,choices,chosen,clear,save);
     }
     queueLoad.onclick=loadQueue;lane.onchange=category.onchange=matching.onchange=()=>{page=0;clearViewer();drawQueue();};previous.onclick=()=>{page--;clearViewer();drawQueue();};next.onclick=()=>{page++;clearViewer();drawQueue();};
-        refreshPanel=render;
+    }
+    refreshPanel=render;
     async function flush(forceNew=false){
       if(loading)return;
       if(forceNew||!resumeRunId)remember(crypto.randomUUID());
