@@ -4,7 +4,8 @@ export const BENZ_T = 'rec0xpNoARWnLmxbF';
 export const TTL = 60 * 60 * 1000;
 export const scoped = value => value.id === PERO_JOB || value.policy === 'standard-pn-60m';
 export function eligible(model, value) {
-  return model.canonicalModelId !== BENZ_T
+  return model.canonicalModelId !== 'recvLEWaCTw15DZQK' // Film IT: owner excluded from Pero job, 2026-11-01
+    && model.canonicalModelId !== BENZ_T
     && !(value.ownerOnly?.excludedCanonicalModelIds || []).includes(model.canonicalModelId)
     && model.qualification?.category === 'standard'
     && model.qualification?.straight === true
