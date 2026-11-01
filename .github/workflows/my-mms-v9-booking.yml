@@ -1,0 +1,20 @@
+name: MY MMS V9 booking validation
+on:
+  pull_request:
+    paths:
+      - 'webflow/mms/customer-booking-v9/**'
+      - '.github/workflows/my-mms-v9-booking.yml'
+permissions:
+  contents: read
+jobs:
+  booking-form:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci --ignore-scripts
+      - name: Validate original booking contract with offline fixtures
+        run: node --test webflow/mms/customer-booking-v9/test/booking-flow.test.mjs

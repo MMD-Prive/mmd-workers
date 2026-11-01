@@ -1,0 +1,21 @@
+<script id="mms-booking-world-copy-v1">
+(function(){
+  "use strict";
+  var attempts=0;
+  function patch(){
+    var root=document.getElementById("mmb2");
+    if(!root){if(attempts++<20)setTimeout(patch,150);return;}
+    var hero=root.querySelector(".mmb2-hero-copy h1, .mms-native-h1");
+    if(hero)hero.innerHTML="เลือกสิ่งที่ต้องการ<br><span>ที่เหลือให้ MMS ประสาน</span>";
+    var lead=root.querySelector(".mmb2-hero-lead, .mms-native-hero-copy>p:not(:first-child)");
+    if(lead)lead.textContent="เลือกบริการ วัน เวลา พื้นที่ และ Male Therapist ที่สนใจได้ในคำขอเดียว ที่เหลือ MMS จะเช็ก Skills คิว และรายละเอียดที่จำเป็นก่อนตอบยืนยันครับ";
+    var caption=root.querySelector(".mmb2-hero-media figcaption small, .mms-native-hero-media figcaption small");
+    if(caption)caption.textContent="Private coordination · by MMS";
+    var consent=root.querySelector("#mmb2-review .w-checkbox-label");
+    if(consent&&consent.textContent.indexOf("MMD")>-1)consent.textContent=consent.textContent.replace(/MMD/g,"MMS");
+    root.querySelectorAll("#mmb2-success p").forEach(function(p){if(p.textContent.indexOf("MMD")>-1)p.textContent=p.textContent.replace(/MMD/g,"MMS")});
+  }
+  if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",patch,{once:true});else patch();
+  setTimeout(patch,800);
+})();
+</script>

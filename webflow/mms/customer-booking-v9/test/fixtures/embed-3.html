@@ -1,0 +1,301 @@
+<style id="mms-booking-rebuilt-v2">
+@font-face{font-family:"LINE Seed Sans TH";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a619dd598baf067153fd1cc_LINESeedSansTH_W_Rg.woff2") format("woff2");font-weight:400;font-display:swap}
+@font-face{font-family:"LINE Seed Sans TH";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a619dd4dc8d84b48cc84959_LINESeedSansTH_W_Bd.woff2") format("woff2");font-weight:700;font-display:swap}
+@font-face{font-family:"LINE Seed Sans TH";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a619dd5cdf166a1e9e45b98_LINESeedSansTH_W_XBd.woff2") format("woff2");font-weight:800;font-display:swap}
+#mmb2{--forest:#102f25;--ink:#17392a;--muted:#4f6658;--lime:#d1ee91;--paper:#f8f8f2;--line:#dbe5d8;--ease:cubic-bezier(.22,1,.36,1);margin:0;background:var(--paper);color:var(--ink);font:400 15px/1.75 "LINE Seed Sans TH","Noto Sans Thai",system-ui,sans-serif;font-synthesis:none;isolation:isolate;overflow:clip}
+#mmb2 *,#mmb2 *:before,#mmb2 *:after{box-sizing:border-box}
+#mmb2 [hidden]{display:none!important}#mmb2 a{text-decoration:none}#mmb2 button,#mmb2 input,#mmb2 select,#mmb2 textarea{font:inherit}#mmb2 img{max-width:100%;height:auto;display:block}#mmb2 button{cursor:pointer}#mmb2 button:disabled{cursor:not-allowed;opacity:.48}#mmb2 a:focus-visible,#mmb2 button:focus-visible,#mmb2 summary:focus-visible{outline:3px solid #94bb64;outline-offset:4px}#mmb2 section,#mmb2 header{scroll-margin-top:18px}
+#mmb2 .mb-wrap{width:min(100% - 36px,1040px);margin-inline:auto}
+#mmb2 .mb-hero{position:relative;background:#102f25;color:#fffdf8;overflow:hidden}#mmb2 .mb-hero>.mb-wrap{position:relative;z-index:1;display:flex;flex-direction:column;min-height:clamp(540px,70svh,640px)}
+#mmb2 .mb-nav{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:72px;border-bottom:1px solid #ffffff25}
+#mmb2 .mb-brand img{width:134px}#mmb2 .mb-nav>a:last-child{font-size:12px;font-weight:700;color:#e5eee2}
+#mmb2 .mb-hero-grid{display:flex;align-items:flex-end;flex:1;padding:170px 0 34px}#mmb2 .mb-hero-copy{position:relative;max-width:590px;text-shadow:0 2px 18px #0005}#mmb2 .mb-kicker{margin:0 0 13px;font-size:10px;font-weight:800;letter-spacing:.15em;line-height:1.5;color:#41653c}#mmb2 .mb-hero .mb-kicker{color:var(--lime)}
+#mmb2 h1{font-size:clamp(34px,9vw,58px);line-height:1.22;letter-spacing:-.025em;margin:0 0 16px;font-weight:800;text-wrap:balance;padding-block:3px}#mmb2 h1 em{font-style:normal;color:var(--lime)}#mmb2 .mb-lead{font-size:14px;line-height:1.85;max-width:490px;margin:0 0 19px;color:#e1ecdf}
+#mmb2 .mb-status{font-size:12px;line-height:1.6;color:#dbead4;display:flex;align-items:center;gap:8px}#mmb2 .mb-status:before{content:"";width:7px;height:7px;flex:none;background:var(--lime);border-radius:50%}
+#mmb2 .mb-hero-picture{position:absolute;inset:0;z-index:0;margin:0;overflow:hidden;background:#153828}#mmb2 .mb-hero-picture img{width:100%;height:100%;max-width:none;object-fit:cover;object-position:46% 12%}#mmb2 .mb-hero-picture:after{content:"";position:absolute;inset:0;background:linear-gradient(0deg,#05170ffa 0%,#05170fe0 24%,#05170f26 67%,#05170f99 100%)}
+#mmb2 .mb-gate{padding:22px 0 0}#mmb2 .mb-gate-card{padding:20px;border:1px solid #c8dac0;border-radius:20px;background:#eaf1e3;display:grid;gap:14px}#mmb2 .mb-gate-card h2{font-size:19px;line-height:1.5;margin:0 0 5px}#mmb2 .mb-gate-card p{font-size:12px;color:var(--muted);margin:0}#mmb2 .mb-gate-card .mb-button{justify-self:start}
+#mmb2 .mb-form{margin:0 auto;padding:26px 0 38px}#mmb2 .mb-guide{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:0 0 25px}#mmb2 .mb-guide a{display:flex;gap:7px;align-items:center;padding:10px 8px;border:1px solid var(--line);border-radius:13px;font-size:10px;font-weight:700;background:#fffdf8;line-height:1.45;color:var(--ink);min-height:49px}#mmb2 .mb-guide b{font-size:10px;display:grid;place-items:center;flex:none;width:22px;height:22px;background:#e7efdf;border-radius:50%;color:var(--ink)}
+#mmb2 .mb-section{margin:0 0 17px;padding:20px 18px;border:1px solid var(--line);border-radius:24px;background:#fffdf8}#mmb2 .mb-section-head{margin:0 0 17px}#mmb2 .mb-section-head .mb-kicker{margin-bottom:8px}#mmb2 h2{font-size:clamp(24px,6.7vw,34px);line-height:1.35;letter-spacing:-.018em;font-weight:800;margin:0 0 8px;text-wrap:balance;padding-block:2px}#mmb2 .mb-section-head>p:last-child{font-size:13px;line-height:1.8;color:var(--muted);margin:0;max-width:620px}#mmb2 .mb-count{font-size:11px;color:var(--muted);margin-top:12px;display:block}
+#mmb2 .mmb2-skill-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}#mmb2 .mmb2-skill-card{position:relative;display:flex;align-items:flex-start;gap:9px;min-height:84px;padding:13px 11px;border:1px solid var(--line);border-radius:16px;background:#f5f7ef;cursor:pointer;transition:background .25s,border-color .25s}#mmb2 .mmb2-skill-card:has(input:checked){border-color:#4b7850;background:#e4efd8}#mmb2 .mmb2-skill-card span{min-width:0}#mmb2 .mmb2-skill-card strong{display:block;font-size:11px;line-height:1.6}#mmb2 .mmb2-skill-card small{display:block;font-size:11px;line-height:1.65;color:var(--muted);margin-top:4px}#mmb2 input[type=checkbox],#mmb2 input[type=radio]{appearance:auto;accent-color:var(--forest);width:18px;height:18px;min-height:18px;flex:none;margin:3px 0 0;box-shadow:none;border-radius:3px}#mmb2 .mb-placeholder{grid-column:1/-1;font-size:12px;padding:17px;border:1px dashed #bfcfba;border-radius:14px;color:var(--muted);background:#f5f7ef}
+#mmb2 .mb-fields{display:grid;gap:17px}#mmb2 .mb-field{display:grid;gap:7px;color:var(--ink);font-size:12px;font-weight:700}#mmb2 .mb-field input,#mmb2 .mb-field select,#mmb2 .mb-field textarea{width:100%;max-width:100%;min-width:0;min-height:50px;border:1px solid #cbd9c8;border-radius:12px;background:#fff;color:var(--ink);padding:11px 12px;font-size:16px;font-weight:400;line-height:1.5;box-shadow:none}#mmb2 .mb-field textarea{min-height:105px;resize:vertical}#mmb2 .mb-field input:focus,#mmb2 .mb-field select:focus,#mmb2 .mb-field textarea:focus{outline:2px solid #a1be81;outline-offset:2px}#mmb2 .mb-field small,#mmb2 .mb-help{font-size:12px;font-weight:400;line-height:1.65;color:var(--muted);margin:3px 0 0}#mmb2 .mb-fieldset{padding:0;border:0;margin:0 0 19px;min-width:0}#mmb2 .mb-fieldset legend{font-size:12px;font-weight:700;margin-bottom:9px}#mmb2 .mb-choices{display:grid;grid-template-columns:1fr 1fr;gap:8px}#mmb2 .mb-choices label{display:flex;align-items:center;gap:9px;min-height:49px;border:1px solid var(--line);padding:11px;border-radius:12px;font-size:12px;color:var(--ink);cursor:pointer}#mmb2 .mb-choices label:last-child{grid-column:1/-1}#mmb2 .mb-choices label:has(input:checked){border-color:#60815a;background:#eaf2e2}
+#mmb2 .mb-button{display:inline-flex;align-items:center;justify-content:center;gap:10px;border:0;border-radius:99px;min-height:49px;padding:12px 20px;background:var(--forest);color:#fffdf8;font-size:14px;font-weight:800;line-height:1.5;text-align:center;text-decoration:none;transition:transform .4s var(--ease),background .25s}#mmb2 .mb-button:hover:not(:disabled){transform:translateY(-2px);background:#214f36}#mmb2 .mb-button-light{background:var(--lime);color:var(--forest)}#mmb2 .mb-button-quiet{background:#edf2e6;color:var(--forest)}#mmb2 #mmb2-match,#mmb2 #mmb2-submit{width:100%;margin:4px 0 9px}#mmb2 #mmb2-use-gps{justify-self:start;min-height:44px;padding:8px 0;border:0;background:none;text-decoration:underline;text-underline-offset:4px;color:#315e36;font-size:11px;font-weight:700}
+#mmb2 .mb-error{font-size:12px;line-height:1.7;color:#963b26;margin:9px 0 0}#mmb2 .mb-error:empty{display:none}#mmb2 .mb-accordion{border-top:1px solid var(--line);margin-top:20px;padding-top:4px}#mmb2 .mb-accordion summary{font-size:12px;font-weight:700;cursor:pointer;padding:13px 0;min-height:46px;color:var(--ink)}#mmb2 .mb-accordion p{font-size:13px;line-height:1.8;color:var(--muted);margin:0 0 8px}
+#mmb2 .mmb2-results{display:grid;gap:10px;margin:17px 0}#mmb2 .mmb2-result{display:grid;grid-template-columns:82px 1fr;gap:13px;padding:12px;border:1px solid var(--line);border-radius:17px;background:#f8faf3;overflow:hidden}#mmb2 .mmb2-result>img{width:82px;height:104px;object-fit:cover;border-radius:11px}#mmb2 .mmb2-result h4{font-size:15px;line-height:1.4;margin:3px 0 6px}#mmb2 .mmb2-result p{font-size:11px;line-height:1.65;margin:0 0 9px;color:var(--muted)}#mmb2 .mmb2-result label{display:flex;gap:9px;align-items:center;font-size:12px;min-height:36px}#mmb2 .mmb2-empty{padding:15px;border:1px dashed #bfceba;border-radius:14px;font-size:12px;color:var(--muted)}
+#mmb2 .mb-journey{margin:21px 0;padding:16px 1px}#mmb2 .mb-journey h2{font-size:20px;margin-bottom:13px}#mmb2 .mb-journey ol{margin:0;padding:0;list-style:none;display:grid;gap:10px;counter-reset:mb-step}#mmb2 .mb-journey li{counter-increment:mb-step;display:flex;gap:11px;font-size:12px;color:var(--muted)}#mmb2 .mb-journey li:before{content:counter(mb-step);display:grid;place-items:center;width:23px;height:23px;flex:none;border:1px solid #bccdb5;border-radius:50%;font-size:10px;color:var(--ink)}
+#mmb2 .mb-review{background:#edf3e5}#mmb2 .mmb2-summary{display:grid;gap:0;margin-bottom:21px;background:#fffdf8;border:1px solid var(--line);border-radius:16px;padding:0 15px}#mmb2 .mmb2-summary article{padding:12px 0;display:grid;gap:4px;border-bottom:1px solid var(--line)}#mmb2 .mmb2-summary article:last-child{border:0}#mmb2 .mmb2-summary span{font-size:10px;color:var(--muted)}#mmb2 .mmb2-summary strong{font-size:12px;line-height:1.7;color:var(--ink);overflow-wrap:anywhere}#mmb2 .mb-consent{display:flex;align-items:flex-start;gap:11px;font-size:12px;line-height:1.8;color:var(--ink);margin:21px 0;cursor:pointer}#mmb2 .mb-success{margin:30px auto 50px;padding:30px 23px;text-align:center;border:1px solid var(--line);background:#edf4e3;border-radius:24px}#mmb2 .mb-success p{font-size:13px;color:var(--muted)}
+#mmb2 .mb-footer{padding:25px 0 108px;background:var(--forest);color:#e4eee0}#mmb2 .mb-footer-inner{display:grid;gap:17px}#mmb2 .mb-footer img{width:117px}#mmb2 .mb-slogan{font-size:12px;line-height:1.75;margin:0}#mmb2 .mb-footer-links{display:flex;gap:18px;font-size:11px;color:#cdddca}
+#mmb2 .mmb2-branch-bar{position:fixed;z-index:60;left:0;right:0;top:auto;bottom:0;height:auto;margin:0;display:grid;grid-template-columns:44px 1fr auto;align-items:center;gap:10px;padding:9px 18px calc(9px + env(safe-area-inset-bottom));border-top:1px solid var(--line);background:#f8f8f2f5;backdrop-filter:blur(18px)}#mmb2 .mmb2-branch-bar button{border:0;background:none;color:var(--ink);padding:4px;min-height:44px;font-size:12px}#mmb2 #mmb2-menu-open{font-size:21px;background:#e8efdf;border-radius:50%;min-width:44px}#mmb2 #mmb2-current{text-align:left;display:block}#mmb2 #mmb2-current strong{font-size:11px;display:block}#mmb2 #mmb2-progress{font-size:9px;display:block;color:var(--muted)}#mmb2 #mmb2-next{background:var(--forest);color:#fffdf8;border-radius:99px;padding:9px 17px;font-size:11px;font-weight:700}#mmb2:has(#mmb2-success:not([hidden])) .mmb2-branch-bar{display:none}
+#mmb2 .mmb2-sheet{position:fixed;inset:0;z-index:80;display:flex;align-items:flex-end;background:#071a12a6;padding:12px}#mmb2 .mmb2-sheet-panel{width:min(100%,520px);max-height:85dvh;overflow:auto;margin:0 auto;background:var(--paper);border-radius:25px;padding:22px;box-shadow:0 -15px 60px #0003}#mmb2 .mb-sheet-head{display:flex;justify-content:space-between;align-items:center;font-size:18px;margin-bottom:18px}#mmb2 #mmb2-menu-close{background:#e6eedf;border:0;border-radius:50%;width:42px;height:42px;color:var(--ink);font-size:22px}#mmb2 .mb-sheet-links{display:grid;gap:9px}#mmb2 .mb-sheet-links button{background:#fffdf8;border:1px solid var(--line);border-radius:13px;min-height:46px;text-align:left;padding:11px 14px;color:var(--ink);font-size:13px}html.mmb2-scroll-lock{overflow:hidden}
+@media(min-width:700px){#mmb2 .mb-wrap{width:min(100% - 60px,1040px)}#mmb2 .mb-hero>.mb-wrap{min-height:620px}#mmb2 .mb-hero-grid{padding:110px 0 58px}#mmb2 .mb-hero-picture img{object-position:50% 0%}#mmb2 .mb-hero-picture:after{background:linear-gradient(90deg,#05170ff0 0%,#05170fc7 40%,#05170f26 75%,#05170f14),linear-gradient(0deg,#05170f99,transparent 75%)}#mmb2 .mb-brand img{width:154px}#mmb2 .mb-nav{min-height:80px}#mmb2 .mb-gate-card{grid-template-columns:1fr auto;align-items:center;padding:22px 27px}#mmb2 .mb-form{padding-top:33px}#mmb2 .mb-guide{gap:12px}#mmb2 .mb-guide a{font-size:12px;gap:12px;padding:13px 17px}#mmb2 .mb-section{padding:33px;margin-bottom:22px}#mmb2 .mmb2-skill-grid{grid-template-columns:repeat(4,1fr)}#mmb2 .mb-fields{grid-template-columns:1fr 1fr;gap:20px}#mmb2 .mb-field-full{grid-column:1/-1}#mmb2 .mb-choices{grid-template-columns:1fr 1fr 1.5fr}#mmb2 .mb-choices label:last-child{grid-column:auto}#mmb2 .mmb2-results{grid-template-columns:1fr 1fr}#mmb2 .mmb2-summary article{grid-template-columns:135px 1fr;gap:15px}#mmb2 .mb-journey ol{grid-template-columns:repeat(3,1fr);gap:22px}#mmb2 .mb-footer-inner{grid-template-columns:1fr auto;align-items:center}#mmb2 .mb-slogan{text-align:right}#mmb2 .mb-footer-links{grid-column:1/-1}#mmb2 .mmb2-branch-bar{left:50%;right:auto;width:480px;transform:translateX(-50%);bottom:14px;padding:8px 12px;border:1px solid var(--line);border-radius:24px;box-shadow:0 9px 35px #153b251a}}
+@media(prefers-reduced-motion:reduce){#mmb2 *,#mmb2 *:before,#mmb2 *:after{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
+#mmb2 .mb-journey{margin:5px 0 17px;padding:0 4px}#mmb2 .mb-journey>summary{min-height:47px;display:list-item;font-size:13px;font-weight:700;cursor:pointer;color:var(--ink);padding:12px 0}#mmb2 .mb-journey ol{padding:5px 0 12px}
+#mmb2 .mb-field input::placeholder,#mmb2 .mb-field textarea::placeholder{color:#5c7061;opacity:1;-webkit-text-fill-color:#5c7061}#mmb2 select:disabled{opacity:1;background:#edf2e7;color:#4b6049}
+#mmb2 .mmb2-skill-card strong{font-size:12px}#mmb2 .mb-accordion p{font-size:13px}#mmb2 .mb-consent{font-size:13px}
+@media(max-width:699px){#mmb2 .mb-section-head>p:last-child{font-size:13px}#mmb2 .mb-guide a{font-size:11px}}
+#mmb2 .mb-guide a[aria-current="step"]{background:#e4efd8;border-color:#718b64}#mmb2 .mb-guide a[aria-current="step"] b{background:#17392a;color:#fffdf8}
+/* FINAL MMD CONTRAST SAFETY — keep after every regular style. */
+#mmb2 h1,#mmb2 .mb-hero h1{color:#fffdf8!important;-webkit-text-fill-color:#fffdf8!important;background:none!important}#mmb2 h1 em{color:#d1ee91!important;-webkit-text-fill-color:#d1ee91!important}#mmb2 h2,#mmb2 h3,#mmb2 h4,#mmb2 strong,#mmb2 .mb-field,#mmb2 legend{color:#17392a!important;-webkit-text-fill-color:#17392a!important;background-image:none!important}#mmb2 p,#mmb2 small,#mmb2 .mb-help{color:#4f6658;-webkit-text-fill-color:currentColor}#mmb2 .mb-hero .mb-lead,#mmb2 .mb-status{color:#e1ecdf!important;-webkit-text-fill-color:#e1ecdf!important}#mmb2 .mb-hero .mb-kicker{color:#d1ee91!important;-webkit-text-fill-color:#d1ee91!important}#mmb2 .mb-button,#mmb2 #mmb2-next{color:#fffdf8!important;-webkit-text-fill-color:#fffdf8!important}#mmb2 .mb-button-light,#mmb2 .mb-button-quiet{color:#102f25!important;-webkit-text-fill-color:#102f25!important}#mmb2 .mb-footer p,#mmb2 .mb-footer a{color:#e4eee0!important;-webkit-text-fill-color:#e4eee0!important}#mmb2 .mb-error{color:#963b26!important;-webkit-text-fill-color:#963b26!important}
+#mmb2 #mmb2-menu-open,#mmb2 #mmb2-menu-close,#mmb2 #mmb2-current{color:#17392a!important;-webkit-text-fill-color:#17392a!important}
+#mmb2 .mb-button:disabled,#mmb2 #mmb2-next:disabled{opacity:1;background:#d8e2d2;color:#42563f!important;-webkit-text-fill-color:#42563f!important;box-shadow:none}
+#mmb2 .mb-button:disabled *,#mmb2 #mmb2-next:disabled *{color:inherit!important;-webkit-text-fill-color:currentColor!important}
+#mmb2 input,#mmb2 select,#mmb2 textarea{color:#17392a!important;-webkit-text-fill-color:#17392a!important}#mmb2 .mb-guide a,#mmb2 .mb-sheet-links button,#mmb2 #mmb2-use-gps{color:#17392a!important;-webkit-text-fill-color:#17392a!important}
+#mmb2 .mb-guide a[aria-current="step"] b{color:#fffdf8!important;-webkit-text-fill-color:#fffdf8!important}
+</style>
+<main id="mmb2" lang="th" data-mmd-page="mms-booking" data-mmd-color-lock="mms" data-mmd-contrast-skip="mms-page" data-profile-endpoint="/member/api/liff/profile" data-catalog-endpoint="/member/api/liff/mms/catalog" data-service-zones-endpoint="/member/api/liff/mms/service-zones" data-match-endpoint="/member/api/liff/mms/match" data-prebook-endpoint="/member/api/liff/mms/prebookings" data-line-url="https://lin.ee/NkfXMu7" data-rebuild="mms-booking-mobile-v2">
+  <header id="mmb2-overview" class="mb-hero"><figure class="mb-hero-picture"><img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a98484e87446c5f76400cea_Therapit%20Bene%2009.webp" width="900" height="900" alt="" aria-hidden="true" fetchpriority="high"></figure><div class="mb-wrap">
+    <nav class="mb-nav" aria-label="เมนู MY MMS"><a class="mb-brand" href="/male-massage/my-mms"><img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a8605ce469f1080c3c57ebe_mms-logo-horizontal-light.svg" width="430" height="100" alt="MMS Male Massage"></a><a href="/male-massage/my-mms" data-i18n="mms.booking.v2.nav.back">กลับ MY MMS ↗</a></nav>
+    <div class="mb-hero-grid"><div class="mb-hero-copy"><p class="mb-kicker" data-i18n="mms.booking.v2.hero.kicker">MY MMS · ขอจองเบื้องต้น</p><h1 data-i18n="mms.booking.v2.hero.title">ให้ Male Massage<br><em>ช่วยดูแล</em></h1><p class="mb-lead" data-i18n="mms.booking.v2.hero.lead">เลือกบริการ วันเวลา และพื้นที่ที่สะดวก MMS จะช่วยแนะนำ Therapist และประสานรายละเอียดให้ครับ</p><div id="mmb2-member-pill" class="mb-status" role="status" aria-live="polite" data-copy-live>กำลังตรวจสอบบัญชีสมาชิก</div></div></div>
+  </div></header>
+  <section id="mmb2-gate" class="mb-gate mb-wrap" aria-labelledby="mmb2-gate-title"><div class="mb-gate-card"><div><h2 id="mmb2-gate-title" data-i18n="mms.booking.v2.gate.title">ยืนยันบัญชีผ่าน LINE</h2><p data-i18n="mms.booking.v2.gate.body">ใช้บัญชีสมาชิกของคุณเพื่อดูรายชื่อ Therapist และส่งคำขอได้สะดวกขึ้น</p></div><a class="mb-button mmb2-preserve-query" href="/member/liff?intent=mms_booking" data-i18n="mms.booking.v2.gate.cta">ยืนยันบัญชีผ่าน LINE ↗</a></div></section>
+  <form id="mmb2-form" class="mb-form mb-wrap" novalidate onsubmit="return false">
+    <nav class="mb-guide" aria-label="ขั้นตอนส่งคำขอ"><a href="#mmb2-service"><b>1</b><span data-i18n="mms.booking.v2.nav.service">เลือกบริการ</span></a><a href="#mmb2-details"><b>2</b><span data-i18n="mms.booking.v2.nav.details">วันเวลา · พื้นที่</span></a><a href="#mmb2-match-section"><b>3</b><span data-i18n="mms.booking.v2.nav.review">ตรวจและส่ง</span></a></nav>
+    <section id="mmb2-service" class="mb-section" data-booking-stage="service" aria-labelledby="mmb2-service-title"><div class="mb-section-head"><p class="mb-kicker">01 · YOUR MOMENT</p><h2 id="mmb2-service-title" data-i18n="mms.booking.v2.service.title">เลือกบริการที่ต้องการ</h2><p data-i18n="mms.booking.v2.service.body">เลือกได้ 1–6 รายการ เพื่อให้ MMS แนะนำ Therapist ได้ตรงกับความต้องการครับ</p><span class="mb-count"><span data-i18n="mms.booking.v2.service.selected">เลือกแล้ว</span> <b id="mmb2-skill-count">0</b> <span data-i18n="mms.booking.v2.service.maximum">รายการ · สูงสุด 6</span></span></div><div id="mmb2-skill-grid" class="mmb2-skill-grid" aria-live="polite"><div class="mb-placeholder" data-i18n="mms.booking.v2.service.placeholder">ยืนยันบัญชีสมาชิกเพื่อดูรายการบริการ</div></div><p id="mmb2-skill-error" class="mb-error" role="alert"></p></section>
+    <section id="mmb2-details" class="mb-section" data-booking-stage="details" hidden aria-labelledby="mmb2-details-title"><div class="mb-section-head"><p class="mb-kicker">02 · WHEN &amp; WHERE</p><h2 id="mmb2-details-title" data-i18n="mms.booking.v2.details.title">วันเวลาและสถานที่</h2><p data-i18n="mms.booking.v2.details.body">ระบุพื้นที่คร่าว ๆ ก่อนได้ ยังไม่ต้องแจ้งเลขห้อง</p></div>
+      <fieldset class="mb-fieldset"><legend data-i18n="mms.booking.v2.field.recipient">ผู้รับบริการ</legend><div class="mb-choices"><label><input id="mmb2-recipient-male" type="radio" name="recipient_gender" value="male" required><span data-i18n="mms.booking.v2.field.male">ผู้ชาย</span></label><label><input id="mmb2-recipient-female" type="radio" name="recipient_gender" value="female"><span data-i18n="mms.booking.v2.field.female">ผู้หญิง</span></label><label><input id="mmb2-recipient-manual" type="radio" name="recipient_gender" value="manual"><span data-i18n="mms.booking.v2.field.manual">ให้ MMS ช่วยประสาน</span></label></div></fieldset>
+      <div class="mb-fields"><label class="mb-field" for="mmb2-province"><span data-i18n="mms.booking.v2.field.province">จังหวัด</span><select id="mmb2-province" required disabled><option value="" data-i18n="mms.booking.v2.field.province.loading">กำลังโหลดจังหวัด…</option></select></label><label class="mb-field" for="mmb2-zone"><span data-i18n="mms.booking.v2.field.zone">เขต / โซน</span><select id="mmb2-zone" required disabled><option value="" data-i18n="mms.booking.v2.field.zone.empty">เลือกจังหวัดก่อน</option></select></label><div class="mb-field mb-field-full"><button id="mmb2-use-gps" type="button" data-i18n="mms.booking.v2.gps.cta">ใช้ตำแหน่งปัจจุบันช่วยตรวจพื้นที่ ↗</button><p id="mmb2-gps-status" class="mb-help" aria-live="polite" data-copy-live>เลือกจังหวัดและโซนเองได้ โดยไม่ต้องเปิดตำแหน่ง</p></div><label class="mb-field" for="mmb2-date"><span data-i18n="mms.booking.v2.field.date">วันที่</span><input type="date" id="mmb2-date" required></label><label class="mb-field" for="mmb2-time"><span data-i18n="mms.booking.v2.field.time">เวลา</span><input type="time" id="mmb2-time" required></label><label class="mb-field" for="mmb2-duration"><span data-i18n="mms.booking.v2.field.duration">ระยะเวลา</span><select id="mmb2-duration" required><option value="90" data-i18n="mms.booking.v2.field.duration.90">90 นาที</option><option value="120" data-i18n="mms.booking.v2.field.duration.120">120 นาที</option><option value="180" data-i18n="mms.booking.v2.field.duration.180">180 นาที</option></select><small data-i18n="mms.booking.v2.field.duration.help">เริ่มต้น 90 นาที</small></label><label class="mb-field" for="mmb2-location-note"><span data-i18n="mms.booking.v2.field.location">ชื่อสถานที่หรือจุดนัดหมาย</span><input id="mmb2-location-note" type="text" maxlength="256" autocomplete="off" data-i18n-placeholder="mms.booking.v2.field.location.placeholder" placeholder="ชื่อคอนโด โรงแรม หรือบริเวณใกล้เคียง"></label></div><p id="mmb2-details-error" class="mb-error" role="alert"></p>
+      <details class="mb-accordion"><summary data-i18n="mms.booking.v2.location.question">ต้องแจ้งสถานที่ละเอียดแค่ไหน?</summary><p data-i18n="mms.booking.v2.location.answer">ชื่อคอนโด โรงแรม หรือย่านที่พอประสานเส้นทางได้ก็เพียงพอ รายละเอียดเพิ่มเติมแจ้ง MMS ภายหลังได้ครับ</p></details>
+    </section>
+    <section id="mmb2-match-section" class="mb-section" data-booking-stage="review" hidden aria-labelledby="mmb2-match-title"><div class="mb-section-head"><p class="mb-kicker">A GOOD FIT</p><h2 id="mmb2-match-title" data-i18n="mms.booking.v2.match.title">Therapist ที่คุณสนใจ</h2><p data-i18n="mms.booking.v2.match.body">MMS แนะนำรายชื่อจากบริการและพื้นที่ที่เลือก โดยจะตรวจสอบคิวอีกครั้งก่อนยืนยัน</p></div><button id="mmb2-match" class="mb-button" type="button" disabled data-copy-live>ดู Therapist ที่เหมาะสม ↗</button><p class="mb-help" data-i18n="mms.booking.v2.match.help">เลือกได้สูงสุด 5 คน หรือให้ MMS ช่วยประสานต่อ</p><div id="mmb2-results" class="mmb2-results" aria-live="polite"></div><label class="mb-field" for="mmb2-preferred-name"><span data-i18n="mms.booking.v2.match.preferred">มีชื่อที่สนใจอยู่แล้ว?</span><input id="mmb2-preferred-name" type="text" maxlength="256" autocomplete="off" data-i18n-placeholder="mms.booking.v2.match.preferred.placeholder" placeholder="ระบุชื่อที่จำได้ (ถ้ามี)"></label><p id="mmb2-match-error" class="mb-error" role="alert"></p></section>
+    <details id="mmb2-journey" class="mb-journey" data-booking-stage="review" hidden><summary data-i18n="mms.booking.v2.journey.title">หลังส่งคำขอเป็นอย่างไร?</summary><ol><li data-i18n="mms.booking.v2.journey.1">MMS ทบทวนบริการ วันเวลา และพื้นที่</li><li data-i18n="mms.booking.v2.journey.2">ประสาน Therapist และตรวจสอบคิว</li><li data-i18n="mms.booking.v2.journey.3">แจ้งรายละเอียดและค่าใช้จ่ายก่อนยืนยัน</li></ol></details>
+    <section id="mmb2-review" class="mb-section mb-review" data-booking-stage="review" hidden aria-labelledby="mmb2-review-title"><div class="mb-section-head"><p class="mb-kicker">03 · ONE LAST LOOK</p><h2 id="mmb2-review-title" data-i18n="mms.booking.v2.review.title">ตรวจรายละเอียดก่อนส่ง</h2><p data-i18n="mms.booking.v2.review.body">คำขอเบื้องต้นยังไม่ใช่การยืนยันนัดหรือค่าใช้จ่าย MMS จะประสานและตอบกลับให้ครับ</p></div><div id="mmb2-summary" class="mmb2-summary" aria-live="polite"></div><label class="mb-field" for="mmb2-note"><span data-i18n="mms.booking.v2.review.note">รายละเอียดเพิ่มเติม</span><textarea id="mmb2-note" maxlength="1200" data-i18n-placeholder="mms.booking.v2.review.note.placeholder" placeholder="สิ่งที่ต้องการแจ้ง MMS เพิ่มเติม (ถ้ามี)"></textarea></label><label class="mb-consent"><input type="checkbox" id="mmb2-consent" required><span data-i18n="mms.booking.v2.review.consent">เข้าใจว่า Therapist วันเวลา สถานที่ และค่าใช้จ่ายจะยืนยันหลัง MMS ประสานและตอบกลับแล้ว</span></label><p id="mmb2-error" class="mb-error" role="alert"></p><button id="mmb2-submit" class="mb-button" type="submit" disabled data-copy-live>ส่งคำขอให้ MMS ↗</button><p class="mb-help"><span data-i18n="mms.booking.v2.review.help">สอบถามเพิ่มเติม</span> <a href="https://lin.ee/NkfXMu7" style="text-decoration:underline" data-i18n="mms.booking.v2.contact.line">ติดต่อ MMS ทาง LINE ↗</a></p></section>
+  </form>
+  <section id="mmb2-success" class="mb-success mb-wrap" tabindex="-1" aria-labelledby="mb-success-title" hidden><p class="mb-kicker">REQUEST RECEIVED</p><h2 id="mb-success-title" data-i18n="mms.booking.v2.success.title">MMS ได้รับคำขอแล้ว</h2><p id="mmb2-reference"></p><p data-i18n="mms.booking.v2.success.body">MMS จะทบทวนรายละเอียดและติดต่อกลับเพื่อประสานนัดหมาย</p><a class="mb-button" href="https://lin.ee/NkfXMu7" data-i18n="mms.booking.v2.contact.line">ติดต่อ MMS ทาง LINE ↗</a></section>
+  <footer class="mb-footer"><div class="mb-wrap mb-footer-inner"><a href="/male-massage/home"><img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a8605ce469f1080c3c57ebe_mms-logo-horizontal-light.svg" width="430" height="100" alt="MMS Male Massage"></a><p class="mb-slogan" data-i18n="mms.booking.v2.footer.slogan">คัดสรร Therapist ฝีมือดี<br>เป็นส่วนตัว เดินทางไปหาคุณได้ทุกที่...แค่กับคุณ</p><div class="mb-footer-links"><a href="https://lin.ee/NkfXMu7" data-i18n="mms.booking.v2.contact.short">ติดต่อ MMS ↗</a><a href="/male-massage/how-to-use" data-i18n="mms.booking.v2.footer.howto">วิธีใช้บริการ</a><a href="/male-massage/my-mms">MY MMS</a></div></div></footer>
+  <nav class="mmb2-branch-bar" aria-label="เมนูขั้นตอน"><button id="mmb2-menu-open" type="button" aria-label="เปิดเมนูขั้นตอน" aria-controls="mmb2-sheet">☰</button><button id="mmb2-current" type="button"><strong data-copy-live>เริ่มต้น</strong><span id="mmb2-progress">01 / 03</span></button><button id="mmb2-next" type="button" data-i18n="mms.booking.v2.sheet.next">ถัดไป ↓</button></nav>
+  <div id="mmb2-sheet" class="mmb2-sheet" hidden><div class="mmb2-sheet-panel" role="dialog" aria-modal="true" aria-label="เปิดเมนูขั้นตอน" tabindex="-1"><div class="mb-sheet-head"><strong data-i18n="mms.booking.v2.sheet.title">เลือกขั้นตอน</strong><button id="mmb2-menu-close" type="button" aria-label="ปิดเมนู">×</button></div><div id="mmb2-sheet-main" class="mb-sheet-links"><button type="button" data-go="mmb2-overview" data-i18n="mms.booking.v2.sheet.start">เริ่มต้น</button><button type="button" data-go="mmb2-service" data-i18n="mms.booking.v2.sheet.service">1 · เลือกบริการ</button><button type="button" data-go="mmb2-details" data-i18n="mms.booking.v2.sheet.details">2 · วันเวลาและพื้นที่</button><button type="button" data-go="mmb2-match-section" data-i18n="mms.booking.v2.sheet.match">Therapist ที่สนใจ</button><button type="button" data-go="mmb2-journey" data-i18n="mms.booking.v2.sheet.journey">หลังส่งคำขอ</button><button type="button" data-go="mmb2-review" data-i18n="mms.booking.v2.sheet.review">3 · ตรวจและส่ง</button></div><div id="mmb2-sheet-services" hidden></div></div></div>
+</main>
+<script id="mms-booking-brand-copy-v2">/* MMS member booking v2 — canonical Thai copy and scoped display adapter.
+   Source of truth: MMD-Prive/mmd-i18n/assets/i18n/pages/mms-booking.js.
+   Presentation only: never changes service codes, form values, auth or API payloads. */
+(function(W){
+  'use strict';
+  var copy={
+    'hero.title':'ให้ Male Massage<br><em>ช่วยดูแล</em>',
+    'hero.lead':'เลือกบริการ วันเวลา และพื้นที่ที่สะดวก MMS จะช่วยแนะนำ Therapist และประสานรายละเอียดให้ครับ',
+    'hero.kicker':'MY MMS · ขอจองเบื้องต้น',
+    'hero.status':'กำลังตรวจสอบบัญชีสมาชิก',
+    'nav.back':'กลับ MY MMS ↗',
+    'nav.aria':'เมนู MY MMS',
+    'nav.steps':'ขั้นตอนส่งคำขอ',
+    'nav.service':'เลือกบริการ',
+    'nav.details':'วันเวลา · พื้นที่',
+    'nav.review':'ตรวจและส่ง',
+    'gate.title':'ยืนยันบัญชีผ่าน LINE',
+    'gate.body':'ใช้บัญชีสมาชิกของคุณเพื่อดูรายชื่อ Therapist และส่งคำขอได้สะดวกขึ้น',
+    'gate.cta':'ยืนยันบัญชีผ่าน LINE ↗',
+    'service.title':'เลือกบริการที่ต้องการ',
+    'service.body':'เลือกได้ 1–6 รายการ เพื่อให้ MMS แนะนำ Therapist ได้ตรงกับความต้องการครับ',
+    'service.placeholder':'ยืนยันบัญชีสมาชิกเพื่อดูรายการบริการ',
+    'service.selected':'เลือกแล้ว',
+    'service.maximum':'รายการ · สูงสุด 6',
+    'details.title':'วันเวลาและสถานที่',
+    'details.body':'ระบุพื้นที่คร่าว ๆ ก่อนได้ ยังไม่ต้องแจ้งเลขห้อง',
+    'field.recipient':'ผู้รับบริการ',
+    'field.male':'ผู้ชาย',
+    'field.female':'ผู้หญิง',
+    'field.manual':'ให้ MMS ช่วยประสาน',
+    'field.province':'จังหวัด',
+    'field.province.loading':'กำลังโหลดจังหวัด…',
+    'field.zone':'เขต / โซน',
+    'field.zone.empty':'เลือกจังหวัดก่อน',
+    'field.date':'วันที่',
+    'field.time':'เวลา',
+    'field.duration':'ระยะเวลา',
+    'field.duration.90':'90 นาที',
+    'field.duration.120':'120 นาที',
+    'field.duration.180':'180 นาที',
+    'field.duration.help':'เริ่มต้น 90 นาที',
+    'field.location':'ชื่อสถานที่หรือจุดนัดหมาย',
+    'field.location.placeholder':'ชื่อคอนโด โรงแรม หรือบริเวณใกล้เคียง',
+    'gps.cta':'ใช้ตำแหน่งปัจจุบันช่วยตรวจพื้นที่ ↗',
+    'gps.help':'เลือกจังหวัดและโซนเองได้ โดยไม่ต้องเปิดตำแหน่ง',
+    'location.question':'ต้องแจ้งสถานที่ละเอียดแค่ไหน?',
+    'location.answer':'ชื่อคอนโด โรงแรม หรือย่านที่พอประสานเส้นทางได้ก็เพียงพอ รายละเอียดเพิ่มเติมแจ้ง MMS ภายหลังได้ครับ',
+    'match.title':'Therapist ที่คุณสนใจ',
+    'match.body':'MMS แนะนำรายชื่อจากบริการและพื้นที่ที่เลือก โดยจะตรวจสอบคิวอีกครั้งก่อนยืนยัน',
+    'match.cta':'ดู Therapist ที่เหมาะสม ↗',
+    'match.help':'เลือกได้สูงสุด 5 คน หรือให้ MMS ช่วยประสานต่อ',
+    'match.preferred':'มีชื่อที่สนใจอยู่แล้ว?',
+    'match.preferred.placeholder':'ระบุชื่อที่จำได้ (ถ้ามี)',
+    'journey.title':'หลังส่งคำขอเป็นอย่างไร?',
+    'journey.1':'MMS ทบทวนบริการ วันเวลา และพื้นที่',
+    'journey.2':'ประสาน Therapist และตรวจสอบคิว',
+    'journey.3':'แจ้งรายละเอียดและค่าใช้จ่ายก่อนยืนยัน',
+    'review.title':'ตรวจรายละเอียดก่อนส่ง',
+    'review.body':'คำขอเบื้องต้นยังไม่ใช่การยืนยันนัดหรือค่าใช้จ่าย MMS จะประสานและตอบกลับให้ครับ',
+    'review.note':'รายละเอียดเพิ่มเติม',
+    'review.note.placeholder':'สิ่งที่ต้องการแจ้ง MMS เพิ่มเติม (ถ้ามี)',
+    'review.consent':'เข้าใจว่า Therapist วันเวลา สถานที่ และค่าใช้จ่ายจะยืนยันหลัง MMS ประสานและตอบกลับแล้ว',
+    'review.submit':'ส่งคำขอให้ MMS ↗',
+    'review.help':'สอบถามเพิ่มเติม',
+    'contact.line':'ติดต่อ MMS ทาง LINE ↗',
+    'contact.short':'ติดต่อ MMS ↗',
+    'success.title':'MMS ได้รับคำขอแล้ว',
+    'success.body':'MMS จะทบทวนรายละเอียดและติดต่อกลับเพื่อประสานนัดหมาย',
+    'footer.slogan':'คัดสรร Therapist ฝีมือดี<br>เป็นส่วนตัว เดินทางไปหาคุณได้ทุกที่...แค่กับคุณ',
+    'footer.howto':'วิธีใช้บริการ',
+    'sheet.aria':'เมนูขั้นตอน',
+    'sheet.open':'เปิดเมนูขั้นตอน',
+    'sheet.close':'ปิดเมนู',
+    'sheet.title':'เลือกขั้นตอน',
+    'sheet.start':'เริ่มต้น',
+    'sheet.service':'1 · เลือกบริการ',
+    'sheet.details':'2 · วันเวลาและพื้นที่',
+    'sheet.match':'Therapist ที่สนใจ',
+    'sheet.journey':'หลังส่งคำขอ',
+    'sheet.review':'3 · ตรวจและส่ง',
+    'sheet.next':'ถัดไป ↓',
+    'runtime.gate':'กรุณายืนยันบัญชีผ่าน LINE ก่อนส่งคำขอ',
+    'runtime.error':'ยังส่งคำขอไม่ได้ กรุณาลองอีกครั้งหรือติดต่อ MMS ทาง LINE',
+    'runtime.skills':'กรุณาเลือกบริการ 1–6 รายการ',
+    'runtime.details':'กรุณาระบุผู้รับบริการ พื้นที่ วันที่ และเวลาให้ครบ',
+    'runtime.matching':'MMS กำลังตรวจสอบบริการและพื้นที่ที่เลือก',
+    'runtime.manual':'รายละเอียดนี้ต้องประสานเพิ่มเติม สามารถส่งคำขอให้ MMS ช่วยดูแลต่อได้ครับ',
+    'runtime.empty':'ยังไม่พบ Therapist ที่ตรงกับรายละเอียดทั้งหมด ส่งคำขอให้ MMS ช่วยประสานเพิ่มเติมได้ครับ',
+    'runtime.checking':'กำลังตรวจสอบ…',
+    'runtime.sending':'กำลังส่งคำขอ…',
+    'runtime.consent':'กรุณายืนยันว่าเข้าใจเงื่อนไขคำขอเบื้องต้นก่อนส่ง',
+    'runtime.profile':'ยังตรวจสอบบัญชีไม่ได้ กรุณาลองอีกครั้ง',
+    'runtime.catalog':'รายการบริการยังไม่พร้อม กรุณาลองอีกครั้ง',
+    'runtime.loading':'ยังโหลดรายละเอียดไม่ได้ กรุณาลองอีกครั้ง',
+    'runtime.match_error':'ยังตรวจสอบรายชื่อไม่ได้ กรุณาลองอีกครั้ง',
+    'runtime.zone_ready':'เลือกจังหวัดและโซนที่ใกล้สถานที่นัดหมาย',
+    'runtime.zone_error':'ยังโหลดพื้นที่ให้บริการไม่ได้ กรุณาลองอีกครั้งก่อนส่งคำขอ',
+    'runtime.gps_loading':'กำลังตรวจตำแหน่ง…',
+    'runtime.gps_received':'รับตำแหน่งแล้ว กรุณายืนยันจังหวัดและโซนจากรายการอีกครั้ง',
+    'runtime.gps_error':'ยังอ่านตำแหน่งไม่ได้ กรุณาเลือกจังหวัดและโซนจากรายการ',
+    'runtime.gps_unsupported':'กรุณาเลือกจังหวัดและโซนจากรายการได้เลย',
+    'runtime.province_error':'โหลดจังหวัดไม่สำเร็จ',
+    'runtime.zone_load_error':'โหลดโซนไม่สำเร็จ',
+    'runtime.zone_choose':'เลือกโซน / เขต / อำเภอ',
+    'runtime.province_choose':'เลือกจังหวัด',
+    'runtime.zone_loading':'กำลังโหลดโซน…',
+    'runtime.reference':'เลขอ้างอิง: ',
+    'runtime.verified':'ยืนยันบัญชีแล้ว · ',
+    'runtime.summary.service':'บริการ',
+    'runtime.summary.recipient':'ผู้รับบริการ',
+    'runtime.summary.when':'วันและเวลา',
+    'runtime.summary.area':'พื้นที่',
+    'runtime.summary.therapist':'Therapist ที่สนใจ',
+    'runtime.unselected':'ยังไม่ได้เลือก',
+    'runtime.interested':'สนใจคนนี้'
+  };
+  var dict=W.I18N_DICT=W.I18N_DICT||{};dict.th=dict.th||{};
+  Object.keys(copy).forEach(function(k){dict.th['mms.booking.v2.'+k]=copy[k];});
+  if(!W.document)return;
+  var exact={
+    'Member verification required':'runtime.gate',
+    'กรุณายืนยัน Member Access ผ่าน LINE ก่อนครับ':'runtime.gate',
+    'MMS service is temporarily unavailable':'runtime.error',
+    'กรุณาเลือก Services 1–6 รายการครับ':'runtime.skills',
+    'กรุณาระบุผู้รับบริการ โซน วันที่ และเวลาให้ครบครับ':'runtime.details',
+    'MMD กำลังตรวจ Skills และพื้นที่ที่ตรงกันครับ':'runtime.matching',
+    'เงื่อนไขนี้ต้องให้ MMD ช่วยประสานเป็นรายกรณีครับ สามารถส่ง Pre-booking ต่อได้':'runtime.manual',
+    'ยังไม่พบ Therapist ที่ตรงครบทุกเงื่อนไขในข้อมูลปัจจุบัน แต่ยังส่ง Pre-booking ให้ MMD ช่วยประสานได้ครับ':'runtime.empty',
+    'กำลังเช็ก…':'runtime.checking',
+    'กำลังส่ง…':'runtime.sending',
+    'เช็ก Therapist ที่เหมาะ →':'match.cta',
+    'ส่ง Pre-booking ให้ MMD':'review.submit',
+    'กรุณายืนยันว่าเข้าใจสถานะ Pre-booking ก่อนส่งครับ':'runtime.consent',
+    'ตรวจสอบ Member Access ไม่สำเร็จ กรุณาลองใหม่อีกครั้งครับ':'runtime.profile',
+    'รายการ Services ของ MMS ยังไม่พร้อมครับ':'runtime.catalog',
+    'โหลดข้อมูล MMS ไม่สำเร็จ กรุณาลองใหม่อีกครั้งครับ':'runtime.loading',
+    'เช็กรายชื่อไม่สำเร็จ กรุณาลองใหม่ครับ':'runtime.match_error',
+    'ส่ง Pre-booking ไม่สำเร็จ กรุณาลองใหม่อีกครั้งครับ':'runtime.error',
+    'เลือกจังหวัดก่อน แล้วเลือกโซนที่ใกล้สถานที่จริงที่สุด':'runtime.zone_ready',
+    'พื้นที่ให้บริการโหลดไม่สำเร็จ จึงยังไม่ส่งคำขอจองเพื่อป้องกันการจับคู่ผิดพื้นที่':'runtime.zone_error',
+    'ยังไม่สามารถโหลดพื้นที่ให้บริการได้ กรุณาลองใหม่อีกครั้ง':'runtime.zone_error',
+    'กำลังตรวจว่าตำแหน่งพร้อมใช้งาน…':'runtime.gps_loading',
+    'รับตำแหน่งแล้ว เพื่อความแม่นยำในการจับคู่ กรุณายืนยันจังหวัดและโซนจากรายการเอง':'runtime.gps_received',
+    'ไม่สามารถอ่านตำแหน่งได้ กรุณาเลือกจังหวัดและโซนเองได้เลย':'runtime.gps_error',
+    'Browser นี้ไม่รองรับ GPS กรุณาเลือกจังหวัดและโซนเองได้เลย':'runtime.gps_unsupported'
+  };
+  function convert(text){
+    var trim=text.trim();
+    if(exact[trim])return text.replace(trim,copy[exact[trim]]);
+    return text.replace(/Member verified · /g,copy['runtime.verified']).replace(/Reference: /g,copy['runtime.reference']).replace(/ให้ MMD ช่วย(?:ประสาน|ดู)/g,copy['field.manual']).replace(/Skills ตรง (\d+) รายการ/g,'ตรงกับบริการที่เลือก $1 รายการ').replace(/MMD จะตรวจคิวอีกครั้ง/g,'MMS จะตรวจสอบคิวอีกครั้ง').replace(/เลือกได้สูงสุด (\d+) Services ครับ/g,'เลือกบริการได้สูงสุด $1 รายการ');
+  }
+  function init(){
+    var root=W.document.querySelector('#mmb2[data-rebuild="mms-booking-mobile-v2"]');
+    if(!root||root.dataset.brandCopyReady)return;root.dataset.brandCopyReady='1';
+    function apply(node){
+      if(!node||node.nodeType===8)return;
+      if(node.nodeType===3){if(node.parentElement&&node.parentElement.closest('script,style,textarea,input,option'))return;var next=convert(node.nodeValue);if(next!==node.nodeValue)node.nodeValue=next;return;}
+      if(node.nodeType!==1||node.matches('script,style,textarea,input,option'))return;
+      Array.from(node.childNodes).forEach(apply);
+    }
+    apply(root);
+    new W.MutationObserver(function(list){list.forEach(function(m){if(m.type==='characterData')apply(m.target);else Array.from(m.addedNodes).forEach(apply);});}).observe(root,{childList:true,subtree:true,characterData:true});
+  }
+  if(W.document.readyState==='loading')W.document.addEventListener('DOMContentLoaded',init,{once:true});else init();
+})(window);
+</script>
+<script src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90%2F689e5ba67671442434f3ca35%2F6a8d13cec7a5e7cc83d78eff%2Fmmb2core1-1.0.0.js"></script>
+<script src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90%2F689e5ba67671442434f3ca35%2F6a8d13ddc7126b1396772fdd%2Fmmb2core2-1.0.0.js"></script>
+<script src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90%2F689e5ba67671442434f3ca35%2F6a8d13ddc7126b139677302b%2Fmmb2core3-1.0.0.js"></script>
+<script src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90%2F689e5ba67671442434f3ca35%2F6a8d13ecc7126b13967739e1%2Fmmb2core4-1.0.0.js"></script>
+<script src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90%2F689e5ba67671442434f3ca35%2F6a8d13ed6f9b74f8355382a5%2Fmmb2core5-1.0.0.js"></script>
+<script src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90%2F689e5ba67671442434f3ca35%2F6a8d13fa3ddb3c6b6a934d99%2Fmmb2core6-1.0.0.js"></script><script id="mms-booking-ui-compat-v1">(function(X){if(!X||!X.r)return;const member=X.member;X.member=async function(){const data=await member();X.E.mb.disabled=false;X.E.sb.disabled=false;return data;};X.ch=[["mmb2-overview","เริ่มต้น"],["mmb2-service","เลือกบริการ"],["mmb2-details","วันเวลา · พื้นที่"],["mmb2-match-section","Therapist ที่สนใจ"],["mmb2-journey","หลังส่งคำขอ"],["mmb2-review","ตรวจและส่ง"]];})(window.MMB2);</script>
+<script src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90%2F689e5ba67671442434f3ca35%2F6a8d13fb9aeecc20863ce2f4%2Fmmb2core7-1.0.0.js"></script>
+<script id="mms-canonical-service-zones">
+(function(){
+  'use strict';
+  var ZONE_CODE_RE=/^(BKK|NBI|PTE|SPK|SKN|NPT)-[A-Z0-9-]{2,70}$/;
+  var catalog=null,writingZones=false;
+  function ready(fn){if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',fn,{once:true});}else{fn();}}
+  function el(id){return document.getElementById(id);}
+  function numberFromOption(o){var raw=(o&&((o.value||'')+' '+(o.textContent||'')))||'';var m=raw.match(/\d+/);return m?parseInt(m[0],10):null;}
+  function enforceDuration(){var e=el('mmb2-duration');if(!e)return;var ninety=null;Array.prototype.forEach.call(e.options,function(o){var n=numberFromOption(o);if(n!==null&&n<90){o.disabled=true;o.hidden=true;o.setAttribute('data-mmb-below-min','1');}if(n===90)ninety=o;});if(!ninety){ninety=new Option('90 นาที','90');e.add(ninety,Math.min(1,e.options.length));}var current=numberFromOption(e.options[e.selectedIndex]||{});if(current===null||current<90){ninety.disabled=false;ninety.hidden=false;e.value=ninety.value;ninety.selected=true;e.dispatchEvent(new Event('change',{bubbles:true}));}}
+  function setStatus(text,isError){var s=el('mmb2-gps-status');if(s){s.textContent=text||'';s.dataset.state=isError?'error':'ready';}}
+  function option(select,label,value){var o=new Option(label,value);select.add(o);return o;}
+  function zoneLabel(z){return z.label_th||z.safe_label_th||z.code;}
+  function zonesForProvince(code){return (catalog&&catalog.zones||[]).filter(function(z){return z.province_code===code&&ZONE_CODE_RE.test(z.code||'');});}
+  function renderZones(preferred){var province=el('mmb2-province'),zone=el('mmb2-zone');if(!province||!zone||!catalog)return;var list=zonesForProvince(province.value);writingZones=true;while(zone.options.length)zone.remove(0);option(zone,province.value?'เลือกโซน / เขต / อำเภอ':'เลือกจังหวัดก่อน','');list.forEach(function(z){var o=option(zone,zoneLabel(z),z.code);if(z.admin_areas_th)o.title=z.admin_areas_th;});var wanted=preferred&&list.some(function(z){return z.code===preferred;})?preferred:'';zone.value=wanted;zone.disabled=!province.value||!list.length;zone.setAttribute('data-mmb-zone-source','canonical');writingZones=false;if(wanted)zone.dispatchEvent(new Event('change',{bubbles:true}));}
+  function renderProvinces(){var province=el('mmb2-province');if(!province||!catalog)return;var previous=province.value;while(province.options.length)province.remove(0);option(province,'เลือกจังหวัด','');(catalog.provinces||[]).forEach(function(p){option(province,p.label_th||p.label_en||p.code,p.code);});province.disabled=false;var wanted=(catalog.provinces||[]).some(function(p){return p.code===previous;})?previous:((catalog.provinces||[]).some(function(p){return p.code==='BKK';})?'BKK':'');province.value=wanted;renderZones('');}
+  function validCatalog(data){return data&&Array.isArray(data.provinces)&&data.provinces.length&&Array.isArray(data.zones)&&data.zones.length&&data.zones.every(function(z){return ZONE_CODE_RE.test(z.code||'')&&z.province_code;});}
+  async function loadZones(){var root=el('mmb2'),province=el('mmb2-province'),zone=el('mmb2-zone');if(!root||!province||!zone)return;province.disabled=true;zone.disabled=true;while(province.options.length)province.remove(0);option(province,'กำลังโหลดจังหวัด…','');while(zone.options.length)zone.remove(0);option(zone,'กำลังโหลดโซน…','');var endpoint=root.getAttribute('data-service-zones-endpoint');if(!endpoint){setStatus('ยังไม่สามารถโหลดพื้นที่ให้บริการได้ กรุณาลองใหม่อีกครั้ง',true);return;}try{var res=await fetch(endpoint,{method:'GET',headers:{'Accept':'application/json'},cache:'no-store'});var payload=await res.json().catch(function(){return null;});if(!res.ok||!payload||payload.ok!==true||!validCatalog(payload.data))throw new Error('catalog');catalog=payload.data;renderProvinces();setStatus('เลือกจังหวัดก่อน แล้วเลือกโซนที่ใกล้สถานที่จริงที่สุด',false);}catch(e){catalog=null;while(province.options.length)province.remove(0);option(province,'โหลดจังหวัดไม่สำเร็จ','');while(zone.options.length)zone.remove(0);option(zone,'โหลดโซนไม่สำเร็จ','');province.disabled=true;zone.disabled=true;setStatus('พื้นที่ให้บริการโหลดไม่สำเร็จ จึงยังไม่ส่งคำขอจองเพื่อป้องกันการจับคู่ผิดพื้นที่',true);}}
+  function initProvince(){var province=el('mmb2-province'),zone=el('mmb2-zone');if(!province||!zone)return;province.addEventListener('change',function(){renderZones('');zone.dispatchEvent(new Event('change',{bubbles:true}));});new MutationObserver(function(){if(!catalog||writingZones)return;var bad=Array.prototype.some.call(zone.options,function(o){return o.value&& !ZONE_CODE_RE.test(o.value);});if(bad)renderZones(zone.value);}).observe(zone,{childList:true,subtree:false});}
+  function initGps(){var btn=el('mmb2-use-gps');if(!btn||btn.dataset.mmbCanonicalReady==='1')return;btn.dataset.mmbCanonicalReady='1';btn.addEventListener('click',function(ev){ev.preventDefault();ev.stopPropagation();if(!navigator.geolocation){setStatus('Browser นี้ไม่รองรับ GPS กรุณาเลือกจังหวัดและโซนเองได้เลย',true);return;}btn.disabled=true;setStatus('กำลังตรวจว่าตำแหน่งพร้อมใช้งาน…',false);navigator.geolocation.getCurrentPosition(function(){setStatus('รับตำแหน่งแล้ว เพื่อความแม่นยำในการจับคู่ กรุณายืนยันจังหวัดและโซนจากรายการเอง',false);btn.disabled=false;},function(){setStatus('ไม่สามารถอ่านตำแหน่งได้ กรุณาเลือกจังหวัดและโซนเองได้เลย',true);btn.disabled=false;},{enableHighAccuracy:false,timeout:8000,maximumAge:300000});},true);}
+  ready(function(){enforceDuration();initProvince();initGps();loadZones();var d=el('mmb2-duration');if(d){new MutationObserver(enforceDuration).observe(d,{childList:true,subtree:true});d.addEventListener('change',enforceDuration);}setTimeout(enforceDuration,400);setTimeout(enforceDuration,1400);});
+})();
+</script>
+<script id="mms-booking-sheet-a11y">document.querySelector('#mmb2-sheet').addEventListener('keydown',function(e){if(e.key!=='Tab')return;const a=[...this.querySelectorAll('button,a[href]')].filter(x=>!x.hidden&&x.getClientRects().length);if(!a.length)return;const f=a[0],l=a[a.length-1];if(e.shiftKey&&(document.activeElement===f||document.activeElement.classList.contains('mmb2-sheet-panel'))){e.preventDefault();l.focus();}else if(!e.shiftKey&&document.activeElement===l){e.preventDefault();f.focus();}});</script>
+
+<script id="mms-booking-stages-v2">/* Scoped presentation: retain the original inputs, validators and requests. */
+(function(X){
+  'use strict';if(!X||!X.r)return;
+  const stages=['service','details','review'];
+  const targets=['mmb2-service','mmb2-details','mmb2-match-section'];
+  const dict=window.I18N_DICT.th;
+  const copy=k=>dict['mms.booking.v2.'+k];
+  X.ch=targets.map((id,i)=>[id,copy(['nav.service','nav.details','nav.review'][i])]);
+  let current=0;
+  const guide=[...X.r.querySelectorAll('.mb-guide a')];
+  function show(index){
+    current=index;
+    X.r.querySelectorAll('[data-booking-stage]').forEach(el=>{el.hidden=el.dataset.bookingStage!==stages[index];});
+    guide.forEach((el,i)=>{if(i===index)el.setAttribute('aria-current','step');else el.removeAttribute('aria-current');});
+    X.active();
+  }
+  X.active=function(){
+    X.ai=current;
+    X.E.cu.textContent=X.ch[current][1];
+    X.E.pg.textContent=String(current+1).padStart(2,'0')+' / 03';
+    X.E.nx.disabled=current===2;
+  };
+  const go=X.go;
+  X.go=function(id,close){
+    if(id==='mmb2-service')show(0);
+    else if(id==='mmb2-details')show(1);
+    else if(['mmb2-match-section','mmb2-journey','mmb2-review'].includes(id))show(2);
+    go(id,close);
+  };
+  X.r.addEventListener('click',function(event){
+    const link=event.target.closest('a[href^="#mmb2-"]');
+    if(!link)return;event.preventDefault();X.go(link.getAttribute('href').slice(1),false);
+  });
+  show(0);
+  const initial=location.hash.slice(1);
+  if(targets.includes(initial)||['mmb2-review','mmb2-journey'].includes(initial))X.go(initial,false);
+})(window.MMB2);
+</script>

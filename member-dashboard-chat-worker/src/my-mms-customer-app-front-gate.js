@@ -169,7 +169,7 @@ export async function handleMyMmsCustomerUi(request, env = {}) {
   if (requestPath(request) === '/male-massage/support/chat') return new Response(request.method === 'HEAD' ? null : renderMmsDirectChatPage('customer'), {
     headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'private, no-store', 'x-mmd-route-owner': WORKER_NAME,
       'x-content-type-options': 'nosniff', 'x-robots-tag': 'noindex, nofollow', 'referrer-policy': 'no-referrer',
-      'content-security-policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'" },
+      'content-security-policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'" },
   });
 
   let upstream;
