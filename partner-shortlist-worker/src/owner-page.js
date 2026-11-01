@@ -81,7 +81,7 @@ export function renderOwnerPage(nonce) {
     #shortlist-owner .pp-card-info p{font-size:12px;color:#746459;margin:5px 0 0}
     #shortlist-owner .pp-empty{grid-column:1/-1;background:#fffdf8;border:1px dashed #d7ccbd;border-radius:14px;padding:24px 16px;text-align:center;color:#746459;font-size:14px}
     @media(max-width:370px){#shortlist-owner .pp-main{padding:14px}#shortlist-owner .pp-row{grid-template-columns:75px minmax(0,1fr)}#shortlist-owner .pp-grid{gap:7px}}
-  </style></head><body><div id="shortlist-owner">
+  .model-search-filters{grid-column:1/-1;margin:8px 0}.model-search-filters summary{cursor:pointer;min-height:44px;padding:10px 0}.model-search-filters select{width:100%;min-height:48px}.model-search-filters .fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}</style></head><body><div id="shortlist-owner">
   <header><div class="shell top"><div class="brand">MMD INTERNAL</div><a class="back" href="/internal/admin/control-room">${c.back} ↗</a></div></header>
   <main class="shell"><h1>${c.title}</h1><p class="intro">${c.intro}</p>
   <div class="toolbar"><label class="sr" for="jobs">${c.selectJob}</label><select id="jobs"><option value="">${c.loading}</option></select><button id="refresh" class="btn">${c.refresh}</button><button id="newJob" class="btn primary">${c.newJob}</button></div>
