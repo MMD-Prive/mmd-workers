@@ -121,6 +121,7 @@ function presentationUrlForAsset(request) {
   const suffix = source.pathname.slice(CUSTOMER_ASSET_PREFIX.length);
   const upstream = new URL(PRESENTATION_ORIGIN);
   if (suffix.startsWith("lovable/")) upstream.pathname = `/__l5e/assets-v1/${suffix.slice("lovable/".length)}`;
+  else if (/^booking\/core-[1-7]\.js$/.test(suffix)) upstream.pathname = `/${suffix}`;
   else if (/^(favicon\.(?:ico|svg)|robots\.txt|hype-loader\.png)$/i.test(suffix)) upstream.pathname = `/${suffix}`;
   else upstream.pathname = `/assets/${suffix}`;
   upstream.search = source.search;

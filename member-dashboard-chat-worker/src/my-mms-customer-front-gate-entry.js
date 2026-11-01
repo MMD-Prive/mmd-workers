@@ -1,4 +1,5 @@
 import currentWorker from "./mms-line-front-gate.js";
+import {isMmsCustomerBookingPage,handleMmsCustomerBookingPage} from './mms-customer-booking-page.mjs';
 import { maybeHandleTherapistWorkspace, THERAPIST_AI_LOGO_PATH } from "./mms-therapist-workspace.js";
 import { isMmsMembershipRequest, isMmsMembershipOriginPassthrough, proxyMmsMembership } from './mms-membership-front-gate.js';
 import {
@@ -51,6 +52,7 @@ async function proxyMedicalRequest(request, env) {
 export default {
   ...currentWorker,
   async fetch(request, env = {}, ctx) {
+    if (isMmsCustomerBookingPage(request)) return handleMmsCustomerBookingPage(request, env);
     if (isMmsMembershipRequest(request)) return proxyMmsMembership(request, env);
     if (isMmsMembershipOriginPassthrough(request)) return globalThis.fetch(request);
     // The bare path is the Therapist LIFF endpoint. Only the customer AI link
