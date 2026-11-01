@@ -257,3 +257,8 @@ test('model lookup uses real canonical field names, escapes query and returns on
  let target;const env={AIRTABLE_BASE_ID:'base',AIRTABLE_API_KEY:'test',AIRTABLE_HTTP:{fetch:async url=>{target=new URL(url);return Response.json({records:[{id:'rec00000000000002',fields:{working_name:'Synthetic',unique_key:'NMP',phone:'PRIVATE'}}]});}}};
  const result=await queueApi.reviewModels(env,{query:"NMP'"});assert.match(target.searchParams.get('filterByFormula'),/working_name/);assert.ok(target.searchParams.get('filterByFormula').includes("NMP'".toLowerCase().replace("'","\\'")));assert.deepEqual(Object.keys(result.items[0]),['id','name','key']);assert.deepEqual(target.searchParams.getAll('fields[]'),['working_name','nickname','unique_key']);
 });
+test('canonical single-record revalidation omits list-only query parameters before draft save',async()=>{
+ const f=queueFixture(),queue=await reviewQueue(f.env,f.deps);let lookedUp=false;
+ f.env.AIRTABLE_API_KEY='test';f.env.AIRTABLE_BASE_ID='base';f.env.AIRTABLE_HTTP={fetch:async url=>{const target=new URL(url);assert.equal(target.search,'');assert.ok(target.pathname.endsWith('/'+f.model.id));lookedUp=true;return Response.json(f.model);}};
+ const saved=await queueApi.saveReviewDraft(f.env,{record_id:f.id,revision:queue.items[0].revision,visibility:'hidden',model_id:f.model.id},actor,{...f.deps,models:undefined});assert.equal(lookedUp,true);assert.equal(saved.item.model.id,f.model.id);
+});

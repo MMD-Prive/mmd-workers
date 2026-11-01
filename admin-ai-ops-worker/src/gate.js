@@ -380,14 +380,15 @@ const MEDIA_FLUSH_CLIENT_LAYER = String.raw`;(()=>{'use strict';
     for(const value of ['all','standard','premium','ems','gws','travel','extreme','farang','up_country']){const option=document.createElement('option');option.value=value;option.textContent=value==='all'?'ครบ 8 แบบ':value;category.append(option);}category.value='all';
     const matching=document.createElement('select');matching.setAttribute('aria-label','กรองการจับคู่');
     for(const [value,label] of [['all','ทุกสถานะการจับคู่'],['unmatched','ยังไม่เสนอคู่'],['matched','เสนอคู่แล้ว']]){const o=document.createElement('option');o.value=value;o.textContent=label;matching.append(o);}matching.value='all';
+    const mediaType=document.createElement('select');mediaType.setAttribute('aria-label','กรองรูปหรือวิดีโอ');for(const [value,label] of [['all','รูปและวิดีโอ'],['image/','รูป'],['video/','วิดีโอ']]){const o=document.createElement('option');o.value=value;o.textContent=label;mediaType.append(o);}mediaType.value='all';
     const queueStatus=document.createElement('p');queueStatus.setAttribute('role','status');
     const queueList=document.createElement('ul'),pager=document.createElement('div'),previous=document.createElement('button'),next=document.createElement('button');previous.textContent='ก่อนหน้า';next.textContent='ถัดไป';previous.type=next.type='button';pager.append(previous,next);
     const viewer=document.createElement('div');viewer.setAttribute('data-flush-viewer','');
-    queueBox.append(queueTitle,queueLoad,lane,category,matching,queueStatus,queueList,pager,viewer);
+    queueBox.append(queueTitle,queueLoad,lane,category,matching,mediaType,queueStatus,viewer,queueList,pager);
     let rows=[],page=0,loaded=false,queueBusy=false,mediaUrl=null,selection=0;
     function clearViewer(){selection++;if(mediaUrl)URL.revokeObjectURL(mediaUrl);mediaUrl=null;viewer.replaceChildren();}
     function drawQueue(){
-      const filtered=rows.filter(r=>(lane.value==='all'||r.visibility===lane.value)&&(category.value==='all'||r.category===category.value)&&(matching.value==='all'||(matching.value==='matched'?Boolean(r.model):!r.model)));
+      const filtered=rows.filter(r=>(mediaType.value==='all'||r.mime?.startsWith(mediaType.value))&&(lane.value==='all'||r.visibility===lane.value)&&(category.value==='all'||r.category===category.value)&&(matching.value==='all'||(matching.value==='matched'?Boolean(r.model):!r.model)));
       const pages=Math.max(1,Math.ceil(filtered.length/25));page=Math.min(page,pages-1);queueList.replaceChildren();
       queueStatus.textContent=(loaded?'โหลดครบ ':'กำลังโหลด ')+rows.length+' รายการ · Review '+rows.filter(r=>r.visibility==='review').length+' / Hidden '+rows.filter(r=>r.visibility==='hidden').length+' · แสดง '+filtered.length+' รายการ · หน้า '+(page+1)+'/'+pages+' · ทุกชิ้นรออนุมัติ';
       previous.disabled=page===0||queueBusy;next.disabled=page>=pages-1||queueBusy;
@@ -396,7 +397,7 @@ const MEDIA_FLUSH_CLIENT_LAYER = String.raw`;(()=>{'use strict';
       }
     }
     async function loadQueue(){
-      if(queueBusy)return;queueBusy=true;queueLoad.disabled=true;rows=[];loaded=false;page=0;clearViewer();
+      if(queueBusy)return;queueBusy=true;queueLoad.disabled=true;rows=[];loaded=false;page=0;clearViewer();queueStatus.textContent='กำลังอ่านคิวรออนุมัติ…';
       try{let cursor=null;const seen=new Set(),ids=new Set();do{const data=await post({action:'review_queue',...(cursor?{cursor}:{})});for(const row of data.items||[])if(!ids.has(row.id)){ids.add(row.id);rows.push(row);}cursor=data.cursor;if(cursor&&seen.has(cursor))throw Error('คิวอ่านซ้ำ กรุณาลองใหม่');if(cursor)seen.add(cursor);drawQueue();}while(cursor);loaded=true;drawQueue();}
       catch(e){queueStatus.textContent='อ่านคิวไม่ครบ · '+String(e.message||e)+' · กดเปิดคิวเพื่อลองใหม่';}
       finally{queueBusy=false;queueLoad.disabled=false;previous.disabled=page===0;}
@@ -406,7 +407,7 @@ const MEDIA_FLUSH_CLIENT_LAYER = String.raw`;(()=>{'use strict';
       const heading=document.createElement('h4');heading.textContent=row.category+' · '+row.intake_id.slice(0,12)+' · รออนุมัติ';
       const close=document.createElement('button');close.type='button';close.textContent='ปิดสื่อ';close.onclick=clearViewer;
       const message=document.createElement('p');message.setAttribute('role','status');message.textContent='กำลังเปิดสื่อส่วนตัว…';
-      viewer.append(heading,close,message);
+      viewer.append(heading,close,message);viewer.scrollIntoView?.({block:'nearest'});
       try{
         const response=await fetch('/v1/admin/ai-ops/media/flush',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'content-type':'application/json'},body:JSON.stringify({action:'review_media',record_id:row.id}),signal:AbortSignal.timeout(45000)});
         if(!response.ok)throw Error('เปิดสื่อไม่ได้ กรุณาเข้าสู่ระบบแล้วลองใหม่');
@@ -426,7 +427,7 @@ const MEDIA_FLUSH_CLIENT_LAYER = String.raw`;(()=>{'use strict';
       save.onclick=async()=>{save.disabled=true;try{const data=await post({action:'review_save',record_id:row.id,revision:row.revision,visibility:visibility.value,model_id:selected?.id||null});if(ticket!==selection)return;Object.assign(row,data.item);drawQueue();message.textContent='บันทึกข้อเสนอแล้ว · ยังรออนุมัติและยังไม่เผยแพร่';}catch(e){message.textContent='บันทึกไม่สำเร็จ · '+String(e.message||e)+' · เปิดคิวใหม่ก่อนลองอีกครั้ง';}finally{save.disabled=false;}};
       viewer.append(source,visibility,query,search,choices,chosen,clear,save);
     }
-    queueLoad.onclick=loadQueue;lane.onchange=category.onchange=matching.onchange=()=>{page=0;clearViewer();drawQueue();};previous.onclick=()=>{page--;clearViewer();drawQueue();};next.onclick=()=>{page++;clearViewer();drawQueue();};
+    queueLoad.onclick=loadQueue;lane.onchange=category.onchange=matching.onchange=mediaType.onchange=()=>{page=0;clearViewer();drawQueue();};previous.onclick=()=>{page--;clearViewer();drawQueue();};next.onclick=()=>{page++;clearViewer();drawQueue();};
     }
     refreshPanel=render;
     async function flush(forceNew=false){

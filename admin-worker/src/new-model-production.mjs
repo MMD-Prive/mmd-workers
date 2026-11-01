@@ -142,7 +142,8 @@ export async function reviewQueue(env,deps={}) {
 async function modelRegistry(env,suffix) {
   const table=env.AIRTABLE_TABLE_MODELS||'Models';
   const target=new URL('https://api.airtable.com/v0/'+encodeURIComponent(env.AIRTABLE_BASE_ID)+'/'+encodeURIComponent(table)+suffix);
-  for(const field of ['working_name','nickname','unique_key'])target.searchParams.append('fields[]',field);
+  // Airtable's single-record endpoint does not accept the list-only fields[] parameter.
+  if(suffix.startsWith('?'))for(const field of ['working_name','nickname','unique_key'])target.searchParams.append('fields[]',field);
   const response=await (env.AIRTABLE_HTTP?.fetch?.bind(env.AIRTABLE_HTTP)||fetch)(target.toString(),{headers:{authorization:'Bearer '+env.AIRTABLE_API_KEY},redirect:'manual',signal:AbortSignal.timeout(12000)});
   if(!response.ok)fail('canonical_model_unavailable');return response.json();
 }
