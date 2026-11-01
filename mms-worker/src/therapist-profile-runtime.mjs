@@ -245,6 +245,8 @@ async function requireCurrentTherapist(request, env) {
   const record = await findUniqueTherapist(env, session.therapist_id);
   if (!record) throw profileError(401, "THERAPIST_SESSION_INVALID");
   assertTherapistCanAuthenticate(record);
+  const binding = await hmacHex(sessionSecret(env), 'mms-therapist-line-binding-v1.' + clean(record.fields?.["LINE Subject Hash"], 200));
+  if (!constantTimeEqual(session.line_binding, binding)) throw profileError(401, "THERAPIST_SESSION_INVALID");
   return {
     record_id: record.id,
     therapist_id: clean(record.fields?.["Therapist ID"], 80),
@@ -402,11 +404,12 @@ async function verifySessionToken(token, env) {
   catch { throw profileError(401, "THERAPIST_SESSION_INVALID"); }
   const now = Math.floor(Date.now() / 1000);
   const therapistId = clean(payload?.therapist_id, 80);
+  if (!/^[a-f0-9]{64}$/.test(payload?.line_binding || "")) throw profileError(401, "THERAPIST_SESSION_INVALID");
   if (payload?.v !== SESSION_VERSION || payload?.role !== SESSION_ROLE) throw profileError(401, "THERAPIST_SESSION_INVALID");
   if (!/^[A-Za-z0-9_-]{4,80}$/.test(therapistId)) throw profileError(401, "THERAPIST_SESSION_INVALID");
   if (!Number.isFinite(payload?.iat) || !Number.isFinite(payload?.exp)) throw profileError(401, "THERAPIST_SESSION_INVALID");
   if (payload.exp <= now || payload.iat > now + 300 || payload.exp - payload.iat > SESSION_TTL_SECONDS) throw profileError(401, "THERAPIST_SESSION_INVALID");
-  return { therapist_id: therapistId, role: SESSION_ROLE };
+  return { therapist_id: therapistId, role: SESSION_ROLE, line_binding: payload.line_binding };
 }
 
 function requireRuntimeConfig(env) {

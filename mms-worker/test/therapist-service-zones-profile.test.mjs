@@ -40,7 +40,7 @@ const env = {
 
 function sessionCookie() {
   const now = Math.floor(Date.now() / 1000);
-  const encoded = Buffer.from(JSON.stringify({ v: 1, role: "mms_therapist", therapist_id: THERAPIST_ID, iat: now, exp: now + 600 })).toString("base64url");
+  const encoded = Buffer.from(JSON.stringify({ v: 1, role: "mms_therapist", therapist_id: THERAPIST_ID, line_binding: createHmac('sha256', SECRET).update('mms-therapist-line-binding-v1.server-side-hash-only').digest('hex'), iat: now, exp: now + 600 })).toString("base64url");
   const signature = createHmac("sha256", SECRET).update("mms-therapist-session-v1." + encoded).digest("hex");
   return "__Secure-mms_therapist_session=v1." + encoded + "." + signature;
 }

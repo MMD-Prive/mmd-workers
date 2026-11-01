@@ -7,7 +7,7 @@ const origin = 'https://www.mmdbkk.com';
 const env = { MMS_THERAPIST_SESSION_SECRET: 'test-session-secret-only-1234567890123456', AIRTABLE_API_TOKEN: 'test', AIRTABLE_BASE_ID: 'appsV1ILPRfIjkaYg', AIRTABLE_THERAPISTS_TABLE_ID: 'tblTC9ZHQa4hAUwLu', ALLOWED_ORIGINS: origin };
 function cookie() {
   const now = Math.floor(Date.now()/1000);
-  const encoded = Buffer.from(JSON.stringify({v:1,role:'mms_therapist',therapist_id:'mmst_test0001',iat:now,exp:now+3600})).toString('base64url');
+  const encoded = Buffer.from(JSON.stringify({v:1,role:'mms_therapist',therapist_id:'mmst_test0001', line_binding: createHmac('sha256', env.MMS_THERAPIST_SESSION_SECRET).update('mms-therapist-line-binding-v1.private-test-hash').digest('hex'),iat:now,exp:now+3600})).toString('base64url');
   return '__Secure-mms_therapist_session=v1.'+encoded+'.'+createHmac('sha256',env.MMS_THERAPIST_SESSION_SECRET).update('mms-therapist-session-v1.'+encoded).digest('hex');
 }
 function record(extra={}) {return {id:'recTest12345',fields:{'Therapist ID':'mmst_test0001','Display Name':'Boss',Status:'Active','Therapist Auth Status':'Active','LINE Subject Hash':'private-test-hash','MY MMS Access':'Approved','Availability Status':'Unavailable','Matching Enabled':true,'Verified Skills':['Sport Massage'],...extra}};}
