@@ -1,3 +1,4 @@
+import { restrictedReplyCategories } from './kenji-reply-category-gate.mjs';
 import { careBackOctoberReply } from './kenji-care-back-october.mjs';
 import { deliverTravelNotice } from '../../shared/model-travel-line.mjs';
 import {
@@ -1569,10 +1570,12 @@ export async function deliverLineText(env = {}, lineUserId, text, options = {}) 
 }
 
 export async function deliverLinePublicMenu(env = {}, lineUserId, options = {}) {
+  if (restrictedReplyCategories(env)) return {ok:false,suppressed:true,error:'reply_category_silent'};
   return deliverLineText(env, lineUserId, PUBLIC_MENU_TEXT, options);
 }
 
 async function sendLineReply(env = {}, replyToken, text, options = {}) {
+  if (restrictedReplyCategories(env)) return {ok:false,suppressed:true,error:'reply_category_silent'};
   const token = asString(env.LINE_CHANNEL_ACCESS_TOKEN);
   const safeText = sanitizeLineText(text);
   const reply = asString(replyToken);

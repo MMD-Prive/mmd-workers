@@ -1,3 +1,4 @@
+import { restrictedReplyCategories } from './kenji-reply-category-gate.mjs';
 import {
   inferLineIntent,
   requestKenjiRuntimeStatus,
@@ -34,7 +35,7 @@ function enabled(value) {
 }
 
 function isLineReplyAllowed(env = {}, controls = {}) {
-  return enabled(env.LINE_AUTO_REPLY_ENABLED) && controls.line_oa_auto_reply !== true;
+  return !restrictedReplyCategories(env) && enabled(env.LINE_AUTO_REPLY_ENABLED) && controls.line_oa_auto_reply !== true;
 }
 
 function normalizedModelRef(value = "") {
@@ -52,6 +53,7 @@ function replyToken(event = {}) {
 }
 
 async function sendReply(env = {}, token = "", reply = "") {
+  if (restrictedReplyCategories(env)) return {ok:false,suppressed:true,error:'reply_category_silent'};
   const channelToken = text(env.LINE_CHANNEL_ACCESS_TOKEN, 2400);
   const answer = text(reply, 1600);
   if (!channelToken || !token || !answer) return { ok: false, error: "reply_not_configured" };

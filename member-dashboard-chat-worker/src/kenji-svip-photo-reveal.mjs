@@ -132,6 +132,7 @@ function perVoiceMessages(result = {}) {
 }
 
 async function sendLineReply(env = {}, replyToken = "", messages = []) {
+  if (env.KENJI_LINE_REPLY_CATEGORY_MODE === 'approved_qa_promo') return {ok:false,suppressed:true,error:'reply_category_silent'};
   const channelToken = text(env.LINE_CHANNEL_ACCESS_TOKEN, 2400);
   if (!channelToken || !replyToken || !messages.length) return { ok: false, error: "reply_not_configured" };
   try {
