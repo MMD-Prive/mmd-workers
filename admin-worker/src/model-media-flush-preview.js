@@ -22,6 +22,7 @@ export const MODEL_MEDIA_SOURCE_ROOTS = Object.freeze([
 
 // Synthetic fixture root remains available only through explicit test dependencies.
 export const MODEL_MEDIA_TEST_ROOT = Object.freeze({key:"nmp_test",label:"NMP-TEST-20261101",lane:"catalogue",id:"1ylEy2w18qTfYWWY2iJYtEPT7HtFpCDyH"});
+const flushAuthCache = new WeakMap();
 const DRIVE_API = "https://www.googleapis.com/drive/v3";
 const FOLDER = "application/vnd.google-apps.folder";
 const PROD_ORIGINS = new Set(["https://mmdbkk.com", "https://www.mmdbkk.com"]);
@@ -50,7 +51,7 @@ async function googleJson(path, params, token, http) {
     headers: { authorization: "Bearer " + token, accept: "application/json" },
     redirect: "manual", signal: AbortSignal.timeout(12000),
   });
-  if (!response.ok) throw Error("drive_http_" + response.status);
+  if (!response.ok) throw Object.assign(Error("drive_read_failed"),{code:"drive_http_"+response.status});
   const data = await response.json().catch(() => null);
   if (!data || typeof data !== "object") throw Error("drive_malformed");
   return data;
@@ -125,13 +126,15 @@ async function scanRoot(source, token, http, candidates = null, checkpoint = nul
 
 async function flushDriveToken(env) {
   const keys = ["FLUSH_GOOGLE_DRIVE_CLIENT_ID", "FLUSH_GOOGLE_DRIVE_CLIENT_SECRET", "FLUSH_GOOGLE_DRIVE_REFRESH_TOKEN"];
-  if (!keys.some(key => env[key])) return libraryDriveToken(env);
-  if (!keys.every(key => typeof env[key] === "string" && env[key].trim())) throw Object.assign(new Error("flush_oauth_configuration_incomplete"), {code:"drive_credentials_not_configured"});
+  if(keys.some(key=>env[key])&&!keys.every(key=>typeof env[key]==="string"&&env[key].trim()))throw Object.assign(Error("flush_oauth_configuration_incomplete"),{code:"drive_credentials_not_configured"});
+  const cached=flushAuthCache.get(env);if(cached&&cached.until>Date.now())return cached.token;
+  if (!keys.some(key => env[key])) {const token=await libraryDriveToken(env);flushAuthCache.set(env,{token,until:Date.now()+45*60000});return token;}
   // Only this intake uses the dedicated read-only OAuth client. Shared credentials are preserved.
-  return libraryDriveToken({...env, GOOGLE_SERVICE_ACCOUNT_JSON:"", COMPCARD_DRIVE_OWNER_EMAIL:MODEL_MEDIA_SOURCE_EMAIL,
+  const token=await libraryDriveToken({...env, GOOGLE_SERVICE_ACCOUNT_JSON:"", COMPCARD_DRIVE_OWNER_EMAIL:MODEL_MEDIA_SOURCE_EMAIL,
     GOOGLE_DRIVE_CLIENT_ID:env.FLUSH_GOOGLE_DRIVE_CLIENT_ID,
     GOOGLE_DRIVE_CLIENT_SECRET:env.FLUSH_GOOGLE_DRIVE_CLIENT_SECRET,
     GOOGLE_DRIVE_REFRESH_TOKEN:env.FLUSH_GOOGLE_DRIVE_REFRESH_TOKEN});
+  flushAuthCache.set(env,{token,until:Date.now()+45*60000});return token;
 }
 
 export async function handleModelMediaFlushPreview(request, env = {}, deps = {}) {
@@ -160,21 +163,23 @@ export async function handleModelMediaFlushPreview(request, env = {}, deps = {})
   const http = deps.http || env.GOOGLE_DRIVE_HTTP?.fetch?.bind(env.GOOGLE_DRIVE_HTTP) || fetch;
   let phase = "oauth";
   try {
-    const token = await (deps.getAccessToken || flushDriveToken)(env);
-    phase = "account_check";
-    const about = await googleJson("/about", { fields: "user(emailAddress)" }, token, http);
-    if (!owner(about.user?.emailAddress)) return respond({ ok: false, error: "source_account_mismatch" }, 503);
-
-    phase = "scan";
-    if (input.action === "stage_all" && input.run_id) {
-      return await continueStaging(env, actor, input.run_id, token, http, sourceRoots);
-    }
+    let verifiedToken;
+    const getToken=async()=>{
+      if(verifiedToken)return verifiedToken;
+      phase="oauth";
+      const token=await (deps.getAccessToken || flushDriveToken)(env);
+      // The default helper validates the account before caching the token.
+      if(deps.getAccessToken){const about=await googleJson("/about",{fields:"user(emailAddress)"},token,http);if(!owner(about.user?.emailAddress))throw Object.assign(Error("account_mismatch"),{code:"drive_account_mismatch"});}
+      verifiedToken=token;phase="scan";return token;
+    };
+    phase="scan";
     if(input.action === "stage_all") {
       phase="staging_manifest";
-      const runId=crypto.randomUUID();
-      await storage(env).put(PREFIX+"runs/"+runId+".json",JSON.stringify({actor_id:actor.id,created_at:Date.now(),candidates:[],rows:[],scan_index:0,scan_state:null}),{onlyIf:{etagDoesNotMatch:"*"},httpMetadata:{contentType:"application/json",cacheControl:"private, no-store"}});
-      return await continueStaging(env,actor,runId,token,http,sourceRoots);
+      const runId=input.run_id || crypto.randomUUID(),key=PREFIX+"runs/"+runId+".json";
+      if(!await storage(env).head(key))await storage(env).put(key,JSON.stringify({actor_id:actor.id,created_at:Date.now(),candidates:[],rows:[],scan_index:0,scan_state:null}),{onlyIf:{etagDoesNotMatch:"*"},httpMetadata:{contentType:"application/json",cacheControl:"private, no-store"}});
+      return await continueStaging(env,actor,runId,getToken,http,sourceRoots);
     }
+    const token=await getToken();
     const rows=[];
     for(let i=0;i<sourceRoots.length;i+=2) rows.push(...await Promise.all(sourceRoots.slice(i,i+2).map(async source=>{
       try{return await scanRoot(source,token,http);}catch{return {key:source.key,label:source.label,lane:source.lane,state:"source_unavailable",complete:false};}
@@ -192,32 +197,36 @@ export async function handleModelMediaFlushPreview(request, env = {}, deps = {})
       checked_at: new Date().toISOString(),
     });
   } catch (error) {
-    const code = String(error?.code || "");
+    let code = String(error?.code || "");
+    if(code==="drive_http_401"){flushAuthCache.delete(env);code="drive_oauth_unavailable";}
     const reason = /^(?:drive_(?:credentials_not_configured|oauth_unavailable|account_mismatch|transport_(?:redirect|timeout|receiver|network)_unavailable)|private_staging_unavailable|review_registry_unavailable)$/.test(code) ? code : "dependency_unavailable";
-    return respond({ ok: false, error: reason, failed_phase: phase, reason, mode: input.action === "stage_all" ? "private_staging" : "preview_only", writes: phase === "staging_manifest" ? "unknown" : false }, 503);
+    return respond({ ok: false, error: reason, failed_phase: phase, reason, mode: input.action === "stage_all" ? "private_staging" : "preview_only", writes: input.action === "stage_all" ? "unknown" : false }, 503);
   }
 }
 
 
-async function continueStaging(env, actor, runId, token, http, sourceRoots) {
+async function continueStaging(env, actor, runId, getToken, http, sourceRoots) {
   const key=PREFIX+"runs/"+runId+".json", obj=await storage(env).get(key);
   if(!obj) return respond({ok:false,error:"staging_run_missing"},404);
   const run=await obj.json();
   if(run.actor_id!==actor.id || !Number.isFinite(run.created_at) || run.created_at+86400000<Date.now()) return respond({ok:false,error:"staging_run_expired_or_forbidden"},409);
   if(!Array.isArray(run.candidates)||run.candidates.some(c=>!sourceRoots.some(root=>root.id===c.root_id)))return respond({ok:false,error:"source_scope_required"},403);
+  const save=()=>storage(env).put(key,JSON.stringify(run),{onlyIf:{etagMatches:obj.etag},httpMetadata:{contentType:"application/json",cacheControl:"private, no-store"}});
+  const changed=()=>respond({ok:true,mode:"private_staging",run_id:runId,continue_required:true,state:"retrying",retry_after_ms:500,total_candidates:run.candidates.length,completed_count:run.next_index||0,publication:false,checked_at:new Date().toISOString()});
   if(Number.isInteger(run.scan_index) && run.scan_index<sourceRoots.length) {
     const source=sourceRoots[run.scan_index];
     // One Drive list page per request; persist cursors before continuing in the UI.
-    const row=await scanRoot(source,token,http,run.candidates,run.scan_state,1);
+    const row=await scanRoot(source,await getToken(),http,run.candidates,run.scan_state,1);
     run.scan_state=row._scan || null;delete row._scan;
     run.rows[run.scan_index]=row;
     if(!run.scan_state)run.scan_index++;
-    await storage(env).put(key,JSON.stringify(run),{httpMetadata:{contentType:"application/json",cacheControl:"private, no-store"}});
+    if(!await save())return changed();
     return respond({ok:true,mode:"private_staging",run_id:runId,continue_required:true,state:"scanning",total_candidates:run.candidates.length,completed_count:0,results:[],catalogue:run.rows.filter(r=>r.lane==="catalogue"),mmd_now:[],source_scan_complete:false,publication:false,checked_at:new Date().toISOString()});
   }
-  const results=[];let remaining=false, attempted=0;
+  const results=[];let remaining=false, attempted=0,visited=0,retryAfter=0;
   run.failures ||= [];
   for(let index=run.next_index || 0;index<run.candidates.length;index++) {
+    if(visited++>=8){remaining=true;break;}
     const candidate=run.candidates[index];
     // Completed receipts make retries and repeated clicks idempotent.
     const id=await hash(JSON.stringify([candidate.root_id,candidate.file_id,candidate.version,candidate.visibility]));
@@ -227,26 +236,35 @@ async function continueStaging(env, actor, runId, token, http, sourceRoots) {
     try {
       results.push(await stageMedia(env,candidate,actor,async c=>{
         if(!c.version)throw Error("source_version_missing");
-        const metadata=async id=>googleJson("/files/"+encodeURIComponent(id),{fields:"id,mimeType,size,version,parents,trashed,owners(emailAddress)"},token,http);
+        const token=await getToken(),deadline=AbortSignal.timeout(20000);
+        const metadata=async id=>{const r=await http(DRIVE_API+"/files/"+encodeURIComponent(id)+"?fields=id,mimeType,size,version,parents,trashed,owners(emailAddress)",{headers:{authorization:"Bearer "+token},redirect:"manual",signal:deadline});if(!r.ok)throw Object.assign(Error("drive_read_failed"),{code:"drive_http_"+r.status});return r.json();};
+        const all=await Promise.all([...c.ancestry.map(metadata),metadata(c.file_id)]);
         for(let i=0;i<c.ancestry.length;i++) {
-          const f=await metadata(c.ancestry[i]);
+          const f=all[i];
           if(f.id!==c.ancestry[i]||f.trashed||f.mimeType!==FOLDER||!f.owners?.some(x=>owner(x.emailAddress)) || (i>0&&!f.parents?.includes(c.ancestry[i-1])))throw Error("source_scope_changed");
         }
-        const before=await metadata(c.file_id);
+        const before=all.at(-1);
         const matches=f=>f.id===c.file_id&&!f.trashed&&String(f.version)===c.version&&f.mimeType===c.mimeType&&Number(f.size)===c.size&&f.parents?.includes(c.ancestry.at(-1))&&f.owners?.some(x=>owner(x.emailAddress));
         if(!matches(before))throw Error("source_changed");
-        const response=await http(DRIVE_API+"/files/"+encodeURIComponent(c.file_id)+"?alt=media",{headers:{authorization:"Bearer "+token},redirect:"manual",signal:AbortSignal.timeout(12000)});
+        const response=await http(DRIVE_API+"/files/"+encodeURIComponent(c.file_id)+"?alt=media",{headers:{authorization:"Bearer "+token},redirect:"manual",signal:deadline});
+        if(!response.ok)throw Object.assign(Error("drive_read_failed"),{code:"drive_http_"+response.status});
         const bytes=await readBytes(response,c.size,c.mimeType);
         if(!matches(await metadata(c.file_id)))throw Error("source_changed");
         return bytes;
-      }));
-    } catch {results.push({id,state:"failed_retry_required"});}
+      },{deferRegistry:true}));
+    } catch(error) {
+      if(error?.code==="drive_http_401")flushAuthCache.delete(env);
+      const retry=/^(?:drive_http_(?:401|429|5\d\d)|drive_.*unavailable|review_registry_unavailable|staging_claim_lost)$/.test(error?.code||"")||['AbortError','TimeoutError','TypeError'].includes(error?.name);
+      results.push({id,state:retry?"retry_later":"failed_retry_required"});
+    }
+    const result=results.at(-1);
+    if(["prepared_private","busy_or_recovery_required","retry_later"].includes(result?.state)){remaining=true;retryAfter=result.retry_after_ms || (result.state==='retry_later'?3000:0);break;}
     if(results.some(r=>r.id===id&&!["pending_review","already_staged"].includes(r.state))&&!run.failures.includes(id))run.failures.push(id);
     run.next_index=index+1;
   }
-  await storage(env).put(key,JSON.stringify(run),{httpMetadata:{contentType:"application/json",cacheControl:"private, no-store"}});
+  if(!await save())return changed();
   const failures=run.failures.length>0;
-  return respond({ok:true,mode:"private_staging",run_id:runId,continue_required:remaining,state:remaining?"staging":failures?"partial_failure":"pending_review",failed_count:run.failures.length,total_candidates:run.candidates.length,completed_count:run.next_index || 0,results,
+  return respond({ok:true,mode:"private_staging",run_id:runId,continue_required:remaining,retry_after_ms:retryAfter,state:remaining?"staging":failures?"partial_failure":"pending_review",failed_count:run.failures.length,total_candidates:run.candidates.length,completed_count:run.next_index || 0,results,
     catalogue:run.rows.filter(r=>r.lane==="catalogue"),mmd_now:run.rows.filter(r=>r.lane==="mmd_now"),
     source_scan_complete:run.rows.every(r=>r.complete),publication:false,checked_at:new Date().toISOString()});
 }

@@ -46,27 +46,54 @@ export async function stageMedia(env,candidate,actor,readSource,deps={}) {
   const receiptKey=PREFIX+'receipts/'+id+'.json',lockKey=PREFIX+'locks/'+id;
   const old=await b.get(receiptKey);
   if(old){const receipt=await old.json();if(receipt.id!==id)fail('staging_receipt_invalid');const head=await b.head(receipt.key);if(!head||head.customMetadata?.sha256!==receipt.sha256)fail('staging_object_missing');return {id,state:'already_staged'};}
-  const lock=await b.put(lockKey,JSON.stringify({actor:actor.id,at:new Date().toISOString()}),{onlyIf:{etagDoesNotMatch:'*'}});
-  if(!lock)return {id,state:'busy_or_recovery_required'};
+  const now=deps.now || Date.now,leaseMs=180000,nonce=crypto.randomUUID();
+  const prior=await b.get(lockKey),priorData=prior?await prior.json():null;
+  const priorUntil=priorData?.expires_at ?? Date.parse(priorData?.at || '')+leaseMs;
+  if(prior&&!priorData?.released&&(!Number.isFinite(priorUntil)||priorUntil>now()))return {id,state:'busy_or_recovery_required',retry_after_ms:30000};
+  const claim=()=>({nonce,actor:actor.id,at:new Date(now()).toISOString(),expires_at:now()+leaseMs,released:false});
+  const lock=await b.put(lockKey,JSON.stringify(claim()),{onlyIf:prior?{etagMatches:prior.etag}:{etagDoesNotMatch:'*'}});
+  if(!lock)return {id,state:'busy_or_recovery_required',retry_after_ms:30000};
+  const renew=async()=>{
+    const current=await b.get(lockKey),value=current?await current.json():null;
+    if(value?.nonce!==nonce||value.released||value.expires_at<=now())fail('staging_claim_lost');
+    if(!await b.put(lockKey,JSON.stringify(claim()),{onlyIf:{etagMatches:current.etag}}))fail('staging_claim_lost');
+  };
   try {
-    const bytes=await readSource(candidate),sha=await hash(bytes);
-    const key=PREFIX+'originals/'+id+'/'+sha;
-    await b.put(key,bytes,{onlyIf:{etagDoesNotMatch:'*'},sha256:sha,httpMetadata:{contentType:candidate.mimeType,cacheControl:'private, no-store'},customMetadata:{sha256:sha,intake_id:id,visibility:candidate.visibility}});
-    const head=await b.head(key);
-    if(!head||head.size!==bytes.length||head.customMetadata?.sha256!==sha||head.customMetadata?.intake_id!==id)fail('staging_object_unverified');
+    const preparedKey=PREFIX+'prepared/'+id+'.json',fingerprint=await hash(JSON.stringify(candidate));
+    const preparedObj=await b.get(preparedKey);let prepared=preparedObj?await preparedObj.json():null;
+    if(prepared){
+      const head=await b.head(prepared.key);
+      if(prepared.id!==id||prepared.source_fingerprint!==fingerprint||!/^[a-f0-9]{64}$/.test(prepared.sha256)||prepared.key!==PREFIX+'originals/'+id+'/'+prepared.sha256||!head||head.size!==prepared.bytes||head.customMetadata?.sha256!==prepared.sha256||head.customMetadata?.intake_id!==id)fail('prepared_object_invalid');
+    }else{
+      const bytes=await readSource(candidate),sha=await hash(bytes),key=PREFIX+'originals/'+id+'/'+sha;
+      await b.put(key,bytes,{onlyIf:{etagDoesNotMatch:'*'},sha256:sha,httpMetadata:{contentType:candidate.mimeType,cacheControl:'private, no-store'},customMetadata:{sha256:sha,intake_id:id,visibility:candidate.visibility}});
+      const head=await b.head(key);
+      if(!head||head.size!==bytes.length||head.customMetadata?.sha256!==sha||head.customMetadata?.intake_id!==id)fail('staging_object_unverified');
+      prepared={id,key,sha256:sha,bytes:bytes.length,source_fingerprint:fingerprint};
+      await renew();
+      if(!await b.put(preparedKey,JSON.stringify(prepared),{onlyIf:{etagDoesNotMatch:'*'},httpMetadata:{contentType:'application/json',cacheControl:'private, no-store'}}))fail('staging_claim_lost');
+      if(deps.deferRegistry)return {id,state:'prepared_private'};
+    }
+    const {key,sha256:sha}=prepared;
     const requestId='nmp_'+id;
     let record=await findRequest(env,requestId,api);
-    const payload={schema:'mmd.new_model_production.v1',intake_id:id,source:candidate,private_staging_key:key,sha256:sha,bytes:bytes.length,requires_per_approval:true,canonical_model_matching_required:true,public_safe:false,private_safe:false};
+    const payload={schema:'mmd.new_model_production.v1',intake_id:id,source:candidate,private_staging_key:key,sha256:sha,bytes:prepared.bytes,requires_per_approval:true,canonical_model_matching_required:true,public_safe:false,private_safe:false};
     if(!record){
+      await renew();
       await api(env,'',{method:'POST',body:JSON.stringify({fields:{request_id:requestId,request_type:'media',request_status:'pending_review',requested_by:'owner:'+String(actor.id).slice(0,120),requested_at:new Date().toISOString(),payload_json:JSON.stringify(payload)},typecast:false})});
       record=await findRequest(env,requestId,api);
     }
     const saved=record&&fieldsOf(record);
     if(!record?.id||saved?.intake_id!==id||saved?.sha256!==sha||saved?.private_staging_key!==key)fail('review_readback_failed');
     // Existing review decisions are never reset on retries.
+    await renew();
     await b.put(receiptKey,JSON.stringify({id,review_record_id:record.id,sha256:sha,key}),{onlyIf:{etagDoesNotMatch:'*'},httpMetadata:{contentType:'application/json',cacheControl:'private, no-store'}});
     return {id,state:'pending_review',review_record_id:record.id};
-  } finally {await b.delete(lockKey);}
+  } finally {
+    // Conditional release cannot erase a newer claim after an interrupted request.
+    const current=await b.get(lockKey).catch(()=>null),value=current?await current.json().catch(()=>null):null;
+    if(value?.nonce===nonce)await b.put(lockKey,JSON.stringify({...value,released:true,expires_at:now()}),{onlyIf:{etagMatches:current.etag}}).catch(()=>null);
+  }
 }
 export async function reviewQueue(env,deps={}) {
   const page=await (deps.registry||registry)(env,'?'+new URLSearchParams({filterByFormula:"AND(LEFT({request_id},4)='nmp_',{request_status}='pending_review')",pageSize:'50'}));

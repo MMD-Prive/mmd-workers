@@ -9,7 +9,7 @@ function fixture(){
  const bucket={
   async get(key){const x=objects.get(key);return x?{...x,json:async()=>JSON.parse(typeof x.data==='string'?x.data:new TextDecoder().decode(x.data))}:null;},
   async head(key){return objects.get(key)||null;},
-  async put(key,data,options={}){if(options.onlyIf?.etagDoesNotMatch==='*'&&objects.has(key))return null;const row={data,size:typeof data==='string'?Buffer.byteLength(data):data.length,customMetadata:options.customMetadata,etag:String(++n)};objects.set(key,row);return row;},
+  async put(key,data,options={}){if(options.onlyIf?.etagDoesNotMatch==='*'&&objects.has(key))return null;if(options.onlyIf?.etagMatches!==undefined&&objects.get(key)?.etag!==options.onlyIf.etagMatches)return null;const row={data,size:typeof data==='string'?Buffer.byteLength(data):data.length,customMetadata:options.customMetadata,etag:String(++n)};objects.set(key,row);return row;},
   async delete(key){objects.delete(key);}
  };
  const registry=async(env,suffix,init={})=>{
@@ -55,7 +55,7 @@ test('bounded reads reject oversized, truncated and mismatched media',async()=>{
  assert.deepEqual(await readBytes(new Response(bytes),4,'image/jpeg'),bytes);
 });
 test('source deletion or version failure cannot create review or success receipt',async()=>{
- const f=fixture();await assert.rejects(stageMedia(f.env,candidate,actor,async()=>{throw Error('source_changed');},f));assert.equal(f.records.length,0);assert.equal(f.objects.size,0);
+ const f=fixture();await assert.rejects(stageMedia(f.env,candidate,actor,async()=>{throw Error('source_changed');},f));assert.equal(f.records.length,0);assert.ok([...f.objects.keys()].every(k=>k.startsWith(PREFIX+'locks/')));
 });
 
 test('actual flush scanner includes Review/Hidden, stages in resumable owner batches, and returns queue',async()=>{
@@ -93,13 +93,13 @@ test('actual flush scanner includes Review/Hidden, stages in resumable owner bat
  const queue=await call({action:'review_queue'});assert.equal(queue.items.length,22);
  assert.ok(queue.items.some(x=>x.visibility==='hidden'));
  assert.ok(queue.items.some(x=>x.visibility==='review'));
- // A bad write must not prevent later files entering review. A fresh click retries only missing receipts.
+ // A temporary failed write resumes from the prepared original; later files and repeat clicks stay safe.
  for(const file of map.values())if(file.version)file.version='2';
  let rejectFirst=true;
  f.env.AIRTABLE_HTTP={fetch:async(url,init)=>{if(init?.method==='POST'&&rejectFirst){rejectFirst=false;return Response.json({}, {status:503});}return Response.json(await f.registry(f.env,new URL(url).search,init));}};
  data=await call({action:'stage_all'});batches=0;
  while(data.continue_required){assert.ok(batches++<100);data=await call({action:'stage_all',run_id:data.run_id});}
- assert.equal(data.state,'partial_failure');assert.equal(data.failed_count,1);assert.equal(f.records.length,43);
+ assert.equal(data.state,'pending_review');assert.equal(data.failed_count,0);assert.equal(f.records.length,44);
  data=await call({action:'stage_all'});batches=0;
  while(data.continue_required){assert.ok(batches++<100);data=await call({action:'stage_all',run_id:data.run_id});}
  assert.equal(data.state,'pending_review');assert.equal(f.records.length,44);
@@ -119,7 +119,7 @@ test('dependency failure reports a bounded phase/code without leaking exception 
  const {readFile}=await import('node:fs/promises');const moduleUrl=new URL('./src/new-model-production.mjs',import.meta.url).href;
  let source=await readFile(new URL('./src/model-media-flush-preview.js',import.meta.url),'utf8');source=source.replace(/from '\.\/new-model-production.mjs'/g,`from '${moduleUrl}'`).replace(/^import .* from "\.\/[^\n]+;\n/gm,'');source='const isOwnerActor=actor=>actor?.role==="owner";\n'+source;
  const {handleModelMediaFlushPreview:handle}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
- const r=await handle(new Request('https://mmdbkk.com/v1/admin/model-media/flush-preview',{method:'POST',headers:{origin:'https://mmdbkk.com'},body:'{"action":"stage_all"}'}),{}, {readActor:async()=>({id:'per',role:'owner'}),getAccessToken:async()=>{throw Object.assign(Error('PRIVATE_SENTINEL'),{code:'drive_oauth_unavailable'});}});
+ const r=await handle(new Request('https://mmdbkk.com/v1/admin/model-media/flush-preview',{method:'POST',headers:{origin:'https://mmdbkk.com'},body:'{"action":"stage_all"}'}),fixture().env, {readActor:async()=>({id:'per',role:'owner'}),getAccessToken:async()=>{throw Object.assign(Error('PRIVATE_SENTINEL'),{code:'drive_oauth_unavailable'});}});
  const data=await r.json();assert.equal(r.status,503);assert.equal(data.failed_phase,'oauth');assert.equal(data.reason,'drive_oauth_unavailable');assert.ok(!JSON.stringify(data).includes('PRIVATE_SENTINEL'));
 });
 
@@ -133,4 +133,60 @@ test('dedicated FLUSH OAuth is isolated from shared credentials and partial conf
  const http=async value=>{const u=new URL(value);if(u.pathname.endsWith('/about'))return Response.json({user:{emailAddress:'malemodel.bkk@gmail.com'}});if(u.pathname.includes('/files/'))return Response.json({id:u.pathname.split('/').at(-1),mimeType:'application/vnd.google-apps.folder',owners:[{emailAddress:'malemodel.bkk@gmail.com'}]});return Response.json({files:[]});};
  const deps={readActor:async()=>({id:'per',role:'owner'}),http};assert.equal((await handle(request(),env,deps)).status,200);assert.equal(env.GOOGLE_DRIVE_CLIENT_ID,'shared-client');assert.equal(env.GOOGLE_SERVICE_ACCOUNT_JSON,'shared-service-account');
  const partial=await handle(request(),{FLUSH_GOOGLE_DRIVE_CLIENT_ID:'test-client'},deps);assert.equal(partial.status,503);assert.equal((await partial.json()).reason,'drive_credentials_not_configured');
+});
+
+test('prepared originals resume registry work without downloading again',async()=>{
+ const f=fixture();let downloads=0;
+ assert.equal((await stageMedia(f.env,candidate,actor,async()=>{downloads++;return bytes;},{...f,deferRegistry:true})).state,'prepared_private');
+ assert.equal(f.records.length,0);
+ assert.equal((await stageMedia(f.env,candidate,actor,async()=>{throw Error('must not redownload');},f)).state,'pending_review');
+ assert.equal(downloads,1);assert.equal(f.records.length,1);
+});
+test('expired claims recover with compare-and-swap and a single review',async()=>{
+ const f=fixture(),{hash}=await import('./src/new-model-production.mjs');
+ const id=await hash(JSON.stringify([candidate.root_id,candidate.file_id,candidate.version,candidate.visibility]));
+ await f.env.PRIVATE_MODEL_MEDIA.put(PREFIX+'locks/'+id,JSON.stringify({actor:'per',at:new Date(Date.now()-181000).toISOString()}));
+ const results=await Promise.all([stageMedia(f.env,candidate,actor,async()=>bytes,f),stageMedia(f.env,candidate,actor,async()=>bytes,f)]);
+ assert.equal(results.filter(r=>r.state==='pending_review').length,1);assert.equal(f.records.length,1);
+});
+test('a late expired worker cannot commit or release its replacement claim',async()=>{
+ const f=fixture();let now=1000000,release,entered;const wait=new Promise(r=>release=r),started=new Promise(r=>entered=r),deps={...f,now:()=>now};
+ const first=stageMedia(f.env,candidate,actor,async()=>{entered();await wait;return bytes;},deps);
+ await started;now+=180001;
+ const second=await stageMedia(f.env,candidate,actor,async()=>bytes,deps);release();
+ await assert.rejects(first,e=>e.code==='staging_claim_lost');assert.equal(second.state,'pending_review');assert.equal(f.records.length,1);
+ const repeat=await stageMedia(f.env,candidate,actor,async()=>{throw Error('must not download');},deps);assert.equal(repeat.state,'already_staged');
+});
+async function loadFlush(){
+ const {readFile}=await import('node:fs/promises');const moduleUrl=new URL('./src/new-model-production.mjs',import.meta.url).href;
+ let source=await readFile(new URL('./src/model-media-flush-preview.js',import.meta.url),'utf8');source=source.replace(/from '\.\/new-model-production.mjs'/g,`from '${moduleUrl}'`).replace(/^import .* from "\.\/[^\n]+;\n/gm,'');
+ return import('data:text/javascript;base64,'+Buffer.from('const isOwnerActor=a=>a?.role==="owner";\n'+source).toString('base64'));
+}
+const flushRequest=input=>new Request('https://mmdbkk.com/v1/admin/model-media/flush-preview',{method:'POST',headers:{origin:'https://mmdbkk.com'},body:JSON.stringify(input)});
+test('large repeat runs bound receipt checks and do not require Google OAuth',async()=>{
+ const {handleModelMediaFlushPreview:handle,MODEL_MEDIA_SOURCE_ROOTS:roots}=await loadFlush(),f=fixture(),runId=crypto.randomUUID();
+ const candidates=Array.from({length:40},(_,i)=>({...candidate,root_id:roots[0].id,file_id:'file'+i}));
+ for(const c of candidates)await stageMedia(f.env,c,actor,async()=>bytes,f);
+ await f.env.PRIVATE_MODEL_MEDIA.put(PREFIX+'runs/'+runId+'.json',JSON.stringify({actor_id:'per',created_at:Date.now(),candidates,rows:[],scan_index:8}));
+ let authCalls=0,steps=0,data;
+ do{const r=await handle(flushRequest({action:'stage_all',run_id:runId}),f.env,{readActor:async()=>({id:'per',role:'owner'}),getAccessToken:async()=>{authCalls++;throw Error('OAuth must not be used');}});assert.equal(r.status,200);data=await r.json();assert.ok(data.completed_count<=8*++steps);}while(data.continue_required);
+ assert.equal(steps,5);assert.equal(data.completed_count,40);assert.equal(authCalls,0);assert.equal(f.records.length,40);
+});
+test('a lost start response reuses the client run ID and cannot replace another actor run',async()=>{
+ const {handleModelMediaFlushPreview:handle}=await loadFlush(),f=fixture(),runId=crypto.randomUUID();let available=false;
+ const deps={readActor:async()=>({id:'per',role:'owner'}),getAccessToken:async()=>{if(!available)throw Object.assign(Error('offline'),{code:'drive_oauth_unavailable'});return 'fixture';},http:async value=>{const u=new URL(value);if(u.pathname.endsWith('/about'))return Response.json({user:{emailAddress:'malemodel.bkk@gmail.com'}});if(u.searchParams.has('q'))return Response.json({files:[]});return Response.json({id:u.pathname.split('/').at(-1),mimeType:'application/vnd.google-apps.folder',owners:[{emailAddress:'malemodel.bkk@gmail.com'}]});}};
+ assert.equal((await handle(flushRequest({action:'stage_all',run_id:runId}),f.env,deps)).status,503);available=true;
+ assert.equal((await handle(flushRequest({action:'stage_all',run_id:runId}),f.env,deps)).status,200);
+ assert.equal([...f.objects.keys()].filter(k=>k.startsWith(PREFIX+'runs/')).length,1);
+ assert.equal((await handle(flushRequest({action:'stage_all',run_id:runId}),f.env,{...deps,readActor:async()=>({id:'other-owner',role:'owner'})})).status,409);
+});
+test('cached Drive credentials refresh after a 401 without replacing the saved run',async()=>{
+ const {readFile}=await import('node:fs/promises'),moduleUrl=new URL('./src/new-model-production.mjs',import.meta.url).href;
+ let source=await readFile(new URL('./src/model-media-flush-preview.js',import.meta.url),'utf8');source=source.replace(/from '\.\/new-model-production.mjs'/g,`from '${moduleUrl}'`).replace(/^import .* from "\.\/[^\n]+;\n/gm,'');
+ const {handleModelMediaFlushPreview:handle}=await import('data:text/javascript;base64,'+Buffer.from('const isOwnerActor=a=>a?.role==="owner";let minted=0;const libraryDriveToken=async()=>String(++minted);\n'+source).toString('base64'));
+ const f=fixture(),env={...f.env,FLUSH_GOOGLE_DRIVE_CLIENT_ID:'test',FLUSH_GOOGLE_DRIVE_CLIENT_SECRET:'test',FLUSH_GOOGLE_DRIVE_REFRESH_TOKEN:'test'},runId=crypto.randomUUID(),tokens=[];
+ const deps={readActor:async()=>({id:'per',role:'owner'}),http:async(value,init)=>{const t=init.headers.authorization;tokens.push(t);if(t==='Bearer 1')return Response.json({}, {status:401});const u=new URL(value);if(u.searchParams.has('q'))return Response.json({files:[]});return Response.json({id:u.pathname.split('/').at(-1),mimeType:'application/vnd.google-apps.folder',owners:[{emailAddress:'malemodel.bkk@gmail.com'}]});}};
+ assert.equal((await handle(flushRequest({action:'stage_all',run_id:runId}),env,deps)).status,503);
+ assert.equal((await handle(flushRequest({action:'stage_all',run_id:runId}),env,deps)).status,200);assert.ok(tokens.includes('Bearer 2'));
+ assert.equal([...f.objects.keys()].filter(k=>k.startsWith(PREFIX+'runs/')).length,1);
 });
