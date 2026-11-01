@@ -120,8 +120,66 @@ export async function stageMedia(env,candidate,actor,readSource,deps={}) {
     if(value?.nonce===nonce)await b.put(lockKey,JSON.stringify({...value,released:true,expires_at:now()}),{onlyIf:{etagMatches:current.etag}}).catch(()=>null);
   }
 }
+// Queue edits are proposals only. The authoritative Model link is never written.
+const recordId = value => /^rec[A-Za-z0-9]{14}$/.test(value || '');
+function pending(record, roots) {
+  const p=fieldsOf(record),f=record?.fields;
+  if(!p||p.schema!=='mmd.new_model_production.v1'||!roots.includes(p.source?.root_id)||f.request_status!=='pending_review'||f.request_id!=='nmp_'+p.intake_id||p.public_safe!==false||p.private_safe!==false||p.requires_per_approval!==true||p.canonical_model_matching_required!==true||f.Model?.length||f.linked_media_assets?.length)fail('review_not_pending');
+  return p;
+}
+async function queueItem(record,p) {
+  return {id:record.id,intake_id:p.intake_id,category:p.source.category,source_visibility:p.source.visibility,visibility:p.review_draft?.visibility||p.source.visibility,mime:p.source.mimeType,bytes:p.bytes,status:'pending_review',canonical_model_matching_required:true,model:p.review_draft?.model||null,revision:await hash(record.fields.payload_json)};
+}
 export async function reviewQueue(env,deps={}) {
-  const page=await (deps.registry||registry)(env,'?'+new URLSearchParams({filterByFormula:"AND(LEFT({request_id},4)='nmp_',{request_status}='pending_review')",pageSize:'50'}));
+  const roots=deps.allowedRootIds||[],params=new URLSearchParams({filterByFormula:"AND(LEFT({request_id},4)='nmp_',{request_status}='pending_review'"+(roots.length?",OR("+roots.map(root=>"FIND('"+root+"',{payload_json})").join(',')+")":'')+")",pageSize:'100'});
+  if(deps.cursor){if(typeof deps.cursor!=='string'||deps.cursor.length>500)fail('queue_cursor_invalid');params.set('offset',deps.cursor);}
+  const page=await (deps.registry||registry)(env,'?'+params);
   if(!Array.isArray(page.records))fail('review_registry_unavailable');
-  return {items:page.records.map(r=>({id:r.id,payload:fieldsOf(r)})).filter(r=>r.payload?.schema==='mmd.new_model_production.v1'&&(!deps.allowedRootIds||deps.allowedRootIds.includes(r.payload.source?.root_id))).map(r=>({id:r.id,intake_id:r.payload.intake_id,category:r.payload.source.category,visibility:r.payload.source.visibility,status:'pending_review',canonical_model_matching_required:true})),incomplete:Boolean(page.offset)};
+  const items=[];
+  for(const r of page.records){const p=fieldsOf(r);if(!p||p.schema!=='mmd.new_model_production.v1'||(roots.length&&!roots.includes(p.source?.root_id)))continue;items.push(await queueItem(r,p));}
+  return {items,cursor:page.offset||null,incomplete:Boolean(page.offset),publication:false};
+}
+async function modelRegistry(env,suffix) {
+  const table=env.AIRTABLE_TABLE_MODELS||'Models';
+  const target=new URL('https://api.airtable.com/v0/'+encodeURIComponent(env.AIRTABLE_BASE_ID)+'/'+encodeURIComponent(table)+suffix);
+  // Airtable's single-record endpoint does not accept the list-only fields[] parameter.
+  if(suffix.startsWith('?'))for(const field of ['working_name','nickname','unique_key'])target.searchParams.append('fields[]',field);
+  const response=await (env.AIRTABLE_HTTP?.fetch?.bind(env.AIRTABLE_HTTP)||fetch)(target.toString(),{headers:{authorization:'Bearer '+env.AIRTABLE_API_KEY},redirect:'manual',signal:AbortSignal.timeout(12000)});
+  if(!response.ok)fail('canonical_model_unavailable');return response.json();
+}
+function modelItem(r){const f=r.fields||{};return {id:r.id,name:String(f.working_name||f.display_name||f.model_name||f.nickname||f.name||f.Name||''),key:String(f.model_lookup_key||f.unique_key||f.model_code||'')};}
+export async function reviewModels(env,input,deps={}) {
+  const q=String(input.query||'').trim();if(q.length<2||q.length>80)fail('model_query_invalid');
+  const escaped=q.toLowerCase().replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+  const params=new URLSearchParams({pageSize:'30',filterByFormula:"OR("+['working_name','nickname','unique_key'].map(f=>"FIND('"+escaped+"',LOWER({"+f+"}&''))").join(',')+")"});
+  const page=await (deps.models||modelRegistry)(env,'?'+params);
+  return {items:(page.records||[]).map(modelItem).filter(x=>x.name),incomplete:Boolean(page.offset),publication:false};
+}
+export async function reviewMedia(env,input,deps={}) {
+  if(!recordId(input.record_id))fail('review_id_invalid');
+  const r=await (deps.registry||registry)(env,'/'+input.record_id),p=pending(r,deps.allowedRootIds||[]);
+  if(!/^[a-f0-9]{64}$/.test(p.intake_id)||!/^[a-f0-9]{64}$/.test(p.sha256)||p.private_staging_key!==PREFIX+'originals/'+p.intake_id+'/'+p.sha256||!['image/jpeg','image/png','image/webp','video/mp4'].includes(p.source.mimeType)||!Number.isSafeInteger(p.bytes)||p.bytes<1||p.bytes>MAX_BYTES)fail('private_media_invalid');
+  const object=await storage(env).get(p.private_staging_key);
+  if(!object||object.size!==p.bytes||object.customMetadata?.sha256!==p.sha256||object.customMetadata?.intake_id!==p.intake_id||object.customMetadata?.visibility!==p.source.visibility||object.httpMetadata?.contentType!==p.source.mimeType)fail('private_media_invalid');
+  return new Response(object.body,{headers:{'content-type':p.source.mimeType,'content-length':String(p.bytes),'cache-control':'private, no-store','x-content-type-options':'nosniff','x-robots-tag':'noindex, nofollow','content-security-policy':"default-src 'none'; sandbox"}});
+}
+export async function saveReviewDraft(env,input,actor,deps={}) {
+  if(!recordId(input.record_id)||!['review','hidden'].includes(input.visibility)||!(/^[a-f0-9]{64}$/.test(input.revision||''))||(input.model_id!==null&&!recordId(input.model_id)))fail('review_input_invalid');
+  const b=storage(env),key=PREFIX+'review-locks/'+input.record_id,nonce=crypto.randomUUID();
+  // A lease is never stolen: uncertain writes fail closed until the next retry.
+  const old=await b.get(key);let condition={etagDoesNotMatch:'*'};
+  if(old){const lease=await old.json();if(lease.until>Date.now())fail('review_busy');condition={etagMatches:old.etag};}
+  const lease=await b.put(key,JSON.stringify({nonce,until:Date.now()+60000}),{onlyIf:condition});if(!lease)fail('review_busy');
+  try{
+    const reg=deps.registry||registry,r=await reg(env,'/'+input.record_id),p=pending(r,deps.allowedRootIds||[]);
+    if(await hash(r.fields.payload_json)!==input.revision)fail('review_conflict');
+    let model=null;if(input.model_id){const canonical=await (deps.models||modelRegistry)(env,'/'+input.model_id);model=modelItem(canonical);if(canonical.id!==input.model_id||!model.name)fail('canonical_model_unavailable');}
+    const prior=p.review_draft;
+    if(prior?.visibility===input.visibility&&(prior.model?.id||null)===(model?.id||null))return {item:await queueItem(r,p),publication:false};
+    p.review_draft={visibility:input.visibility,model,updated_by:actor.id||'owner',updated_at:new Date().toISOString()};
+    const fence=await b.get(key);if(!fence)fail('review_busy');const currentLease=await fence.json();if(currentLease.nonce!==nonce||currentLease.until<Date.now()+15000)fail('review_busy');
+    const saved=await reg(env,'/'+input.record_id,{method:'PATCH',body:JSON.stringify({fields:{payload_json:JSON.stringify(p)}})});
+    const verified=pending(saved,deps.allowedRootIds||[]);if(JSON.stringify(verified)!==JSON.stringify(p))fail('review_save_unverified');
+    return {item:await queueItem(saved,verified),publication:false};
+  }finally{const lock=await b.get(key);if(lock&&(await lock.json()).nonce===nonce)await b.put(key,JSON.stringify({nonce,until:0}),{onlyIf:{etagMatches:lock.etag}}).catch(()=>null);}
 }
