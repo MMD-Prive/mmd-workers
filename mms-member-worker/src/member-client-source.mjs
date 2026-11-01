@@ -3,6 +3,9 @@ export const CLIENT_SOURCE = String.raw`(function client() {
   const $ = id => document.getElementById(id);
   const params = new URLSearchParams(location.search);
   const stage = params.get('stage') || 'published';
+  const stateRaw=params.get('liff.state') || '';
+  const stateParams=new URLSearchParams(stateRaw.includes('?')?stateRaw.slice(stateRaw.indexOf('?')+1):stateRaw);
+  const returnBooking=stage==='published' && (params.get('return_to') || stateParams.get('return_to'))==='booking';
   const base = '/api/mms/app/membership/';
   let config, account, initialized = false, editing = false, busy = false;
   const messages = {
@@ -46,6 +49,7 @@ export const CLIENT_SOURCE = String.raw`(function client() {
     $('emailview').textContent = p.email || 'ยังไม่ระบุ';
     $('since').textContent = new Date(p.created_at).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', year: 'numeric' });
     show('account');
+    if(returnBooking) location.replace('/male-massage/member/mms-booking');
   }
   function fillForm() {
     const p = account?.profile || {};
@@ -69,6 +73,7 @@ export const CLIENT_SOURCE = String.raw`(function client() {
       if (!liff.isLoggedIn()) {
         const returnUrl = new URL(location.origin + '/male-massage/member');
         if (stage !== 'published') returnUrl.searchParams.set('stage', stage);
+        if(returnBooking) returnUrl.searchParams.set('return_to','booking');
         liff.login({ redirectUri: returnUrl.toString() }); return;
       }
       progress(65, 'กำลังยืนยันบัญชีของคุณ');

@@ -388,6 +388,35 @@ export async function handleMyMmsCustomerApi(request, env = {}) {
   const method = String(request.method || "GET").toUpperCase();
   const path = requestPath(request);
 
+  if (path.startsWith(`${CUSTOMER_API_BASE}/booking/`)) {
+    const action=path.slice(`${CUSTOMER_API_BASE}/booking/`.length);
+    const targets={catalog:'/mms/api/catalog','service-zones':'/mms/api/service-zones',match:'/mms/api/therapists/match',prebookings:'/mms/api/prebookings'};
+    if(action!=='profile' && !Object.hasOwn(targets,action)) return json({ok:false,error:{code:'NOT_FOUND'}},404);
+    const expected=['match','prebookings'].includes(action)?'POST':'GET';
+    if(method!==expected)return methodNotAllowed(expected);
+    if(method==='POST' && !new Set(['https://mmdbkk.com','https://www.mmdbkk.com']).has(request.headers.get('origin')))return json({ok:false,error:{code:'ORIGIN_NOT_ALLOWED'}},403);
+    const profile=await readMemberProfile(request,env);
+    if(profile.status!==200 || !profile.data){
+      const status=[401,403,409].includes(profile.status)?profile.status:503;
+      return json({ok:false,error:{code:status===401?'MMS_SESSION_REQUIRED':status===409?'MMS_ACCOUNT_REGISTRATION_REQUIRED':status===403?'MMS_ACCESS_DENIED':'MMS_MEMBER_CONTEXT_UNAVAILABLE'}},status);
+    }
+    if(action==='profile')return json({ok:true,data:{display_name:profile.data.displayName}});
+    let body;
+    if(method==='POST'){
+      try{const raw=await request.text();if(raw.length>16384)throw Error();body=JSON.parse(raw);}catch{return json({ok:false,error:{code:'MMS_BOOKING_BODY_INVALID'}},400);}
+      const allowed=action==='match'?['recipient_gender','zone','skills']:['idempotency_key','recipient_gender','zone','service_date','service_time','duration_minutes','skills','requested_therapist_ids','note','language'];
+      if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).some(k=>!allowed.includes(k)))return json({ok:false,error:{code:'MMS_BROWSER_IDENTITY_REJECTED'}},400);
+      if(action==='prebookings')body={...body,member_ref:profile.data.memberRef};
+    }
+    try{
+      if(!env.MMS_WORKER?.fetch)throw Error();
+      const upstream=await env.MMS_WORKER.fetch(new Request('https://mms.internal'+targets[action],{method,headers:{accept:'application/json',...(body?{'content-type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{}),redirect:'manual',signal:AbortSignal.any([request.signal,AbortSignal.timeout(8000)])}));
+      const payload=await upstream.json();
+      if(![200,201,400,401,403,409,422,429,503].includes(upstream.status)||typeof payload?.ok!=='boolean'||(upstream.ok&&payload.ok!==true))throw Error();
+      return json(payload,upstream.status);
+    }catch{return json({ok:false,error:{code:'MMS_BOOKING_UPSTREAM_UNAVAILABLE'}},503);}
+  }
+
   if (path === `${CUSTOMER_API_BASE}/chat` || path.startsWith(`${CUSTOMER_API_BASE}/chat/`)) {
     if (!['GET', 'POST'].includes(method)) return methodNotAllowed('GET, POST');
     if (method === 'POST' && !new Set(['https://mmdbkk.com', 'https://www.mmdbkk.com']).has(request.headers.get('origin'))) return json({ ok: false, error: { code: 'ORIGIN_NOT_ALLOWED' } }, 403);

@@ -31,3 +31,17 @@ test('failed enrollment stays on the form and never displays a successful member
   assert.equal(node('error').hidden, false);
   assert.equal(node('save').disabled, false);
 });
+
+for(const search of ['?return_to=booking','?liff.state=%2F%3Freturn_to%3Dbooking'])test('registered MMS account returns to exact booking: '+search,async()=>{
+ const p=browserFixture(memberPage(),{search,registered:true});await settle();assert.deepEqual(p.redirects,['/male-massage/member/mms-booking']);
+});
+for(const search of ['?return_to=https://evil.example','?return_to=//evil.example','?stage=developing&return_to=booking','?stage=review&return_to=booking'])test('unapproved return target or stage stays on account: '+search,async()=>{
+ const p=browserFixture(memberPage(),{search,registered:true});await settle();assert.deepEqual(p.redirects,[]);
+});
+test('unregistered account requires explicit consent and registration before booking return',async()=>{
+ const p=browserFixture(memberPage(),{search:'?return_to=booking'});await settle();assert.deepEqual(p.redirects,[]);assert.equal(p.node('editor').hidden,false);p.node('consent').checked=true;await p.node('form').onsubmit({preventDefault(){}});assert.deepEqual(p.redirects,['/male-massage/member/mms-booking']);
+});
+
+test('LINE OAuth callback preserves only the fixed booking intent on same host',async()=>{
+ const p=browserFixture(memberPage(),{search:'?return_to=booking&redirect=https://evil.example',loggedOut:true});await settle();await p.node('login').onclick();assert.deepEqual(JSON.parse(JSON.stringify(p.loginRedirects)),[{redirectUri:'https://www.mmdbkk.com/male-massage/member?return_to=booking'}]);
+});
