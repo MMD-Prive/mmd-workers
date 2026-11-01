@@ -186,7 +186,7 @@ export async function handleModelMediaFlushPreview(request, env = {}, deps = {})
   } catch (error) {
     const code = String(error?.code || "");
     const reason = /^(?:drive_(?:credentials_not_configured|oauth_unavailable|account_mismatch|transport_(?:redirect|timeout|receiver|network)_unavailable)|private_staging_unavailable|review_registry_unavailable)$/.test(code) ? code : "dependency_unavailable";
-    return respond({ ok: false, error: "media_flush_unavailable", failed_phase: phase, reason, mode: input.action === "stage_all" ? "private_staging" : "preview_only", writes: phase === "staging_manifest" ? "unknown" : false }, 503);
+    return respond({ ok: false, error: reason, failed_phase: phase, reason, mode: input.action === "stage_all" ? "private_staging" : "preview_only", writes: phase === "staging_manifest" ? "unknown" : false }, 503);
   }
 }
 
