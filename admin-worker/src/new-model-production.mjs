@@ -128,7 +128,7 @@ function pending(record, roots) {
   return p;
 }
 async function queueItem(record,p) {
-  return {id:record.id,intake_id:p.intake_id,category:p.source.category,source_visibility:p.source.visibility,visibility:p.review_draft?.visibility||p.source.visibility,mime:p.source.mimeType,bytes:p.bytes,status:'pending_review',canonical_model_matching_required:true,model:p.review_draft?.model||null,revision:await hash(record.fields.payload_json)};
+  return {id:record.id,intake_id:p.intake_id,category:p.source.category,source_visibility:p.source.visibility,visibility:p.review_draft?.visibility||p.source.visibility,mime:p.source.mimeType,bytes:p.bytes,status:'pending_review',canonical_model_matching_required:true,model:p.review_draft?.model||null,registered_draft:Boolean(p.review_draft?.registration),revision:await hash(record.fields.payload_json)};
 }
 export async function reviewQueue(env,deps={}) {
   const roots=deps.allowedRootIds||[],params=new URLSearchParams({filterByFormula:"AND(LEFT({request_id},4)='nmp_',{request_status}='pending_review'"+(roots.length?",OR("+roots.map(root=>"FIND('"+root+"',{payload_json})").join(',')+")":'')+")",pageSize:'100'});
@@ -172,6 +172,7 @@ export async function saveReviewDraft(env,input,actor,deps={}) {
   const lease=await b.put(key,JSON.stringify({nonce,until:Date.now()+60000}),{onlyIf:condition});if(!lease)fail('review_busy');
   try{
     const reg=deps.registry||registry,r=await reg(env,'/'+input.record_id),p=pending(r,deps.allowedRootIds||[]);
+    if(p.review_draft?.registration)fail('review_conflict_registered_read_only');
     if(await hash(r.fields.payload_json)!==input.revision)fail('review_conflict');
     let model=null;if(input.model_id){const canonical=await (deps.models||modelRegistry)(env,'/'+input.model_id);model=modelItem(canonical);if(canonical.id!==input.model_id||!model.name)fail('canonical_model_unavailable');}
     const prior=p.review_draft;
@@ -182,4 +183,62 @@ export async function saveReviewDraft(env,input,actor,deps={}) {
     const verified=pending(saved,deps.allowedRootIds||[]);if(JSON.stringify(verified)!==JSON.stringify(p))fail('review_save_unverified');
     return {item:await queueItem(saved,verified),publication:false};
   }finally{const lock=await b.get(key);if(lock&&(await lock.json()).nonce===nonce)await b.put(key,JSON.stringify({nonce,until:0}),{onlyIf:{etagMatches:lock.etag}}).catch(()=>null);}
+}
+
+// Owner-only, read-only grouped inspection. Never returns private storage keys.
+const DRAFT_TYPE='new_model_creation_proposal',CASE_TYPE='model_matching_exception';
+const driveId=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{10,100}$/.test(value);
+const sameIds=(a,b)=>Array.isArray(a)&&Array.isArray(b)&&a.length===b.length&&new Set(a).size===a.length&&a.every(id=>b.includes(id));
+const caseReasons=new Set(['name_only_or_different_folder_scope','registry_folder_id_conflict','folder_has_no_model_identity']);
+const modelReadFields=['working_name','unique_key','status','requires_per_approval','catalog_visibility','canonical_profile_status','registry_record_type','intake_gate_status','visibility_review_status','client_visibility_status','drive_folder_id','source_folder','available_now','can_work_public','can_work_private','approved_for_private_sales','Public Search Enabled','Preview Image Approved'];
+const assetReadFields=['media_id','Model','media_type','media_visibility','asset_role','review_status','public_safe','private_safe','flash_safe','teaser_safe','file_type','file_size_bytes','r2_bucket','private_original_key','MMD — Model Review Requests'];
+function draftGroup(r,roots){
+  const p=fieldsOf(r),f=r?.fields,isModel=f?.request_type===DRAFT_TYPE;
+  if(!recordId(r?.id)||!p||!roots.includes(p.source?.root_id)||f.request_status!=='pending_review'||p.proposal_status!=='pending_review'||p.schema!==(isModel?'mmd.new_model_creation_proposal.v1':'mmd.model_matching_exception.v1')||(!isModel&&f.request_type!==CASE_TYPE)||p.public_safe!==false||p.private_safe!==false||p.requires_per_approval!==true||p.canonical_model_matching_required!==true||p.create_canonical_model!==false||p.auto_create_allowed!==false||p.publish_allowed!==false||!driveId(p.source.folder_id)||typeof p.source.folder_path!=='string'||p.source.folder_path.length>2048||!/^[a-f0-9]{64}$/.test(p.proposal_id))fail('draft_review_state_changed');
+  const ids=p.media?.review_record_ids;
+  if(!Array.isArray(ids)||!ids.length||ids.length>100||ids.some(id=>!recordId(id))||new Set(ids).size!==ids.length||p.media.count!==ids.length||!Array.isArray(p.media.intake_ids)||p.media.intake_ids.length!==ids.length||p.media.intake_ids.some(id=>typeof id!=='string'||!/^[a-f0-9]{64}$/.test(id))||new Set(p.media.intake_ids).size!==ids.length)fail('draft_review_state_changed');
+  if(isModel){const d=p.draft_registration;if(!d||d.status!=='pending_review'||!recordId(d.model_record_id)||d.model_operational_status!=='inactive'||d.profile_review_status!=='Needs review'||d.identity_verified!==false||d.model_activation_approved!==false||d.media_approved!==false||d.public_safe!==false||d.private_safe!==false||d.requires_per_approval!==true||d.linked_media_count!==ids.length||!sameIds(f.Model,[d.model_record_id])||!sameIds(f.linked_media_assets,d.media_asset_record_ids)||d.media_asset_record_ids.length!==ids.length||d.media_asset_record_ids.some(id=>!recordId(id))||typeof p.proposed_model?.working_name!=='string'||p.proposed_model.identity_verified!==false)fail('draft_review_state_changed');}
+  else if(!caseReasons.has(p.reason)||f.Model?.length||f.linked_media_assets?.length)fail('draft_review_state_changed');
+  return {record:r,p,isModel};
+}
+function groupItem(g){const {record:r,p,isModel}=g;return {id:r.id,kind:isModel?'model':'exception',model_id:isModel?p.draft_registration.model_record_id:null,name:isModel?p.proposed_model.working_name:p.case_name,category:p.source.category,folder_id:p.source.folder_id,source_path:p.source.folder_path,media_count:p.media.count,status:'pending_review',reason:isModel?null:p.reason,summary:isModel?'ชื่อร่างจากโฟลเดอร์ · ยังไม่ยืนยันตัวตน':p.summary_th,publication:false};}
+export async function draftReviewQueue(env,input={},deps={}){
+  if(input.cursor&&(typeof input.cursor!=='string'||input.cursor.length>500))fail('queue_cursor_invalid');
+  const params=new URLSearchParams({pageSize:'100',filterByFormula:"AND({request_status}='pending_review',OR({request_type}='new_model_creation_proposal',{request_type}='model_matching_exception'))"});if(input.cursor)params.set('offset',input.cursor);
+  const page=await (deps.registry||registry)(env,'?'+params);if(!Array.isArray(page.records))fail('review_registry_unavailable');
+  const items=[],members=new Set(),models=new Set(),scopes=new Set();for(const r of page.records){const p=fieldsOf(r);if(!deps.allowedRootIds?.includes(p?.source?.root_id))continue;const g=draftGroup(r,deps.allowedRootIds),scope=p.source.root_id+'|'+p.source.folder_id;if(p.media.review_record_ids.some(id=>members.has(id))||(g.isModel&&(models.has(p.draft_registration.model_record_id)||scopes.has(scope))))fail('draft_review_state_changed');for(const id of p.media.review_record_ids)members.add(id);if(g.isModel){models.add(p.draft_registration.model_record_id);scopes.add(scope);}items.push(groupItem(g));}
+  return {items,cursor:page.offset||null,publication:false,read_only:true};
+}
+async function readDraftTable(env,kind,ids,deps){
+  if(!ids.length||ids.length>100||ids.some(id=>!recordId(id))||new Set(ids).size!==ids.length)fail('draft_members_invalid');
+  const params=new URLSearchParams({pageSize:'100',filterByFormula:'OR('+ids.map(id=>"RECORD_ID()='"+id+"'").join(',')+')'});
+  const fields=kind==='models'?modelReadFields:kind==='assets'?assetReadFields:[];for(const f of fields)params.append('fields[]',f);
+  const table=kind==='models'?(env.AIRTABLE_TABLE_MODELS||'Models'):kind==='assets'?(env.AIRTABLE_TABLE_MODEL_MEDIA||'MMD — Model Media Assets'):null;
+  const page=deps.readTable?await deps.readTable(kind,ids):table?await registry({...env,AIRTABLE_TABLE_MODEL_REVIEW_REQUESTS:table},'?'+params):await (deps.registry||registry)(env,'?'+params);
+  if(!Array.isArray(page.records)||page.offset||page.records.length!==ids.length||!sameIds(page.records.map(r=>r.id),ids))fail('draft_review_state_changed');return new Map(page.records.map(r=>[r.id,r]));
+}
+export async function draftReviewDetail(env,input,deps={}){
+  if(!recordId(input.record_id))fail('review_id_invalid');
+  const g=draftGroup(await (deps.registry||registry)(env,'/'+input.record_id),deps.allowedRootIds||[]),{p,isModel}=g;
+  const reviews=await readDraftTable(env,'reviews',p.media.review_record_ids,deps);
+  let model=null,assets=null;
+  if(isModel){
+    const id=p.draft_registration.model_record_id,loaded=await readDraftTable(env,'models',[id],deps),f=loaded.get(id).fields;
+    if(f.working_name!==p.proposed_model.working_name||f.unique_key!=='nmp_draft_'+p.proposal_id||f.drive_folder_id!==p.source.folder_id||f.status!=='inactive'||f.requires_per_approval!==true||f.catalog_visibility!=='Hidden'||f.canonical_profile_status!=='Needs review'||f.registry_record_type!=='Intake Candidate'||f.intake_gate_status!=='Source Review'||f.visibility_review_status!=='pending_review'||f.client_visibility_status!=='hidden'||['available_now','can_work_public','can_work_private','approved_for_private_sales','Public Search Enabled','Preview Image Approved'].some(k=>f[k]===true))fail('draft_review_state_changed');
+    model={id,name:f.working_name,key:f.unique_key,operational_status:'inactive',profile_review:'Needs review',catalog_visibility:'Hidden',identity_verified:false};
+    assets=await readDraftTable(env,'assets',p.draft_registration.media_asset_record_ids,deps);
+  }
+  const media=[];
+  for(let i=0;i<p.media.review_record_ids.length;i++){
+    const id=p.media.review_record_ids[i],r=reviews.get(id),v=pending(r,deps.allowedRootIds||[]),source=v.source;
+    if(v.intake_id!==p.media.intake_ids[i]||source.root_id!==p.source.root_id||source.category!==p.source.category||!Array.isArray(source.ancestry)||source.ancestry[0]!==source.root_id||!source.ancestry.includes(p.source.folder_id)||v.private_staging_key!==PREFIX+'originals/'+v.intake_id+'/'+v.sha256||!recordId(id)||!driveId(source.file_id)||!['image/jpeg','image/png','image/webp','video/mp4'].includes(source.mimeType)||!Number.isSafeInteger(v.bytes)||v.bytes<1||v.bytes>MAX_BYTES||v.review_draft?.follow_up?.review_request_record_id!==g.record.id||v.review_draft.follow_up.proposal_id!==p.proposal_id)fail('draft_review_state_changed');
+    if(isModel){const reg=v.review_draft.registration,a=assets.get(reg?.media_asset_record_id),f=a?.fields;if(!reg||reg.status!=='draft_linked_pending_review'||reg.model_record_id!==model.id||reg.source_proposal_record_id!==g.record.id||reg.model_activation_approved!==false||reg.media_approved!==false||reg.identity_verified!==false||reg.public_safe!==false||reg.private_safe!==false||reg.requires_per_approval!==true||v.review_draft.model?.id!==model.id||v.review_draft.model_status!=='pending_review'||!f||f.media_id!=='nmp_pending_asset_'+v.intake_id||!sameIds(f.Model,[model.id])||!sameIds(f['MMD — Model Review Requests'],[g.record.id])||f.review_status!=='pending_review'||f.media_type!=='intake_pending_original'||f.asset_role!=='pending_model_review'||f.media_visibility!=='hidden'||['public_safe','private_safe','flash_safe','teaser_safe'].some(k=>f[k]===true)||f.r2_bucket!=='mmd-private-model-media'||f.private_original_key!==v.private_staging_key||f.file_type!==source.mimeType||f.file_size_bytes!==v.bytes)fail('draft_review_state_changed');}
+    else if(v.review_draft.model!==null||v.review_draft.registration)fail('draft_review_state_changed');
+    const evidence=!isModel?p.evidence?.files?.find(x=>x.review_record_id===id):null;
+    if(!isModel&&(!evidence||evidence.file_id!==source.file_id||evidence.source_parent_verified!==true||!Array.isArray(evidence.parent_ids)||!evidence.parent_ids.includes(source.ancestry.at(-1))))fail('draft_review_state_changed');
+    media.push({id,intake_id:v.intake_id,mime:source.mimeType,bytes:v.bytes,visibility:v.review_draft.visibility||source.visibility,source_visibility:source.visibility,file_id:source.file_id,file_name:evidence?.file_name||null,source_path:v.review_draft.matching?.source_path||p.source.folder_path,status:'pending_review'});
+  }
+  if(isModel&&!sameIds(media.map(m=>reviews.get(m.id)).map(r=>fieldsOf(r).review_draft.registration.media_asset_record_id),p.draft_registration.media_asset_record_ids))fail('draft_review_state_changed');
+  const candidates=!isModel?(Array.isArray(p.evidence?.registry_candidates)?p.evidence.registry_candidates:[]).slice(0,20).map(c=>({id:recordId(c.id)?c.id:null,name:String(c.name||''),key:String(c.key||''),source_path:String(c.path||''),folder_id:driveId(c.folder_id)?c.folder_id:null,status:String(c.status||'')})):[];
+  return {item:groupItem(g),model,media,evidence:{source_folder_id:p.source.folder_id,source_path:p.source.folder_path,observed_paths:Array.isArray(p.source.observed_media_paths)?p.source.observed_media_paths.filter(x=>typeof x==='string'&&x.length<=2048).slice(0,100):[p.source.folder_path],recorded_at:p.created_at,identity_verified:false,summary:isModel?'ชื่อจากป้ายโฟลเดอร์ ยังต้องตรวจตัวตนและอนุมัติโปรไฟล์':p.summary_th,reason:isModel?null:p.reason,canonical_folder_lookup:!isModel?p.evidence?.canonical_folder_lookup||null:null,registry_candidates:candidates},read_only:true,publication:false};
 }
