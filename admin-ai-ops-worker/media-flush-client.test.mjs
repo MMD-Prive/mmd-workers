@@ -53,7 +53,7 @@ test('queue loads 797 unique rows, filters Hidden, opens private media and saves
 });
 
 test('read-only full-page inspection separates 85 drafts / 739 files from 3 cases / 27 files and revokes previews',async()=>{
- const rid=n=>'rec'+String(n).padStart(14,'0');const models=Array.from({length:85},(_,i)=>({id:rid(40000+i),kind:'model',model_id:rid(50000+i),name:i===0?'Alpha Synthetic':'Model '+i,category:i<14?'farang':'up_country',source_path:'Root/Area/'+i,folder_id:'folder_synthetic_'+i,media_count:i===0?2:i<=65?9:8}));
+ const rid=n=>'rec'+String(n).padStart(14,'0');const models=Array.from({length:85},(_,i)=>({id:rid(40000+i),kind:'model',inspection_result:'unreviewed',model_id:rid(50000+i),name:i===0?'Alpha Synthetic':'Model '+i,category:i<14?'farang':'up_country',source_path:'Root/Area/'+i,folder_id:'folder_synthetic_'+i,media_count:i===0?2:i<=65?9:8}));
  const cases=[{id:rid(60000),kind:'exception',name:'Folk Synthetic',media_count:14,category:'up_country'},{id:rid(60001),kind:'exception',name:'Simba Synthetic',media_count:6,category:'farang'},{id:rid(60002),kind:'exception',name:'Surathani Synthetic',media_count:7,category:'up_country'}].map(x=>({...x,folder_id:'folder_synthetic_case',source_path:'Root/Case/'+x.name}));
  const all=[...models,...cases],actions=[],mimeById=new Map();let urls=0,revoked=0;
  const fetch=async(_,init)=>{const input=JSON.parse(init.body);actions.push(input.action);
@@ -68,12 +68,12 @@ test('read-only full-page inspection separates 85 drafts / 739 files from 3 case
  await find('โมเดลร่าง (85)').onclick();await byAttr('data-draft-media',rid(70000)).onclick();assert.equal(allNodes().some(n=>n.tag==='img'&&n.src==='blob:synthetic-1'),true);assert.equal(urls,1);
  const filter=byAttr('aria-label','ชนิดสื่อของโมเดล');filter.value='video/';filter.onchange();assert.equal(revoked,1);assert.equal(allNodes().filter(n=>n.attrs['data-draft-media']).length,1);await byAttr('data-draft-media',rid(70001)).onclick();assert.equal(allNodes().some(n=>n.tag==='video'&&n.controls===true),true);
  await find('เคสแยก (3)').onclick();assert.equal(revoked,2);assert.equal(groupSearch.value,'');assert.equal(allNodes().filter(n=>n.attrs['data-draft-group']).length,3);assert.ok(allNodes().some(n=>n.textContent==='Folk Synthetic · 14 ไฟล์'));
- const links=allNodes().filter(n=>n.tag==='a');assert.ok(links.every(n=>/^https:\/\/(drive.google.com|airtable.com)\//.test(n.href)));assert.ok(actions.every(x=>['review_draft_queue','review_draft_detail','review_media'].includes(x)));assert.equal(allNodes().some(n=>n.tag==='button'&&/บันทึก|อนุมัติ|เผยแพร่/.test(n.textContent||'')),false);
+ const links=allNodes().filter(n=>n.tag==='a');assert.ok(links.every(n=>/^https:\/\/(drive.google.com|airtable.com)\//.test(n.href)));assert.ok(actions.every(x=>['review_draft_queue','review_draft_detail','review_media'].includes(x)));assert.equal(allNodes().some(n=>n.tag==='button'&&!n.attrs['data-inspection-count']&&/บันทึก|อนุมัติ|เผยแพร่/.test(n.textContent||'')),false);
  find('ปิดหน้าตรวจ').onclick();assert.equal(modal.open,false);assert.equal(allNodes().some(n=>n.tag==='img'||n.tag==='video'),false);
 });
 
 test('model inspection requires reason, freezes duplicate clicks, retries one operation, renders history and leaves cases read-only',async()=>{
- const item={id:'rec00000000004000',kind:'model',model_id:'rec00000000005000',name:'Synthetic reviewer test',category:'up_country',source_path:'Synthetic/Test',folder_id:'synthetic_test_folder',media_count:0},exception={...item,id:'rec00000000006000',kind:'exception',name:'Synthetic separated case'};
+ const item={id:'rec00000000004000',kind:'model',inspection_result:'unreviewed',model_id:'rec00000000005000',name:'Synthetic reviewer test',category:'up_country',source_path:'Synthetic/Test',folder_id:'synthetic_test_folder',media_count:0},exception={...item,id:'rec00000000006000',kind:'exception',name:'Synthetic separated case'};
  let log=[],revision='a'.repeat(64),lost=false,saves=0,release;const inputs=[];
  const fetch=async(_,init)=>{const input=JSON.parse(init.body);inputs.push(input);
   if(input.action==='review_draft_queue')return Response.json({ok:true,read_only:true,publication:false,items:[item,exception]});
@@ -84,5 +84,27 @@ test('model inspection requires reason, freezes duplicate clicks, retries one op
  const p=page(fetch),nodes=()=>descendants(p.body),find=text=>nodes().find(n=>n.textContent===text),attr=value=>nodes().find(n=>n.attrs['aria-label']===value);
  await descendants(p.panel).find(n=>n.textContent==='เปิดหน้าตรวจโมเดลร่าง').onclick();const save=find('บันทึกผลตรวจ · ยังรออนุมัติ');await save.onclick();assert.equal(saves,0);assert.ok(nodes().some(n=>n.textContent==='เลือกผลตรวจและกรอกเหตุผลก่อนบันทึก'));
  attr('ผลตรวจโมเดลร่าง').value='needs_more_evidence';attr('เหตุผลการตรวจโมเดลร่าง').value='Synthetic <script> must remain plain text';const pending=save.onclick();assert.equal(save.disabled,true);await save.onclick();assert.equal(saves,1);assert.equal(find('ปิดหน้าตรวจ').disabled,true);release();await pending;assert.equal(saves,2);assert.equal(log.length,1);assert.equal(save.disabled,false);assert.equal(attr('เหตุผลการตรวจโมเดลร่าง').value,'');assert.ok(nodes().some(n=>n.textContent?.includes('รายการนี้บันทึกไว้แล้ว')));assert.ok(nodes().some(n=>n.tag==='li'&&n.textContent.includes('Synthetic <script>')));
+ assert.ok(nodes().some(n=>n.textContent?.includes('บันทึกผลตรวจแล้ว 1 / 1 โมเดล (100%)')));assert.equal(nodes().find(n=>n.attrs['data-inspection-count']==='unreviewed').textContent,'ยังไม่ตรวจ · 0');
  await find('เคสแยก (1)').onclick();assert.equal(nodes().some(n=>n.attrs['data-model-inspection']!==undefined),false);assert.ok(inputs.every(i=>!('approve'in i)&&!('model_id'in i)&&!('actor'in i)));
+});
+
+test('progress covers all queue pages and filters latest outcomes with category/search while cases stay separate',async()=>{
+ const rid=n=>'rec'+String(n).padStart(14,'0'),results=['unreviewed','checked_pending_approval','needs_more_evidence','needs_correction'];
+ const models=Array.from({length:85},(_,i)=>({id:rid(40000+i),kind:'model',model_id:rid(50000+i),inspection_result:i<10?results[0]:results[1+Math.floor((i-10)/25)],inspection_count:i<10?0:3,name:'Synthetic '+String(i).padStart(2,'0'),category:i<14?'farang':'up_country',source_path:'Root/Area/'+i,folder_id:'folder_synthetic_'+i,media_count:i===0?2:i<=65?9:8}));
+ const cases=[14,6,7].map((n,i)=>({...models[0],id:rid(60000+i),kind:'exception',name:'Case '+i,media_count:n})),all=[...models,...cases],calls=[];
+ const fetch=async(_,init)=>{const input=JSON.parse(init.body);calls.push(input.action);if(input.action==='review_draft_queue'){const start=Number(input.cursor||0);return Response.json({ok:true,read_only:true,publication:false,items:all.slice(start,start+40),cursor:start+40<all.length?String(start+40):null});}assert.equal(input.action,'review_draft_detail');const item=all.find(r=>r.id===input.record_id);return Response.json({ok:true,read_only:true,publication:false,item,model:item.kind==='model'?{id:item.model_id}:null,media:[],evidence:{source_path:item.source_path,source_folder_id:item.folder_id,recorded_at:'2026-11-01T00:00:00Z',summary:'Synthetic source',observed_paths:[],registry_candidates:[]}});};
+ const p=page(fetch),nodes=()=>descendants(p.body),find=text=>nodes().find(n=>n.textContent===text),attr=value=>nodes().find(n=>n.attrs['aria-label']===value),count=value=>nodes().find(n=>n.attrs['data-inspection-count']===value),rows=()=>nodes().filter(n=>n.attrs['data-draft-group']);
+ await descendants(p.panel).find(n=>n.textContent==='เปิดหน้าตรวจโมเดลร่าง').onclick();assert.equal(calls.filter(x=>x==='review_draft_queue').length,3);assert.ok(nodes().some(n=>n.textContent?.includes('บันทึกผลตรวจแล้ว 75 / 85 โมเดล (88%)')));assert.equal(count('unreviewed').textContent,'ยังไม่ตรวจ · 10');assert.equal(count('needs_correction').textContent,'ต้องแก้ข้อมูล · 25');
+ await count('unreviewed').onclick();assert.equal(rows().length,10);assert.equal(find('ถัดไป').disabled,true);assert.ok(rows().every(r=>r.textContent.includes('ผลตรวจ: ยังไม่ตรวจ')));
+ await count('needs_more_evidence').onclick();assert.equal(rows().length,10);assert.ok(nodes().some(n=>n.textContent?.startsWith('พบ 25 จาก 85')));find('ถัดไป').onclick();assert.ok(nodes().some(n=>n.textContent==='2 / 3'));
+ attr('หมวดโมเดลร่าง').value='farang';await attr('หมวดโมเดลร่าง').onchange();assert.equal(rows().length,0);assert.ok(nodes().some(n=>n.textContent==='ไม่พบรายการตามตัวกรอง'));
+ await count('needs_correction').onclick();attr('ค้นโมเดลร่างหรือเคส').value='Synthetic 84';await attr('ค้นโมเดลร่างหรือเคส').oninput();assert.equal(rows().length,1);assert.equal(rows()[0].attrs['data-draft-group'],rid(40084));
+ await find('เคสแยก (3)').onclick();assert.equal(rows().length,3);assert.equal(attr('กรองผลตรวจโมเดลร่าง').hidden,true);assert.ok(nodes().some(n=>n.textContent?.includes('75 / 85')));assert.ok(calls.every(a=>a==='review_draft_queue'||a==='review_draft_detail'));
+});
+test('incomplete, duplicate or unknown outcome data never produces a misleading progress total',async()=>{
+ for(const mode of ['missing','duplicate','later_page_failure']){
+  const item={id:'rec00000000004000',kind:'model',name:'Synthetic',inspection_result:'unreviewed'};
+  const p=page(async(_,init)=>{const input=JSON.parse(init.body);assert.equal(input.action,'review_draft_queue');if(mode==='later_page_failure'&&input.cursor)return Response.json({ok:false,error:'history_unavailable'},{status:503});return Response.json({ok:true,read_only:true,publication:false,items:mode==='missing'?[{...item,inspection_result:undefined}]:mode==='duplicate'?[item,item]:[item],cursor:mode==='later_page_failure'?'second':null});});
+  await descendants(p.panel).find(n=>n.textContent==='เปิดหน้าตรวจโมเดลร่าง').onclick();const nodes=()=>descendants(p.body);assert.equal(nodes().find(n=>n.attrs['data-draft-progress']!==undefined).hidden,true);assert.ok(nodes().some(n=>n.textContent?.includes('อ่านข้อมูลไม่ครบ')));const filter=nodes().find(n=>n.attrs['aria-label']==='กรองผลตรวจโมเดลร่าง');filter.value='unreviewed';await filter.onchange();assert.equal(nodes().find(n=>n.attrs['data-draft-progress']!==undefined).hidden,true);
+ }
 });
