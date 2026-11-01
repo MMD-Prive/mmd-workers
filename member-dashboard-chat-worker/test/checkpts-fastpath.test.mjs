@@ -16,6 +16,23 @@ const truth = () => ({ ok: true, authority: AUTHORITY, identity_status: "resolve
   membership: { level: "private_premium", label: "Premium", lifecycle: "active", expire_at: "2027-01-01" },
   points: { status: "verified", active_points: 120 } });
 
+const categoryEnv = {KENJI_LINE_REPLY_CATEGORY_MODE:'approved_qa_promo',LINE_AUTO_REPLY_ENABLED:'true',LINE_KENJI_MODEL_ENABLED:'false',KENJI_LINE_APPROVED_PROMO_ENABLED:'true'};
+for (const command of ['checkpts','package','regis','apply','โปร']) test(`restricted signed intake sends once: ${command}`, async () => {
+  const {status,calls}=await run(command,{env:categoryEnv});
+  assert.equal(status,200);assert.equal(calls.replies.length,1);
+  assert.ok(calls.writes.some(w=>w.table==='MMD — Console Inbox'),'inbound intake preserved');
+  if(command==='checkpts') assert.match(calls.replies[0].messages[0].text,/Points: 120 Points/);
+});
+for (const options of [{owner:true},{kill:true},{globalKill:true},{ownerAfterTruth:true},{killAfterTruth:true}]) test(`restricted checkpts pause: ${JSON.stringify(options)}`,async()=>{
+  const {calls}=await run('checkpts',{...options,env:categoryEnv});assert.equal(calls.replies.length,0);
+});
+test('restricted native FAQ and unknown messages retain intake without reply or truth lookup',async()=>{
+  for(const command of ['มีบริการอะไรบ้าง','GWs คืออะไร','สวัสดี','จอง','checkpts ดูให้เพื่อน']){
+    const {calls}=await run(command,{env:categoryEnv});assert.equal(calls.replies.length,0);assert.equal(calls.truth.length,0);
+    assert.ok(calls.writes.some(w=>w.table==='MMD — Console Inbox'));
+  }
+});
+
 // Uses the real signed Seed + canonical intake handlers. All outbound I/O is mocked.
 async function run(command, options = {}) {
   const previousFetch = globalThis.fetch;
