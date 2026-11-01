@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { reconcilePremiumReviewedMembershipTerm } from '../payments-worker/premium-membership-term.js';
 import {
   currentPrivateMembershipPromotion as canonicalPromotion,
   applyMembershipPromotion as canonicalApply,
@@ -35,7 +36,7 @@ test('pinned live function bytes are complete, parseable and reviewed', () => {
   assert.equal(manifest.modules[0].before_sha256, 'b07133b10d83dfba1a2ccc0fd89d12dcc06b1bfc44916b86ca94155abb9e7f94');
   assert.deepEqual([...patches.keys()], [
     'currentPrivateMembershipPromotion', 'applyMembershipPromotion', 'resolveWriteThroughPlan',
-    'materializeRenewal', 'materializeRecoveredMembership', 'entitlementFields',
+    'materializeRenewal', 'materializeRecoveredMembership', 'entitlementFields', 'reconcilePremiumReviewedMembershipTerm',
   ]);
   for (const p of patches.values()) {
     assert.equal(sha(p.before), p.before_sha256, p.id);
@@ -96,3 +97,45 @@ test('reviewed writer stores its resolved term so replays do not lose the months
   assert.equal(result.expire_at, '2028-05-01T00:00:00.000Z');
   assert.match(patches.get('materializeRecoveredMembership').after, /renewal_status: "renewed",\n      membership_term: membershipTermLabel,/);
 });
+
+function premiumResponse(term, rule) {
+  return Response.json({ ok:true, entitlement_materialized:true, entitlement_record_id:'rec01234567890123',
+    membership_expire_at:'2028-05-01T05:00:00.000Z', membership_term:term, membership_expiry_rule:rule });
+}
+const premiumRequest=()=>new Request('https://payments.example.invalid/reviewed-proof', {
+  method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({package_code:'premium'}),
+});
+function premiumWrapper(implementation, writes) {
+  if(implementation==='source')return (request,response)=>reconcilePremiumReviewedMembershipTerm(request,response,{
+    AIRTABLE_BASE_ID:'fixture-base',AIRTABLE_API_KEY:'fixture',AIRTABLE_HTTP:{fetch:async request=>{
+      writes.push((await request.json()).fields);return Response.json({id:'rec01234567890123'});
+    }},
+  });
+  return evaluateFunction(patches.get('reconcilePremiumReviewedMembershipTerm').after,{
+    code9:value=>String(value||'').trim().toLowerCase(),
+    isRecordId:value=>/^rec[a-zA-Z0-9]{10,}$/.test(value),clean21:value=>String(value||'').trim(),
+    addUtcYears:(value,years)=>{const date=new Date(value);date.setUTCFullYear(date.getUTCFullYear()+years);return date;},
+    patchEntitlement:async(_env,_id,fields)=>{writes.push(fields);},
+    rebuild:(_response,data)=>Response.json(data),
+  });
+}
+for(const implementation of ['source','emitted']) {
+  test(implementation+' Premium wrapper preserves canonical November recovery and replay without another year',async()=>{
+    const writes=[];const reconcile=premiumWrapper(implementation,writes);
+    for(const anchor of ['current_expiry','verified_payment']) {
+      const response=premiumResponse('1_year_plus_6_months',`1_year_from_${anchor}_plus_november_returning_premium_2026`);
+      assert.equal(await reconcile(premiumRequest(),response),response);
+      assert.equal(await reconcile(premiumRequest(),response),response);
+      const data=await response.clone().json();assert.equal(data.membership_expire_at,'2028-05-01T05:00:00.000Z');
+      assert.equal(data.membership_term,'1_year_plus_6_months');
+    }
+    assert.deepEqual(writes,[]);
+  });
+  test(implementation+' Premium wrapper retains its existing legacy one-year repair',async()=>{
+    const writes=[];const reconcile=premiumWrapper(implementation,writes);
+    const response=premiumResponse('1_year','1_year_from_verified_payment');
+    const data=await(await reconcile(premiumRequest(),response)).json();
+    assert.equal(data.membership_expire_at,'2029-05-01T05:00:00.000Z');assert.equal(data.membership_term,'2_years');
+    assert.deepEqual(writes,[{expire_at:'2029-05-01T05:00:00.000Z',membership_expiry_rule:'2_years_from_verified_payment'}]);
+  });
+}

@@ -19,14 +19,14 @@ export function projectKenjiRenewalPromotion(membership = {}, now = new Date()) 
   if (!offer) return { authority, status: "not_applicable", reason: timing.expired_one_year_or_more ? "expired_one_calendar_year_or_more" : "outside_approved_campaign_window" };
   const promotionYears = Number(offer?.bonus_years || 0), promotionDays = Number(offer?.bonus_days || 0);
   const promotionMonths = Number(offer.bonus_months || 0);
-  const benefit = { authority, package_code: packageCode, promotion_years: promotionYears, promotion_months: promotionMonths, promotion_days: promotionDays, bonus_months: promotionMonths, ends_before: offer.ends_before, requires_verified_payment: true, checkout_status: "review_required" };
+  const benefit = { authority, package_code: packageCode, promotion_years: promotionYears, promotion_months: promotionMonths, promotion_days: promotionDays, bonus_months: promotionMonths, ends_before: offer.ends_before, requires_verified_payment: true };
   // Returning members outside the existing 90-day price window still receive
   // the policy benefit, but require a separately verified signup/rejoin quote.
   // Do not manufacture its purchased term or a discounted renewal offer here.
   if (promotionMonths === 6 && !privateRenewalPriceEligible(timing)) {
     return { ...benefit, status: "review_required", reason: "renewal_expired_over_90_days_review_required" };
   }
-  return { ...benefit, status: "conditional_eligible", total_years: 1 + promotionYears, base_years: 1, starts_from: timing.active ? "existing_expiry" : "verified_renewal_time", reason: "payment_term_policy_alignment_required" };
+  return { ...benefit, status: "conditional_eligible", total_years: 1 + promotionYears, base_years: 1, starts_from: timing.active ? "existing_expiry" : "verified_renewal_time", checkout_status: "review_required", reason: "payment_term_policy_alignment_required" };
 }
 
 function couponProjection(wallet = {}) {

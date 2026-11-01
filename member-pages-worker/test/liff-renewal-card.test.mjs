@@ -172,11 +172,21 @@ test("promotion label and expiry helper", () => {
   assert.equal(LIFF_RENEWAL_CARD_INTERNALS.expiryAfter({ membership_start_at: "bad", membership_years: 1 }), null);
 });
 
-test("Premium advance renewal card shows two years from the current expiry (1 purchased + 1 promo)", async () => {
-  const fx = await fixture({ tier: "Premium", expires: "2027-02-28T16:59:59.999Z" });
-  const payload = await (await get(fx)).json();
-  assert.equal(payload.amount_thb, 2500);
-  assert.equal(payload.new_expires_at.slice(0, 10), "2029-02-28");
+test("Premium November advance renewal adds six calendar months after the purchased year", async () => {
+  const NativeDate = globalThis.Date;
+  const at = NativeDate.parse("2026-11-01T12:00:00+07:00");
+  globalThis.Date = class extends NativeDate {
+    constructor(...args) { super(...(args.length ? args : [at])); }
+    static now() { return at; }
+  };
+  try {
+    const fx = await fixture({ tier: "Premium", expires: "2027-02-28T16:59:59.999Z" });
+    const payload = await (await get(fx)).json();
+    assert.equal(payload.amount_thb, 2500);
+    assert.equal(payload.new_expires_at.slice(0, 10), "2028-08-28");
+    assert.equal(payload.bonus_months, 6);
+    assert.equal(payload.bonus_years, 0);
+  } finally { globalThis.Date = NativeDate; }
 });
 
  test("gateway persistence must succeed before any payment intent is requested", async () => {

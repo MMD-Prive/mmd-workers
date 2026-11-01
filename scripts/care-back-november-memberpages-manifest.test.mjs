@@ -46,7 +46,7 @@ test('projection retains review for expired accounts without fabricating price o
  const projection=fn(pairs.get('projectKenjiRenewalPromotion').after);const now=new Date('2026-11-01T12:00:00+07:00');
  for(const level of ['private_standard','private_premium']){
   const active=projection({level,lifecycle:'active',expire_at:'2027-05-01T12:00:00+07:00'},now);assert.equal(active.promotion_months,6);assert.equal(active.base_years,1);assert.equal(active.checkout_status,'review_required');
-  for(const expire_at of ['2026-07-01T12:00:00+07:00','2024-01-01T12:00:00+07:00']){const old=projection({level,lifecycle:'expired',expire_at},now);assert.equal(old.promotion_months,6);assert.equal(old.status,'review_required');assert.equal(old.base_years,undefined);assert.equal(old.amount_thb,undefined);}
+  for(const expire_at of ['2026-07-01T12:00:00+07:00','2024-01-01T12:00:00+07:00']){const old=projection({level,lifecycle:'expired',expire_at},now);assert.equal(old.promotion_months,6);assert.equal(old.status,'review_required');assert.equal(old.base_years,undefined);assert.equal(old.amount_thb,undefined);assert.equal(old.checkout_status,undefined);}
  }
 });
 test('both emitted UI renderers show months without calling them days or years',()=>{

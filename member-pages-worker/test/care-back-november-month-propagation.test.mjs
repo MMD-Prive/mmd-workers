@@ -191,6 +191,7 @@ test("expired returning members beyond 90 days retain the policy benefit without
     assert.equal(result.status, "review_required");
     assert.equal(result.promotion_months, 6);
     assert.equal(result.reason, "renewal_expired_over_90_days_review_required");
+    assert.equal(result.checkout_status, undefined, "no checkout candidate may override the existing price-review reason");
     assert.equal(result.base_years, undefined);
     assert.equal(result.total_years, undefined);
     assert.equal(result.amount_thb, undefined);
