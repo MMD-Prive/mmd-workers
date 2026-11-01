@@ -109,3 +109,31 @@
 /* Keep the step menu inside the mobile safe area instead of legacy absolute offsets. */
 #mmb2[data-rebuild] .mmb2-sheet{padding:12px max(12px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left))}
 #mmb2[data-rebuild] .mmb2-sheet-panel{position:relative;inset:auto;width:min(100%,520px);margin:0 auto;max-height:85dvh}
+
+/* Digital input presentation. Canonical fields remain owned by mmb2core. */
+#mmb2 .mms-digital-source{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;overflow:hidden!important;clip-path:inset(50%);white-space:nowrap}
+#mmb2 .mms-booking-digital{border:1px solid #cbd9c8;border-radius:18px;background:#fffdf7;padding:16px;min-width:0;color:#173e30}
+#mmb2 .mms-booking-digital summary{list-style:none;cursor:pointer;min-height:44px;display:flex;align-items:center;font-size:16px;font-weight:750;line-height:1.6;overflow-wrap:anywhere}
+#mmb2 .mms-booking-digital summary::-webkit-details-marker{display:none}
+#mmb2 .mms-booking-digital fieldset{border:0;min-width:0;margin:12px 0 0;padding:0}
+#mmb2 .mms-booking-digital legend{font-size:16px;font-weight:750;padding:0 0 12px}
+#mmb2 .mms-booking-digital input[type=search]{width:100%;min-height:50px;padding:12px;font-size:16px;color:#173e30;background:white;border:1px solid #cbd9c8;border-radius:12px;margin-bottom:12px}
+#mmb2 .mms-booking-options{display:grid;gap:9px;max-height:270px;overflow:auto;padding:3px}
+#mmb2 .mms-booking-option{display:flex;align-items:center;gap:12px;padding:14px;border:1px solid #d5dfce;border-radius:14px;background:white;min-height:56px;cursor:pointer;font-size:16px;line-height:1.6;overflow-wrap:anywhere}
+#mmb2 .mms-booking-option:has(input:checked){background:#edf3da;border-color:#42634c;box-shadow:inset 0 0 0 1px #42634c}
+#mmb2 .mms-booking-option:has(input:focus-visible),#mmb2 .mms-booking-digital summary:focus-visible{outline:3px solid #628b45;outline-offset:3px}
+#mmb2 .mms-booking-selection{font-size:14px;line-height:1.7;color:#53675a;margin:12px 0}
+#mmb2 .mms-booking-digital fieldset:disabled{opacity:.6}
+#mmb2[data-rebuild] .mb-field>span,#mmb2[data-rebuild] .mb-fieldset legend{font-size:16px!important;line-height:1.6}
+#mmb2[data-rebuild] .mmb2-skill-card strong,#mmb2[data-rebuild] .mb-choices label{font-size:16px!important;line-height:1.6}
+#mmb2[data-rebuild] .mmb2-skill-card small,#mmb2[data-rebuild] .mb-help{font-size:14px!important;line-height:1.7}
+#mmb2[data-rebuild] .mb-field input,#mmb2[data-rebuild] .mb-field textarea{font-size:16px!important;min-height:56px;border-radius:16px;background:#fffdf7}
+#mmb2 .mb-fields{gap:14px}
+@media(prefers-reduced-motion:reduce){#mmb2 .mms-booking-digital *{animation:none;transition:none;scroll-behavior:auto}}
+
+#mmb2 [data-digital-for="mmb2-duration"] .mms-booking-options{grid-template-columns:repeat(auto-fit,minmax(min(100%,90px),1fr))}
+#mmb2 [data-digital-for="mmb2-duration"] .mms-booking-option{position:relative;justify-content:center;padding:12px 8px;gap:0;text-align:center}
+#mmb2 [data-digital-for="mmb2-duration"] input[type=radio]{position:absolute;width:1px;height:1px;opacity:0}
+#mmb2 .mms-booking-datetime{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,8em),1fr));gap:12px;min-width:0}
+#mmb2 .mms-booking-datetime>p{grid-column:1/-1}
+#mmb2 .mms-booking-datetime input{min-width:0;width:100%;max-width:100%}
