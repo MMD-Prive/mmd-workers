@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {JSDOM} from 'jsdom';
 import { buildBundle } from '../../../scripts/build-my-model-workspace-bundle.mjs';
 
 const source = fs.readFileSync(new URL('./my-model-workspace-20261016.js', import.meta.url), 'utf8');
@@ -10,11 +11,11 @@ const common = {module:{exports:{}},URL,URLSearchParams}; vm.runInNewContext(sou
 const {classify, world, safeUrl, miniAppLink, profilePatch} = common.module.exports;
 const model = {working_name:'Fixture Model',readiness:{line_identity_verified:true},languages:['thai'],availability_status:'available',available_now:true,telegram_connected:false};
 
-function fixture({profile={ok:true,model}, job={status:404,error:'active_session_not_found'}, origin='https://mmdbkk.com', search='', loggedIn=false, legacyRoot=false, workspaceRoot=true} = {}) {
+function fixture({profile={ok:true,model}, job={status:404,error:'active_session_not_found'}, origin='https://mmdbkk.com', search='', loggedIn=false, legacyRoot=false, workspaceRoot=true, runtime=source} = {}) {
   const calls=[], events=new Map(), nodes=new Map();
   function element(tag='DIV') {return {tagName:tag.toUpperCase(),dataset:{},hidden:false,disabled:false,textContent:'',value:'',checked:false,children:[],listeners:{},
     append(...items){this.children.push(...items);},replaceChildren(...items){this.children=[...items];this.textContent='';},removeAttribute(key){delete this[key];},
-    addEventListener(key,fn){this.listeners[key]=fn;},querySelectorAll(){return [];},reset(){},remove(){}};}
+    addEventListener(key,fn){this.listeners[key]=fn;},querySelectorAll(){return [];},reset(){},remove(){},focus(){this.focused=true;}};}
   const root=element();root.querySelector=selector=>{if(!nodes.has(selector))nodes.set(selector,element());return nodes.get(selector);};
   const roots=new Map(workspaceRoot?[['mmd-model-home-v4',root]]:[]);
   if(legacyRoot){const legacy=element('section');legacy.remove=()=>{roots.delete('mmd-model-home-v3');calls.push({retired:'mmd-model-home-v3'});};roots.set('mmd-model-home-v3',legacy);}
@@ -33,7 +34,7 @@ function fixture({profile={ok:true,model}, job={status:404,error:'active_session
       return new Response(JSON.stringify(payload),{status:payload.status||200});
     }};
   const context={window,document:window.document,URL,URLSearchParams,AbortController,setTimeout,clearTimeout,Intl,CustomEvent:class {constructor(type,init={}){this.type=type;this.detail=init.detail;}}};
-  vm.runInNewContext(source,context);
+  vm.runInNewContext(runtime,context);
   return {calls,nodes,form,window,events,roots,run:script=>vm.runInNewContext(script,context)};
 }
 async function settle(){for(let n=0;n<8;n++)await new Promise(setImmediate);}
@@ -134,7 +135,7 @@ test('current profile save still enforces auth denial and surfaces ordinary sour
     f.window.fetch=async()=>Response.json({ok:false,error:status===401?'model_session_expired':status===403?'private_access_required':'upstream_unavailable'},{status});
     await f.form.listeners.submit({preventDefault(){}});await settle();
     assert.equal(f.nodes.get('[data-mm-workspace]').hidden,status!==503);
-    assert.match(f.nodes.get('[data-mm-save-status]').textContent,/ยังยืนยันการบันทึกไม่ได้/);
+    assert.equal(f.nodes.get('[data-mm-save-status]').textContent,status===401?'หมดเวลา · ตรวจ LINE':'บันทึกไม่ได้ · ตรวจสถานะ ลองใหม่');
     if(status===503)assert.equal(f.nodes.get('[data-mss-save]').disabled,false);
   }
 });
@@ -273,3 +274,101 @@ for (const [status,error] of [[401,'model_session_expired'],[403,'forbidden'],[5
     if (status === 401) assert.equal(f.nodes.get('[data-mm-workspace]').hidden, true);
   });
 }
+
+for (const review of [true,false,undefined]) test(`profile save pending single-flight and confirmed review=${review}`,async()=>{
+  const f=fixture();await settle();const pending=deferredResponse();let writes=0;
+  f.window.fetch=async(url,options={})=>{
+    if(options.method==='PATCH'){writes++;return pending.promise;}
+    return Response.json({ok:true,media:[]});
+  };
+  const first=f.form.listeners.submit({preventDefault(){}});
+  assert.equal(f.nodes.get('[data-mss-save]').disabled,true);
+  assert.equal(f.nodes.get('[data-mm-save-status]').textContent,'กำลังบันทึก');
+  await f.form.listeners.submit({preventDefault(){}});
+  assert.equal(writes,1);
+  pending.resolve(Response.json({ok:true,model:{...model,working_name:'Saved Fixture'},...(review===undefined?{}:{review_required:review})}));
+  await first;await settle();
+  assert.equal(f.nodes.get('[data-mm-save-status]').textContent,review===true?'บันทึกแล้ว · รอตรวจ':'บันทึกสำเร็จ');
+  assert.equal(f.nodes.get('[data-mm-name]').textContent,'Saved Fixture');
+  assert.equal(f.nodes.get('[data-mss-save]').disabled,false);
+  assert.equal(writes,1);
+});
+
+test('submit without a verified profile makes no write and focuses account refresh',async()=>{
+  const f=fixture({profile:{ok:false,status:403,error:'model_not_linked'}});await settle();
+  const before=f.calls.length;
+  await f.form.listeners.submit({preventDefault(){}});
+  assert.equal(f.calls.length,before);
+  assert.equal(f.nodes.get('[data-mm-save-status]').textContent,'ยังไม่เชื่อม · ตรวจสถานะบัญชี');
+  assert.equal(f.nodes.get('[data-mm-refresh]').focused,true);
+});
+
+for(const failure of ['validation','unavailable','network','missing-model'])test(`profile save ${failure} retains edits, releases same-snapshot guard and never auto-replays`,async()=>{
+  const f=fixture();await settle();f.form.elements.skills_summary.value='keep my pending edit';let writes=0;
+  f.window.fetch=async(url,options={})=>{
+    if(options.method==='PATCH'){
+      writes++;
+      if(failure==='network')throw new TypeError('fixture network unavailable');
+      if(failure==='missing-model')return Response.json({ok:true});
+      const status=failure==='validation'?400:503;
+      return Response.json({ok:false,error:'fixture_failure'},{status});
+    }
+    return Response.json({ok:true,media:[]});
+  };
+  await f.form.listeners.submit({preventDefault(){}});await settle();
+  assert.equal(writes,1);
+  assert.equal(f.nodes.get('[data-mm-save-status]').textContent,failure==='validation'?'ข้อมูลไม่ถูกต้อง · ตรวจใหม่':'บันทึกไม่ได้ · ตรวจสถานะ ลองใหม่');
+  assert.equal(f.nodes.get('[data-mm-workspace]').hidden,false);
+  assert.equal(f.form.elements.skills_summary.value,'keep my pending edit');
+  assert.equal(f.nodes.get('[data-mss-save]').disabled,false);
+  // A later explicit submit is allowed; no test or runtime auto-replays it.
+  await f.form.listeners.submit({preventDefault(){}});
+  assert.equal(writes,2);
+});
+
+test('successful profile refresh clears previous save error',async()=>{
+  const f=fixture();await settle();
+  f.nodes.get('[data-mm-save-status]').textContent='old save error';
+  await f.nodes.get('[data-mm-refresh]').listeners.click();await settle();
+  assert.equal(f.nodes.get('[data-mm-save-status]').textContent,'');
+  assert.equal(f.nodes.get('[data-mm-name]').textContent,'Fixture Model');
+});
+
+test('built minified runtime preserves no-job and profile-save single-flight behavior',async()=>{
+  const runtime=buildBundle().match(/<script id="my-model-workspace-bundle-20261016">([\s\S]*?)<\/script>/)[1];
+  const f=fixture({runtime,job:{ok:false,status:404,error:'session_not_found'}});await settle();
+  assert.equal(f.nodes.get('[data-mm-job]').textContent,'ยังไม่มีงานที่กำลังใช้งาน');
+  const pending=deferredResponse();let writes=0;
+  f.window.fetch=async(url,options={})=>{
+    if(options.method==='PATCH'){writes++;return pending.promise;}
+    return Response.json({ok:true,media:[]});
+  };
+  const saving=f.form.listeners.submit({preventDefault(){}});
+  await f.form.listeners.submit({preventDefault(){}});
+  assert.equal(writes,1);assert.equal(f.nodes.get('[data-mss-save]').disabled,true);
+  pending.resolve(Response.json({ok:true,review_required:true,model}));await saving;await settle();
+  assert.equal(f.nodes.get('[data-mm-save-status]').textContent,'บันทึกแล้ว · รอตรวจ');
+  assert.equal(f.nodes.get('[data-mss-save]').disabled,false);
+});
+
+test('builder fails closed on an oversized embed rather than returning it',()=>{
+  const read=fs.readFileSync;
+  try {
+    fs.readFileSync=function(file,...options){
+      if(String(file).endsWith('my-model-workspace-20261016.html'))return 'x'.repeat(50000);
+      return read.call(this,file,...options);
+    };
+    assert.throws(()=>buildBundle(),/exceeds 50,000 bytes/);
+  } finally {fs.readFileSync=read;}
+});
+
+test('profile-save live status stays inside its form beside the save button',()=>{
+  const dom=new JSDOM(buildBundle());
+  try {
+    const d=dom.window.document,status=d.querySelector('[data-mm-save-status]');
+    assert.equal(d.querySelectorAll('[data-mm-save-status]').length,1);
+    assert.equal(status.getAttribute('role'),'status');
+    assert.equal(status.closest('form'),d.querySelector('[data-mss-profile-form]'));
+    assert.equal(status.previousElementSibling,d.querySelector('[data-mss-save]'));
+  } finally {dom.window.close();}
+});
