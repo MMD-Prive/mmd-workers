@@ -27,9 +27,10 @@ test('emitted shared policy keeps new signup and historical terms and applies si
 });
 test('public announcement is visible through November 30 and ends at Bangkok midnight',()=>{
  const visible=fn(pairs.get('isPrivateCareBackAnnouncementVisible').after);
- assert.equal(visible(new Date('2026-11-01T00:00:00+07:00')),true);
- assert.equal(visible(new Date('2026-11-30T23:59:59+07:00')),true);
- assert.equal(visible(new Date('2026-12-01T00:00:00+07:00')),false);
+ assert.equal(visible(new Date('2026-11-01T00:00:00+07:00'),'november'),true);
+ assert.equal(visible(new Date('2026-11-30T23:59:59+07:00'),'november'),true);
+ assert.equal(visible(new Date('2026-12-01T00:00:00+07:00'),'november'),false);
+ assert.equal(visible(new Date('2026-11-01T00:00:00+07:00')),false);
  const campaign=new Function('now','RENEWAL_COPY','isPrivateCareBackAnnouncementVisible',pairs.get('renewalViewHtml-campaign').after+'\nreturn campaign;');
  const november=campaign(new Date('2026-11-01T00:00:00+07:00'),{},visible);
  assert.match(november.campaignTitle,/เพิ่ม 6 เดือน/);assert.match(november.campaignTerms,/หมดอายุไม่เกิน 6 เดือนหรือเกิน 6 เดือน/);assert.match(november.campaignAnnouncement,/30 พ.ย. 2569/);assert.doesNotMatch(JSON.stringify(november),/สิ้นปี|31 ธ.ค./);

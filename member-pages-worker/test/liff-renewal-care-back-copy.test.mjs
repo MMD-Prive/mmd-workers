@@ -37,14 +37,14 @@ test('Premium signup is 2,999 THB for its normal two-year term, not a one-year f
 });
 
 test('approved November announcement stops exactly at December 1 Bangkok without changing monetary eligibility',()=>{
-  assert.equal(isPrivateCareBackAnnouncementVisible('2026-10-31T23:59:59.999+07:00'),true);
-  assert.equal(isPrivateCareBackAnnouncementVisible('2026-11-01T00:00:00+07:00'),true);
-  assert.equal(isPrivateCareBackAnnouncementVisible('2026-11-30T23:59:59.999+07:00'),true);
-  assert.equal(isPrivateCareBackAnnouncementVisible('2026-12-01T00:00:00+07:00'),false);
-  assert.equal(isPrivateCareBackAnnouncementVisible('2026-12-31T23:59:59.999+07:00'),false);
-  assert.equal(isPrivateCareBackAnnouncementVisible('2026-07-31T23:59:59.999+07:00'),false);
-  assert.equal(isPrivateCareBackAnnouncementVisible('invalid'),false);
-  assert.equal(isPrivateCareBackAnnouncementVisible(null),false);
+  assert.equal(isPrivateCareBackAnnouncementVisible('2026-10-31T23:59:59.999+07:00','november'),true);
+  assert.equal(isPrivateCareBackAnnouncementVisible('2026-11-01T00:00:00+07:00','november'),true);
+  assert.equal(isPrivateCareBackAnnouncementVisible('2026-11-30T23:59:59.999+07:00','november'),true);
+  assert.equal(isPrivateCareBackAnnouncementVisible('2026-12-01T00:00:00+07:00','november'),false);
+  assert.equal(isPrivateCareBackAnnouncementVisible('2026-12-31T23:59:59.999+07:00','november'),false);
+  assert.equal(isPrivateCareBackAnnouncementVisible('2026-07-31T23:59:59.999+07:00','november'),false);
+  assert.equal(isPrivateCareBackAnnouncementVisible('invalid','november'),false);
+  assert.equal(isPrivateCareBackAnnouncementVisible(null,'november'),false);
 });
 
 for(const code of ['premium','standard']) {

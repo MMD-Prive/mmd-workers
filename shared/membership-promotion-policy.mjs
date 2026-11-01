@@ -35,11 +35,13 @@ const NOVEMBER_RETURNING_CARE_BACK = Object.freeze({
 });
 
 // Read-only presentation window, separate from paid-time eligibility below.
-// Public messaging stops after November; this must never gate renewal settlement.
-export function isPrivateCareBackAnnouncementVisible(at = new Date()) {
+// Callers opt into the November wave only after updating their customer copy.
+// Existing October-only callers retain their cutoff; neither window gates settlement.
+export function isPrivateCareBackAnnouncementVisible(at = new Date(), wave = "october") {
   const time = at instanceof Date ? at.getTime() : Date.parse(String(at || ""));
+  const endsBefore = wave === "november" ? PROMO_PUBLIC_ENDS_BEFORE : OCTOBER_PUBLIC_ENDS_BEFORE;
   return Number.isFinite(time) && time >= CARE_BACK_START_MS
-    && time < Date.parse(PROMO_PUBLIC_ENDS_BEFORE);
+    && time < Date.parse(endsBefore);
 }
 
 export function isProtectedPrivateMembership(value) {

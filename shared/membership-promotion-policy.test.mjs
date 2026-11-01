@@ -19,12 +19,14 @@ test('November wave advertises through 30 Nov while paid-time rights are honored
 });
 
 test('November announcement cutoff is Bangkok midnight and does not gate December rights',()=>{
- assert.equal(visible('2026-07-31T16:59:59.999Z'),false);
+ assert.equal(visible('2026-07-31T16:59:59.999Z','november'),false);
+ assert.equal(visible('2026-10-31T16:59:59.999Z','november'),true);
+ assert.equal(visible('2026-10-31T17:00:00Z','november'),true);
+ assert.equal(visible('2026-11-30T16:59:59.999Z','november'),true);
+ assert.equal(visible('2026-11-30T17:00:00Z','november'),false);
+ assert.equal(visible('invalid','november'),false);
  assert.equal(visible('2026-10-31T16:59:59.999Z'),true);
- assert.equal(visible('2026-10-31T17:00:00Z'),true);
- assert.equal(visible('2026-11-30T16:59:59.999Z'),true);
- assert.equal(visible('2026-11-30T17:00:00Z'),false);
- assert.equal(visible('invalid'),false);
+ assert.equal(visible('2026-10-31T17:00:00Z'),false,'October-only callers cannot advertise stale terms in November');
  assert.equal(promo(renewal('premium','2026-11-30T17:00:00Z')).bonus_months,6);
 });
 

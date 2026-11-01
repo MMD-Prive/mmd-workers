@@ -9,7 +9,7 @@
       "name": "worker.js",
       "type": "esm",
       "before_sha256": "52e7b637b5cf4a4b4d4d82800b85eecc9def9392a4695677dd0c1eb67f1f05b1",
-      "after_sha256": "ce51ca66bd14ddd17be1cf97c2536e0d219b5ea0facd77a5e080a885b25955f1",
+      "after_sha256": "9bbe9bf7ad95ed49de8f64cd485883507e2fd142d47df2e5ae0ac28bfb34f523",
       "patches": [
         {
           "id": "currentPrivateMembershipPromotion",
@@ -28,9 +28,9 @@
         {
           "id": "isPrivateCareBackAnnouncementVisible",
           "before": "function isPrivateCareBackAnnouncementVisible(at = /* @__PURE__ */ new Date()) {\n  const time = at instanceof Date ? at.getTime() : Date.parse(String(at || \"\"));\n  return Number.isFinite(time) && time >= CARE_BACK_START_MS && time < Date.parse(PROMO_PUBLIC_ENDS_BEFORE);\n}",
-          "after": "function isPrivateCareBackAnnouncementVisible(at = /* @__PURE__ */ new Date()) {\n  const time = at instanceof Date ? at.getTime() : Date.parse(String(at || \"\"));\n  return Number.isFinite(time) && time >= CARE_BACK_START_MS && time < Date.parse(\"2026-12-01T00:00:00+07:00\");\n}",
+          "after": "function isPrivateCareBackAnnouncementVisible(at = new Date(), wave = \"october\") {\n  const time = at instanceof Date ? at.getTime() : Date.parse(String(at || \"\"));\n  const endsBefore = wave === \"november\" ? \"2026-12-01T00:00:00+07:00\" : \"2026-11-01T00:00:00+07:00\";\n  return Number.isFinite(time) && time >= CARE_BACK_START_MS\n    && time < Date.parse(endsBefore);\n}",
           "before_sha256": "88301b3ca0b1adf70dba9a0e5b53659bdc40e23ee5d1c760a574769703b57b0c",
-          "after_sha256": "049ee8850f53b6ddba4d2fd4c27c19c21648a64a316bdc8931dc511dc47475db"
+          "after_sha256": "b2e7b3902d08f745a20eadc7fa9375ec7f7b3e973ec516056787adaaf4f79460"
         },
         {
           "id": "promoLabel",
@@ -56,9 +56,9 @@
         {
           "id": "renewalViewHtml-campaign",
           "before": "  const announceCareBack = isPrivateCareBackAnnouncementVisible(now);",
-          "after": "  const announceCareBack = isPrivateCareBackAnnouncementVisible(now);\n  const novemberWave = new Date(now).getTime() >= Date.parse(\"2026-11-01T00:00:00+07:00\");\n  const campaign = novemberWave ? {\n    campaignTitle: \"สมาชิกเดิม รับอายุสมาชิกเพิ่ม 6 เดือน\",\n    campaignTerms: \"ต่ออายุล่วงหน้า หรือกลับมาสมัครหลังหมดอายุไม่เกิน 6 เดือนหรือเกิน 6 เดือน รับเพิ่ม 6 เดือน เมื่อผ่านเงื่อนไข\",\n    campaignAnnouncement: \"รอบประชาสัมพันธ์ถึง 30 พ.ย. 2569\",\n  } : RENEWAL_COPY;",
+          "after": "  const announceCareBack = isPrivateCareBackAnnouncementVisible(now, \"november\");\n  const novemberWave = new Date(now).getTime() >= Date.parse(\"2026-11-01T00:00:00+07:00\");\n  const campaign = novemberWave ? {\n    campaignTitle: \"สมาชิกเดิม รับอายุสมาชิกเพิ่ม 6 เดือน\",\n    campaignTerms: \"ต่ออายุล่วงหน้า หรือกลับมาสมัครหลังหมดอายุไม่เกิน 6 เดือนหรือเกิน 6 เดือน รับเพิ่ม 6 เดือน เมื่อผ่านเงื่อนไข\",\n    campaignAnnouncement: \"รอบประชาสัมพันธ์ถึง 30 พ.ย. 2569\",\n  } : RENEWAL_COPY;",
           "before_sha256": "ba027997c47815a33d0ef809c0cf0925537467add935100c0376f4a10b15112d",
-          "after_sha256": "321e927ee72fc7d3aa417ef6c85fdac0f623582ab3c5adecca2c642f13345334"
+          "after_sha256": "48ac9e0b9371c62e1264466daf7778bca41477447c30788f60febbfe38a7c951"
         },
         {
           "id": "renewalViewHtml-campaignAnnouncement",
