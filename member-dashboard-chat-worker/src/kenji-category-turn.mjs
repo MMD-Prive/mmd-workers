@@ -1,6 +1,8 @@
 import {approvedCategoryReply, withCategoryReplyGrant} from './kenji-reply-category-gate.mjs';
-import {approvedPublicQa} from './kenji-approved-public-qa.mjs';
 import {careBackOctoberReply} from './kenji-care-back-october.mjs';
+import {lineIntakeCommand, readLineIntakeCatalog, resolveLineIntakeReply} from './kenji-line-intake-commands.mjs';
+import {resolveKenjiCheckptsTruth} from './kenji-line-live-truth.mjs';
+import {resolveCheckptsShortcut} from './rich-menu-conversation.mjs';
 
 export async function runApprovedCategoryTurn(env, event, initialRuntime, io) {
   const now = io.now ?? Date.now();
@@ -15,7 +17,30 @@ export async function runApprovedCategoryTurn(env, event, initialRuntime, io) {
     String(event.mode).toLowerCase() !== 'standby' && !event.deliveryContext?.isRedelivery && token &&
     Number.isFinite(age) && age >= -60000 && age <= 300000;
   if (eligible) {
-    decision = approvedCategoryReply(event,env,{ownerFaq:approvedPublicQa,careBackOctoberReply,now}) || silent;
+    // Native OA owns Q&A. Only exact current-message commands may read truth;
+    // never promote stale conversation state into a command or model request.
+    const command = event.type === 'message' && event.message?.type === 'text'
+      ? String(event.message.text || '').normalize('NFKC').trim().toLowerCase() : '';
+    const intake = lineIntakeCommand(event);
+    try {
+      if (command === 'checkpts' || intake) {
+        const continuity = await io.continuity();
+        const [runtime, owner] = await Promise.all([io.runtime(),io.owner(continuity)]);
+        if (continuity?.available !== true || runtime?.ok !== true ||
+            runtime.controls?.all_kenji_mutations === true || runtime.controls?.line_oa_auto_reply === true ||
+            owner?.ok !== true || owner.active === true) return {decision,attempted,delivered:false,deliveryStatus:null};
+        if (command === 'checkpts') {
+          const truth = await resolveKenjiCheckptsTruth({env,event,useSnapshot:false});
+          decision = {...resolveCheckptsShortcut(truth,now,false),intent:'approved_command',reply_source:'category_checkpts'};
+        } else {
+          const catalog = intake === 'apply' ? null : await readLineIntakeCatalog(env,event);
+          const reply = resolveLineIntakeReply(event,{},catalog,now);
+          decision = {text:reply.text,intent:'approved_command',reply_source:`category_${intake}`};
+        }
+      } else {
+        decision = approvedCategoryReply(event,env,{careBackOctoberReply,now}) || silent;
+      }
+    } catch { decision = silent; }
     if (decision.text) {
       try {
         // Never reuse stale conversational identity or a previous runtime result.

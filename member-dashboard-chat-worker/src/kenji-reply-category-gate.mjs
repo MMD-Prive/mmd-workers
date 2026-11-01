@@ -11,7 +11,8 @@ export function categoryReplyTransportAllowed(env, token, text, button = null, e
 }
 export function withCategoryReplyGrant(env, token, decision) {
   if (env?.KENJI_LINE_REPLY_CATEGORY_MODE !== 'approved_qa_promo') return env;
-  if (!['approved_qa','approved_promotion'].includes(decision?.intent) || !decision?.text) return env;
+  if (!decision?.text || !(decision.intent === 'approved_promotion' ||
+      (decision.intent === 'approved_command' && /^category_(checkpts|package|regis|apply)$/.test(decision.reply_source)))) return env;
   return {...env, [CATEGORY_REPLY_GRANT]: Object.freeze({token, text:decision.text})};
 }
 
@@ -25,20 +26,14 @@ export function approvedCategoryReply(event, env = {}, adapters = {}) {
   // No identity, payment proof, eligibility, or conversational state is an
   // authority for public Q&A or advertising copy.
   if (/สลิป|โอนแล้ว|ชำระแล้ว|จ่ายแล้ว|คืนเงิน|ของผม|ของฉัน|ของหนู|ได้สิทธิ์แล้ว|ได้สิทธิ์ไหม|เข้าเกณฑ์/i.test(raw)) return null;
-  if (enabled(env.KENJI_LINE_APPROVED_QA_ENABLED)) {
-    const reply = adapters.ownerFaq?.(raw);
-    if (reply?.intent === 'approved_qa' && reply.reply_source === 'per_line_20261031_v2' &&
-        typeof reply.text === 'string' && reply.text.trim() && reply.text.length <= 1600 &&
-        !/points|คะแนน|แต้ม|ได้สิทธิ์|(?:ครบ|สะสม).*(?:บาท|สิทธิ์)|(?:ชำระ|ต่ออายุ).*(?:สำเร็จ|เรียบร้อย)/i.test(reply.text)) {
-      // Do not forward model cards, booking drafts, routes, or extra messages.
-      return {text: reply.text, intent: 'approved_qa', reply_source: reply.reply_source};
-    }
-  }
+  // Q&A belongs exclusively to native LINE OA, even if an old FAQ flag is on.
   const now = adapters.now ?? Date.now();
   const start = Date.parse('2026-10-31T00:00:00+07:00');
   const end = Date.parse('2026-11-01T00:00:00+07:00');
-  if (enabled(env.KENJI_LINE_APPROVED_PROMO_ENABLED) && Number.isFinite(now) && now >= start && now < end &&
+  if (enabled(env.KENJI_LINE_APPROVED_PROMO_ENABLED) && Number.isFinite(now) && now >= start &&
       /^(?:มีโปรอะไร|มีโปรอะไรบ้าง|โปร(?:โมชั่น)?|care[\s_-]*back|แคร์แบค)[?？!\s]*(?:ครับ|ค่ะ)?$/i.test(raw)) {
+    // Approved post-announcement navigation, not an eligibility/expiry claim.
+    if (now >= end) return {text:'กดตรวจข้อเสนอและสิทธิ์ล่าสุดจากบัญชีเดิมได้เลยครับ\nhttps://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=overview',intent:'approved_promotion',reply_source:'care_back_latest_navigation'};
     const reply = adapters.careBackOctoberReply?.('care_back_overview', raw, now);
     if (typeof reply?.text === 'string' && reply.text.trim() && reply.text.length <= 4500) {
       return {text: reply.text, intent: 'approved_promotion', reply_source: 'care_back_20261031'};
