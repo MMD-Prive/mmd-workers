@@ -9,6 +9,7 @@ class Node{
  constructor(tag){this.tag=tag;this.children=[];this.attrs={};this.style={};this.value='';this.open=false;}
  append(...nodes){this.children.push(...nodes);}appendChild(node){this.children.push(node);return node;}prepend(node){this.children.unshift(node);}setAttribute(k,v){this.attrs[k]=v;}replaceChildren(...nodes){this.children=nodes;}
  showModal(){this.open=true;}close(){this.open=false;this.onclose?.();}
+ querySelectorAll(){return descendants(this).filter(n=>['button','input','select','textarea'].includes(n.tag));}
  querySelector(){return this.children.find(n=>n.attrs['data-mmd-media-flush']);}
 }
 function page(fetch,storage=new Map(),urlApi=URL){
@@ -69,4 +70,19 @@ test('read-only full-page inspection separates 85 drafts / 739 files from 3 case
  await find('เคสแยก (3)').onclick();assert.equal(revoked,2);assert.equal(groupSearch.value,'');assert.equal(allNodes().filter(n=>n.attrs['data-draft-group']).length,3);assert.ok(allNodes().some(n=>n.textContent==='Folk Synthetic · 14 ไฟล์'));
  const links=allNodes().filter(n=>n.tag==='a');assert.ok(links.every(n=>/^https:\/\/(drive.google.com|airtable.com)\//.test(n.href)));assert.ok(actions.every(x=>['review_draft_queue','review_draft_detail','review_media'].includes(x)));assert.equal(allNodes().some(n=>n.tag==='button'&&/บันทึก|อนุมัติ|เผยแพร่/.test(n.textContent||'')),false);
  find('ปิดหน้าตรวจ').onclick();assert.equal(modal.open,false);assert.equal(allNodes().some(n=>n.tag==='img'||n.tag==='video'),false);
+});
+
+test('model inspection requires reason, freezes duplicate clicks, retries one operation, renders history and leaves cases read-only',async()=>{
+ const item={id:'rec00000000004000',kind:'model',model_id:'rec00000000005000',name:'Synthetic reviewer test',category:'up_country',source_path:'Synthetic/Test',folder_id:'synthetic_test_folder',media_count:0},exception={...item,id:'rec00000000006000',kind:'exception',name:'Synthetic separated case'};
+ let log=[],revision='a'.repeat(64),lost=false,saves=0,release;const inputs=[];
+ const fetch=async(_,init)=>{const input=JSON.parse(init.body);inputs.push(input);
+  if(input.action==='review_draft_queue')return Response.json({ok:true,read_only:true,publication:false,items:[item,exception]});
+  if(input.action==='review_draft_detail')return Response.json({ok:true,read_only:true,publication:false,item:input.record_id===item.id?item:exception,model:input.record_id===item.id?{id:item.model_id}:null,media:[],evidence:{source_folder_id:item.folder_id,source_path:item.source_path,summary:'Synthetic only',recorded_at:'2026-11-01T00:00:00Z',observed_paths:[],registry_candidates:[]},inspection:input.record_id===item.id?{revision,current:log.at(-1)||null,history:log,history_limit:100,can_save:true}:null});
+  if(input.action==='review_draft_save'){saves++;if(!lost){lost=true;log.push({operation_id:input.operation_id,result:input.result,reason:input.reason,actor:'synthetic-owner',at:'2026-11-01T00:00:00Z'});revision='b'.repeat(64);await new Promise(r=>release=r);throw Error('Lost committed response');}assert.equal(input.operation_id,log[0].operation_id);return Response.json({ok:true,publication:false,pending_review:true,already_saved:true,inspection:{revision,current:log[0],history:log,history_limit:100,can_save:true}});}
+  throw Error('Unexpected mutation');
+ };
+ const p=page(fetch),nodes=()=>descendants(p.body),find=text=>nodes().find(n=>n.textContent===text),attr=value=>nodes().find(n=>n.attrs['aria-label']===value);
+ await descendants(p.panel).find(n=>n.textContent==='เปิดหน้าตรวจโมเดลร่าง').onclick();const save=find('บันทึกผลตรวจ · ยังรออนุมัติ');await save.onclick();assert.equal(saves,0);assert.ok(nodes().some(n=>n.textContent==='เลือกผลตรวจและกรอกเหตุผลก่อนบันทึก'));
+ attr('ผลตรวจโมเดลร่าง').value='needs_more_evidence';attr('เหตุผลการตรวจโมเดลร่าง').value='Synthetic <script> must remain plain text';const pending=save.onclick();assert.equal(save.disabled,true);await save.onclick();assert.equal(saves,1);assert.equal(find('ปิดหน้าตรวจ').disabled,true);release();await pending;assert.equal(saves,2);assert.equal(log.length,1);assert.equal(save.disabled,false);assert.equal(attr('เหตุผลการตรวจโมเดลร่าง').value,'');assert.ok(nodes().some(n=>n.textContent?.includes('รายการนี้บันทึกไว้แล้ว')));assert.ok(nodes().some(n=>n.tag==='li'&&n.textContent.includes('Synthetic <script>')));
+ await find('เคสแยก (1)').onclick();assert.equal(nodes().some(n=>n.attrs['data-model-inspection']!==undefined),false);assert.ok(inputs.every(i=>!('approve'in i)&&!('model_id'in i)&&!('actor'in i)));
 });
