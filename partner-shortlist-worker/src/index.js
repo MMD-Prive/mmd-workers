@@ -1,3 +1,4 @@
+import { scoped, eligible, filters, matches, TTL } from "./pero-policy.js";
 // Job-scoped sharing only. The existing owner media/library APIs remain private.
 export const OWNER_API = "/v1/admin/model-selections";
 export const PARTNER_API = "/v1/partner/model-selections";
@@ -148,26 +149,26 @@ function shareUrl(request, id, token) {
 }
 function ownerView(value) {
   return { id: value.id, title: value.title, revision: value.revision, state: value.state,
-    expiresAt: value.expiresAt, createdAt: value.createdAt, updatedAt: value.updatedAt,
+    policy: value.policy || null, activatedAt: value.activatedAt || null, expiresAt: value.expiresAt, createdAt: value.createdAt, updatedAt: value.updatedAt,
     brief: value.brief, ownerOnly: value.ownerOnly, selection: value.selection,
     models: value.models.map(model => ({ id: model.id, canonicalModelId: model.canonicalModelId, historyReviewedAt: model.historyReviewedAt, ...model.display,
       photos: model.photos.map(photo => ({ id: photo.id, source: photo.source, assetId: photo.assetId,
         shareAllowed: photo.shareAllowed, downloadAllowed: photo.downloadAllowed, bytes: photo.bytes,
         contentType: photo.contentType, previewPath: OWNER_API + "/" + value.id + "/media/" + photo.id })) })) };
 }
-function partnerView(value) {
+function partnerView(value, permittedModels = null) {
   const selected = value.selection;
   const banned = new Set(value.ownerOnly?.excludedCanonicalModelIds || []);
-  const visibleModels = value.models.filter(model => !banned.has(model.canonicalModelId));
+  const visibleModels = (permittedModels || value.models).filter(model => !banned.has(model.canonicalModelId));
   const currentModels = new Set(visibleModels.map(model => model.id));
   const currentPhotos = new Set(visibleModels.flatMap(model => model.photos.filter(photo => photo.shareAllowed === true).map(photo => photo.id)));
   const validSelection = selected && selected.modelIds.every(id => currentModels.has(id)) && selected.photoIds.every(id => currentPhotos.has(id));
-  return { ok: true, jobId: value.id, title: value.title, revision: value.revision,
+  return { ok: true, ...(scoped(value)?{scope:"standard-pn-60m"}:{}), jobId: value.id, title: value.title, revision: value.revision,
     expiresAt: value.expiresAt, brief: brief(value.brief), selection: validSelection ? {
       receiptId: selected.receiptId, modelIds: selected.modelIds, photoIds: selected.photoIds,
       note: selected.note, submittedAt: selected.submittedAt,
     } : null,
-    models: visibleModels.map(model => ({ id: model.id, ...display(model.display), photos: model.photos
+    models: visibleModels.map(model => ({ id: model.id, ...display(model.display), ...(scoped(value) ? {match: model.match, approximate: true} : {}), photos: model.photos
       .filter(photo => photo.shareAllowed === true).map(photo => ({ id: photo.id, downloadAllowed: photo.downloadAllowed === true,
         previewPath: PARTNER_API + "/" + value.id + "/media/" + photo.id,
         ...(photo.downloadAllowed === true ? { downloadPath: PARTNER_API + "/" + value.id + "/media/" + photo.id + "/download" } : {}) })) })) };
@@ -175,15 +176,29 @@ function partnerView(value) {
 async function partnerEntry(request, env, id) {
   const bearer = request.headers.get("authorization") || "";
   if (!/^Bearer [A-Za-z0-9_-]{43}$/.test(bearer)) fail("invalid_link", 401);
-  const entry = await read(env, id);
+  let entry = await read(env, id);
   const tokenHash = await hash(bearer.slice(7));
   if (tokenHash !== entry.value.tokenHash) fail("invalid_link", 401);
   if (entry.value.state !== "active" || Date.parse(entry.value.expiresAt) <= Date.now()) fail("link_closed", 410);
+  if (scoped(entry.value)) {
+    if (entry.value.policy !== 'standard-pn-60m') fail('scope_upgrade_required', 403);
+    if (!entry.value.activatedAt) {
+      const activatedAt = now();
+      const updated = await save(env, entry, {...entry.value, activatedAt,
+        expiresAt: new Date(Math.min(Date.parse(entry.value.expiresAt), Date.now()+TTL)).toISOString()});
+      entry = await read(env, id);
+      if (entry.value.tokenHash !== tokenHash || entry.value.state !== 'active') fail('link_closed',410);
+    }
+    if (Date.parse(entry.value.activatedAt)+TTL <= Date.now()) fail('link_closed',410);
+  }
   return entry;
 }
 async function media(request, env, value, photoId, download, isOwner) {
   let photo;
-  for (const model of value.models) photo ||= model.photos.find(item => item.id === photoId);
+  for (const model of value.models) {
+    if (!isOwner && ((value.ownerOnly?.excludedCanonicalModelIds || []).includes(model.canonicalModelId) || (scoped(value) && !eligible(model,value)))) continue;
+    photo ||= model.photos.find(item => item.id === photoId);
+  }
   if (!photo || (!isOwner && photo.shareAllowed !== true)) fail("not_found", 404);
   if (!isOwner && download && photo.downloadAllowed !== true) fail("download_not_allowed", 403);
   const original = isOwner || download, variant = original ? photo : photo.preview;
@@ -258,6 +273,14 @@ async function importModel(request, env, cookie, entry, input) {
   if (!RECORD.test(input.canonicalModelId || "")) fail("invalid_model_source");
   if ((entry.value.ownerOnly?.excludedCanonicalModelIds || []).includes(input.canonicalModelId)) fail("model_excluded", 403);
   const shown = display(input.display);
+  let qualification;
+  if (scoped(entry.value)) {
+    const q=input.qualification;
+    if (!object(q) || q.category!=='standard' || q.pn!==true || q.straight!==true || q.accepting!==true) fail('standard_pn_review_required',400);
+    qualification={category:'standard',pn:true,straight:true,accepting:true,body:text(q.body,80),skin:text(q.skin,80)};
+    shown.format='PN';
+    if (!eligible({canonicalModelId:input.canonicalModelId,qualification,historyReviewedAt:now(),display:shown},entry.value)) fail('model_excluded',403);
+  }
   if (!Array.isArray(input.photos) || !input.photos.length || input.photos.length > 30) fail("invalid_photos");
   const old = entry.value.models.find(model => model.canonicalModelId === input.canonicalModelId);
   if (!old && entry.value.models.length >= 30) fail("too_many_models");
@@ -294,7 +317,7 @@ async function importModel(request, env, cookie, entry, input) {
     if (!previewSaved) fail("media_store_conflict", 409);
     photos.push({ id, ...spec, shareAllowed: true, contentType, bytes: data.length, sha256, preview: preview.metadata, approvedAt: now() });
   }
-  const model = { id: old?.id || randomId(), canonicalModelId: input.canonicalModelId, historyReviewedAt: now(), display: shown, photos };
+  const model = { id: old?.id || randomId(), canonicalModelId: input.canonicalModelId, historyReviewedAt: now(), ...(qualification ? {qualification}:{}), display: shown, photos };
   const models = old ? entry.value.models.map(item => item.id === old.id ? model : item) : [...entry.value.models, model];
   const selection = old && entry.value.selection?.modelIds.includes(old.id) ? null : entry.value.selection;
   return save(env, entry, { ...entry.value, models, selection });
@@ -306,6 +329,7 @@ export async function buildRecord(input) {
   const record = { schema: "partner_shortlist_v1", id, revision: 1, state: "active", title: text(input.title, 100, true),
     brief: brief(input.brief), ownerOnly: ownerOnly(input.ownerOnly || {}), expiresAt: expiry(input.expiresAt),
     models: [], selection: null, receipts: [], tokenHash: await hash(token), createdAt, updatedAt: createdAt };
+  if (input.policy === 'standard-pn-60m') { record.policy=input.policy;record.activatedAt=null;record.brief.format='PN'; }
   return { record, token };
 }
 async function ownerRoute(request, env, parts) {
@@ -330,6 +354,11 @@ async function ownerRoute(request, env, parts) {
   if (parts.length === 1 && ["GET", "HEAD"].includes(method)) return json({ ok: true, item: ownerView(value) });
   if (parts.length === 1 && method === "PATCH") {
     const input = await body(request); compareRevision(value, input); const next = { ...value };
+    if (own(input, 'policy')) {
+      if (input.policy !== 'standard-pn-60m') fail('invalid_policy');
+      next.policy=input.policy; next.activatedAt=null;next.brief={...next.brief,format:'PN'};
+      next.tokenHash=await hash(randomToken()); // old wider links must stop; rotate explicitly to issue a new link
+    }
     if (own(input, "title")) next.title = text(input.title, 100, true);
     if (own(input, "brief")) next.brief = brief(input.brief);
     if (own(input, "ownerOnly")) next.ownerOnly = ownerOnly(input.ownerOnly, value.ownerOnly);
@@ -339,12 +368,13 @@ async function ownerRoute(request, env, parts) {
       if (input.state === "active" && value.state !== "active") fail("rotate_to_reopen", 409);
       next.state = input.state;
     }
+    if(scoped(next)) next.brief={...next.brief,format:"PN"};
     return json({ ok: true, item: ownerView(await save(env, entry, next)) });
   }
   if (parts[1] === "rotate" && parts.length === 2 && method === "POST") {
     const input = await body(request); compareRevision(value, input);
     if (Date.parse(value.expiresAt) <= Date.now()) fail("update_expiry_first", 409);
-    const token = randomToken(), next = await save(env, entry, { ...value, state: "active", tokenHash: await hash(token) });
+    const token = randomToken(), next = await save(env, entry, { ...value, state: "active", tokenHash: await hash(token), ...(scoped(value)?{activatedAt:null}:{}) });
     return json({ ok: true, item: ownerView(next), url: shareUrl(request, value.id, token) });
   }
   if (parts[1] === "models" && parts.length === 2 && method === "POST") return json({ ok: true, item: ownerView(await importModel(request, env, cookie, entry, await body(request))) });
@@ -363,11 +393,18 @@ function idList(value, max) {
 async function partnerRoute(request, env, parts) {
   if (!parts.length) fail("not_found", 404);
   const entry = await partnerEntry(request, env, parts[0]), value = entry.value, method = request.method;
-  if (parts[1] === "view" && parts.length === 2 && ["GET", "HEAD"].includes(method)) return json(partnerView(value));
-  if (parts[1] === "media" && ID.test(parts[2] || "") && (parts.length === 3 || (parts.length === 4 && parts[3] === "download")) && ["GET", "HEAD"].includes(method)) return media(request, env, value, parts[2], parts[3] === "download", false);
+  let allowedModels = value.models.filter(m=>!(value.ownerOnly?.excludedCanonicalModelIds||[]).includes(m.canonicalModelId));
+  if(scoped(value)) {
+    let f;try {f=filters(new URL(request.url).searchParams)}catch {fail('invalid_filters',400)}
+    allowedModels=matches(value,f);
+  }
+  const projected={...value,models:allowedModels};
+  if (parts[1] === "view" && parts.length === 2 && ["GET", "HEAD"].includes(method)) return json(partnerView(value,allowedModels));
+  if (parts[1] === "media" && ID.test(parts[2] || "") && (parts.length === 3 || (parts.length === 4 && parts[3] === "download")) && ["GET", "HEAD"].includes(method)) return media(request, env, projected, parts[2], parts[3] === "download", false);
   if (parts[1] === "brief" && parts.length === 2 && method === "POST") {
     const input = await body(request); compareRevision(value, input);
-    const next = await save(env, entry, { ...value, brief: brief(input.brief) });
+    const updatedBrief=brief(input.brief); if(scoped(value))updatedBrief.format="PN";
+    const next = await save(env, entry, { ...value, brief: updatedBrief });
     return json({ ok: true, revision: next.revision, brief: next.brief });
   }
   if (parts[1] === "selection" && parts.length === 2 && method === "POST") {
@@ -382,7 +419,7 @@ async function partnerRoute(request, env, parts) {
     }
     compareRevision(value, input);
     if (value.receipts.length >= 100) fail("submission_limit", 429);
-    const models = modelIds.map(id => value.models.find(model => model.id === id));
+    const models = modelIds.map(id => allowedModels.find(model => model.id === id));
     if (models.some(model => !model || model.display.status === "unavailable")) fail("selection_not_available", 409);
     const permitted = new Set(models.flatMap(model => model.photos.filter(photo => photo.shareAllowed).map(photo => photo.id)));
     if (photoIds.some(id => !permitted.has(id))) fail("photo_not_in_selection", 403);
@@ -410,3 +447,4 @@ export async function handleShortlist(request, env = {}) {
   }
 }
 export default { fetch: handleShortlist };
+

@@ -415,3 +415,35 @@ test("job-scoped Benz exclusion survives owner brief edits and rejects imported 
   assert.ok(!("ownerOnly" in safe));
   assert.doesNotMatch(JSON.stringify(safe),/excludedCanonicalModelIds|9000/);
 });
+
+
+test('Standard scope starts once, reveals only filtered models and denies excluded media', async()=>{
+ const f=fixture(), c=await f.create();
+ let response=await f.owner(O+'/'+c.id,'PATCH',{revision:1,policy:'standard-pn-60m'});
+ let item=(await response.json()).item;
+ assert.equal((await f.partner(c.id,c.token)).status,401);
+ response=await f.owner(O+'/'+c.id+'/rotate','POST',{revision:item.revision});
+ let rotated=await response.json(), token=new URLSearchParams(new URL(rotated.url).hash.slice(1)).get('t');
+ const noReview=await f.owner(O+'/'+c.id+'/models','POST',f.importInput(rotated.item.revision));
+ assert.equal(noReview.status,400);
+ item=await f.addModel({...c,item:rotated.item},{qualification:{category:'standard',pn:true,straight:true,accepting:true}});
+ let view=await (await f.partner(c.id,token)).json();
+ assert.equal(view.models.length,0);
+ const expires=view.expiresAt;
+ assert.ok(Date.parse(expires)-Date.now()<=3600000);
+ assert.equal((await (await f.partner(c.id,token)).json()).expiresAt,expires);
+ view=await (await f.partner(c.id,token,'view?search=1&heightMin=181&heightMax=185')).json();
+ assert.equal(view.models.length,1);assert.equal(view.models[0].match,'near');
+ const photo=view.models[0].photos[0].id;
+ assert.equal((await f.partner(c.id,token,'media/'+photo)).status,404);
+ assert.equal((await f.partner(c.id,token,'media/'+photo+'?search=1&heightMin=181')).status,200);
+ assert.equal((await f.partner(c.id,token,'view?search=1&tier=premium')).status,400);
+ assert.equal((await (await f.partner(c.id,token,'view?search=1&heightMin=190')).json()).models.length,0);
+ const key=PREFIX+'records/'+c.id+'.json';let record=await (await f.bucket.get(key)).json();
+ record.ownerOnly.excludedCanonicalModelIds=[canonicalId];await f.bucket.put(key,JSON.stringify(record));
+ assert.equal((await f.partner(c.id,token,'media/'+photo+'?search=1')).status,404);
+ assert.equal((await (await f.partner(c.id,token,'view?search=1')).json()).models.length,0);
+ record.ownerOnly.excludedCanonicalModelIds=[];record.activatedAt=new Date(Date.now()-3600001).toISOString();record.expiresAt=new Date(Date.now()+86400000).toISOString();await f.bucket.put(key,JSON.stringify(record));
+ assert.equal((await f.partner(c.id,token,'view?search=1')).status,410);
+ assert.equal((await f.partner(c.id,token,'media/'+photo+'?search=1','HEAD')).status,410);
+});
