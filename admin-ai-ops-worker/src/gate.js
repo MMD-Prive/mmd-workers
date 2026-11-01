@@ -478,6 +478,7 @@ const MEDIA_FLUSH_CLIENT_LAYER = String.raw`;(()=>{'use strict';
   function repairOpsReadability(host){
     const paint=(el,bg,color,size='16px')=>{if(!el?.style?.setProperty)return;for(const [key,value] of Object.entries({background:bg,color,'-webkit-text-fill-color':color,'font-size':size,'line-height':'1.6','letter-spacing':'normal'}))el.style.setProperty(key,value,'important');};
     paint(host,'#ffffff','#202936');
+    for(const text of document.querySelectorAll('.mmd-aiops-h b,.mmd-aiops-h small'))paint(text,'transparent','#ffffff',text.tagName==='SMALL'?'14px':'18px');
     for(const card of host.querySelectorAll('.mmd-aiops-item,.mmd-aiops-a,.mmd-aiops-card')){const warn=card.classList?.contains('mmd-aiops-warn'),bg=warn?'#fff7ed':'#ffffff',color=warn?'#744210':'#202936';paint(card,bg,color);for(const text of card.querySelectorAll('b,strong,small,span,p'))paint(text,'transparent',color);}
     for(const title of host.querySelectorAll('.mmd-aiops-k'))paint(title,'transparent','#704815','14px');
     for(const meta of host.querySelectorAll('.mmd-aiops-meta,.mmd-aiops-sub'))paint(meta,'transparent','#4b5563','14px');
