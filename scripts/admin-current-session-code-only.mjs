@@ -20,6 +20,142 @@ const ordered = value => [...value].sort((a, b) => canonical(a).localeCompare(ca
 const same = (a, b, reason) => assert.equal(canonical(a), canonical(b), reason);
 const sha256 = value => createHash('sha256').update(value).digest('hex');
 
+// One audited historical baseline. These identifiers are not a general fallback
+// for missing annotations; neither a tag nor a timestamp proves source identity.
+export const BASELINE_CI_RECEIPT = Object.freeze({
+  repository: 'MMD-Prive/mmd-workers', repositoryId: 1121397236,
+  sourceSha: '339c6009f9974815ff0bd777f019b7442b730df5',
+  versionId: '5e18fc0a-fa8c-478a-8dc0-17122b25ba10',
+  deploymentId: '100ea975-2603-471d-835b-a718a38ea631',
+  runId: 41283302297, attempt: 1, workflowId: 333112512,
+  workflowPath: '.github/workflows/deploy-admin-worker.yml',
+  jobId: 124779493737, jobName: 'validate-and-deploy',
+});
+const CI = BASELINE_CI_RECEIPT;
+const CI_RUN = `repos/${CI.repository}/actions/runs/${CI.runId}`;
+const CI_JOB = `repos/${CI.repository}/actions/jobs/${CI.jobId}`;
+
+// gh performs GETs only, captures output in memory and follows GitHub's log
+// download redirect. No credential or raw log is printed or persisted here.
+export function readBaselineCiGithub(path, execute = execFileSync) {
+  assert.ok([CI_RUN, CI_JOB, CI_JOB + '/logs'].includes(path), 'unapproved baseline receipt endpoint');
+  assert.ok(process.env.GH_TOKEN, 'GitHub receipt-read credential required');
+  try {
+    // Historical test output contains ANSI sequences. Permit capture into the
+    // pipe only; the verifier never forwards those bytes to a terminal/receipt.
+    const output = execute('gh', ['api', '--hostname', 'github.com', '--method', 'GET',
+      ...(path.endsWith('/logs') ? ['--allow-escape-sequences'] : []), path], {
+      encoding: 'utf8', maxBuffer: 2 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'],
+      env: { ...process.env, GH_HOST: 'github.com', GH_DEBUG: '' },
+    });
+    return path.endsWith('/logs') ? output : JSON.parse(output);
+  } catch { throw new Error('baseline CI receipt unavailable; no upload permitted'); }
+}
+
+function requireAuditedBaseline(version, deployment) {
+  assert.equal(version?.id, CI.versionId, 'missing annotation on an unaudited baseline');
+  assert.equal(deployment?.id, CI.deploymentId, 'baseline receipt deployment mismatch');
+  assert.equal(activeVersion(deployment), CI.versionId, 'baseline receipt allocation mismatch');
+}
+
+export function validateBaselineCiReceipt({ version, deployment, run, job, log }) {
+  requireAuditedBaseline(version, deployment);
+  for (const repository of [run?.repository, run?.head_repository]) {
+    assert.equal(repository?.full_name, CI.repository, 'baseline receipt repository mismatch');
+    assert.equal(repository?.id, CI.repositoryId, 'baseline receipt repository identity mismatch');
+  }
+  assert.equal(run?.id, CI.runId, 'baseline receipt run mismatch');
+  assert.equal(run?.run_attempt, CI.attempt, 'baseline receipt attempt mismatch');
+  assert.equal(run?.workflow_id, CI.workflowId, 'baseline receipt workflow mismatch');
+  assert.equal(run?.path, CI.workflowPath, 'baseline receipt workflow path mismatch');
+  assert.equal(run?.event, 'workflow_dispatch', 'baseline receipt was not a manual release');
+  assert.equal(run?.head_branch, 'main', 'baseline receipt branch mismatch');
+  assert.equal(run?.head_sha, CI.sourceSha, 'baseline receipt source mismatch');
+  assert.equal(run?.status, 'completed', 'baseline receipt run incomplete');
+  assert.equal(run?.conclusion, 'success', 'baseline receipt run did not succeed');
+  assert.equal(job?.id, CI.jobId, 'baseline receipt job mismatch');
+  assert.equal(job?.run_id, CI.runId, 'baseline receipt job/run mismatch');
+  assert.equal(job?.run_attempt, CI.attempt, 'baseline receipt job attempt mismatch');
+  assert.equal(job?.head_sha, CI.sourceSha, 'baseline receipt job source mismatch');
+  assert.equal(job?.name, CI.jobName, 'baseline receipt job name mismatch');
+  assert.equal(job?.status, 'completed', 'baseline receipt job incomplete');
+  assert.equal(job?.conclusion, 'success', 'baseline receipt job did not succeed');
+  for (const name of ['Check out repository', 'Run tests and source validation',
+    'Pin Kenji admin shell assets to deploy SHA', 'Validate Cloudflare version upload',
+    'Upload admin-worker version', 'Resolve uploaded version ID',
+    'Deploy uploaded admin-worker version', 'Require verified live deployment']) {
+    const steps = job.steps?.filter(step => step.name === name);
+    assert.equal(steps?.length, 1, 'baseline receipt critical step missing or ambiguous');
+    assert.equal(steps[0].conclusion, 'success', 'baseline receipt critical step failed');
+  }
+  const migration = job.steps?.filter(step => step.name === 'Apply Durable Object migration with direct deploy');
+  assert.equal(migration?.length, 1, 'baseline receipt migration outcome missing');
+  assert.equal(migration[0].conclusion, 'skipped', 'baseline receipt used migration fallback');
+  assert.ok(typeof log === 'string' && log.length > 0 && Buffer.byteLength(log) <= 2 * 1024 * 1024,
+    'baseline receipt log missing or oversized');
+  const records = log.replace(/\r\n/g, '\n').split('\n').map(line => {
+    const match = /^(\d{4}-\d{2}-\d{2}T[\d:.]+Z) (.*)$/.exec(line);
+    return match ? { at: match[1], text: match[2] } : null;
+  }).filter(Boolean);
+  const one = pattern => {
+    const matches = records.map((record, index) => ({ ...record, index })).filter(record => pattern.test(record.text));
+    assert.equal(matches.length, 1, 'baseline receipt record missing or ambiguous');
+    return matches[0];
+  };
+  const checkout = one(/^\[command\]\/usr\/bin\/git log -1 --format=%H$/);
+  assert.equal(records[checkout.index + 1]?.text, CI.sourceSha, 'checkout receipt source mismatch');
+  const pinned = one(/^Pinned Kenji admin shell JS\/CSS to [a-f0-9]{40}$/);
+  assert.equal(pinned.text, `Pinned Kenji admin shell JS/CSS to ${CI.sourceSha}`, 'baseline build pin mismatch');
+  const upload = one(/^Worker Version ID: [a-f0-9-]+$/);
+  assert.equal(upload.text, `Worker Version ID: ${CI.versionId}`, 'upload receipt version mismatch');
+  const resolved = one(/^Resolved version [a-f0-9-]+ from versions upload output$/);
+  assert.equal(resolved.text, `Resolved version ${CI.versionId} from versions upload output`, 'resolved version mismatch');
+  const receipts = records.map((record, index) => {
+    try { return { ...record, index, value: JSON.parse(record.text) }; } catch { return null; }
+  }).filter(record => record?.value?.worker === 'admin-worker');
+  assert.equal(receipts.length, 1, 'deployment receipt missing or ambiguous');
+  const promoted = receipts[0];
+  assert.ok(canonical(promoted.value) === canonical({ ok: true, worker: 'admin-worker',
+    version: CI.versionId, deployment: CI.deploymentId }), 'deployment receipt linkage mismatch');
+  const chain = [checkout, pinned, upload, resolved, promoted];
+  for (let i = 0; i < chain.length; i++) {
+    assert.ok(Number.isFinite(Date.parse(chain[i].at)), 'baseline receipt timestamp invalid');
+    if (i) assert.ok(chain[i].index > chain[i - 1].index && Date.parse(chain[i].at) >= Date.parse(chain[i - 1].at),
+      'baseline receipt ordering mismatch');
+  }
+  return {
+    method: 'audited-github-ci-receipt', baseline_source_sha: CI.sourceSha,
+    baseline_ci: { repository: CI.repository, run_id: CI.runId, run_attempt: CI.attempt,
+      job_id: CI.jobId, workflow_path: CI.workflowPath, version_id: CI.versionId,
+      deployment_id: CI.deploymentId, checkout_at: checkout.at, upload_at: upload.at, deployment_at: promoted.at,
+      build_transformations: ['kenji-shell-assets-pinned-to-source-sha'], artifact_digest_verified: false },
+  };
+}
+
+export async function baselineSourceEvidence(version, deployment, readGithub = readBaselineCiGithub) {
+  const annotated = version?.annotations?.['workers/commit_sha'];
+  if (annotated !== undefined) {
+    assert.match(annotated || '', /^[a-f0-9]{40}$/, 'invalid baseline source annotation');
+    return { method: 'version-commit-annotation', baseline_source_sha: annotated };
+  }
+  requireAuditedBaseline(version, deployment); // Reject unknown baselines before any receipt request.
+  const run = await readGithub(CI_RUN);
+  const job = await readGithub(CI_JOB);
+  const log = await readGithub(CI_JOB + '/logs');
+  return validateBaselineCiReceipt({ version, deployment, run, job, log });
+}
+
+export async function verifyBaselineSourceForRelease({ version, deployment, sourceState, sha, git, readGithub }) {
+  assert.match(sha || '', /^[a-f0-9]{40}$/, 'full candidate SHA required');
+  assert.equal(sourceState?.commit_sha, sha, 'candidate checkout SHA mismatch');
+  assert.equal(sourceState?.dirty_tree, false, 'dirty candidate checkout');
+  const evidence = await baselineSourceEvidence(version, deployment, readGithub);
+  git('merge-base', '--is-ancestor', evidence.baseline_source_sha, sha);
+  assert.equal(git('diff', evidence.baseline_source_sha, sha, '--', 'admin-worker/wrangler.toml'), '',
+    'source configuration or migration changed; separate release approval required');
+  return { ...sourceState, ...evidence, candidate_source_sha: sha, configuration_diff: false };
+}
+
 export function validateSourceState({ expectedSha, headSha, dirtyStatus }) {
   assert.match(expectedSha || '', /^[a-f0-9]{40}$/, 'full source SHA required');
   assert.equal(headSha, expectedSha, 'checkout SHA mismatch');
@@ -155,7 +291,7 @@ export async function releaseCurrentSession(io) {
     const config = versionConfiguration(version);
     const metadata = (io.metadataFactory ?? uploadMetadata)(version, io.sha);
     // A stale build variable or temporal proximity is not source provenance.
-    state.source_evidence = await io.sourceCheck(version);
+    state.source_evidence = await io.sourceCheck(version, deployment);
     state.source_evidence.checked_at = io.now();
     const settings = await call('/script-settings');
     assert.ok(settings && typeof settings === 'object', 'settings unavailable');
@@ -296,15 +432,9 @@ async function main() {
     expectedDeployment: process.env.EXPECTED_DEPLOYMENT,
     releaseId,
     call: createTransport(process.env.CLOUDFLARE_API_TOKEN),
-    sourceCheck: async baseline => {
-      const source = baseline.annotations?.['workers/commit_sha'];
-      assert.match(source || '', /^[a-f0-9]{40}$/, 'baseline source provenance missing; independent code-equivalence audit required');
-      git('merge-base', '--is-ancestor', source, sha);
-      assert.equal(git('diff', source, sha, '--', 'admin-worker/wrangler.toml'), '',
-        'source configuration or migration changed; separate release approval required');
-      return { ...sourceState, method: 'version-commit-annotation', baseline_source_sha: source,
-        candidate_source_sha: sha, configuration_diff: false };
-    },
+    sourceCheck: (baseline, deployment) => verifyBaselineSourceForRelease({
+      version: baseline, deployment, sourceState, sha, git,
+    }),
     buildEvidence: code => collectBuildEvidence(code, dir, releaseId),
     now: () => new Date().toISOString(),
     save: state => writeFileSync(journal, JSON.stringify(state, null, 2), { mode: 0o600 }),
