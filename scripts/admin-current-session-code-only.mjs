@@ -163,18 +163,22 @@ export function validateSourceState({ expectedSha, headSha, dirtyStatus }) {
   return { commit_sha: expectedSha, dirty_tree: false, dirty_path_count: 0 };
 }
 
-export function createBuildEvidence({ code, releaseId, nodeVersion, wranglerVersion, lockfile, wranglerConfig }) {
+export function createBuildEvidence({ code, releaseId, nodeVersion, wranglerVersion, lockfile, wranglerConfig, shellAssetPinSha }) {
   assert.ok(code instanceof Uint8Array && code.byteLength > 0, 'compiled module required');
   assert.match(releaseId || '', /^\d+\.\d+$/, 'workflow run identity required');
   assert.match(nodeVersion || '', /^v22\./, 'unexpected Node.js toolchain');
   assert.equal(wranglerVersion, '4.105.0', 'unexpected Wrangler toolchain');
   assert.ok(lockfile instanceof Uint8Array && lockfile.byteLength > 0, 'dependency lockfile required');
   assert.ok(wranglerConfig instanceof Uint8Array && wranglerConfig.byteLength > 0, 'build configuration required');
+  if (shellAssetPinSha !== undefined) assert.match(shellAssetPinSha, /^[a-f0-9]{40}$/, 'full shell asset pin SHA required');
   const module = { name: 'admin-login-hero-worker.js', bytes: code.byteLength,
     digest: { algorithm: 'sha256', value: sha256(code) } };
   const moduleManifest = [module];
   return {
     release_id: releaseId,
+    ...(shellAssetPinSha === undefined ? {} : { build_transformations: [{
+      kind: 'kenji-shell-assets-pinned-to-source-sha', source_sha: shellAssetPinSha, stage: 'compiled-module-before-digest',
+    }] }),
     toolchain: { node: nodeVersion, wrangler: wranglerVersion },
     lockfile: { path: 'package-lock.json', digest: { algorithm: 'sha256', value: sha256(lockfile) } },
     additional_inputs: [{ path: 'generated-wrangler-config.json', digest: { algorithm: 'sha256', value: sha256(wranglerConfig) } }],
@@ -183,9 +187,16 @@ export function createBuildEvidence({ code, releaseId, nodeVersion, wranglerVers
   };
 }
 
+function validateShellAssetPin(build, sourceSha) {
+  if (build?.build_transformations !== undefined) same(build.build_transformations, [{
+    kind: 'kenji-shell-assets-pinned-to-source-sha', source_sha: sourceSha, stage: 'compiled-module-before-digest',
+  }], 'shell asset pin does not match released source');
+}
+
 export function validateReceiptLinks({ source, build, upload, deployment }) {
   assert.match(source?.commit_sha || '', /^[a-f0-9]{40}$/, 'source commit missing from receipt');
   assert.equal(source.dirty_tree, false, 'dirty source cannot be released');
+  validateShellAssetPin(build, source.commit_sha);
   assert.ok(build?.release_id && build.artifact?.digest?.algorithm === 'sha256'
     && /^[a-f0-9]{64}$/.test(build.artifact.digest.value), 'artifact build receipt missing');
   assert.ok(UUID.test(upload?.version_id || ''), 'upload response version missing');
@@ -315,11 +326,12 @@ export async function releaseCurrentSession(io) {
     await unchanged(deployment, active); // inherit resolves LATEST, not necessarily active.
     state.baseline_version = active;
     state.baseline_deployment = deployment.id;
-    const code = await io.bundle(version);
+    const code = await io.bundle(version, io.sha);
     assert.ok(code instanceof Uint8Array && code.byteLength > 0, 'compiled module required');
-    state.build_evidence = { ...await io.buildEvidence(code), recorded_at: io.now() };
+    state.build_evidence = { ...await io.buildEvidence(code, io.sha), recorded_at: io.now() };
     assert.ok(state.build_evidence?.artifact?.digest?.algorithm === 'sha256'
       && state.build_evidence.artifact.digest.value === sha256(code), 'artifact digest does not match uploaded module');
+    validateShellAssetPin(state.build_evidence, io.sha);
     state.release_id = state.build_evidence.release_id;
     state.bundle_sha256 = state.build_evidence.artifact.digest.value;
     await io.approve();
@@ -377,7 +389,25 @@ export function validateBundleFiles(files) {
     ['admin-login-hero-worker.js'], 'multi-module output requires separate review');
 }
 
-export function buildCurrentSessionBundle(baseline, dir) {
+// Apply the existing deploy workflow's SHA query pin to the compiled module,
+// before hashing/upload. Source files and the clean-tree gate remain untouched.
+export function pinKenjiShellAssets(code, sourceSha) {
+  assert.match(sourceSha || '', /^[a-f0-9]{40}$/, 'full shell asset pin SHA required');
+  assert.ok(code instanceof Uint8Array && code.byteLength > 0, 'compiled module required');
+  let text = Buffer.from(code).toString('utf8');
+  assert.ok(Buffer.from(text).equals(Buffer.from(code)), 'compiled module must be UTF-8');
+  for (const extension of ['css', 'js']) {
+    const url = `https://models.mmdbkk.com/webflow/internal/admin/kenji/kenji-admin-v1.${extension}`;
+    const parts = text.split(url);
+    assert.ok(parts.length === 2 && ['"', "'", '`'].includes(parts[1][0]),
+      'shell asset marker missing, duplicated or already versioned');
+    text = parts[0] + url + '?v=' + sourceSha + parts[1];
+  }
+  return Buffer.from(text);
+}
+
+export function buildCurrentSessionBundle(baseline, dir, sourceSha, execute = execFileSync) {
+  assert.match(sourceSha || '', /^[a-f0-9]{40}$/, 'full shell asset pin SHA required');
   const r = baseline.resources.script_runtime;
   const config = join(dir, 'bundle.json');
   writeFileSync(config, JSON.stringify({ name: 'admin-worker',
@@ -386,23 +416,23 @@ export function buildCurrentSessionBundle(baseline, dir) {
     send_metrics: false,
   }), { mode: 0o600 });
   try {
-    execFileSync('wrangler', ['versions', 'upload', '--dry-run', '--config', config, '--outdir', join(dir, 'bundle')], {
+    execute('wrangler', ['versions', 'upload', '--dry-run', '--config', config, '--outdir', join(dir, 'bundle')], {
       stdio: 'ignore', env: { ...process.env, CLOUDFLARE_API_TOKEN: '', CLOUDFLARE_API_KEY: '',
         WRANGLER_SEND_METRICS: 'false', WRANGLER_LOG_PATH: join(dir, 'wrangler.log') },
     });
   } catch { throw new Error('local bundle failed; no upload permitted'); }
   validateBundleFiles(readdirSync(join(dir, 'bundle')));
-  return readFileSync(join(dir, 'bundle', 'admin-login-hero-worker.js'));
+  return pinKenjiShellAssets(readFileSync(join(dir, 'bundle', 'admin-login-hero-worker.js')), sourceSha);
 }
 
-function collectBuildEvidence(code, dir, releaseId) {
+function collectBuildEvidence(code, dir, releaseId, shellAssetPinSha) {
   const versionOutput = execFileSync('wrangler', ['--version'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
   const match = versionOutput.match(/wrangler\s+([0-9]+\.[0-9]+\.[0-9]+)/i);
   assert.ok(match, 'Wrangler version could not be identified');
   const lockfile = readFileSync(resolve('package-lock.json'));
   const wranglerConfig = readFileSync(join(dir, 'bundle.json'));
   return createBuildEvidence({ code, releaseId, nodeVersion: process.version,
-    wranglerVersion: match[1], lockfile, wranglerConfig });
+    wranglerVersion: match[1], lockfile, wranglerConfig, shellAssetPinSha });
 }
 
 async function main() {
@@ -435,10 +465,10 @@ async function main() {
     sourceCheck: (baseline, deployment) => verifyBaselineSourceForRelease({
       version: baseline, deployment, sourceState, sha, git,
     }),
-    buildEvidence: code => collectBuildEvidence(code, dir, releaseId),
+    buildEvidence: (code, sourceSha) => collectBuildEvidence(code, dir, releaseId, sourceSha),
     now: () => new Date().toISOString(),
     save: state => writeFileSync(journal, JSON.stringify(state, null, 2), { mode: 0o600 }),
-    bundle: async baseline => buildCurrentSessionBundle(baseline, dir),
+    bundle: async (baseline, sourceSha) => buildCurrentSessionBundle(baseline, dir, sourceSha),
   });
   console.log('Code-only deployment readback complete; no business-write smoke was performed.');
 }

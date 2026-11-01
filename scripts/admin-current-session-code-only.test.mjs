@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { readFileSync } from 'node:fs';
-import { BASELINE_CI_RECEIPT, baselineSourceEvidence, readBaselineCiGithub, validateBaselineCiReceipt, verifyBaselineSourceForRelease, activeVersion, createBuildEvidence, createTransport, releaseCurrentSession, ROOT, uploadMetadata, validateBundleFiles, validateReceiptLinks, validateSourceState, ZONE } from './admin-current-session-code-only.mjs';
+import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, readdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createHash } from 'node:crypto';
+import { pinKenjiShellAssets, buildCurrentSessionBundle, BASELINE_CI_RECEIPT, baselineSourceEvidence, readBaselineCiGithub, validateBaselineCiReceipt, verifyBaselineSourceForRelease, activeVersion, createBuildEvidence, createTransport, releaseCurrentSession, ROOT, uploadMetadata, validateBundleFiles, validateReceiptLinks, validateSourceState, ZONE } from './admin-current-session-code-only.mjs';
 
 const id = n => `${String(n).padStart(8, '0')}-0000-4000-8000-000000000000`;
 const sha = 'a'.repeat(40);
@@ -432,4 +435,76 @@ test('unexpected data in a receipt never appears in a verifier error or output e
   const f = ciFixture();
   f.data.log = f.data.log.replace(`"deployment":"${ci.deploymentId}"`, `"deployment":"${ci.deploymentId}","payload":"private-marker"`);
   assert.throws(() => validateBaselineCiReceipt(f.data), error => !error.message.includes('private-marker'));
+});
+
+const shellCss = 'https://models.mmdbkk.com/webflow/internal/admin/kenji/kenji-admin-v1.css';
+const shellJs = 'https://models.mmdbkk.com/webflow/internal/admin/kenji/kenji-admin-v1.js';
+const shellModule = () => Buffer.from(`const css="${shellCss}"; const js='${shellJs}'; export default {};`);
+test('shell pin preserves both asset paths, changing only their source SHA query', () => {
+  const input = shellModule(); const original = Buffer.from(input);
+  const result = pinKenjiShellAssets(input, sha);
+  assert.equal(result.toString(), input.toString().replace(shellCss, shellCss + '?v=' + sha).replace(shellJs, shellJs + '?v=' + sha));
+  assert.deepEqual(input, original, 'input remains untouched');
+  const quoted = Buffer.from('const css=`' + shellCss + '`;const js=`' + shellJs + '`;');
+  assert.ok(pinKenjiShellAssets(quoted, sha).toString().includes(shellJs + '?v=' + sha));
+});
+for (const [name, input] of [
+  ['missing CSS', () => Buffer.from(`const js="${shellJs}";`)],
+  ['missing JS', () => Buffer.from(`const css="${shellCss}";`)],
+  ['duplicate marker', () => Buffer.concat([shellModule(), Buffer.from(`const duplicate="${shellCss}";`)])],
+  ['old pin', () => Buffer.from(shellModule().toString().replace(shellCss, shellCss + '?v=' + 'b'.repeat(40)))],
+  ['wrong path suffix', () => Buffer.from(shellModule().toString().replace(shellJs, shellJs + '.backup'))],
+  ['non UTF8', () => Buffer.concat([shellModule(), Buffer.from([255])])],
+]) test(`shell pin rejects ${name}`, () => assert.throws(() => pinKenjiShellAssets(input(), sha)));
+test('shell pin rejects absent, short or malformed SHA', () => {
+  for (const value of [undefined, '', 'abc123', 'g'.repeat(40)]) assert.throws(() => pinKenjiShellAssets(shellModule(), value));
+});
+test('local bundle pins before digest without editing source or invoking a real upload', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'mmd-shell-pin-test-'));
+  try {
+    const sourceBefore = readFileSync('admin-worker/src/index.js');
+    let calls = 0;
+    const baseline = {resources:{script_runtime:{compatibility_date:'2026-01-01'}}};
+    const execute = (command, args, options) => {
+      calls++; assert.equal(command, 'wrangler');
+      assert.deepEqual(args.slice(0,3), ['versions','upload','--dry-run']);
+      assert.equal(options.env.CLOUDFLARE_API_TOKEN, '');
+      assert.equal(options.env.CLOUDFLARE_API_KEY, '');
+      assert.equal(options.stdio, 'ignore');
+      mkdirSync(join(dir,'bundle')); writeFileSync(join(dir,'bundle','admin-login-hero-worker.js'), shellModule());
+    };
+    assert.throws(() => buildCurrentSessionBundle(baseline, dir, '', execute));
+    assert.equal(calls, 0);
+    const code = buildCurrentSessionBundle(baseline, dir, sha, execute);
+    assert.equal(calls, 1);
+    assert.deepEqual(readFileSync('admin-worker/src/index.js'), sourceBefore);
+    assert.deepEqual(readdirSync(dir).sort(), ['bundle','bundle.json']);
+    assert.deepEqual(readFileSync(join(dir,'bundle','admin-login-hero-worker.js')), shellModule());
+    assert.ok(code.toString().includes(shellCss + '?v=' + sha));
+    const build = createBuildEvidence({code,releaseId:'1001.1',nodeVersion:'v22.1.0',wranglerVersion:'4.105.0',
+      lockfile:Buffer.from('lock'),wranglerConfig:readFileSync(join(dir,'bundle.json')),shellAssetPinSha:sha});
+    assert.equal(build.artifact.digest.value, createHash('sha256').update(code).digest('hex'));
+    assert.notEqual(build.artifact.digest.value, createHash('sha256').update(shellModule()).digest('hex'));
+    assert.equal(build.build_transformations[0].source_sha, sha);
+    assert.equal(JSON.stringify(build).includes(shellCss), false);
+  } finally { rmSync(dir,{recursive:true,force:true}); }
+});
+test('pin failure stops release before any upload and leaves gates intact', async () => {
+  const f=fixture(); let receivedSha;
+  f.io.bundle=async (_version,sourceSha) => { receivedSha=sourceSha; return pinKenjiShellAssets(Buffer.from('export default {};'),sourceSha); };
+  await assert.rejects(releaseCurrentSession(f.io), /shell asset marker/);
+  assert.equal(receivedSha,sha); assert.equal(f.writes().length,0);
+});
+test('receipt rejects a shell pin linked to another source', async () => {
+  const f=fixture();
+  const original=f.io.buildEvidence;
+  f.io.buildEvidence=async (code,sourceSha) => {
+    assert.equal(sourceSha,sha);
+    return {...await original(code),build_transformations:[{kind:'kenji-shell-assets-pinned-to-source-sha',
+      source_sha:'b'.repeat(40),stage:'compiled-module-before-digest'}]};
+  };
+  const build=await f.io.buildEvidence(new Uint8Array([1]),sha);
+  assert.throws(() => validateReceiptLinks({source:{commit_sha:sha,dirty_tree:false},build}), /shell asset pin/);
+  await assert.rejects(releaseCurrentSession(f.io), /shell asset pin/);
+  assert.equal(f.writes().length,0);
 });
