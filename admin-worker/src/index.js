@@ -2442,18 +2442,10 @@ function modelSessionOwnsRecord(env, payload, record) {
   if (sessionValues.length && !sessionValues.some((value) => assignmentKeys.has(value))) return false;
 
   const payloadModelId = str(payload?.model_record_id || payload?.model_id);
-  if (Object.prototype.hasOwnProperty.call(fields, "Canonical Model")) {
-    const canonical = canonicalModelIds(record);
-    return Boolean(payloadModelId && canonical.length === 1 && fields["Canonical Model"].length === 1 && canonical[0] === payloadModelId);
-  }
-  const recordModelIds = modelSessionFieldValues(fields, [names.modelRecordId, "Model Record ID", "model_record_id", "model_id", "Model"]);
-  if (payloadModelId && recordModelIds.length && !recordModelIds.includes(payloadModelId)) return false;
-
-  const payloadModelName = str(payload?.model_name).toLowerCase();
-  const recordModelNames = modelSessionFieldValues(fields, [names.modelName, "Model Name", "working_name"]).map((value) => value.toLowerCase());
-  if (payloadModelName && recordModelNames.length && !recordModelNames.includes(payloadModelName)) return false;
-
-  return true;
+  const canonical = canonicalModelIds(record);
+  return Boolean(payloadModelId && Array.isArray(fields["Canonical Model"])
+    && fields["Canonical Model"].length === 1 && canonical.length === 1
+    && canonical[0] === payloadModelId);
 }
 
 async function resolveModelSessionContext(req, env, body = null) {
@@ -2990,10 +2982,20 @@ async function activateFinalPaymentAfterArrival(env, session) {
   return { ok: true, payment: data };
 }
 
+function modelSessionActionTargetsContext(body, context) {
+  const expected = body?.session_id;
+  return typeof expected === "string" && expected.length > 0
+    && expected === modelSessionResponseSession(context.tables, context.session)?.session_id;
+}
+
 async function handleModelSessionAction(req, env) {
   const body = await safeJson(req);
   const authContext = await resolveModelSessionContext(req, env, body);
   if (!authContext.ok) return modelSessionJson({ ok: false, error: authContext.error }, authContext.status);
+
+  if (!modelSessionActionTargetsContext(body, authContext)) {
+    return modelSessionJson({ ok: false, error: "session_context_changed" }, 409);
+  }
 
   const rawAction = str(body?.action).trim().toLowerCase();
   if (PUBLIC_EXTENSION_MODEL_ACTIONS.has(rawAction)) {
@@ -3016,6 +3018,10 @@ async function handleModelSessionAction(req, env) {
 
   const reread = await resolveModelSessionContext(req, env, body);
   if (!reread.ok) return modelSessionJson({ ok: false, error: reread.error }, reread.status);
+
+  if (reread.session.id !== authContext.session.id || !modelSessionActionTargetsContext(body, reread)) {
+    return modelSessionJson({ ok: false, error: "session_context_changed" }, 409);
+  }
 
   const stateInfo = modelSessionStateFromRecord(reread.tables, reread.session);
   if (!stateInfo.field || !normalizeSessionState(stateInfo.state)) {
