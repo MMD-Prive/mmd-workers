@@ -1,6 +1,5 @@
 import { stageMedia, storage, readBytes, reviewQueue, PREFIX, hash } from './new-model-production.mjs';
-// PER · AI OPS / FLUSH ALL MEDIA: owner-triggered, metadata-only preflight.
-// This endpoint never downloads originals, writes R2/Airtable/CMS, or publishes media.
+// Owner-triggered private staging and review intake. Never publishes media.
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
 import { isOwnerActor } from "./owner-my-mmd-recovery-diagnostic.js";
 import { libraryDriveToken } from "./compcard-library-sources.js";
@@ -21,14 +20,14 @@ export const MODEL_MEDIA_SOURCE_ROOTS = Object.freeze([
   { key: "hot_cha", label: "Hot Cha", lane: "mmd_now", id: "1kzEAekqrtbjd4SDa-SyzKv4kCYbI8sRe" },
 ]);
 
-// Production acceptance release: hard-pinned to synthetic fixtures until separately approved.
+// Synthetic fixture root remains available only through explicit test dependencies.
 export const MODEL_MEDIA_TEST_ROOT = Object.freeze({key:"nmp_test",label:"NMP-TEST-20261101",lane:"catalogue",id:"1ylEy2w18qTfYWWY2iJYtEPT7HtFpCDyH"});
 const DRIVE_API = "https://www.googleapis.com/drive/v3";
 const FOLDER = "application/vnd.google-apps.folder";
 const PROD_ORIGINS = new Set(["https://mmdbkk.com", "https://www.mmdbkk.com"]);
 const MEDIA_MIMES = new Set(["image/jpeg", "image/png", "image/webp", "video/mp4"]);
 const HIDDEN_FOLDER = /^(?:review|hidden|archive|rejected|pending|draft|private\s*(?:pic|clip|video)|reference)(?:\b|[\s_-])/i;
-const LIMITS = Object.freeze({ maxFolders: 24, maxDepth: 4, maxPages: 3, maxMedia: 500 });
+const LIMITS = Object.freeze({ maxFolders: 4096, maxDepth: 16, maxPages: 1000, maxMedia: 10000 });
 const HEADERS = {
   "content-type": "application/json; charset=utf-8",
   "cache-control": "private, no-store",
@@ -57,7 +56,7 @@ async function googleJson(path, params, token, http) {
   return data;
 }
 
-async function scanRoot(source, token, http, candidates = null) {
+async function scanRoot(source, token, http, candidates = null, checkpoint = null, pageBudget = Infinity) {
   const base = await googleJson("/files/" + encodeURIComponent(source.id), {
     supportsAllDrives: "true", fields: "id,name,mimeType,trashed,owners(emailAddress)",
   }, token, http);
@@ -66,15 +65,16 @@ async function scanRoot(source, token, http, candidates = null) {
     return { key: source.key, label: source.label, lane: source.lane, state: "source_unverified", complete: false };
   }
 
-  const queue = [{ id: source.id, depth: 0, visibility: "review", ancestry: [source.id] }];
-  const seenFolders = new Set(), seenFiles = new Set();
-  let images = 0, videos = 0, excludedFolders = 0, unverifiedOwner = 0, complete = true;
+  const queue = checkpoint?.queue || [{ id: source.id, depth: 0, visibility: "review", ancestry: [source.id] }];
+  const seenFolders = new Set(checkpoint?.seenFolders || []), seenFiles = new Set(checkpoint?.seenFiles || []);
+  let {images=0,videos=0,excludedFolders=0,unverifiedOwner=0,complete=true}=checkpoint || {};
+  let pagesRead=0;
   while (queue.length && seenFolders.size < LIMITS.maxFolders && images + videos < LIMITS.maxMedia) {
     const folder = queue.shift();
-    if (!folder || seenFolders.has(folder.id)) continue;
+    if (!folder || (seenFolders.has(folder.id) && !folder.cursor)) continue;
     seenFolders.add(folder.id);
-    let cursor = "";
-    for (let page = 0; page < LIMITS.maxPages; page++) {
+    let cursor = folder.cursor || "";
+    for (let page = folder.page || 0; page < LIMITS.maxPages; page++) {
       const data = await googleJson("/files", {
         q: "'" + folder.id.replace(/'/g, "\\'") + "' in parents and trashed=false",
         fields: "nextPageToken,files(id,name,mimeType,parents,trashed,owners(emailAddress),size,version,modifiedTime)",
@@ -103,13 +103,16 @@ async function scanRoot(source, token, http, candidates = null) {
         }
         if (images + videos >= LIMITS.maxMedia) { complete = false; break; }
       }
+      pagesRead++;
       const next = String(data.nextPageToken || "");
       if (!next) break;
       if (next === cursor) throw Error("drive_pagination_loop");
       cursor = next;
       if (page === LIMITS.maxPages - 1) complete = false;
+      else if(pagesRead>=pageBudget){queue.unshift({...folder,cursor:next,page:page+1});break;}
       if (images + videos >= LIMITS.maxMedia) break;
     }
+    if(pagesRead>=pageBudget && queue.length && seenFolders.size<LIMITS.maxFolders && images+videos<LIMITS.maxMedia) return {key:source.key,label:source.label,lane:source.lane,state:"scanning",complete:false,_scan:{queue,seenFolders:[...seenFolders],seenFiles:[...seenFiles],images,videos,excludedFolders,unverifiedOwner,complete}};
   }
   if (queue.length || unverifiedOwner > 0) complete = false;
   return {
@@ -145,7 +148,7 @@ export async function handleModelMediaFlushPreview(request, env = {}, deps = {})
   if (!input || !["preview_all", "stage_all", "review_queue"].includes(input.action) || Object.keys(input).some(k => !["action", "run_id"].includes(k)) || (input.run_id && !/^[a-f0-9-]{36}$/.test(input.run_id))) {
     return respond({ ok: false, error: "preview_action_required" }, 400);
   }
-  const sourceRoots = deps.sourceRoots || [MODEL_MEDIA_TEST_ROOT];
+  const sourceRoots = deps.sourceRoots || MODEL_MEDIA_SOURCE_ROOTS.filter(source => source.lane === "catalogue");
   if (input.action === "review_queue") {
     try { return respond({ok:true,...await reviewQueue(env, {allowedRootIds:sourceRoots.map(source=>source.id)})}); }
     catch { return respond({ok:false,error:"review_queue_unavailable"},503); }
@@ -166,22 +169,16 @@ export async function handleModelMediaFlushPreview(request, env = {}, deps = {})
     if (input.action === "stage_all" && input.run_id) {
       return await continueStaging(env, actor, input.run_id, token, http, sourceRoots);
     }
-    const candidates = input.action === "stage_all" ? [] : null;
-    const rows = [];
-    // Small, bounded batches avoid a 10-source burst against Drive.
-    for (let i = 0; i < sourceRoots.length; i += 2) {
-      const part = await Promise.all(sourceRoots.slice(i, i + 2).map(async source => {
-        try { return await scanRoot(source, token, http, candidates); }
-        catch { return { key: source.key, label: source.label, lane: source.lane, state: "source_unavailable", complete: false }; }
-      }));
-      rows.push(...part);
+    if(input.action === "stage_all") {
+      phase="staging_manifest";
+      const runId=crypto.randomUUID();
+      await storage(env).put(PREFIX+"runs/"+runId+".json",JSON.stringify({actor_id:actor.id,created_at:Date.now(),candidates:[],rows:[],scan_index:0,scan_state:null}),{onlyIf:{etagDoesNotMatch:"*"},httpMetadata:{contentType:"application/json",cacheControl:"private, no-store"}});
+      return await continueStaging(env,actor,runId,token,http,sourceRoots);
     }
-    if (candidates) {
-      phase = "staging_manifest";
-      const runId = crypto.randomUUID();
-      await storage(env).put(PREFIX+"runs/"+runId+".json",JSON.stringify({actor_id:actor.id,created_at:Date.now(),candidates,rows}),{onlyIf:{etagDoesNotMatch:"*"},httpMetadata:{contentType:"application/json",cacheControl:"private, no-store"}});
-      return await continueStaging(env, actor, runId, token, http, sourceRoots);
-    }
+    const rows=[];
+    for(let i=0;i<sourceRoots.length;i+=2) rows.push(...await Promise.all(sourceRoots.slice(i,i+2).map(async source=>{
+      try{return await scanRoot(source,token,http);}catch{return {key:source.key,label:source.label,lane:source.lane,state:"source_unavailable",complete:false};}
+    })));
     return respond({
       ok: true, schema: "mmd.per_ai_ops.manual_media_flush_preview.v1",
       mode: "preview_only", source_account: MODEL_MEDIA_SOURCE_EMAIL,
@@ -206,14 +203,26 @@ async function continueStaging(env, actor, runId, token, http, sourceRoots) {
   const key=PREFIX+"runs/"+runId+".json", obj=await storage(env).get(key);
   if(!obj) return respond({ok:false,error:"staging_run_missing"},404);
   const run=await obj.json();
-  if(run.actor_id!==actor.id || !Number.isFinite(run.created_at) || run.created_at+3600000<Date.now()) return respond({ok:false,error:"staging_run_expired_or_forbidden"},409);
-  if(!Array.isArray(run.candidates)||run.candidates.some(c=>!sourceRoots.some(root=>root.id===c.root_id)))return respond({ok:false,error:"test_source_scope_required"},403);
+  if(run.actor_id!==actor.id || !Number.isFinite(run.created_at) || run.created_at+86400000<Date.now()) return respond({ok:false,error:"staging_run_expired_or_forbidden"},409);
+  if(!Array.isArray(run.candidates)||run.candidates.some(c=>!sourceRoots.some(root=>root.id===c.root_id)))return respond({ok:false,error:"source_scope_required"},403);
+  if(Number.isInteger(run.scan_index) && run.scan_index<sourceRoots.length) {
+    const source=sourceRoots[run.scan_index];
+    // One Drive list page per request; persist cursors before continuing in the UI.
+    const row=await scanRoot(source,token,http,run.candidates,run.scan_state,1);
+    run.scan_state=row._scan || null;delete row._scan;
+    run.rows[run.scan_index]=row;
+    if(!run.scan_state)run.scan_index++;
+    await storage(env).put(key,JSON.stringify(run),{httpMetadata:{contentType:"application/json",cacheControl:"private, no-store"}});
+    return respond({ok:true,mode:"private_staging",run_id:runId,continue_required:true,state:"scanning",total_candidates:run.candidates.length,completed_count:0,results:[],catalogue:run.rows.filter(r=>r.lane==="catalogue"),mmd_now:[],source_scan_complete:false,publication:false,checked_at:new Date().toISOString()});
+  }
   const results=[];let remaining=false, attempted=0;
-  for(const candidate of run.candidates) {
+  run.failures ||= [];
+  for(let index=run.next_index || 0;index<run.candidates.length;index++) {
+    const candidate=run.candidates[index];
     // Completed receipts make retries and repeated clicks idempotent.
     const id=await hash(JSON.stringify([candidate.root_id,candidate.file_id,candidate.version,candidate.visibility]));
     const receiptObj=await storage(env).get(PREFIX+"receipts/"+id+".json");
-    if(receiptObj){const receipt=await receiptObj.json();const head=await storage(env).head(receipt.key);if(receipt.id===id&&head?.customMetadata?.sha256===receipt.sha256)continue;}
+    if(receiptObj){const receipt=await receiptObj.json();const head=await storage(env).head(receipt.key);if(receipt.id===id&&head?.customMetadata?.sha256===receipt.sha256){run.next_index=index+1;continue;}}
     if(attempted>=1){remaining=true;break;} attempted++;
     try {
       results.push(await stageMedia(env,candidate,actor,async c=>{
@@ -232,9 +241,12 @@ async function continueStaging(env, actor, runId, token, http, sourceRoots) {
         return bytes;
       }));
     } catch {results.push({id,state:"failed_retry_required"});}
+    if(results.some(r=>r.id===id&&!["pending_review","already_staged"].includes(r.state))&&!run.failures.includes(id))run.failures.push(id);
+    run.next_index=index+1;
   }
-  const failures=results.some(r=>!["pending_review","already_staged"].includes(r.state));
-  return respond({ok:true,mode:"private_staging",run_id:runId,continue_required:remaining&&!failures,state:failures?"partial_failure":remaining?"staging":"pending_review",results,
+  await storage(env).put(key,JSON.stringify(run),{httpMetadata:{contentType:"application/json",cacheControl:"private, no-store"}});
+  const failures=run.failures.length>0;
+  return respond({ok:true,mode:"private_staging",run_id:runId,continue_required:remaining,state:remaining?"staging":failures?"partial_failure":"pending_review",failed_count:run.failures.length,total_candidates:run.candidates.length,completed_count:run.next_index || 0,results,
     catalogue:run.rows.filter(r=>r.lane==="catalogue"),mmd_now:run.rows.filter(r=>r.lane==="mmd_now"),
     source_scan_complete:run.rows.every(r=>r.complete),publication:false,checked_at:new Date().toISOString()});
 }

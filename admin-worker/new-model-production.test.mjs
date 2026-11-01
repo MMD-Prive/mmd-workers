@@ -78,7 +78,7 @@ test('actual flush scanner includes Review/Hidden, stages in resumable owner bat
   if(u.pathname.endsWith('/about'))return Response.json({user:{emailAddress:email}});
   const id=decodeURIComponent(u.pathname.split('/').at(-1));
   if(u.searchParams.get('alt')==='media')return new Response(bytes);
-  if(u.searchParams.has('q')){const parent=u.searchParams.get('q').match(/^'([^']+)'/)[1];return Response.json({files:[...map.values()].filter(x=>x.parents?.includes(parent))});}
+  if(u.searchParams.has('q')){const parent=u.searchParams.get('q').match(/^'([^']+)'/)[1];const files=[...map.values()].filter(x=>x.parents?.includes(parent));if(roots.some(r=>r.id===parent)&&!u.searchParams.has('pageToken'))return Response.json({files:files.slice(0,1),nextPageToken:'second'});return Response.json({files:u.searchParams.has('pageToken')?files.slice(1):files});}
   return Response.json(map.get(id));
  };
  const deps={readActor:async()=>({id:'per',role:'owner'}),getAccessToken:async()=>'fixture',http,sourceRoots:roots};
@@ -88,21 +88,31 @@ test('actual flush scanner includes Review/Hidden, stages in resumable owner bat
  const call=async input=>{const response=await handle(new Request('https://mmdbkk.com/v1/admin/model-media/flush-preview',{method:'POST',headers:{origin:'https://mmdbkk.com'},body:JSON.stringify(input)}),f.env,deps);assert.equal(response.status,200);return response.json();};
  const preview=await call({action:'preview_all'});assert.equal(preview.catalogue[0].images,2);assert.equal(preview.mmd_now.length,3);
  let data=await call({action:'stage_all'}),batches=1;
- while(data.continue_required){assert.ok(batches++<24);data=await call({action:'stage_all',run_id:data.run_id});}
+ while(data.continue_required){assert.ok(batches++<100);data=await call({action:'stage_all',run_id:data.run_id});}
  assert.equal(data.state,'pending_review');assert.equal(data.source_scan_complete,true);assert.equal(data.publication,false);assert.equal(f.records.length,22);
  const queue=await call({action:'review_queue'});assert.equal(queue.items.length,22);
  assert.ok(queue.items.some(x=>x.visibility==='hidden'));
  assert.ok(queue.items.some(x=>x.visibility==='review'));
+ // A bad write must not prevent later files entering review. A fresh click retries only missing receipts.
+ for(const file of map.values())if(file.version)file.version='2';
+ let rejectFirst=true;
+ f.env.AIRTABLE_HTTP={fetch:async(url,init)=>{if(init?.method==='POST'&&rejectFirst){rejectFirst=false;return Response.json({}, {status:503});}return Response.json(await f.registry(f.env,new URL(url).search,init));}};
+ data=await call({action:'stage_all'});batches=0;
+ while(data.continue_required){assert.ok(batches++<100);data=await call({action:'stage_all',run_id:data.run_id});}
+ assert.equal(data.state,'partial_failure');assert.equal(data.failed_count,1);assert.equal(f.records.length,43);
+ data=await call({action:'stage_all'});batches=0;
+ while(data.continue_required){assert.ok(batches++<100);data=await call({action:'stage_all',run_id:data.run_id});}
+ assert.equal(data.state,'pending_review');assert.equal(f.records.length,44);
 });
 
-test('production default scans only the synthetic test root',async()=>{
+test('production default scans exactly eight catalogue roots and excludes other lanes',async()=>{
  const {readFile}=await import('node:fs/promises');const moduleUrl=new URL('./src/new-model-production.mjs',import.meta.url).href;
  let source=await readFile(new URL('./src/model-media-flush-preview.js',import.meta.url),'utf8');source=source.replace(/from '\.\/new-model-production.mjs'/g,`from '${moduleUrl}'`).replace(/^import .* from "\.\/[^\n]+;\n/gm,'');
  source='const isOwnerActor=actor=>actor?.role==="owner";\n'+source;
- const {handleModelMediaFlushPreview:handle,MODEL_MEDIA_TEST_ROOT:root}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
+ const {handleModelMediaFlushPreview:handle,MODEL_MEDIA_SOURCE_ROOTS:roots}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
  const requested=[];const http=async value=>{const url=new URL(value);if(url.pathname.endsWith('/about'))return Response.json({user:{emailAddress:'malemodel.bkk@gmail.com'}});if(url.pathname.includes('/files/')){const id=url.pathname.split('/').at(-1);requested.push(id);return Response.json({id,mimeType:'application/vnd.google-apps.folder',owners:[{emailAddress:'malemodel.bkk@gmail.com'}]});}return Response.json({files:[]});};
  const r=await handle(new Request('https://mmdbkk.com/v1/admin/model-media/flush-preview',{method:'POST',headers:{origin:'https://mmdbkk.com'},body:'{"action":"preview_all"}'}),{}, {readActor:async()=>({id:'per',role:'owner'}),getAccessToken:async()=>'fixture',http});
- assert.equal(r.status,200);assert.deepEqual(requested,[root.id]);assert.equal((await r.json()).catalogue[0].key,'nmp_test');
+ assert.equal(r.status,200);assert.deepEqual(requested,roots.filter(r=>r.lane==='catalogue').map(r=>r.id));const data=await r.json();assert.equal(data.catalogue.length,8);assert.equal(data.mmd_now.length,0);
 });
 
 test('dependency failure reports a bounded phase/code without leaking exception details',async()=>{

@@ -327,17 +327,17 @@ const MEDIA_FLUSH_CLIENT_LAYER = String.raw`;(()=>{'use strict';
     panel=document.createElement('details');
     panel.setAttribute('data-mmd-media-flush','v1');
     const title=document.createElement('summary');title.textContent='🚽 FLUSH ALL MEDIA · PER';
-    const note=document.createElement('p');note.textContent='โหมดทดสอบ · malemodel.bkk@gmail.com · เฉพาะโฟลเดอร์ NMP-TEST-20261101';
+    const note=document.createElement('p');note.textContent='malemodel.bkk@gmail.com · แค็ตตาล็อก 8 แบบ · รวม Review/Hidden · รออนุมัติ';
     const button=document.createElement('button');button.type='button';button.textContent='FLUSH · รับสื่อเข้าคิวตรวจ';
     const status=document.createElement('span');status.setAttribute('role','status');
     const results=document.createElement('ul');
     const foot=document.createElement('p');foot.className='muted';
-    foot.textContent='รับเฉพาะสื่อทดสอบเข้า R2 ส่วนตัวและคิวตรวจ Airtable · รวม Review/Hidden';
+    foot.textContent='รับสื่อจากแค็ตตาล็อก 8 แบบเข้า R2 ส่วนตัวและคิวตรวจ Airtable · รวม Review/Hidden · ยังไม่เผยแพร่';
     panel.append(title,note,button,status,results,foot);
     host.prepend(panel);
     const render=()=>{
       button.disabled=loading;
-      status.textContent=loading?'กำลังตรวจโฟลเดอร์ต้นทาง…':error?error:last?('ตรวจเมื่อ '+new Date(last.checked_at).toLocaleString('th-TH')+' · '+(last.mode==='private_staging'?(last.state==='pending_review'?'รับสื่อแล้ว · รอตรวจอนุมัติ':last.state==='partial_failure'?'รับสื่อได้บางส่วน · ต้องลองใหม่':'กำลังรับสื่อ')+(last.source_scan_complete?'':' · ตรวจต้นทางได้บางส่วน'):last.state==='inventory_checked'?'ตรวจครบตามขอบเขต':'บางรายการยังตรวจไม่ครบ')):'กดเมื่อต้องการตรวจรูปที่อัปเดต';
+      status.textContent=loading?(last?.state==='scanning'?'กำลังตรวจโฟลเดอร์ต้นทาง · '+String(last.catalogue?.length||0)+'/8 แบบ':last?.mode==='private_staging'?'กำลังรับสื่อ · '+String(last.completed_count||0)+'/'+String(last.total_candidates||0):'กำลังตรวจโฟลเดอร์ต้นทาง…'):error?error:last?('ตรวจเมื่อ '+new Date(last.checked_at).toLocaleString('th-TH')+' · '+(last.mode==='private_staging'?(last.state==='pending_review'?'รับสื่อแล้ว · รอตรวจอนุมัติ':last.state==='partial_failure'?'รับสื่อได้บางส่วน · ต้องลองใหม่ '+String(last.failed_count||0)+' รายการ':'กำลังรับสื่อ')+(last.source_scan_complete?'':' · ตรวจต้นทางได้บางส่วน'):last.state==='inventory_checked'?'ตรวจครบตามขอบเขต':'บางรายการยังตรวจไม่ครบ')):'กดเมื่อต้องการตรวจรูปที่อัปเดต';
       results.replaceChildren();
       if(!last)return;
       for(const item of [...(last.catalogue||[]),...(last.mmd_now||[]),...(last.review_queue||[]).map(x=>({label:x.category+' · '+x.visibility,state:'pending_review'}))]) {
@@ -362,7 +362,8 @@ const MEDIA_FLUSH_CLIENT_LAYER = String.raw`;(()=>{'use strict';
         const qr=await fetch('/v1/admin/ai-ops/media/flush',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'content-type':'application/json'},body:JSON.stringify({action:'review_queue'}),signal:controller.signal});
         const queue=await qr.json();
         if(!qr.ok||queue.ok!==true)throw Error('อ่านคิวตรวจไม่ได้');
-        last.review_queue=queue.items;
+        last.review_queue=queue.items;last.review_queue_incomplete=queue.incomplete;
+        if(queue.incomplete)foot.textContent='คิวมีมากกว่าที่แสดง · ดูรายการทั้งหมดใน Airtable · สื่อยังเป็นส่วนตัวและรออนุมัติ';
       }catch(e){error='FLUSH ยังตรวจไม่สำเร็จ · '+String(e.message||e);}
       finally{clearTimeout(timer);loading=false;refreshPanel();}
     };
