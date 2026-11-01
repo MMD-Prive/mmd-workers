@@ -91,6 +91,8 @@ async function scanRoot(source, token, http) {
           else complete = false;
         } else if (MEDIA_MIMES.has(file.mimeType) && !seenFiles.has(file.id)) {
           seenFiles.add(file.id);
+          // Do not treat files named Hidden/Review as publishable candidates.
+          if (HIDDEN_FOLDER.test(String(file.name || ""))) { excludedFolders++; continue; }
           if (file.mimeType.startsWith("image/")) images++;
           else videos++;
         }
@@ -104,7 +106,7 @@ async function scanRoot(source, token, http) {
       if (images + videos >= LIMITS.maxMedia) break;
     }
   }
-  if (queue.length) complete = false;
+  if (queue.length || unverifiedOwner > 0) complete = false;
   return {
     key: source.key, label: source.label, lane: source.lane,
     state: complete ? "inventory_checked" : "incomplete_scan",
@@ -155,7 +157,7 @@ export async function handleModelMediaFlushPreview(request, env = {}, deps = {})
         ...rows.filter(row => row.lane === "mmd_now"),
         { key: "mmd_recommend", label: "MMD Recommend", source: "telegram_standard_topic", state: "topic_id_unresolved", complete: false },
       ],
-      telegram: { standard_group_configured: true, mmd_recommended_topic: "unresolved", hot_call: "excluded_from_mmd_now" },
+      telegram: { source: "telegram_standard", mmd_recommended_topic: "unresolved", hot_call: "excluded_from_mmd_now" },
       writes: { drive: false, r2: false, airtable: false, cms: false, website: false },
       next: "owner_review_and_canonical_model_matching_required_before_ingest",
       checked_at: new Date().toISOString(),
