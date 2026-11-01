@@ -311,6 +311,19 @@ test("command-only activation does not enable ordinary text, partial aliases or 
   }
 });
 
+test("bounded membership expiry questions use the same new Checkpts lane with general replies disabled", async () => {
+  for (const command of ['วันหมดอายุ','เหลือกี่วัน','สมาชิกหมดอายุ','สมาชิกจะหมดอายุเมื่อไหร่','สมาชิกหมดอายุวันไหนครับ','วันหมดอายุ? ครับ']) {
+    const { calls, body } = await run(command, { env: { LINE_AUTO_REPLY_ENABLED:'false', LINE_KENJI_DETERMINISTIC_CONVERSATION_ENABLED:'false', KENJI_LINE_RIGHTS_COMMAND_ENABLED:'false' } });
+    assert.equal(body.saved[0].reply_source,'my_mmd_points_shortcut_v2');
+    assert.equal(calls.replies.length,1);
+    assert.match(calls.replies[0].messages[0].text,/ชื่อสมาชิก: Fixture Member/);
+    assert.match(calls.replies[0].messages[0].text,/Points: 120 Points/);
+    assert.doesNotMatch(calls.replies[0].messages[0].text,/CARE BACK|https?:\/\//);
+  }
+  for(const command of ['ต่ออายุ','สมัครสมาชิก','วันหมดอายุของเพื่อน','เหลือกี่วัน โอนแล้ว','สวัสดี'])
+    assert.equal(isCheckptsShortcut(event(command)),false);
+});
+
 test("Checkpts rechecks current verified Points when the snapshot is pending", async () => {
   const snapshotTruth = { ...truth(), points: { status: "unavailable", active_points: 999 } };
   const { calls, body } = await run("checkpts", {

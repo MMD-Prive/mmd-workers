@@ -10,5 +10,5 @@ export function isCheckptsShortcut(event = {}) {
   if (event.type !== "message" || event.message?.type !== "text" || event.source?.type !== "user") return false;
   const command = String(event.message.text || "").normalize("NFKC")
     .replace(/[\u200B\uFEFF]/g, "").trim().replace(/\s+/g, " ").toLowerCase();
-  return COMMANDS.has(command);
+  return COMMANDS.has(command) || /^(?:สมาชิก(?:จะ)?หมดอายุ(?:เมื่อไหร่|วันไหน)?|วันหมดอายุ|เหลือกี่วัน)[\s?？!]*(?:ครับ)?$/.test(command);
 }
