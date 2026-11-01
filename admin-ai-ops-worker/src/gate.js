@@ -318,7 +318,7 @@ const MEDIA_FLUSH_CLIENT_LAYER = String.raw`;(()=>{'use strict';
   const style=document.createElement('style');
   style.textContent='[data-mmd-media-flush]{margin:10px 0;border:1px solid #e9b17d;border-radius:12px;background:#fff8ef;color:#26211c;padding:12px;font:500 12px/1.45 -apple-system,BlinkMacSystemFont,"Noto Sans Thai",sans-serif}[data-mmd-media-flush] summary{cursor:pointer;font-weight:800;font-size:12px;color:#71360f}[data-mmd-media-flush] p{margin:7px 0;color:#765b46}[data-mmd-media-flush] button{background:#edaa70;border:1px solid #c67739;border-radius:9px;color:#2d1b0d;font-weight:800;min-height:44px;padding:10px 14px;cursor:pointer}[data-mmd-media-flush] button:disabled{opacity:.6;cursor:wait}[data-mmd-media-flush] ul{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:4px}[data-mmd-media-flush] li{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid #ecdfd1;padding:5px 0;color:#3a3029;font-size:11px}[data-mmd-media-flush] .muted{font-size:10px;color:#856e5f}[data-mmd-media-flush] [role=status]{display:block;margin-top:8px;color:#654832;font-size:11px;white-space:pre-wrap}';
   document.head.appendChild(style);
-  let last=null,loading=false,error='',resumeRunId=null;
+  let last=null,loading=false,error='',resumeRunId=null,refreshPanel=()=>{};
   function mount(){
     const host=document.querySelector('.mmd-aiops-b');
     if(!host)return;
@@ -347,8 +347,9 @@ const MEDIA_FLUSH_CLIENT_LAYER = String.raw`;(()=>{'use strict';
         li.append(label,value);results.append(li);
       }
     };
+    refreshPanel=render;
     button.onclick=async()=>{
-      if(loading)return;loading=true;error='';render();
+      if(loading)return;loading=true;error='';refreshPanel();
       const controller=new AbortController();let timer;
       try{
         let runId=resumeRunId;do {
@@ -356,14 +357,14 @@ const MEDIA_FLUSH_CLIENT_LAYER = String.raw`;(()=>{'use strict';
         const r=await fetch('/v1/admin/ai-ops/media/flush',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'content-type':'application/json',accept:'application/json'},body:JSON.stringify({action:'stage_all',...(runId?{run_id:runId}:{})}),signal:controller.signal});
         const data=await r.json().catch(()=>null);
         if(!r.ok||!data||data.ok!==true)throw Error(r.status===401||r.status===403?'กรุณาเข้าสู่ระบบ Owner':data?.error||('HTTP '+r.status));
-        last=data;render();runId=data.continue_required?data.run_id:null;resumeRunId=runId;
+        last=data;refreshPanel();runId=data.continue_required?data.run_id:null;resumeRunId=runId;
         } while(runId);
         const qr=await fetch('/v1/admin/ai-ops/media/flush',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'content-type':'application/json'},body:JSON.stringify({action:'review_queue'}),signal:controller.signal});
         const queue=await qr.json();
         if(!qr.ok||queue.ok!==true)throw Error('อ่านคิวตรวจไม่ได้');
         last.review_queue=queue.items;
       }catch(e){error='FLUSH ยังตรวจไม่สำเร็จ · '+String(e.message||e);}
-      finally{clearTimeout(timer);loading=false;render();}
+      finally{clearTimeout(timer);loading=false;refreshPanel();}
     };
     render();
   }

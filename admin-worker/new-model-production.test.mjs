@@ -88,7 +88,7 @@ test('actual flush scanner includes Review/Hidden, stages in resumable owner bat
  const call=async input=>{const response=await handle(new Request('https://mmdbkk.com/v1/admin/model-media/flush-preview',{method:'POST',headers:{origin:'https://mmdbkk.com'},body:JSON.stringify(input)}),f.env,deps);assert.equal(response.status,200);return response.json();};
  const preview=await call({action:'preview_all'});assert.equal(preview.catalogue[0].images,2);assert.equal(preview.mmd_now.length,3);
  let data=await call({action:'stage_all'}),batches=1;
- while(data.continue_required){assert.ok(batches++<10);data=await call({action:'stage_all',run_id:data.run_id});}
+ while(data.continue_required){assert.ok(batches++<24);data=await call({action:'stage_all',run_id:data.run_id});}
  assert.equal(data.state,'pending_review');assert.equal(data.source_scan_complete,true);assert.equal(data.publication,false);assert.equal(f.records.length,22);
  const queue=await call({action:'review_queue'});assert.equal(queue.items.length,22);
  assert.ok(queue.items.some(x=>x.visibility==='hidden'));

@@ -214,7 +214,7 @@ async function continueStaging(env, actor, runId, token, http, sourceRoots) {
     const id=await hash(JSON.stringify([candidate.root_id,candidate.file_id,candidate.version,candidate.visibility]));
     const receiptObj=await storage(env).get(PREFIX+"receipts/"+id+".json");
     if(receiptObj){const receipt=await receiptObj.json();const head=await storage(env).head(receipt.key);if(receipt.id===id&&head?.customMetadata?.sha256===receipt.sha256)continue;}
-    if(attempted>=4){remaining=true;break;} attempted++;
+    if(attempted>=1){remaining=true;break;} attempted++;
     try {
       results.push(await stageMedia(env,candidate,actor,async c=>{
         if(!c.version)throw Error("source_version_missing");
