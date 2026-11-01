@@ -22,7 +22,7 @@ export const MODEL_MEDIA_SOURCE_ROOTS = Object.freeze([
 
 // Synthetic fixture root remains available only through explicit test dependencies.
 export const MODEL_MEDIA_TEST_ROOT = Object.freeze({key:"nmp_test",label:"NMP-TEST-20261101",lane:"catalogue",id:"1ylEy2w18qTfYWWY2iJYtEPT7HtFpCDyH"});
-const flushAuthCache = new WeakMap();
+let flushAuthCache = null;
 const DRIVE_API = "https://www.googleapis.com/drive/v3";
 const FOLDER = "application/vnd.google-apps.folder";
 const PROD_ORIGINS = new Set(["https://mmdbkk.com", "https://www.mmdbkk.com"]);
@@ -127,14 +127,18 @@ async function scanRoot(source, token, http, candidates = null, checkpoint = nul
 async function flushDriveToken(env) {
   const keys = ["FLUSH_GOOGLE_DRIVE_CLIENT_ID", "FLUSH_GOOGLE_DRIVE_CLIENT_SECRET", "FLUSH_GOOGLE_DRIVE_REFRESH_TOKEN"];
   if(keys.some(key=>env[key])&&!keys.every(key=>typeof env[key]==="string"&&env[key].trim()))throw Object.assign(Error("flush_oauth_configuration_incomplete"),{code:"drive_credentials_not_configured"});
-  const cached=flushAuthCache.get(env);if(cached&&cached.until>Date.now())return cached.token;
-  if (!keys.some(key => env[key])) {const token=await libraryDriveToken(env);flushAuthCache.set(env,{token,until:Date.now()+45*60000});return token;}
+  // The owning Worker clones its runtime env for each request. Cache only a verified
+  // token string, keyed by a hash of this FLUSH credential configuration.
+  const config=keys.some(key=>env[key])?keys.map(key=>env[key]):[env.GOOGLE_SERVICE_ACCOUNT_JSON,env.GOOGLE_DRIVE_CLIENT_ID,env.GOOGLE_DRIVE_CLIENT_SECRET,env.GOOGLE_DRIVE_REFRESH_TOKEN];
+  const cacheKey=await hash(JSON.stringify([MODEL_MEDIA_SOURCE_EMAIL,...config]));
+  const cached=flushAuthCache;if(cached?.key===cacheKey&&cached.until>Date.now())return cached.token;
+  if (!keys.some(key => env[key])) {const token=await libraryDriveToken(env);flushAuthCache={key:cacheKey,token,until:Date.now()+45*60000};return token;}
   // Only this intake uses the dedicated read-only OAuth client. Shared credentials are preserved.
   const token=await libraryDriveToken({...env, GOOGLE_SERVICE_ACCOUNT_JSON:"", COMPCARD_DRIVE_OWNER_EMAIL:MODEL_MEDIA_SOURCE_EMAIL,
     GOOGLE_DRIVE_CLIENT_ID:env.FLUSH_GOOGLE_DRIVE_CLIENT_ID,
     GOOGLE_DRIVE_CLIENT_SECRET:env.FLUSH_GOOGLE_DRIVE_CLIENT_SECRET,
     GOOGLE_DRIVE_REFRESH_TOKEN:env.FLUSH_GOOGLE_DRIVE_REFRESH_TOKEN});
-  flushAuthCache.set(env,{token,until:Date.now()+45*60000});return token;
+  flushAuthCache={key:cacheKey,token,until:Date.now()+45*60000};return token;
 }
 
 export async function handleModelMediaFlushPreview(request, env = {}, deps = {}) {
@@ -198,7 +202,7 @@ export async function handleModelMediaFlushPreview(request, env = {}, deps = {})
     });
   } catch (error) {
     let code = String(error?.code || "");
-    if(code==="drive_http_401"){flushAuthCache.delete(env);code="drive_oauth_unavailable";}
+    if(code==="drive_http_401"){flushAuthCache=null;code="drive_oauth_unavailable";}
     const reason = /^(?:drive_(?:credentials_not_configured|oauth_unavailable|account_mismatch|transport_(?:redirect|timeout|receiver|network)_unavailable)|private_staging_unavailable|review_registry_unavailable)$/.test(code) ? code : "dependency_unavailable";
     return respond({ ok: false, error: reason, failed_phase: phase, reason, mode: input.action === "stage_all" ? "private_staging" : "preview_only", writes: input.action === "stage_all" ? "unknown" : false }, 503);
   }
@@ -253,7 +257,7 @@ async function continueStaging(env, actor, runId, getToken, http, sourceRoots) {
         return bytes;
       },{deferRegistry:true}));
     } catch(error) {
-      if(error?.code==="drive_http_401")flushAuthCache.delete(env);
+      if(error?.code==="drive_http_401")flushAuthCache=null;
       const retry=/^(?:drive_http_(?:401|429|5\d\d)|drive_.*unavailable|review_registry_unavailable|staging_claim_lost)$/.test(error?.code||"")||['AbortError','TimeoutError','TypeError'].includes(error?.name);
       results.push({id,state:retry?"retry_later":"failed_retry_required"});
     }

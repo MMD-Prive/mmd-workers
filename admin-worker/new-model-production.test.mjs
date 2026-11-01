@@ -188,5 +188,7 @@ test('cached Drive credentials refresh after a 401 without replacing the saved r
  const deps={readActor:async()=>({id:'per',role:'owner'}),http:async(value,init)=>{const t=init.headers.authorization;tokens.push(t);if(t==='Bearer 1')return Response.json({}, {status:401});const u=new URL(value);if(u.searchParams.has('q'))return Response.json({files:[]});return Response.json({id:u.pathname.split('/').at(-1),mimeType:'application/vnd.google-apps.folder',owners:[{emailAddress:'malemodel.bkk@gmail.com'}]});}};
  assert.equal((await handle(flushRequest({action:'stage_all',run_id:runId}),env,deps)).status,503);
  assert.equal((await handle(flushRequest({action:'stage_all',run_id:runId}),env,deps)).status,200);assert.ok(tokens.includes('Bearer 2'));
+ assert.equal((await handle(flushRequest({action:'stage_all',run_id:runId}),{...env},deps)).status,200);assert.equal(tokens.at(-1),'Bearer 2');
+ assert.equal((await handle(flushRequest({action:'stage_all',run_id:runId}),{...env,FLUSH_GOOGLE_DRIVE_CLIENT_SECRET:'rotated-test'},deps)).status,200);assert.equal(tokens.at(-1),'Bearer 3');
  assert.equal([...f.objects.keys()].filter(k=>k.startsWith(PREFIX+'runs/')).length,1);
 });
