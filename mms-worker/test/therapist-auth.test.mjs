@@ -1,4 +1,7 @@
 import test from "node:test";
+import { createHmac } from "node:crypto";
+import { requireMyMmsApprovedTherapist } from "../src/my-mms-access-runtime.mjs";
+import { handleMmsTherapistProfileRequest } from "../src/therapist-profile-runtime.mjs";
 import assert from "node:assert/strict";
 
 import {
@@ -16,6 +19,7 @@ const AUTH_ME = `${BASE_URL}/male-massage/therapists/api/auth/me`;
 const AUTH_LOGOUT = `${BASE_URL}/male-massage/therapists/api/auth/logout`;
 
 const env = {
+  MMS_PRIVATE_UPLOADS: { get() {}, put() {} },
   MMS_THERAPIST_AUTH_ENABLED: "true",
   MMS_THERAPIST_LINE_CHANNEL_ID: CHANNEL_ID,
   MMS_THERAPIST_SESSION_SECRET: "session-secret-for-tests-1234567890-abcdef",
@@ -271,4 +275,58 @@ test("logout clears the Therapist cookie at the Therapist path", async () => {
   assert.match(cookie, /^__Secure-mms_therapist_session=;/);
   assert.match(cookie, /Max-Age=0/);
   assert.match(cookie, /Path=\/male-massage\/therapists/);
+});
+
+test("issued session rejects a changed LINE link in auth, app and profile; newly logged-in account works", async () => {
+  let restore = installFetchMock();
+  let cookie;
+  try {
+    const login = await call(jsonRequest(AUTH_LINE, { id_token: "fixture-token" }));
+    assert.equal(login.status, 200);
+    cookie = cookieFrom(login);
+    assert.equal((await call(new Request(AUTH_ME, { headers: { Cookie: cookie } }))).status, 200);
+  } finally { restore(); }
+
+  const changed = activeTherapist({ "LINE Subject Hash": "replacement-account-hash", "MY MMS Access": "Approved" });
+  restore = installFetchMock({ therapistRecords: [changed], updatedRecord: changed, subjectRecords: [changed] });
+  try {
+    const request = new Request(AUTH_ME, { headers: { Cookie: cookie } });
+    assert.equal((await call(request)).status, 401);
+    await assert.rejects(requireMyMmsApprovedTherapist(request, env), e => e.code === "THERAPIST_SESSION_INVALID");
+    await assert.rejects(handleMmsTherapistProfileRequest(new Request(BASE_URL + "/male-massage/therapists/api/auth/profile", { headers: { Cookie: cookie } }), env), e => e.code === "THERAPIST_SESSION_INVALID");
+    const login = await call(jsonRequest(AUTH_LINE, { id_token: "replacement-fixture-token" }));
+    const freshRequest = new Request(AUTH_ME, { headers: { Cookie: cookieFrom(login) } });
+    assert.equal((await call(freshRequest)).status, 200);
+    assert.equal((await requireMyMmsApprovedTherapist(freshRequest, env)).fields["Therapist ID"], changed.fields["Therapist ID"]);
+  } finally { restore(); }
+});
+
+test("legacy signed session without LINE binding requires login again across all private surfaces", async () => {
+  const now = Math.floor(Date.now() / 1000);
+  const encoded = Buffer.from(JSON.stringify({ v: 1, role: "mms_therapist", therapist_id: "mmst_testtherapist0001", iat: now, exp: now + 600 })).toString("base64url");
+  const signature = createHmac("sha256", env.MMS_THERAPIST_SESSION_SECRET).update("mms-therapist-session-v1." + encoded).digest("hex");
+  const Cookie = "__Secure-mms_therapist_session=v1." + encoded + "." + signature;
+  const restore = installFetchMock();
+  try {
+    const request = new Request(AUTH_ME, { headers: { Cookie } });
+    assert.equal((await call(request)).status, 401);
+    await assert.rejects(requireMyMmsApprovedTherapist(request, env), e => e.code === "THERAPIST_SESSION_INVALID");
+    await assert.rejects(handleMmsTherapistProfileRequest(new Request(BASE_URL + "/male-massage/therapists/api/auth/profile", { headers: { Cookie } }), env), e => e.code === "THERAPIST_SESSION_INVALID");
+  } finally { restore(); }
+});
+
+test("revoked or unlinked Therapist cannot use an otherwise valid bound session", async () => {
+  let restore = installFetchMock();
+  let Cookie;
+  try { Cookie = cookieFrom(await call(jsonRequest(AUTH_LINE, { id_token: "fixture-token" }))); }
+  finally { restore(); }
+  for (const fields of [{ "Therapist Auth Status": "Revoked" }, { "LINE Subject Hash": "" }]) {
+    restore = installFetchMock({ therapistRecords: [activeTherapist(fields)] });
+    try {
+      const request = new Request(AUTH_ME, { headers: { Cookie } });
+      assert.equal((await call(request)).status, 403);
+      await assert.rejects(requireMyMmsApprovedTherapist(request, env), e => e.code === "THERAPIST_ACCESS_DENIED");
+      await assert.rejects(handleMmsTherapistProfileRequest(new Request(BASE_URL + "/male-massage/therapists/api/auth/profile", { headers: { Cookie } }), env), e => e.code === "THERAPIST_ACCESS_DENIED");
+    } finally { restore(); }
+  }
 });

@@ -105,7 +105,7 @@ async function loginWithLine(request, env) {
 
   assertTherapistCanAuthenticate(therapist);
   const therapistId = clean(therapist.fields?.["Therapist ID"], 80);
-  const sessionToken = await createSessionToken({ therapist_id: therapistId }, env, now);
+  const sessionToken = await createSessionToken({ therapist_id: therapistId, subject_hash: clean(therapist.fields?.["LINE Subject Hash"], 200) }, env, now);
 
   return authJson({
     ok: true,
@@ -124,6 +124,8 @@ async function currentTherapist(request, env) {
   const therapist = await findUniqueTherapist(env, "Therapist ID", session.therapist_id);
   if (!therapist) throw authError(401, "THERAPIST_SESSION_INVALID");
   assertTherapistCanAuthenticate(therapist);
+  const binding = await hmacHex(sessionSecret(env), 'mms-therapist-line-binding-v1.' + clean(therapist.fields?.["LINE Subject Hash"], 200));
+  if (!constantTimeEqual(session.line_binding, binding)) throw authError(401, "THERAPIST_SESSION_INVALID");
 
   return authJson({ ok: true, data: safeAuthProfile(therapist) }, 200, request, env);
 }
@@ -224,13 +226,14 @@ async function lineSubjectHash(subject, env) {
   return hmacHex(pepper, `mms-therapist-line-v1\u0000${channelId}\u0000${subject}`);
 }
 
-async function createSessionToken({ therapist_id }, env, now = new Date()) {
+async function createSessionToken({ therapist_id, subject_hash }, env, now = new Date()) {
   const secret = sessionSecret(env);
   const iat = Math.floor(now.getTime() / 1000);
   const payload = {
     v: SESSION_VERSION,
     role: SESSION_ROLE,
     therapist_id,
+    line_binding: await hmacHex(secret, "mms-therapist-line-binding-v1." + subject_hash),
     iat,
     exp: iat + SESSION_TTL_SECONDS,
   };
@@ -259,6 +262,7 @@ async function verifySessionToken(token, env) {
 
   const now = Math.floor(Date.now() / 1000);
   const therapistId = clean(payload?.therapist_id, 80);
+  if (!/^[a-f0-9]{64}$/.test(payload?.line_binding || "")) throw authError(401, "THERAPIST_SESSION_INVALID");
   if (payload?.v !== SESSION_VERSION || payload?.role !== SESSION_ROLE) throw authError(401, "THERAPIST_SESSION_INVALID");
   if (!/^[A-Za-z0-9_-]{4,80}$/.test(therapistId)) throw authError(401, "THERAPIST_SESSION_INVALID");
   if (!Number.isFinite(payload?.iat) || !Number.isFinite(payload?.exp)) throw authError(401, "THERAPIST_SESSION_INVALID");
@@ -266,7 +270,7 @@ async function verifySessionToken(token, env) {
     throw authError(401, "THERAPIST_SESSION_INVALID");
   }
 
-  return { therapist_id: therapistId, role: SESSION_ROLE };
+  return { therapist_id: therapistId, role: SESSION_ROLE, line_binding: payload.line_binding };
 }
 
 function sessionSecret(env) {

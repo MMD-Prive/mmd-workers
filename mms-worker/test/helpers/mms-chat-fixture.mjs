@@ -63,7 +63,7 @@ export function fixture() {
 
 export function cookie(env, therapistId = THERAPIST.id) {
   const now = Math.floor(Date.now() / 1000);
-  const payload = Buffer.from(JSON.stringify({ v: 1, role: 'mms_therapist', therapist_id: therapistId, iat: now, exp: now + 600 })).toString('base64url');
+  const payload = Buffer.from(JSON.stringify({ v: 1, role: 'mms_therapist', therapist_id: therapistId, line_binding: createHmac('sha256', env.MMS_THERAPIST_SESSION_SECRET).update('mms-therapist-line-binding-v1.private-subject-hash').digest('hex'), iat: now, exp: now + 600 })).toString('base64url');
   const signature = createHmac('sha256', env.MMS_THERAPIST_SESSION_SECRET).update(`mms-therapist-session-v1.${payload}`).digest('hex');
   return `__Secure-mms_therapist_session=v1.${payload}.${signature}`;
 }
