@@ -39,9 +39,22 @@ test('auto reply OFF prevents command truth reads and replies',async()=>{
   for(const command of ['checkpts','package','regis','apply','โปร'])assert.equal((await runApprovedCategoryTurn(e,event(command),runtime,io())).attempted,false);
 });
 test('post announcement promo uses neutral approved navigation at Bangkok boundary',async()=>{
-  for(const date of ['2026-11-01T00:00:00+07:00','2026-11-15T12:00:00+07:00','2026-12-01T00:00:00+07:00']){
+  for(const date of ['2026-12-01T00:00:00+07:00','2026-12-31T12:00:00+07:00']){
     const now=Date.parse(date);const x=io({now});const r=await runApprovedCategoryTurn(env,{...event('โปร'),timestamp:now},runtime,x);
     assert.equal(r.delivered,true);assert.match(r.decision.text,/ตรวจข้อเสนอและสิทธิ์ล่าสุด/);assert.doesNotMatch(r.decision.text,/31 ต.ค.|สิ้นสุด|วันสุดท้าย|เพิ่ม.*เดือน/);
+  }
+});
+test('November category turn delivers canonical three-cohort announcement and CTA once',async()=>{
+  for(const date of ['2026-11-01T00:00:00+07:00','2026-11-30T23:59:59.999+07:00']){
+    const now=Date.parse(date),x=io({now});
+    const r=await runApprovedCategoryTurn(env,{...event('มีโปรอะไร'),timestamp:now},runtime,x);
+    assert.equal(r.delivered,true);assert.equal(x.sent.length,1);
+    for(const group of ['สมาชิกปัจจุบัน','หมดอายุไม่เกิน 6 เดือน','หมดอายุเกิน 6 เดือน'])assert.ok(r.decision.text.includes(group));
+    assert.match(r.decision.text,/30 พ.ย. 2569/);assert.match(r.decision.text,/ก่อนชำระ/);
+    const url=new URL(r.decision.text.split(' → ').at(-1));
+    assert.equal(url.origin,'https://miniapp.line.me');assert.equal(url.searchParams.get('intent'),'signup');
+    assert.equal(url.searchParams.get('view'),'signup');assert.equal(url.searchParams.get('world'),'private');
+    assert.doesNotMatch(r.decision.text,/วันนี้วันสุดท้าย|31 ต.ค.|คุณได้รับสิทธิ์แล้ว/);
   }
 });
 test('promo switch off stays silent without disabling explicit commands',async()=>{

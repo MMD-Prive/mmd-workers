@@ -29,14 +29,19 @@ export function approvedCategoryReply(event, env = {}, adapters = {}) {
   // Q&A belongs exclusively to native LINE OA, even if an old FAQ flag is on.
   const now = adapters.now ?? Date.now();
   const start = Date.parse('2026-10-31T00:00:00+07:00');
-  const end = Date.parse('2026-11-01T00:00:00+07:00');
   if (enabled(env.KENJI_LINE_APPROVED_PROMO_ENABLED) && Number.isFinite(now) && now >= start &&
       /^(?:มีโปรอะไร|มีโปรอะไรบ้าง|โปร(?:โมชั่น)?|care[\s_-]*back|แคร์แบค)[?？!\s]*(?:ครับ|ค่ะ)?$/i.test(raw)) {
-    // Approved post-announcement navigation, not an eligibility/expiry claim.
-    if (now >= end) return {text:'กดตรวจข้อเสนอและสิทธิ์ล่าสุดจากบัญชีเดิมได้เลยครับ\nhttps://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=overview',intent:'approved_promotion',reply_source:'care_back_latest_navigation'};
+    // Canonical campaign copy owns the public wave and its expiry, not this gate.
+    // This is an overview of three cohorts, never a classification of this user.
     const reply = adapters.careBackOctoberReply?.('care_back_overview', raw, now);
-    if (typeof reply?.text === 'string' && reply.text.trim() && reply.text.length <= 4500) {
-      return {text: reply.text, intent: 'approved_promotion', reply_source: 'care_back_20261031'};
+    const routes = new Set([
+      'https://miniapp.line.me/2010862595-yT4DCEMc/?intent=signup&view=signup&world=private',
+      'https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=overview',
+    ]);
+    if (typeof reply?.text === 'string' && reply.text.trim() && reply.text.length <= 4500 &&
+        routes.has(reply.route) && typeof reply.label === 'string' && reply.label.length <= 30) {
+      // A single bounded text message retains the exact canonical URI/query.
+      return {text: `${reply.text}\n${reply.label} → ${reply.route}`, intent: 'approved_promotion', reply_source: 'care_back_canonical_public'};
     }
   }
   // No currently verified replacement campaign: silence, never a stale CTA.
