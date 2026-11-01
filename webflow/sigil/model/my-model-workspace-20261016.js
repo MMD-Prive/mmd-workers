@@ -60,7 +60,7 @@
   const q = selector => root.querySelector(selector);
   const text = (selector, value) => { const node = q(selector); if (node) node.textContent = value; };
   const form = q('[data-mss-profile-form]'), workspace = q('[data-mm-workspace]');
-  let profile = null, busy = false, alive = true;
+  let profile = null, busy = false, savingProfile = null, alive = true;
   const controllers = new Set();
   async function request(path, options = {}) {
     const controller = new AbortController(); controllers.add(controller);
@@ -104,6 +104,7 @@
   function fill(model) {
     profile = model; workspace.hidden = false;
     q('[data-mss-save]').disabled = false;
+    text('[data-mm-save-status]', '');
     q('[data-mm-primary]').hidden = true; q('[data-mm-apply]').hidden = true;
     status('บัญชี MY MODEL เชื่อมแล้ว', 'อัปเดตโปรไฟล์และสถานะรับงานได้ แม้ยังไม่มีงานปัจจุบัน');
     text('[data-mm-auth]', 'บัญชีเชื่อมแล้ว · สถานะความพร้อมตรวจแยกตามรายการ');
@@ -212,20 +213,32 @@
     }
   }
   form.addEventListener('submit', async event => {
-    event.preventDefault(); if (!profile) return;
+    event.preventDefault();
+    if (!profile) {
+      text('[data-mm-save-status]', 'ยังไม่เชื่อม · ตรวจสถานะบัญชี');
+      q('[data-mm-refresh]').focus();
+      return;
+    }
     const identity = profile;
+    if (savingProfile === identity) return;
     const current = () => alive && profile === identity;
     const button = q('[data-mss-save]'); button.disabled = true;
+    savingProfile = identity;
+    text('[data-mm-save-status]', 'กำลังบันทึก');
     try {
       const data = await request('/v1/model/profile', {method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(profilePatch(form))});
-      // Lock/reverification replaces this snapshot; an old save cannot restore it.
       if (!current()) return;
-      if (!data.model) throw new Error('profile_invalid'); fill(data.model); text('[data-mm-save-status]', 'บันทึกข้อมูลแล้ว');
+      if (!data.model) throw new Error('profile_invalid');
+      fill(data.model);
+      text('[data-mm-save-status]', data.review_required === true ? 'บันทึกแล้ว · รอตรวจ' : 'บันทึกสำเร็จ');
     } catch (error) {
       if (!current()) return;
       if (['login','denied'].includes(classify(error))) locked(error);
-      text('[data-mm-save-status]', 'ยังยืนยันการบันทึกไม่ได้ ตรวจสถานะก่อนส่งอีกครั้ง');
-    } finally { if (current()) button.disabled = false; }
+      text('[data-mm-save-status]', classify(error) === 'login' ? 'หมดเวลา · ตรวจ LINE' : error?.status === 400 ? 'ข้อมูลไม่ถูกต้อง · ตรวจใหม่' : 'บันทึกไม่ได้ · ตรวจสถานะ ลองใหม่');
+    } finally {
+      if (savingProfile === identity) savingProfile = null;
+      if (current()) button.disabled = false;
+    }
   });
   q('[data-mm-telegram-connect]').addEventListener('click', async event => {
     if (!profile) return; const button = event.currentTarget; button.disabled = true;
