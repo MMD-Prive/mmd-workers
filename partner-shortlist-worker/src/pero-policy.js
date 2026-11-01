@@ -8,6 +8,7 @@ export function eligible(model, value) {
     && !(value.ownerOnly?.excludedCanonicalModelIds || []).includes(model.canonicalModelId)
     && model.qualification?.category === 'standard'
     && model.qualification?.straight === true
+    && model.qualification?.pn !== false && model.qualification?.accepting !== false
     && model.display.status !== 'unavailable';
 }
 export function filters(params) {
