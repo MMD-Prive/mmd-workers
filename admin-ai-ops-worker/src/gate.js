@@ -400,7 +400,7 @@ const MEDIA_FLUSH_CLIENT_LAYER = String.raw`;(()=>{'use strict';
       if(queueBusy)return;queueBusy=true;queueLoad.disabled=true;rows=[];loaded=false;page=0;clearViewer();queueStatus.textContent='กำลังอ่านคิวรออนุมัติ…';
       try{let cursor=null;const seen=new Set(),ids=new Set();do{const data=await post({action:'review_queue',...(cursor?{cursor}:{})});for(const row of data.items||[])if(!ids.has(row.id)){ids.add(row.id);rows.push(row);}cursor=data.cursor;if(cursor&&seen.has(cursor))throw Error('คิวอ่านซ้ำ กรุณาลองใหม่');if(cursor)seen.add(cursor);drawQueue();}while(cursor);loaded=true;drawQueue();}
       catch(e){queueStatus.textContent='อ่านคิวไม่ครบ · '+String(e.message||e)+' · กดเปิดคิวเพื่อลองใหม่';}
-      finally{queueBusy=false;queueLoad.disabled=false;previous.disabled=page===0;}
+      finally{queueBusy=false;queueLoad.disabled=false;if(loaded)drawQueue();}
     }
     async function openReview(row){
       clearViewer();const ticket=selection;

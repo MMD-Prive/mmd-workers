@@ -43,6 +43,7 @@ test('queue loads 797 unique rows, filters Hidden, opens private media and saves
  const p=page(fetch),find=text=>descendants(p.panel).find(n=>n.textContent===text),attr=name=>descendants(p.panel).find(n=>n.attrs['aria-label']===name);
  await find('เปิดคิวรออนุมัติ').onclick();assert.ok(descendants(p.panel).some(n=>n.textContent?.includes('โหลดครบ 797 รายการ')));assert.equal(actions.length,8);
  const oldQueue=p.panel.children.find(n=>n.tag==='section'),newPanel=p.remount();assert.equal(newPanel.children.find(n=>n.tag==='section'),oldQueue);assert.ok(descendants(newPanel).some(n=>n.textContent?.includes('โหลดครบ 797 รายการ')));p.panel=newPanel;
+ assert.equal(find('ถัดไป').disabled,false);find('ถัดไป').onclick();assert.ok(descendants(p.panel).some(n=>n.textContent?.includes('หน้า 2/32')));find('ก่อนหน้า').onclick();
  attr('กรอง Review/Hidden').value='hidden';attr('กรอง Review/Hidden').onchange();assert.equal(descendants(p.panel).filter(n=>n.textContent==='ดูสื่อ / จับคู่').length,1);
  await find('ดูสื่อ / จับคู่').onclick();assert.ok(descendants(p.panel).some(n=>n.tag==='img'&&n.src.startsWith('blob:')));
  attr('ค้นหาโมเดล').value='TEST';await find('ค้นหาโมเดล').onclick();find('Synthetic Model · TEST').onclick();await find('บันทึกข้อเสนอ · ยังรออนุมัติ').onclick();assert.equal(saves,1);assert.ok(descendants(p.panel).some(n=>n.textContent?.includes('บันทึกข้อเสนอแล้ว')));assert.equal(actions.some(a=>/approve|publish/.test(a)),false);
