@@ -135,7 +135,7 @@
       q('[data-mm-console]').href = consoleLink.href;
       global.dispatchEvent(new CustomEvent('mmd:model-session-ready', {detail:data}));
     } catch (error) {
-      if (error.status === 404 && error.message === 'active_session_not_found') {
+      if (error.status === 404 && ['session_not_found', 'active_session_not_found'].includes(error.message)) {
         text('[data-mm-job]', 'ยังไม่มีงานที่กำลังใช้งาน');
         text('[data-mm-job-copy]', 'บัญชีเชื่อมแล้ว จัดการโปรไฟล์หรือเปิด Jobs Today ต่อได้');
       } else if (classify(error) === 'review') {

@@ -69,10 +69,8 @@ export function createModelLv15Preview({shellPath=defaultShellPath}={}){
     if(p==='/v1/model/media'&&method==='GET')return send(res,{ok:true,media:[],items:[]});
     if(p==='/v1/model/history'&&method==='GET')return send(res,{ok:true,items:[],summary:{earned_total_thb:null,paid_confirmed_total_thb:null}});
     if(p==='/v1/model/session/current'&&method==='GET'){
-     // Existing Dashboard contract uses a 404 for confirmed no-active-job;
-     // existing Console contract uses successful session:null.
-     let fromConsole=false;try{fromConsole=new URL(req.headers.referer||url).pathname==='/sigil/model/console'}catch{}
-     if(f.state==='empty'&&!fromConsole)return send(res,{ok:false,error:'active_session_not_found'},404);
+     // Match the canonical no-job API response on both real-source preview pages.
+     if(f.state==='empty')return send(res,{ok:false,error:'session_not_found'},404);
      return send(res,{ok:true,session:fixtureSession(f)});
     }
     if(p==='/v1/model/session/action'&&method==='POST'){const result=applyFixtureAction(f,data);return send(res,result,result.ok?200:409);}
