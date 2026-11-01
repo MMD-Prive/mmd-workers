@@ -11,9 +11,9 @@ class Node{
  querySelector(){return this.children.find(n=>n.attrs['data-mmd-media-flush']);}
 }
 function page(fetch,storage=new Map()){
- const host=new Node('host'),head=new Node('head'),document={head,body:{},documentElement:{},readyState:'complete',createElement:tag=>new Node(tag),querySelector:()=>host};
- vm.runInNewContext(client,{window:{},document,location:{pathname:'/internal/admin/dashboard'},sessionStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},crypto:webcrypto,fetch,URL,AbortSignal,AbortController,MutationObserver:class{observe(){}},setTimeout:(fn,ms)=>setTimeout(fn,ms>=100000?10000:0),clearTimeout,Date,Promise});
- const panel=host.children[0];return {panel,storage,button:panel.children.find(n=>n.tag==='button'&&n.textContent.startsWith('FLUSH')),fresh:panel.children.find(n=>n.textContent==='ตรวจสื่อใหม่'),status:panel.children.find(n=>n.attrs.role==='status')};
+ let observe;const host=new Node('host'),head=new Node('head'),document={head,body:{},documentElement:{},readyState:'complete',createElement:tag=>new Node(tag),querySelector:()=>host};
+ vm.runInNewContext(client,{window:{},document,location:{pathname:'/internal/admin/dashboard'},sessionStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},crypto:webcrypto,fetch,URL,AbortSignal,AbortController,MutationObserver:class{constructor(fn){observe=fn;}observe(){}},setTimeout:(fn,ms)=>setTimeout(fn,ms>=100000?10000:0),clearTimeout,Date,Promise});
+ const panel=host.children[0];return {panel,remount:()=>{host.replaceChildren();observe();return host.children[0];},storage,button:panel.children.find(n=>n.tag==='button'&&n.textContent.startsWith('FLUSH')),fresh:panel.children.find(n=>n.textContent==='ตรวจสื่อใหม่'),status:panel.children.find(n=>n.attrs.role==='status')};
 }
 const complete=()=>Response.json({ok:true,mode:'private_staging',state:'pending_review',completed_count:797,total_candidates:797,source_scan_complete:true,continue_required:false,checked_at:new Date().toISOString()});
 test('lost start response, repeat click and reload retain the same run; new scan is explicit',async()=>{
@@ -42,6 +42,7 @@ test('queue loads 797 unique rows, filters Hidden, opens private media and saves
  throw Error('unexpected action '+input.action);};
  const p=page(fetch),find=text=>descendants(p.panel).find(n=>n.textContent===text),attr=name=>descendants(p.panel).find(n=>n.attrs['aria-label']===name);
  await find('เปิดคิวรออนุมัติ').onclick();assert.ok(descendants(p.panel).some(n=>n.textContent?.includes('โหลดครบ 797 รายการ')));assert.equal(actions.length,8);
+ const oldQueue=p.panel.children.find(n=>n.tag==='section'),newPanel=p.remount();assert.equal(newPanel.children.find(n=>n.tag==='section'),oldQueue);assert.ok(descendants(newPanel).some(n=>n.textContent?.includes('โหลดครบ 797 รายการ')));p.panel=newPanel;
  attr('กรอง Review/Hidden').value='hidden';attr('กรอง Review/Hidden').onchange();assert.equal(descendants(p.panel).filter(n=>n.textContent==='ดูสื่อ / จับคู่').length,1);
  await find('ดูสื่อ / จับคู่').onclick();assert.ok(descendants(p.panel).some(n=>n.tag==='img'&&n.src.startsWith('blob:')));
  attr('ค้นหาโมเดล').value='TEST';await find('ค้นหาโมเดล').onclick();find('Synthetic Model · TEST').onclick();await find('บันทึกข้อเสนอ · ยังรออนุมัติ').onclick();assert.equal(saves,1);assert.ok(descendants(p.panel).some(n=>n.textContent?.includes('บันทึกข้อเสนอแล้ว')));assert.equal(actions.some(a=>/approve|publish/.test(a)),false);
