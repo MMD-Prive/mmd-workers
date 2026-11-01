@@ -43,15 +43,32 @@ input,select,textarea{border-color:#cbbdad}
 .primary,.secondary,.choose{min-height:48px}
 @media(max-width:350px){.brief h2{font-size:18px}.brief .text-btn{font-size:12px;white-space:nowrap}.grid{gap:9px}.model-body{padding:11px}}
 @media(prefers-reduced-motion:no-preference){.primary,.secondary,.choose,.chip{transition:background-color .16s ease,border-color .16s ease,color .16s ease}}
+/* Existing MMD Partner assets */
+#mmd-selection .intro .eyebrow{color:#f5e2b5!important;-webkit-text-fill-color:#f5e2b5!important}.private{white-space:nowrap;flex-shrink:0}@media(max-width:350px){.brand-logo{max-width:94px}.brand small{max-width:72px;font-size:8px}}
+.brand{display:flex;align-items:center;gap:14px}.brand-logo{width:132px;height:48px;object-fit:contain}.brand small{border-left:1px solid #f5e2b540;padding-left:14px;max-width:100px;line-height:1.6;margin:0;font-size:9px}.top-row{min-height:76px}
+.intro{position:relative;isolation:isolate;overflow:hidden;min-height:214px;border-radius:20px;background:#30251f;margin:18px 0;padding:24px 20px;display:flex;align-items:center}
+.partner-art{position:absolute;inset:0 0 0 42%;z-index:-2}.partner-art img{width:100%;height:100%;object-fit:cover;object-position:60% 36%}
+.intro:after{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(90deg,#30251f 20%,#30251ff2 44%,#30251f1a 100%)}
+.intro-copy{max-width:65%}
+#mmd-selection .intro h1{color:#fff5e5!important;-webkit-text-fill-color:#fff5e5!important;font-size:clamp(25px,4vw,36px);line-height:1.3;margin:8px 0 12px}
+#mmd-selection .intro :is(p,.expiry){color:#eadcc8;-webkit-text-fill-color:#eadcc8}
+.intro .eyebrow{color:#f5e2b5;letter-spacing:.06em;font-size:11px}.intro p{font-size:14px}
+.intro .expiry{font-size:12px}.intro .expiry svg{flex:none}
+#modelSearch{border-top:3px solid #704b30}
+.gate{border-radius:22px;text-align:left;box-shadow:0 16px 50px #382a2110}
+.gate>svg{margin:0 0 16px}.gate h1{font-size:26px}
+@media(min-width:700px){.intro{min-height:244px;padding:32px}.intro-copy{max-width:58%}.partner-art{inset:0 0 0 48%}}
+@media(max-width:350px){.intro{padding:20px 16px}.intro-copy{max-width:72%}.intro h1{font-size:25px}.brand-logo{width:110px}.brand{gap:8px}.brand small{padding-left:8px;max-width:76px}.private{font-size:11px}}
+
 </style>
 </head>
 <body id="mmd-selection">
 <svg width="0" height="0" aria-hidden="true" style="position:absolute;pointer-events:none"><defs><symbol id="lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 018 0v3M12 14v3"/></symbol><symbol id="check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol><symbol id="plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol><symbol id="close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol><symbol id="clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol></defs></svg>
-<header class="top"><div class="wrap top-row"><div class="brand">MMD Privé<small>Partner selection</small></div><span class="private"><svg aria-hidden="true"><use href="#lock"/></svg><span data-i18n-text="partner.modelSelection.header.private">เฉพาะงานนี้</span></span></div></header>
+<header class="top"><div class="wrap top-row"><div class="brand"><img class="brand-logo" src="https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90/6aa585f59071f36b97cc2803_02-horizontal-lockup-512px.webp" alt="MMD Privé" width="152" height="55"><small>Partner selection</small></div><span class="private"><svg aria-hidden="true"><use href="#lock"/></svg><span data-i18n-text="partner.modelSelection.header.private">เฉพาะงานนี้</span></span></div></header>
 <main class="wrap">
 <section class="gate" id="gate" aria-live="polite"><svg aria-hidden="true"><use href="#lock"/></svg><h1 id="gateTitle"><span data-i18n-text="partner.modelSelection.gate.title">เปิดลิงก์เฉพาะงาน</span></h1><p id="gateMessage"><span data-i18n-text="partner.modelSelection.gate.fullLink">ใช้ลิงก์ฉบับเต็มที่เปอร์ส่งให้ เพื่อดูรูปและรายละเอียดของงานนี้ค่ะ</span></p><button id="retryGate" class="secondary wide" hidden><span data-i18n-text="partner.modelSelection.gate.retry">ลองเปิดอีกครั้ง</span></button></section>
 <div id="workspace" hidden>
-<section class="intro"><span class="eyebrow" id="jobTitle"></span><h1><span data-i18n-text="partner.modelSelection.intro.title">คัดไว้สำหรับงานนี้</span></h1><p><span data-i18n-text="partner.modelSelection.intro.description">ดูรูป เลือกคนที่สนใจ แล้วส่งตัวเลือกให้เปอร์เช็กคิวค่ะ</span></p><div class="expiry"><svg aria-hidden="true"><use href="#clock"/></svg><span id="expiryText"></span></div></section>
+<section class="intro"><div class="partner-art" aria-hidden="true"><img src="https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90/6a6afec4834ec91b0d3474bd_Yuki%20Model%20Referral-p-800.webp" alt="" width="800" height="1000" fetchpriority="high"></div><div class="intro-copy"><span class="eyebrow" id="jobTitle"></span><h1><span data-i18n-text="partner.modelSelection.intro.title">คัดไว้สำหรับงานนี้</span></h1><p><span data-i18n-text="partner.modelSelection.intro.description">ดูรูป เลือกคนที่สนใจ แล้วส่งตัวเลือกให้เปอร์เช็กคิวค่ะ</span></p><div class="expiry"><svg aria-hidden="true"><use href="#clock"/></svg><span id="expiryText"></span></div></div></section>
 <div class="error" id="loadError" role="alert" hidden></div>
 <div class="notice" id="updatedNotice" role="status" hidden><span data-i18n-text="partner.modelSelection.notice.updated">ข้อมูลของงานนี้มีการอัปเดตค่ะ ตัวเลือกที่คุณกำลังเลือกยังอยู่ในหน้านี้</span></div>
 <section class="brief" aria-labelledby="briefHeading"><span class="kicker"><span data-i18n-text="partner.modelSelection.brief.kicker">01 · บรีฟงาน</span></span><div class="section-top"><h2 id="briefHeading"></h2><button type="button" class="text-btn" id="editBrief"><span data-i18n-text="partner.modelSelection.brief.edit">เพิ่มรายละเอียด ↗</span></button></div><details class="brief-more"><summary><span data-i18n-text="partner.modelSelection.brief.expand">ดูบรีฟทั้งหมด</span></summary><div class="brief-values" id="briefValues"></div></details><p class="brief-foot" id="briefFoot"></p></section>
@@ -156,5 +173,6 @@ if(parent!==window){window.addEventListener('message',function(e){if(e.source!==
 </script>
 </body>
 </html>
+
 
 
