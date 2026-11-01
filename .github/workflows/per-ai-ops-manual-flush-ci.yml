@@ -1,0 +1,31 @@
+name: PER AI OPS Manual Media Flush CI
+on:
+  pull_request:
+    paths:
+      - "admin-worker/src/model-media-flush-preview.js"
+      - "admin-worker/src/admin-login-hero-worker.js"
+      - "admin-worker/model-media-flush-preview.test.mjs"
+      - "admin-ai-ops-worker/src/gate.js"
+      - "admin-ai-ops-worker/test/manual-media-flush.test.mjs"
+      - ".github/workflows/per-ai-ops-manual-flush-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  manual-flush:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Syntax
+        run: |
+          node --check admin-worker/src/model-media-flush-preview.js
+          node --check admin-ai-ops-worker/src/gate.js
+      - name: Owner, source-account and no-write guards
+        run: |
+          node --test admin-worker/model-media-flush-preview.test.mjs
+          node --test admin-ai-ops-worker/test/manual-media-flush.test.mjs
