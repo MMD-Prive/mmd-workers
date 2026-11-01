@@ -35,6 +35,8 @@ export default {
       if (request.headers.get("origin") !== url.origin) {
         return json({ ok: false, error: "same_origin_required" }, 403);
       }
+      const input = await request.json().catch(() => null);
+      if (!input || !["preview_all", "stage_all", "review_queue"].includes(input.action) || Object.keys(input).some(k => !["action", "run_id"].includes(k))) return json({ok:false,error:"media_action_invalid"},400);
       const headers = new Headers({ "accept": "application/json", "content-type": "application/json", "origin": url.origin });
       for (const key of ["cookie", "user-agent"]) {
         const value = request.headers.get(key);
@@ -44,8 +46,8 @@ export default {
         const target = new URL(MEDIA_FLUSH_ADMIN_PATH, url.origin);
         return await env.MMS_ADMIN.fetch(new Request(target, {
           method: "POST", headers, redirect: "manual",
-          body: JSON.stringify({ action: "preview_all" }),
-          signal: AbortSignal.timeout(45000),
+          body: JSON.stringify(input),
+          signal: AbortSignal.timeout(90000),
         }));
       } catch {
         return json({ ok: false, error: "media_flush_preview_unavailable" }, 503);
@@ -316,46 +318,74 @@ const MEDIA_FLUSH_CLIENT_LAYER = String.raw`;(()=>{'use strict';
   const style=document.createElement('style');
   style.textContent='[data-mmd-media-flush]{margin:10px 0;border:1px solid #e9b17d;border-radius:12px;background:#fff8ef;color:#26211c;padding:12px;font:500 12px/1.45 -apple-system,BlinkMacSystemFont,"Noto Sans Thai",sans-serif}[data-mmd-media-flush] summary{cursor:pointer;font-weight:800;font-size:12px;color:#71360f}[data-mmd-media-flush] p{margin:7px 0;color:#765b46}[data-mmd-media-flush] button{background:#edaa70;border:1px solid #c67739;border-radius:9px;color:#2d1b0d;font-weight:800;min-height:44px;padding:10px 14px;cursor:pointer}[data-mmd-media-flush] button:disabled{opacity:.6;cursor:wait}[data-mmd-media-flush] ul{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:4px}[data-mmd-media-flush] li{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid #ecdfd1;padding:5px 0;color:#3a3029;font-size:11px}[data-mmd-media-flush] .muted{font-size:10px;color:#856e5f}[data-mmd-media-flush] [role=status]{display:block;margin-top:8px;color:#654832;font-size:11px;white-space:pre-wrap}';
   document.head.appendChild(style);
-  let last=null,loading=false,error='';
+  const storageKey='mmd.flush.run.v2';
+  let last=null,loading=false,error='',resumeRunId=null,refreshPanel=()=>{},panelOpen=false;
+  try{const id=sessionStorage.getItem(storageKey);if(/^[a-f0-9-]{36}$/.test(id||''))resumeRunId=id;}catch{}
+  function remember(id){resumeRunId=id;try{id?sessionStorage.setItem(storageKey,id):sessionStorage.removeItem(storageKey);}catch{}}
+  const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+  async function post(input){
+    let failure;
+    for(let attempt=0;attempt<5;attempt++){
+      const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),105000);
+      try{
+        const r=await fetch('/v1/admin/ai-ops/media/flush',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'content-type':'application/json',accept:'application/json'},body:JSON.stringify(input),signal:controller.signal});
+        const data=await r.json().catch(()=>null);
+        if(r.ok&&data?.ok===true)return data;
+        if(r.status===401||r.status===403)throw Object.assign(Error('กรุณาเข้าสู่ระบบ Owner'),{terminal:true});
+        if(r.status===409){remember(null);throw Object.assign(Error('รอบเดิมหมดอายุ · กดตรวจสื่อใหม่'),{terminal:true});}
+        throw Object.assign(Error(data?.error||('HTTP '+r.status)),{terminal:r.status<500&&r.status!==429});
+      }catch(e){if(e.terminal)throw e;failure=e;}
+      finally{clearTimeout(timer);}
+      if(attempt<4)await pause(Math.min(12000,1000*2**attempt));
+    }
+    throw failure;
+  }
   function mount(){
     const host=document.querySelector('.mmd-aiops-b');
     if(!host)return;
     let panel=host.querySelector('[data-mmd-media-flush]');
     if(panel)return;
     panel=document.createElement('details');
-    panel.setAttribute('data-mmd-media-flush','v1');
+    panel.setAttribute('data-mmd-media-flush','v1');panel.open=panelOpen||loading;panel.ontoggle=()=>{panelOpen=panel.open;};
     const title=document.createElement('summary');title.textContent='🚽 FLUSH ALL MEDIA · PER';
-    const note=document.createElement('p');note.textContent='Google Drive: malemodel.bkk@gmail.com เท่านั้น · 8 หมวดโมเดล + MMD NOW';
-    const button=document.createElement('button');button.type='button';button.textContent='FLUSH · ตรวจรายการล่าสุด';
+    const note=document.createElement('p');note.textContent='malemodel.bkk@gmail.com · แค็ตตาล็อก 8 แบบ · รวม Review/Hidden · รออนุมัติ';
+    const button=document.createElement('button');button.type='button';button.textContent='FLUSH · รับสื่อเข้าคิวตรวจ';
+    const fresh=document.createElement('button');fresh.type='button';fresh.textContent='ตรวจสื่อใหม่';fresh.style.marginLeft='6px';
     const status=document.createElement('span');status.setAttribute('role','status');
     const results=document.createElement('ul');
     const foot=document.createElement('p');foot.className='muted';
-    foot.textContent='ขั้นตรวจสอบเท่านั้น ยังไม่เขียน R2/Airtable หรือเผยแพร่ · Telegram Standard / MMD Recommended รอ Topic ID';
-    panel.append(title,note,button,status,results,foot);
+    foot.textContent='รับสื่อจากแค็ตตาล็อก 8 แบบเข้า R2 ส่วนตัวและคิวตรวจ Airtable · รวม Review/Hidden · ยังไม่เผยแพร่';
+    panel.append(title,note,button,fresh,status,results,foot);
     host.prepend(panel);
     const render=()=>{
-      button.disabled=loading;
-      status.textContent=loading?'กำลังตรวจโฟลเดอร์ต้นทาง…':error?error:last?('ตรวจเมื่อ '+new Date(last.checked_at).toLocaleString('th-TH')+' · '+(last.state==='inventory_checked'?'ตรวจครบตามขอบเขต':'บางรายการยังตรวจไม่ครบ')):'กดเมื่อต้องการตรวจรูปที่อัปเดต';
+      button.disabled=loading;fresh.disabled=loading;
+      status.textContent=loading?(last?.state==='scanning'?'กำลังตรวจโฟลเดอร์ต้นทาง · '+String(last.catalogue?.length||0)+'/8 แบบ':last?.mode==='private_staging'?'กำลังรับสื่อ · '+String(last.completed_count||0)+'/'+String(last.total_candidates||0):'กำลังตรวจโฟลเดอร์ต้นทาง…'):error?error:last?('ตรวจเมื่อ '+new Date(last.checked_at).toLocaleString('th-TH')+' · '+(last.mode==='private_staging'?(last.state==='pending_review'?'รับสื่อแล้ว '+String(last.completed_count||0)+'/'+String(last.total_candidates||0)+' · รอตรวจอนุมัติ':last.state==='partial_failure'?'รับสื่อได้บางส่วน · ต้องลองใหม่ '+String(last.failed_count||0)+' รายการ':'กำลังรับสื่อ')+(last.source_scan_complete?'':' · ตรวจต้นทางได้บางส่วน'):last.state==='inventory_checked'?'ตรวจครบตามขอบเขต':'บางรายการยังตรวจไม่ครบ')):'กดเมื่อต้องการตรวจรูปที่อัปเดต';
       results.replaceChildren();
       if(!last)return;
-      for(const item of [...(last.catalogue||[]),...(last.mmd_now||[])]) {
+      for(const item of [...(last.catalogue||[]),...(last.mmd_now||[]),...(last.review_queue||[]).map(x=>({label:x.category+' · '+x.visibility,state:'pending_review'}))]) {
         const li=document.createElement('li'),label=document.createElement('span'),value=document.createElement('span');
         label.textContent=item.label||item.key||'';
-        value.textContent=item.state==='inventory_checked'?(String(item.images||0)+' รูป · '+String(item.videos||0)+' วิดีโอ'):item.state==='topic_id_unresolved'?'รอข้อมูล Topic':item.state==='incomplete_scan'?'ตรวจได้บางส่วน':item.state==='source_unverified'?'ต้นทางไม่ผ่านการตรวจ':'ตรวจไม่ได้';
+        value.textContent=last.mode==='private_staging'&&item.state==='inventory_checked'?'ตรวจต้นทางแล้ว':item.state==='inventory_checked'?(String(item.images||0)+' รูป · '+String(item.videos||0)+' วิดีโอ'):item.state==='pending_review'?'รออนุมัติ / จับคู่โมเดล':item.state==='source_id_unresolved'?'รอระบุต้นทาง':item.state==='topic_id_unresolved'?'รอข้อมูล Topic':item.state==='incomplete_scan'?'ตรวจได้บางส่วน':item.state==='source_unverified'?'ต้นทางไม่ผ่านการตรวจ':item.state==='scanning'?'กำลังตรวจต้นทาง':'ตรวจไม่ได้';
         li.append(label,value);results.append(li);
       }
     };
-    button.onclick=async()=>{
-      if(loading)return;loading=true;error='';render();
-      const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),50000);
+    refreshPanel=render;
+    async function flush(forceNew=false){
+      if(loading)return;
+      if(forceNew||!resumeRunId)remember(crypto.randomUUID());
+      loading=true;error='';refreshPanel();
       try{
-        const r=await fetch('/v1/admin/ai-ops/media/flush',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'content-type':'application/json',accept:'application/json'},body:'{}',signal:controller.signal});
-        const data=await r.json().catch(()=>null);
-        if(!r.ok||!data||data.ok!==true)throw Error(r.status===401||r.status===403?'กรุณาเข้าสู่ระบบ Owner':data?.error||('HTTP '+r.status));
-        last=data;
-      }catch(e){error='FLUSH ยังตรวจไม่สำเร็จ · '+String(e.message||e);}
-      finally{clearTimeout(timer);loading=false;render();}
-    };
+        let data,retries=0;
+        do{
+          data=await post({action:'stage_all',run_id:resumeRunId});last=data;refreshPanel();
+          if(data.retry_after_ms){if(++retries>12)throw Error('งานยังไม่พร้อม · กดรับต่อรอบเดิมได้');await pause(Math.min(30000,data.retry_after_ms));}else retries=0;
+        }while(data.continue_required);
+        try{const queue=await post({action:'review_queue'});last.review_queue=queue.items;last.review_queue_incomplete=queue.incomplete;foot.textContent=queue.incomplete?'รับแล้วและรออนุมัติ · แสดงคิวบางส่วน ดูรายการทั้งหมดใน Airtable':'รับแล้วและรออนุมัติ · กดตรวจสื่อใหม่เมื่อมีสื่อเพิ่มหรือแก้ไข';}
+        catch{foot.textContent='รับรอบนี้แล้ว แต่อ่านคิวไม่ได้ · กดซ้ำเพื่อตรวจต่อได้';}
+      }catch(e){error='FLUSH หยุดชั่วคราว · '+String(e.message||e)+' · กดรับต่อรอบเดิมได้';}
+      finally{loading=false;refreshPanel();}
+    }
+    button.onclick=()=>flush(false);fresh.onclick=()=>flush(true);
     render();
   }
   const run=()=>{if(!document.body)return;mount();};
@@ -363,3 +393,4 @@ const MEDIA_FLUSH_CLIENT_LAYER = String.raw`;(()=>{'use strict';
   else run();
   const observer=new MutationObserver(run);observer.observe(document.documentElement,{subtree:true,childList:true});
 })();`;
+

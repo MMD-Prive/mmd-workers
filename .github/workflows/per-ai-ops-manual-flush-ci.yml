@@ -5,6 +5,11 @@ on:
       - "admin-worker/src/model-media-flush-preview.js"
       - "admin-worker/src/admin-login-hero-worker.js"
       - "admin-worker/model-media-flush-preview.test.mjs"
+      - "admin-worker/src/new-model-production.mjs"
+      - "admin-worker/new-model-production.test.mjs"
+      - "admin-ai-ops-worker/media-flush-client.test.mjs"
+      - "scripts/flush-overlay-merge-scope.mjs"
+      - "scripts/flush-overlay-merge-scope.test.mjs"
       - "admin-ai-ops-worker/src/gate.js"
       - "admin-ai-ops-worker/test/manual-media-flush.test.mjs"
       - ".github/workflows/per-ai-ops-manual-flush-ci.yml"
@@ -25,7 +30,9 @@ jobs:
         run: |
           node --check admin-worker/src/model-media-flush-preview.js
           node --check admin-ai-ops-worker/src/gate.js
-      - name: Owner, source-account and no-write guards
+      - name: Owner, source-account and private-review guards
         run: |
           node --test admin-worker/model-media-flush-preview.test.mjs
           node --test admin-ai-ops-worker/test/manual-media-flush.test.mjs
+          node --test admin-worker/new-model-production.test.mjs admin-ai-ops-worker/media-flush-client.test.mjs
+          node --test scripts/flush-overlay-merge-scope.test.mjs

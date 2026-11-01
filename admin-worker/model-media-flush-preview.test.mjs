@@ -25,10 +25,14 @@ function googleFixture({ account = MODEL_MEDIA_SOURCE_EMAIL, badRoot = "", allOw
     if (!parent) throw Error("unexpected_drive_query");
     const file = (suffix, name, mimeType, owner = account) =>
       ({ id: parent + suffix, name, mimeType, parents: [parent], trashed: false, owners: [{ emailAddress: owner }] });
+    if(parent.endsWith('-h'))return response({files:[file('-review','review.png','image/png')]});
+    if(parent.endsWith('-hidden'))return response({files:[file('-clip','clip.mp4','video/mp4')]});
     return response({
       files: [
         file("-p", "cover.webp", "image/webp"),
         file("-h", "Review", "application/vnd.google-apps.folder"),
+        file("-hidden", "Hidden", "application/vnd.google-apps.folder"),
+        file("-archive", "Archive", "application/vnd.google-apps.folder"),
         file("-x", "other.jpg", "image/jpeg", allOwned ? account : "somebody@example.com"),
       ],
     });
@@ -36,12 +40,12 @@ function googleFixture({ account = MODEL_MEDIA_SOURCE_EMAIL, badRoot = "", allOw
   return { http, calls };
 }
 
-test("source list is exactly eight Catalogue lanes and two Drive-owned MMD NOW lanes", () => {
+test("declared sources retain eight Catalogue lanes and resolved Drive categories", () => {
   const catalogue = MODEL_MEDIA_SOURCE_ROOTS.filter(x => x.lane === "catalogue");
   const now = MODEL_MEDIA_SOURCE_ROOTS.filter(x => x.lane === "mmd_now");
   assert.deepEqual(catalogue.map(x => x.key), ["standard","premium","ems","gws","travel","extreme","farang","up_country"]);
-  assert.deepEqual(now.map(x => x.key), ["new_entry","hot_cha"]);
-  assert.equal(new Set(MODEL_MEDIA_SOURCE_ROOTS.map(x => x.id)).size, 10);
+  assert.deepEqual(now.map(x => x.key), ["new_entry","mmd_recommend","hot_cha"]);
+  assert.equal(new Set(MODEL_MEDIA_SOURCE_ROOTS.map(x => x.id)).size, 11);
 });
 
 test("the flush preview is restricted to Per and same-origin POST", async () => {
@@ -64,27 +68,29 @@ test("source identity is locked to malemodel.bkk@gmail.com, without fallback", a
   const bad = googleFixture({ account: "different-owner@example.com" });
   const res = await handleModelMediaFlushPreview(request(), {}, { ...access, http: bad.http });
   assert.equal(res.status, 503);
-  assert.equal((await res.json()).error, "source_account_mismatch");
+  assert.equal((await res.json()).error, "drive_account_mismatch");
   const blocked = await handleModelMediaFlushPreview(request(), { COMPCARD_DRIVE_OWNER_EMAIL: "other@example.com" }, { ...access, http: bad.http });
   assert.equal(blocked.status, 503);
 });
 
-test("manual flush checks each verified source, skips Review, and never writes or publishes", async () => {
+test("metadata preview scans only eight approved roots including Review/Hidden without writes", async () => {
   const { http, calls } = googleFixture({ allOwned: false });
   const result = await handleModelMediaFlushPreview(request(), {}, { ...access, http });
   assert.equal(result.status, 200);
   const data = await result.json();
   assert.equal(data.mode, "preview_only");
   assert.equal(data.catalogue.length, 8);
-  assert.equal(data.mmd_now.length, 3); // New Release, Hot Cha, pending Telegram Standard topic
-  assert.equal(data.mmd_now.at(-1).state, "topic_id_unresolved");
-  assert.equal(data.catalogue[0].images, 1);
+  assert.equal(data.mmd_now.length, 0);
+  assert.equal(data.catalogue[0].images, 2);
+  assert.equal(data.catalogue[0].videos, 1);
   assert.equal(data.catalogue[0].excluded_folders, 1);
   assert.equal(data.catalogue[0].unverified_owner_items, 1);
   assert.deepEqual(data.writes, {drive:false,r2:false,airtable:false,cms:false,website:false});
   assert.equal(calls.filter(x => x.pathname.endsWith("/about")).length, 1);
   assert.equal(calls.some(x => x.href.includes("alt=media")), false);
-  assert.equal(calls.some(x => x.searchParams.get("q")?.includes("-h")), false);
+  assert.equal(calls.some(x => x.searchParams.get("q")?.includes("-h")), true);
+  assert.equal(calls.some(x => x.searchParams.get("q")?.includes("-hidden")), true);
+  assert.equal(calls.some(x => x.searchParams.get("q")?.includes("-archive")), false);
 });
 
 test("unverified category roots stay unscanned and fail closed", async () => {
