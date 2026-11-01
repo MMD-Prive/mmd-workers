@@ -33,7 +33,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           BEFORE_SHA: ${{ github.event.before }}
           AFTER_SHA: ${{ github.sha }}
-        run: node scripts/kenji-pause-release-scope.mjs
+        run: node scripts/flush-overlay-merge-scope.mjs
 
   deploy-and-smoke:
     needs: release-scope
