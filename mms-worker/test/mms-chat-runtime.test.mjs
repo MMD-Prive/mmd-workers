@@ -170,3 +170,50 @@ test('native chat pages stay on already-owned support and Therapist app paths; p
   assert.equal((await maybeHandleTherapistWorkspace(new Request(ORIGIN + '/male-massage/therapists/app/chat'), env)).status, 302);
   const f = fixture(); try { assert.match((await call(f.env, '/policy')).headers.get('cache-control'), /private, no-store/); } finally { f.restore(); }
 });
+
+test('private test pair chats both ways with matching off and a hidden offline profile; other accounts and expired pairs fail closed', async () => {
+  const f = fixture();
+  try {
+    f.record.fields['Matching Enabled'] = false;
+    f.record.fields['Manual Review Only'] = true;
+    f.record.fields['Availability Status'] = 'Unavailable';
+    f.record.fields['Display Name'] = 'TEST ONLY · Per';
+    f.manifest.profile_visibility = 'private';
+    const original = JSON.stringify(f.record);
+    const pair = { customer_id: CUSTOMER.id, therapist_id: THERAPIST.id, expires_at: new Date(Date.now() + 600000).toISOString() };
+    f.env.MMS_CHAT_TEST_PAIR = JSON.stringify(pair);
+    await accept(f.env);
+    await accept(f.env, THERAPIST);
+    await accept(f.env, OTHER_CUSTOMER);
+    const listed = await (await call(f.env, '/therapists')).json();
+    assert.equal(listed.data.therapists[0].is_test, true);
+    assert.equal((await (await call(f.env, '/therapists', undefined, { actor: OTHER_CUSTOMER })).json()).data.therapists.length, 0);
+    assert.equal((await call(f.env, '/threads', { therapist_id: THERAPIST.id }, { actor: OTHER_CUSTOMER })).status, 409);
+    const opened = await call(f.env, '/threads', { therapist_id: THERAPIST.id });
+    assert.equal(opened.status, 200);
+    const id = (await opened.json()).data.thread_id;
+    assert.equal((await call(f.env, `/threads/${id}/messages`, { text: 'คอร์ส 60 นาทีมีอะไรบ้างครับ', request_key: 'private_test_msg_001' })).status, 200);
+    assert.equal((await call(f.env, `/threads/${id}/messages`, { text: 'สอบถามรายละเอียดได้ครับ', request_key: 'private_test_msg_002' }, { actor: THERAPIST })).status, 200);
+    assert.equal((await (await call(f.env, `/threads/${id}`, undefined, { actor: THERAPIST })).json()).data.messages.length, 2);
+    assert.equal((await call(f.env, `/threads/${id}`, undefined, { actor: OTHER_CUSTOMER })).status, 404);
+    for (const actor of [CUSTOMER, THERAPIST]) {
+      const held = await call(f.env, `/threads/${id}/messages`, { text: 'ขอไลน์หน่อยครับ', request_key: 'private_test_hold_01' }, { actor });
+      assert.equal(held.status, 422);
+      const hold = await held.json();
+      assert.equal((await call(f.env, `/threads/${id}/reviews`, { hold_id: hold.error.hold_id }, { actor })).status, 200);
+    }
+    assert.equal((await (await call(f.env, `/threads/${id}`, undefined, { actor: THERAPIST })).json()).data.messages.length, 2);
+    f.record.fields['Matching Enabled'] = true;
+    assert.equal((await call(f.env, `/threads/${id}/messages`, { text: 'hello', request_key: 'private_test_unsafe1' }, { actor: THERAPIST })).status, 409);
+    f.record.fields['Matching Enabled'] = false;
+    f.env.MMS_CHAT_TEST_PAIR = JSON.stringify({ ...pair, customer_id: OTHER_CUSTOMER.id });
+    assert.equal((await call(f.env, `/threads/${id}/messages`, { text: 'hello', request_key: 'private_test_changed' }, { actor: THERAPIST })).status, 409);
+    f.env.MMS_CHAT_TEST_PAIR = JSON.stringify({ ...pair, expires_at: '2000-01-01T00:00:00Z' });
+    assert.equal((await call(f.env, `/threads/${id}/messages`, { text: 'hello', request_key: 'private_test_expired' })).status, 409);
+    assert.equal((await call(f.env, `/threads/${id}/messages`, { text: 'hello', request_key: 'private_test_expired2' }, { actor: THERAPIST })).status, 409);
+    delete f.env.MMS_CHAT_TEST_PAIR;
+    assert.equal((await call(f.env, `/threads/${id}/messages`, { text: 'hello', request_key: 'private_test_removed1' }, { actor: THERAPIST })).status, 409);
+    assert.equal(JSON.stringify(f.record), original);
+    assert.ok(f.calls.every(c => !c.init?.method || c.init.method === 'GET'));
+  } finally { f.restore(); }
+});

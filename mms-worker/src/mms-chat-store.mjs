@@ -85,12 +85,14 @@ export class MmsChatStore {
     const more = rows.length > 50;
     rows = rows.slice(0, 50);
     if (after === null) rows.reverse();
-    return ok({ thread_id: room.thread_id, therapist_id: room.therapist_id, label: actor.role === 'customer' ? room.therapist_label : `ลูกค้า MY MMS · ${room.thread_id.slice(-6)}`, messages: rows, more, direction: after === null ? 'older' : 'newer' });
+    return ok({ ...(room.test_expires_at ? { test_expires_at: room.test_expires_at } : {}), thread_id: room.thread_id, therapist_id: room.therapist_id, label: actor.role === 'customer' ? room.therapist_label : `ลูกค้า MY MMS · ${room.thread_id.slice(-6)}`, messages: rows, more, direction: after === null ? 'older' : 'newer' });
   }
 
   send(actor, text, requestKey, now) {
     return this.storage.transactionSync(() => {
-      if (!this.member(actor)) return fail(404, 'MMS_CHAT_NOT_FOUND');
+      const member = this.member(actor);
+      if (!member) return fail(404, 'MMS_CHAT_NOT_FOUND');
+      if (member.test_expires_at && now >= member.test_expires_at) return fail(409, 'MMS_CHAT_THERAPIST_UNAVAILABLE');
       if (typeof text !== 'string' || text.trim().length === 0 || text.length > 1000 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(text)) return fail(400, 'MMS_CHAT_MESSAGE_INVALID');
       if (!/^[a-zA-Z0-9_-]{16,80}$/.test(requestKey)) return fail(400, 'MMS_CHAT_REQUEST_KEY_INVALID');
       const actorKey = keyOf(actor);
