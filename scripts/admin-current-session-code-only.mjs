@@ -163,6 +163,25 @@ export function validateSourceState({ expectedSha, headSha, dirtyStatus }) {
   return { commit_sha: expectedSha, dirty_tree: false, dirty_path_count: 0 };
 }
 
+// Only errors created here can contribute a detailed receipt code. Never copy
+// upstream messages, arguments, stderr, or arbitrary error.code into receipts.
+const receiptFailureCodes = new WeakMap();
+function releaseFailure(code) {
+  const error = new Error('Release verification failed; inspect sanitized reason code.');
+  receiptFailureCodes.set(error, code);
+  return error;
+}
+
+export function parseWranglerVersion(output) {
+  if (typeof output !== 'string' || output.length > 4096) throw releaseFailure('WRANGLER_VERSION_UNRECOGNIZED');
+  const lines = output.replace(/\x1b\[[0-9;]*m/g, '').split(/\r?\n/).map(line => line.trim())
+    .filter(line => line && !/^[─━-]+$/.test(line));
+  const match = lines.length === 1 && /^(?:[⛅☁️ \t]*wrangler[ \t]+)?([0-9]+\.[0-9]+\.[0-9]+)$/i.exec(lines[0]);
+  if (!match) throw releaseFailure('WRANGLER_VERSION_UNRECOGNIZED');
+  if (match[1] !== '4.105.0') throw releaseFailure('WRANGLER_VERSION_MISMATCH');
+  return match[1];
+}
+
 export function createBuildEvidence({ code, releaseId, nodeVersion, wranglerVersion, lockfile, wranglerConfig, shellAssetPinSha }) {
   assert.ok(code instanceof Uint8Array && code.byteLength > 0, 'compiled module required');
   assert.match(releaseId || '', /^\d+\.\d+$/, 'workflow run identity required');
@@ -289,10 +308,12 @@ export async function releaseCurrentSession(io) {
   assert.ok([ROOT, `/accounts/${ACCOUNT}/workers/scripts/immigrate-worker`, `/accounts/${ACCOUNT}/workers/scripts/member-dashboard-chat-worker`].includes(root), 'unapproved release Worker');
   const state = { phase: 'preflight', worker: root.split('/').at(-1), source_sha: io.sha };
   const save = phase => { state.phase = phase; io.save({ ...state }); };
+  let failureStage = 'approval';
   try {
     await io.approve();
     assert.match(io.sha || '', /^[a-f0-9]{40}$/);
     const call = (suffix, init) => io.call(root + suffix, init);
+    failureStage = 'baseline_read';
     const deployment = (await call('/deployments'))?.deployments?.[0];
     const active = activeVersion(deployment);
     assert.equal(active, io.expectedVersion, 'approved baseline version mismatch');
@@ -302,8 +323,10 @@ export async function releaseCurrentSession(io) {
     const config = versionConfiguration(version);
     const metadata = (io.metadataFactory ?? uploadMetadata)(version, io.sha);
     // A stale build variable or temporal proximity is not source provenance.
+    failureStage = 'source_validation';
     state.source_evidence = await io.sourceCheck(version, deployment);
     state.source_evidence.checked_at = io.now();
+    failureStage = 'baseline_configuration';
     const settings = await call('/script-settings');
     assert.ok(settings && typeof settings === 'object', 'settings unavailable');
     const boundary = async () => {
@@ -326,19 +349,23 @@ export async function releaseCurrentSession(io) {
     await unchanged(deployment, active); // inherit resolves LATEST, not necessarily active.
     state.baseline_version = active;
     state.baseline_deployment = deployment.id;
+    failureStage = 'local_bundle';
     const code = await io.bundle(version, io.sha);
     assert.ok(code instanceof Uint8Array && code.byteLength > 0, 'compiled module required');
+    failureStage = 'build_evidence';
     state.build_evidence = { ...await io.buildEvidence(code, io.sha), recorded_at: io.now() };
     assert.ok(state.build_evidence?.artifact?.digest?.algorithm === 'sha256'
       && state.build_evidence.artifact.digest.value === sha256(code), 'artifact digest does not match uploaded module');
     validateShellAssetPin(state.build_evidence, io.sha);
     state.release_id = state.build_evidence.release_id;
     state.bundle_sha256 = state.build_evidence.artifact.digest.value;
+    failureStage = 'pre_upload_approval_and_drift';
     await io.approve();
     await unchanged(deployment, active);
     const form = new FormData();
     form.set('metadata', JSON.stringify(metadata));
     form.set('worker.js', new Blob([code], { type: 'application/javascript+module' }), 'worker.js');
+    failureStage = 'upload';
     save('upload-attempted-outcome-unknown');
     const uploaded = await call('/versions?bindings_inherit=strict', { method: 'POST', body: form });
     assert.ok(UUID.test(uploaded?.id || '') && uploaded.id !== active, 'ambiguous upload result; do not rerun');
@@ -347,6 +374,7 @@ export async function releaseCurrentSession(io) {
       created_on: typeof uploaded.created_on === 'string' ? uploaded.created_on : null,
       recorded_at: io.now() };
     save('uploaded-not-promoted');
+    failureStage = 'upload_readback';
     const exact = await call('/versions/' + uploaded.id);
     assert.equal(exact.id, uploaded.id, 'uploaded version mismatch');
     same(versionConfiguration(exact), config, 'uploaded configuration mismatch');
@@ -354,14 +382,17 @@ export async function releaseCurrentSession(io) {
     const versions = (await call('/versions'))?.items;
     assert.equal(versions?.[0]?.id, uploaded.id, 'uploaded latest mismatch');
     assert.equal(versions?.[1]?.id, active, 'upload predecessor mismatch');
+    failureStage = 'pre_promotion_approval_and_drift';
     await io.approve();
     await unchanged(deployment, uploaded.id);
+    failureStage = 'promotion';
     save('promotion-attempted-outcome-unknown');
     const promoted = await call('/deployments', { method: 'POST', body: JSON.stringify({
       strategy: 'percentage', versions: [{ version_id: uploaded.id, percentage: 100 }],
     }) });
     assert.ok(UUID.test(promoted?.id || '') && promoted.id !== deployment.id, 'ambiguous promotion result; do not rerun');
     state.deployment = promoted.id;
+    failureStage = 'promotion_readback';
     const receipt = await call('/deployments/' + promoted.id);
     assert.equal(receipt.id, promoted.id);
     assert.equal(activeVersion(receipt), uploaded.id);
@@ -379,6 +410,8 @@ export async function releaseCurrentSession(io) {
     return state;
   } catch (error) {
     state.stopped_after = state.phase;
+    state.failure_stage = failureStage;
+    state.reason_code = receiptFailureCodes.get(error) || 'RELEASE_STAGE_FAILED';
     save('stopped'); // No retry, fallback, cleanup mutation or automatic rollback.
     throw error;
   }
@@ -427,12 +460,11 @@ export function buildCurrentSessionBundle(baseline, dir, sourceSha, execute = ex
 
 function collectBuildEvidence(code, dir, releaseId, shellAssetPinSha) {
   const versionOutput = execFileSync('wrangler', ['--version'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
-  const match = versionOutput.match(/wrangler\s+([0-9]+\.[0-9]+\.[0-9]+)/i);
-  assert.ok(match, 'Wrangler version could not be identified');
+  const wranglerVersion = parseWranglerVersion(versionOutput);
   const lockfile = readFileSync(resolve('package-lock.json'));
   const wranglerConfig = readFileSync(join(dir, 'bundle.json'));
   return createBuildEvidence({ code, releaseId, nodeVersion: process.version,
-    wranglerVersion: match[1], lockfile, wranglerConfig, shellAssetPinSha });
+    wranglerVersion, lockfile, wranglerConfig, shellAssetPinSha });
 }
 
 async function main() {

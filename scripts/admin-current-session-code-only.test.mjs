@@ -4,7 +4,7 @@ import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, readdirSyn
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { pinKenjiShellAssets, buildCurrentSessionBundle, BASELINE_CI_RECEIPT, baselineSourceEvidence, readBaselineCiGithub, validateBaselineCiReceipt, verifyBaselineSourceForRelease, activeVersion, createBuildEvidence, createTransport, releaseCurrentSession, ROOT, uploadMetadata, validateBundleFiles, validateReceiptLinks, validateSourceState, ZONE } from './admin-current-session-code-only.mjs';
+import { parseWranglerVersion, pinKenjiShellAssets, buildCurrentSessionBundle, BASELINE_CI_RECEIPT, baselineSourceEvidence, readBaselineCiGithub, validateBaselineCiReceipt, verifyBaselineSourceForRelease, activeVersion, createBuildEvidence, createTransport, releaseCurrentSession, ROOT, uploadMetadata, validateBundleFiles, validateReceiptLinks, validateSourceState, ZONE } from './admin-current-session-code-only.mjs';
 
 const id = n => `${String(n).padStart(8, '0')}-0000-4000-8000-000000000000`;
 const sha = 'a'.repeat(40);
@@ -507,4 +507,39 @@ test('receipt rejects a shell pin linked to another source', async () => {
   assert.throws(() => validateReceiptLinks({source:{commit_sha:sha,dirty_tree:false},build}), /shell asset pin/);
   await assert.rejects(releaseCurrentSession(f.io), /shell asset pin/);
   assert.equal(f.writes().length,0);
+});
+
+for (const output of ['4.105.0', '4.105.0\n', 'wrangler 4.105.0\r\n', ' ⛅️ wrangler 4.105.0\n───────────────────\n', '\x1b[32mwrangler 4.105.0\x1b[0m']) {
+  test('Wrangler parser accepts supported pinned output ' + JSON.stringify(output), () => {
+    assert.equal(parseWranglerVersion(output), '4.105.0');
+  });
+}
+for (const output of ['', undefined, '4.106.0', 'wrangler 4.104.0', '4.105.0-beta.1',
+  '4.105.0\n4.106.0', 'private-token 4.105.0', '4.105.0\nprivate-token', 'x'.repeat(4097)]) {
+  test('Wrangler invalid output fails closed without exposing raw output ' + String(output).slice(0,30), async () => {
+    const f=fixture();
+    f.io.buildEvidence=async () => parseWranglerVersion(output);
+    await assert.rejects(releaseCurrentSession(f.io), error => !error.message.includes('private-token'));
+    assert.equal(f.writes().length,0);
+    const receipt=f.receipts.at(-1);
+    assert.equal(receipt.phase,'stopped'); assert.equal(receipt.stopped_after,'preflight');
+    assert.equal(receipt.failure_stage,'build_evidence');
+    assert.equal(receipt.reason_code, /^(?:wrangler )?4\.10[46]\.0$/.test(output || '') ? 'WRANGLER_VERSION_MISMATCH' : 'WRANGLER_VERSION_UNRECOGNIZED');
+    assert.equal(JSON.stringify(receipt).includes('private-token'),false);
+  });
+}
+test('unknown upstream errors use a fixed code, never their message/code/body', async () => {
+  const f=fixture();
+  f.io.bundle=async () => {throw Object.assign(Error('private-upstream-token'),{code:'secret-code',body:'private-body'});};
+  await assert.rejects(releaseCurrentSession(f.io));
+  const receipt=f.receipts.at(-1);
+  assert.equal(receipt.reason_code,'RELEASE_STAGE_FAILED'); assert.equal(receipt.failure_stage,'local_bundle');
+  assert.equal(/private-|secret-code/.test(JSON.stringify(receipt)),false); assert.equal(f.writes().length,0);
+});
+test('safe reason codes retain upload outcome unknown without retry', async () => {
+  const f=fixture({uploadError:true});
+  await assert.rejects(releaseCurrentSession(f.io));
+  assert.equal(f.receipts.at(-1).stopped_after,'upload-attempted-outcome-unknown');
+  assert.equal(f.receipts.at(-1).failure_stage,'upload');
+  assert.equal(f.receipts.at(-1).reason_code,'RELEASE_STAGE_FAILED'); assert.equal(f.writes().length,1);
 });
