@@ -274,3 +274,18 @@ test('missing presentation binding fails closed without contacting an external o
   assert.match(await page.text(), /ยังเปิด MY MMS ไม่สำเร็จ/);
   assert.equal((await handleMyMmsCustomerAsset(req('/male-massage-assets/app.css'), {})).status, 502);
 });
+
+test('customer chat permits embedded brand assets while scripts and connections stay restricted', async () => {
+  const response = await handleMyMmsCustomerUi(req('/male-massage/support/chat'));
+  const csp = response.headers.get('content-security-policy');
+  const directives = Object.fromEntries(csp.split(';').map(part => part.trim().split(/\s+/)).filter(([name]) => name).map(([name,...sources]) => [name,sources]));
+  assert.deepEqual(directives['default-src'], ["'none'"]);
+  assert.deepEqual(directives['img-src'], ['data:']);
+  assert.deepEqual(directives['font-src'], ['data:']);
+  assert.deepEqual(directives['connect-src'], ["'self'"]);
+  assert.deepEqual(directives['script-src'], ["'unsafe-inline'"]);
+  const html = await response.text();
+  assert.match(html, /data:image\/svg\+xml;base64,/);
+  assert.match(html, /data:font\/woff2;base64,/);
+  assert.doesNotMatch(html, /https:\/\/cdn\.prod\.website-files\.com/);
+});

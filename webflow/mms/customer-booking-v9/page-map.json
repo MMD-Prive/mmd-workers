@@ -1,0 +1,20 @@
+{
+  "siteId": "68f879d546d2f4e2ab186e90",
+  "pageId": "6a88d0b8cd1adb75d960acbe",
+  "path": "/male-massage/member/mms-booking",
+  "presentationOwner": "Webflow",
+  "runtimeOwner": "Original registered mmb2core1 through mmb2core7 scripts",
+  "files": {
+    "page-head.html": "page freeform head",
+    "guided-compat.html": "HtmlEmbed 18293b8f-807b-a751-5e1a-945593218123 code",
+    "booking.html": "HtmlEmbed 38f0a7d1-981b-fabd-fe33-754276ad095f code"
+  },
+  "css": "booking-v9.css is embedded in page-head.html; do not apply it twice",
+  "unchangedEmbeds": [
+    "4799ae21-5eec-6d1d-49c2-21d4789b3ee5",
+    "c7943d3c-0749-259e-d693-22679f9a36a8"
+  ],
+  "publication": "Not published; saving these files or merging this PR does not publish Webflow",
+  "fixtureBoundary": "test/ fixtures are offline only and must never be copied to Webflow",
+  "normalization": "Trailing blank lines normalized to one final newline; script contents and form contracts unchanged."
+}

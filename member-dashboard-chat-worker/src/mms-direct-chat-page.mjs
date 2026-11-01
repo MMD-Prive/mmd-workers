@@ -1,3 +1,4 @@
+import { MMS_CUSTOMER_V9_FONTS } from "./mms-customer-v9-fonts.mjs";
 import { MMS_GRAPHICS_CSS, MMS_CHAT_GRAPHICS_CSS, MMS_GRAPHICS_LOGO } from "./mms-graphics-v2.mjs";
 import { mmsGraphicRuntime } from "./mms-graphic-progress.mjs";
 import { MMS_CHAT_ERRORS } from '../../shared/mms-chat-policy.mjs';
@@ -7,7 +8,7 @@ export function renderMmsDirectChatPage(role) {
   const config = JSON.stringify({ role, api: therapist ? '/male-massage/therapists/api/app/chat' : '/api/mms/app/chat', errors: MMS_CHAT_ERRORS }).replaceAll('<', '\\u003c');
   return `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>แชตตรง · ${therapist ? 'MY THERAPIST' : 'MY MMS'}</title><style>
   *{box-sizing:border-box}[hidden]{display:none!important}body{margin:0;background:#f4f5ef;color:#20392b;font:16px/1.65 system-ui,-apple-system,sans-serif}main{max-width:760px;margin:auto;padding:18px 16px calc(30px + env(safe-area-inset-bottom))}header,.row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;justify-content:space-between}h1{font-size:26px;margin:14px 0 4px}h2{font-size:20px;margin:0 0 12px}h3{font-size:17px;margin:0}p{margin:8px 0}a{color:#24563c}header a,summary{min-height:48px;display:inline-flex;align-items:center}summary{cursor:pointer;font-weight:650}button{border:0;border-radius:12px;min-height:48px;padding:10px 16px;font:inherit;background:#24563c;color:#fff;cursor:pointer}button.alt{background:#e9eee4;color:#24563c}button:disabled{opacity:.6;cursor:default}button:focus-visible,a:focus-visible,summary:focus-visible{outline:3px solid #ad8544;outline-offset:3px}textarea,select{width:100%;font:inherit;color:inherit;background:white;border:1px solid #a8b8a0;border-radius:10px;padding:12px;margin:6px 0 12px}textarea{resize:vertical;min-height:96px}.card{padding:18px;border:1px solid #dce2d6;border-radius:18px;background:white;margin:14px 0;overflow-wrap:anywhere}.muted{color:#52634f;font-size:14px}.error{color:#8f2f20}#notice{min-height:26px}#messages{max-height:55svh;min-height:140px;overflow-y:auto;overscroll-behavior:contain;padding:4px}article.message{max-width:90%;padding:12px 14px;border-radius:14px;background:#edf0e9;margin:10px 0;white-space:pre-wrap;overflow-wrap:anywhere}article.message.mine{margin-left:auto;background:#e1eddd}article.message small{display:block;color:#52634f;font-size:12px}.thread{display:block;width:100%;text-align:left;margin:8px 0}.thread[aria-pressed=true]{background:#24563c;color:white}.course{font-size:14px;margin:6px 0}ol{padding-left:24px}li{margin:12px 0}.actions{display:flex;gap:10px;flex-wrap:wrap}#blocked{padding:12px;background:#fff4e8;border-radius:12px}#send{flex:1}label{display:block}button,a{touch-action:manipulation}
-  ${MMS_GRAPHICS_CSS}${MMS_CHAT_GRAPHICS_CSS}${therapist ? "" : MMS_CUSTOMER_CHAT_SKIN}</style></head><body data-mms-graphics="${therapist ? 'chat-v2' : 'customer-chat-v3'}"><main data-mms-chat="${role}"><header><a href="${therapist ? '/male-massage/therapists/app' : '/male-massage'}">← ${therapist ? 'MY THERAPIST' : 'MY MMS'}</a><img class="mms-brand" src="${MMS_GRAPHICS_LOGO}" alt="MMS Male Massage" width="108" height="32"></header><h1>${therapist ? 'แชตกับลูกค้า' : 'คุยกับ Therapist'}</h1><p class="muted">สอบถามและตกลงบริการได้ตรงนี้ครับ การคุยยังไม่ถือเป็นการจองหรือรับงาน</p>
+  ${MMS_GRAPHICS_CSS}${MMS_CHAT_GRAPHICS_CSS}${therapist ? "" : MMS_CUSTOMER_CHAT_SKIN}</style></head><body data-mms-graphics="${therapist ? 'chat-v2' : 'customer-chat-v3'}"><main data-mms-chat="${role}"><header><a href="${therapist ? '/male-massage/therapists/app' : '/male-massage'}">← ${therapist ? 'MY THERAPIST' : 'MY MMS'}</a><img class="mms-brand" src="${MMS_GRAPHICS_LOGO}" alt="MMS Male Massage" width="108" height="32"></header>${therapist ? '<h1>แชตกับลูกค้า</h1><p class="muted">สอบถามและตกลงบริการได้ตรงนี้ครับ การคุยยังไม่ถือเป็นการจองหรือรับงาน</p>' : '<section class="mms-chat-v9-hero"><p class="mms-chat-v9-kicker">YOUR CONVERSATIONS</p><h1>คุยกัน<br><em>ใน MY MMS.</em></h1><p>สอบถามและตกลงบริการได้ตรงนี้ครับ การคุยยังไม่ถือเป็นการจองหรือรับงาน</p></section>'}
   <div id="graphic-progress" hidden></div><p id="notice" role="status" aria-live="polite">กำลังตรวจสอบบัญชีครับ</p><div class="actions"><button id="retry" class="alt" type="button">ลองอีกครั้ง</button><a id="login" hidden href="${therapist ? '/male-massage/therapists/login' : '/male-massage/member'}">ยืนยันบัญชีผ่าน LINE</a></div>
   <section class="card" id="policy-card" hidden><details id="policy-details" open><summary>กติกาการสนทนาใน MY MMS</summary><p id="policy-intro"></p><ol id="rules"></ol></details><button id="agree" type="button">รับทราบและเริ่มคุย</button></section>
   <div id="app" hidden><section id="directory" class="card" ${therapist ? 'hidden' : ''}><h2>เลือก Therapist</h2><label>พื้นที่ให้บริการ<select id="zone"><option value="">ทุกพื้นที่ให้บริการ</option></select></label><p class="muted">สถานะ Online หมายถึงเปิดรับคำขอ ยังต้องรอ Therapist ยืนยันงานครับ</p><div id="therapists"></div><button id="more-therapists" type="button" class="alt" hidden>ดู Therapist เพิ่ม</button></section>
@@ -168,25 +169,37 @@ function chatClient(config) {
 
 // Presentation only: chat policy, API, polling and account isolation stay unchanged.
 const MMS_CUSTOMER_CHAT_SKIN = `
-body[data-mms-graphics="customer-chat-v3"]{background:#173e32;color:#213b30;min-height:100dvh;padding:0 10px;font-family:system-ui,-apple-system,sans-serif}
-[data-mms-graphics="customer-chat-v3"] main{max-width:672px;background:#fafbf7;min-height:100dvh;padding:0 20px calc(112px + env(safe-area-inset-bottom));border-radius:0 0 28px 28px}
-[data-mms-graphics="customer-chat-v3"] header{background:#173e32;color:#f5f7ee;margin:0 -20px;padding:calc(18px + env(safe-area-inset-top)) 20px 22px;border:0}
-[data-mms-graphics="customer-chat-v3"] header a{color:#f5f7ee;font-size:.85rem;text-decoration:none}
-[data-mms-graphics="customer-chat-v3"] header img{background:transparent;padding:0}
-[data-mms-graphics="customer-chat-v3"] h1{font-size:24px;line-height:1.4;padding-top:26px;margin-top:0;font-weight:600}
-[data-mms-graphics="customer-chat-v3"] .card{border-color:#e2e8df;border-radius:24px;padding:20px;box-shadow:none;background:#fff}
-[data-mms-graphics="customer-chat-v3"] h2{font-size:18px;font-weight:600}
-[data-mms-graphics="customer-chat-v3"] .muted{color:#596d62;font-size:13px}
-[data-mms-graphics="customer-chat-v3"] button{background:#173e32;border-radius:14px;font-weight:500}
-[data-mms-graphics="customer-chat-v3"] button.alt{background:#eef3e8;color:#284d36}
-[data-mms-graphics="customer-chat-v3"] select,[data-mms-graphics="customer-chat-v3"] textarea{border-color:#d9e2d4;border-radius:14px;background:#fafbf7}
-[data-mms-graphics="customer-chat-v3"] article.message{background:#f0f3ec;border-radius:18px 18px 18px 5px;font-size:15px}
-[data-mms-graphics="customer-chat-v3"] article.message.mine{background:#e5eddc;border-radius:18px 18px 5px 18px}
+${MMS_CUSTOMER_V9_FONTS}
+body[data-mms-graphics="customer-chat-v3"]{background:#f6f6f0;color:#183326;min-height:100dvh;padding:0;font-family:"LINE Seed Sans TH",system-ui,sans-serif;font-size:1rem}
+[data-mms-graphics="customer-chat-v3"] main{max-width:880px;min-height:100dvh;padding:0 20px calc(124px + env(safe-area-inset-bottom))}
+[data-mms-graphics="customer-chat-v3"] header{border-radius:0;background:#0b2419;color:#fffdf8;margin:0 -20px;padding:calc(10px + env(safe-area-inset-top)) 20px 10px;border:0;min-height:68px}
+[data-mms-graphics="customer-chat-v3"] header a{color:#fffdf8;font-size:1rem;text-decoration:none}
+[data-mms-graphics="customer-chat-v3"] header img{background:transparent;padding:0;width:136px;height:auto;max-height:40px}
+[data-mms-graphics="customer-chat-v3"] .mms-chat-v9-hero{position:relative;isolation:isolate;overflow:hidden;background:radial-gradient(circle at 92% 76%,#335f37 0,transparent 40%),radial-gradient(circle at 8% 2%,#254b32 0,transparent 50%),#0b2419;color:#fffdf8;margin:0 -20px 28px;padding:30px 24px 34px}
+[data-mms-graphics="customer-chat-v3"] .mms-chat-v9-hero::after{content:"";position:absolute;z-index:-1;right:-35%;bottom:-110%;width:90%;aspect-ratio:1;border:1px solid #d8ee8f29;border-radius:50%;pointer-events:none}
+[data-mms-graphics="customer-chat-v3"] .mms-chat-v9-kicker{color:#d8ee8f;font-size:.625rem;letter-spacing:.16em;font-weight:800;margin:0 0 15px}
+[data-mms-graphics="customer-chat-v3"] h1{font-size:clamp(2.375rem,8.5vw,3.625rem);line-height:1.18;margin:0;font-weight:800;letter-spacing:-.045em}
+[data-mms-graphics="customer-chat-v3"] h1 em{font-style:normal;color:#d8ee8f}
+[data-mms-graphics="customer-chat-v3"] .mms-chat-v9-hero>p:last-child{color:#e3eee3;margin:16px 0 0;line-height:1.75}
+[data-mms-graphics="customer-chat-v3"] .card{border-color:#dae2d8;border-radius:22px;padding:22px;box-shadow:0 8px 28px #14312006;background:#fffdf8}
+[data-mms-graphics="customer-chat-v3"] h2{font-size:1.375rem;font-weight:800;line-height:1.5}
+[data-mms-graphics="customer-chat-v3"] .muted{color:#50665a;font-size:1rem;line-height:1.7}
+[data-mms-graphics="customer-chat-v3"] button{background:#d8ee8f;color:#0b2419;border-radius:999px;font-weight:700;min-height:52px;white-space:normal}
+[data-mms-graphics="customer-chat-v3"] button.alt{background:#e8eee5;color:#183326}
+[data-mms-graphics="customer-chat-v3"] .thread[aria-pressed=true]{background:#0b2419;color:#d8ee8f}
+[data-mms-graphics="customer-chat-v3"] :is(select,textarea){border-color:#bfcfba;border-radius:12px;background:#fffdf8}
+[data-mms-graphics="customer-chat-v3"] :is(p,h1,h2,h3,button,a,summary){overflow-wrap:anywhere;min-width:0}
+[data-mms-graphics="customer-chat-v3"] article.message{background:#e8eee5;border-radius:18px 18px 18px 5px;font-size:1rem}
+[data-mms-graphics="customer-chat-v3"] article.message.mine{background:#e8efd8;border-radius:18px 18px 5px 18px}
+[data-mms-graphics="customer-chat-v3"] article.message small{font-size:.875rem;color:#50665a}
 [data-mms-graphics="customer-chat-v3"] #conversation{scroll-margin-top:16px}
-[data-mms-graphics="customer-chat-v3"] .mms-customer-nav{position:fixed;bottom:0;left:0;right:0;z-index:30;background:#fafbf7f5;border-top:1px solid #e2e8df;padding:5px 12px calc(5px + env(safe-area-inset-bottom));display:flex;justify-content:center;backdrop-filter:blur(16px)}
-[data-mms-graphics="customer-chat-v3"] .mms-customer-nav a{flex:1;max-width:162px;min-height:64px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;font-size:11px;text-decoration:none;color:#718073;border-radius:18px}
-[data-mms-graphics="customer-chat-v3"] .mms-customer-nav a[aria-current=page]{background:#eaf1e4;color:#173e32}
+[data-mms-graphics="customer-chat-v3"] .mms-customer-nav{position:fixed;bottom:0;left:0;right:0;z-index:30;background:#f6f6f0f5;border-top:1px solid #dae2d8;padding:8px 10px calc(8px + env(safe-area-inset-bottom));display:flex;justify-content:center;gap:5px;backdrop-filter:blur(16px)}
+[data-mms-graphics="customer-chat-v3"] .mms-customer-nav a{flex:1;max-width:210px;min-height:58px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;font-size:.8125rem;text-decoration:none;color:#50665a;border-radius:14px}
+[data-mms-graphics="customer-chat-v3"] .mms-customer-nav a[aria-current=page]{background:#0b2419;color:#d8ee8f}
 [data-mms-graphics="customer-chat-v3"] .mms-customer-nav svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+[data-mms-graphics="customer-chat-v3"] :is(a,button,summary,select,textarea):focus-visible{outline:3px solid #a8d46d;outline-offset:4px}
+@media(min-width:700px){[data-mms-graphics="customer-chat-v3"] .mms-chat-v9-hero{padding:44px 36px}[data-mms-graphics="customer-chat-v3"] h1{font-size:3.75rem}}
+@media(prefers-reduced-motion:reduce){[data-mms-graphics="customer-chat-v3"] *,[data-mms-graphics="customer-chat-v3"] *::before,[data-mms-graphics="customer-chat-v3"] *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 `;
 const MMS_CUSTOMER_CHAT_NAV = `<nav class="mms-customer-nav" aria-label="เมนูหลัก">
 <a href="/male-massage"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7v11h-6v-7H9v7H3Z"/></svg>หน้าหลัก</a>
