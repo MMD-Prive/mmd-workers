@@ -60,6 +60,7 @@ jobs:
             webflow/sigil/model/model-console-install-blocks.test.mjs \
             webflow/sigil/model/model-console-decline-options.test.mjs \
             webflow/sigil/model/model-console-state-presentation.test.mjs \
+            webflow/sigil/model/model-console-no-job.test.mjs \
             webflow/sigil/model/model-console-travel-flow.test.mjs \
             webflow/sigil/model/model-console-v3-identity-first.test.mjs \
             webflow/sigil/model/model-console-payout-summary-v2.test.mjs \
