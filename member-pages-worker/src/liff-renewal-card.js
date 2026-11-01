@@ -77,8 +77,10 @@ function expiryAfter(offer) {
 function promoLabel(promotion) {
   if (!promotion) return "";
   const years = Number(promotion.bonus_years || 0);
+  const months = Number(promotion.bonus_months || 0);
   const days = Number(promotion.bonus_days || 0);
   if (years > 0) return `โปรต่ออายุ: เพิ่ม ${years} ปี`;
+  if (months > 0) return `โปรต่ออายุ: เพิ่ม ${months} เดือน`;
   if (days > 0) return `โปรต่ออายุ: เพิ่ม ${days} วัน`;
   return "";
 }
@@ -121,6 +123,7 @@ async function handleOffer(request, env) {
     promotion_label: promoLabel(offer.promotion),
     membership_years: offer.membership_years,
     bonus_days: Number(offer.promotion?.bonus_days || 0),
+    bonus_months: Number(offer.promotion?.bonus_months || 0),
     bonus_years: Number(offer.promotion?.bonus_years || 0),
     promotion_ends_before: offer.promotion?.ends_before || null,
     price_rule: offer.price_rule,
@@ -234,3 +237,4 @@ export async function handleLiffRenewalCard(request, env = {}) {
 }
 
 export const LIFF_RENEWAL_CARD_INTERNALS = Object.freeze({ expiryAfter, promoLabel, canonicalCheckoutUrl, renewalSessionId });
+

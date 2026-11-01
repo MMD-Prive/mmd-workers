@@ -189,7 +189,7 @@ async function materializeRenewal(env, input) {
   const expireAt = (applyMembershipPromotion(baseExpireAt, promotion, {start_at:startAt}) || baseExpireAt)?.toISOString() || "";
   if (!expireAt) return entitlementReview("membership_term_invalid");
   const baseRule = `${renewalYears}_year${renewalYears === 1 ? "" : "s"}_from_${timing.active ? "current_expiry" : "verified_payment"}`;
-  const membershipTerm = `${renewalYears === 2 ? "2_years" : "1_year"}${promotion ? `_plus_${promotion.bonus_years ? `${promotion.bonus_years}_year` : `${promotion.bonus_days}_days`}` : ""}`;
+  const membershipTerm = `${renewalYears === 2 ? "2_years" : "1_year"}${promotion ? `_plus_${promotion.bonus_years ? `${promotion.bonus_years}_year` : promotion.bonus_months ? `${promotion.bonus_months}_months` : `${promotion.bonus_days}_days`}` : ""}`;
   const memberEmail = email(member.fields?.["Contact Email"] || member.fields?.email);
   const fields = compact({
     entitlement_id: entitlementId,
@@ -483,3 +483,4 @@ function code(value) { return clean(value, 180).toLowerCase().replace(/[^a-z0-9]
 function text(value, max = 240) { return clean(value, max).replace(/[\u0000-\u001F\u007F]/g, " ").slice(0, max); }
 function clean(value, max = 4000) { return String(value == null ? "" : value).trim().slice(0, max); }
 function compact(value) { return Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined && v !== null && v !== "")); }
+

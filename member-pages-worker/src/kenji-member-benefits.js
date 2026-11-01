@@ -1,25 +1,32 @@
-import { currentPrivateMembershipPromotion, privateRenewalTiming } from "../../shared/membership-promotion-policy.mjs";
+import { currentPrivateMembershipPromotion, privateRenewalTiming, privateRenewalPriceEligible } from "../../shared/membership-promotion-policy.mjs";
 import { getCareBackStore } from "./care-back-claim-store.js";
 import { readCareBackPhase1Recovery } from "./care-back-phase1-recovery.js";
 
 export function projectKenjiRenewalPromotion(membership = {}, now = new Date()) {
-  const authority = "owner_approved_october_renewal_2026_v1";
+  const authority = now.getTime() >= Date.parse("2026-11-01T00:00:00+07:00")
+    ? "owner_approved_november_returning_2026_v1" : "owner_approved_october_renewal_2026_v1";
   const packageCode = { private_standard: "standard", private_premium: "premium" }[membership.level];
   if (membership.member_blocked || !["active", "expiring_soon", "grace", "expired"].includes(membership.lifecycle) || !packageCode) {
     return { authority, status: "not_applicable" };
   }
   const timing = privateRenewalTiming(membership.expire_at, now);
   if (!timing?.expiry_known) return { authority, status: "review_required", reason: "canonical_expiry_required" };
-  if (timing.expired_one_year_or_more) return { authority, status: "not_applicable", reason: "expired_one_calendar_year_or_more" };
   // Candidate payment time is only a preview. Payment truth re-evaluates the
   // actual paid_at; this projection neither awards nor extends membership.
   const offer = currentPrivateMembershipPromotion({ package_code: packageCode, paid_at: now.toISOString(), action: "renewal", existing_member: true, prior_expire_at: membership.expire_at });
-  // Owner confirmation 2026-10-12 (CARE BACK poster): Standard = 1 year + 180 days, Premium = 1 year + 1 year (total 2).
-  // Terms come from the payment policy offer so this projection never promises more than checkout would grant.
-  // Checkout stays under review (unchanged).
+  // The paid-time policy preserves historical October terms and selects the
+  // six-calendar-month November benefit. It does not authorize a renewal price.
+  if (!offer) return { authority, status: "not_applicable", reason: timing.expired_one_year_or_more ? "expired_one_calendar_year_or_more" : "outside_approved_campaign_window" };
   const promotionYears = Number(offer?.bonus_years || 0), promotionDays = Number(offer?.bonus_days || 0);
-  return offer ? { authority, status: "conditional_eligible", package_code: packageCode, total_years: 1 + promotionYears, base_years: 1, promotion_years: promotionYears, promotion_days: promotionDays, starts_from: timing.active ? "existing_expiry" : "verified_renewal_time", ends_before: offer.ends_before, requires_verified_payment: true, checkout_status: "review_required", reason: "payment_term_policy_alignment_required" }
-    : { authority, status: "not_applicable", reason: "outside_approved_campaign_window" };
+  const promotionMonths = Number(offer.bonus_months || 0);
+  const benefit = { authority, package_code: packageCode, promotion_years: promotionYears, promotion_months: promotionMonths, promotion_days: promotionDays, bonus_months: promotionMonths, ends_before: offer.ends_before, requires_verified_payment: true };
+  // Returning members outside the existing 90-day price window still receive
+  // the policy benefit, but require a separately verified signup/rejoin quote.
+  // Do not manufacture its purchased term or a discounted renewal offer here.
+  if (promotionMonths === 6 && !privateRenewalPriceEligible(timing)) {
+    return { ...benefit, status: "review_required", reason: "renewal_expired_over_90_days_review_required" };
+  }
+  return { ...benefit, status: "conditional_eligible", total_years: 1 + promotionYears, base_years: 1, starts_from: timing.active ? "existing_expiry" : "verified_renewal_time", checkout_status: "review_required", reason: "payment_term_policy_alignment_required" };
 }
 
 function couponProjection(wallet = {}) {
@@ -52,3 +59,4 @@ export async function readKenjiCareBackCoupon(env, lineUserId, memberId) {
     return couponProjection(await store.readCouponWallet({ identityHash, memberId }));
   } catch { return unavailable; }
 }
+

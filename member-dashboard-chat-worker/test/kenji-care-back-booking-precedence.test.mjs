@@ -147,14 +147,14 @@ test('all three CARE BACK groups supersede the active Hiro intake without changi
   assert.deepEqual(readDraft(), initialDraft, 'a campaign question must not become a booking location/date');
 }));
 
-test('after the Bangkok cutoff CARE BACK still supersedes Hiro and returns the ended-campaign CTA', async (t) => harness(t, async ({ send, calls, initialDraft, readDraft }) => {
+test('after the November cutoff CARE BACK still supersedes Hiro and returns neutral navigation', async (t) => harness(t, async ({ send, calls, initialDraft, readDraft }) => {
   assert.equal((await send('CARE BACK สมาชิกใหม่')).status, 200);
   assert.equal(calls.line.length, 1);
-  assert.match(calls.line[0].messages[0].text, /สิ้นสุดวันที่ 31 ต\.ค\. 2569/);
+  assert.match(calls.line[0].messages[0].text, /ตรวจข้อเสนอและสิทธิ์ล่าสุดจากบัญชีเดิม/);
   assert.match(calls.line[0].messages[0].text, /intent=status&view=overview/);
   assert.doesNotMatch(calls.line[0].messages[0].text, /Hiro|วันนี้วันสุดท้าย|1,199|66 คะแนน/);
   assert.deepEqual(readDraft(), initialDraft);
-}, { now: Date.parse('2026-11-01T00:00:00+07:00') }));
+}, { now: Date.parse('2026-12-01T00:00:00+07:00') }));
 
 test('a named-model message still uses the existing guided booking intake', async (t) => harness(t, async ({ send, calls }) => {
   assert.equal((await send('นายแบบ Hiro')).status, 200);

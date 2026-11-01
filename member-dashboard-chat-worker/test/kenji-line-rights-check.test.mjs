@@ -37,7 +37,7 @@ test("redelivery never produces customer reply", async () => { const f = await f
 test("uncertain profile amount and historical points never become spendable", () => { const t = truth(); t.points = { status:"verified", active_points:61320, historicalPoints:{ grossPoints:61320 } }; const d = renderLineRightsCheck(t); assert.doesNotMatch(d.text,/61,320/); assert.ok(d.missing.includes("canonical_paid_points")); });
 for (const level of ["vip", "svip", "black_card"]) test(`preserves ${level} and blocks package downgrade`, () => { const t=truth(); t.membership.level=level; const d=renderLineRightsCheck(t); assert.match(d.text, new RegExp(level === "black_card" ? "Black Card" : level.toUpperCase())); assert.doesNotMatch(d.text,/2,500/); assert.ok(d.missing.includes("protected_tier_owner_review")); });
 test("blocked member cannot receive renewal price", () => { const t=truth(); t.membership.member_blocked=true; assert.doesNotMatch(renderLineRightsCheck(t).text,/2,500/); });
-test("new signup classification is honest", () => { const t=truth(); t.membership.lifecycle="expired"; t.renewal={status:"review_required",classification:"new_signup"}; assert.match(renderLineRightsCheck(t).text,/สมัครใหม่/); });
+test("new signup classification requests review of the existing account", () => { const t=truth(); t.membership.lifecycle="expired"; t.renewal={status:"review_required",classification:"new_signup"}; assert.match(renderLineRightsCheck(t).text,/ตรวจเงื่อนไขสมัครจากบัญชีเดิมก่อนชำระ/); });
 
 for (const commandText of ["เช็กสิทธิ์\u200B", "อยากทราบสถานะสมาชิกตอนนี้ พิมพ์ เช็กสิทธิ์", "อยากทราบสถานะสมาชิกตอนนี้ พิมพ์ เช็คสิทธิ์", "อยากทราบสถานะสมาชิกตอนนี้ พิมพ์ เช็คสิทธิ์ ."]) test(`signed ingress preserves the shared shortcut stop or the legacy sentence gate for ${JSON.stringify(commandText)}`, async () => {
   const { createLineSignature } = await import("../src/index.js");
@@ -144,7 +144,8 @@ test("only current unblocked canonical access appears in benefits", () => {
   t.membership.member_blocked = true;
   assert.doesNotMatch(renderLineRightsCheck(t).text, /สิทธิ์ดู Private: Premium|Public Service: ใช้งานได้/);
 });
-test("Standard renewal promo is stated as 180 extra days, never as a total of 2 years", () => {
+test("historical October Standard promo is stated as 180 extra days, never as a total of 2 years", context => {
+  context.mock.method(Date, "now", () => Date.parse("2026-10-31T12:00:00+07:00"));
   const t = truth();
   t.membership = { ...t.membership, level: "private_standard" };
   t.promotion = { authority: "owner_approved_october_renewal_2026_v1", status: "conditional_eligible", package_code: "standard", total_years: 1, base_years: 1, promotion_years: 0, promotion_days: 180, starts_from: "existing_expiry", requires_verified_payment: true, ends_before: "2099-01-01", checkout_status: "review_required" };
@@ -153,7 +154,8 @@ test("Standard renewal promo is stated as 180 extra days, never as a total of 2 
   t.promotion.promotion_days = 365; // inconsistent shape fails closed
   assert.match(renderLineRightsCheck(t).text, /โปรต่ออายุยังรอเปอร์ตรวจเงื่อนไขครับ/);
 });
-test("own canonical coupon and approved total-two-year promo are rendered without activating anything", () => {
+test("historical October canonical coupon and total-two-year promo render without activating anything", context => {
+  context.mock.method(Date, "now", () => Date.parse("2026-10-31T12:00:00+07:00"));
   const t = truth();
   t.coupon = { authority: "canonical_care_back_wallet_v1", status: "ready", approved_discount_percent: 5, expires_at: "2099-01-01" };
   t.promotion = { authority: "owner_approved_october_renewal_2026_v1", status: "conditional_eligible", package_code: "premium", total_years: 2, base_years: 1, promotion_years: 1, starts_from: "existing_expiry", requires_verified_payment: true, ends_before: "2099-01-01", checkout_status: "review_required" };
@@ -219,3 +221,4 @@ test("signed interest ingress answers once while general replies stay stopped", 
     assert.equal(deliveries, 1); assert.equal(reads, 1);
   } finally { globalThis.fetch = previous; }
 });
+

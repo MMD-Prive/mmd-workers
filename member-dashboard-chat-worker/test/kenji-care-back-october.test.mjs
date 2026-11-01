@@ -6,12 +6,12 @@ import { refineKenjiSalesIntent } from '../src/kenji-sales-reply-v2-policy.mjs';
 import { resolveKenjiSeedDecision } from '../src/kenji-seed-line-runtime.mjs';
 const event = text => ({ type: 'message', mode: 'active', source: { type: 'user' }, message: { type: 'text', text } });
 
-test('Bangkok date boundaries never advertise the offer after October 31', () => {
+test('Bangkok date boundaries retire the October copy when the November wave begins', () => {
   assert.equal(careBackOctoberReply('care_back_new_member', '', start - 1), null);
   for (const now of [start, end - 1]) assert.match(careBackOctoberReply('care_back_new_member', '', now).text, /วันนี้วันสุดท้าย/);
   for (const now of [end, end + 86400000]) {
     const answer = careBackOctoberReply('care_back_new_member', '', now);
-    assert.match(answer.text, /สิ้นสุด/);
+    assert.match(answer.text, /30 พ.ย. 2569/);
     assert.doesNotMatch(answer.text, /วันนี้วันสุดท้าย|1,199|66 คะแนน|แถม/);
     assert.ok(answer.route);
   }
@@ -55,3 +55,4 @@ test('stale effective intent cannot turn a bare choice into an advertised group 
     assert.doesNotMatch(reply.text || '', /1,199|1,000|แถม 180 วัน|Premium แถม 1 ปี/);
   }
 });
+

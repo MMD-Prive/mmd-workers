@@ -64,10 +64,13 @@ export async function reconcilePremiumReviewedMembershipTerm(request, response, 
   // New reviewed-proof materialization is already canonical: Premium is two
   // calendar years from verified payment. Keep this wrapper only as a
   // backward-compatibility guard for legacy one-year responses so a canonical
-  // response can never be extended to three years.
+  // response can never be extended to three years. November returning-member
+  // results already include their six-month bonus and must also remain unchanged.
   if (data.membership_term === "2_years"
     || data.membership_expiry_rule === "2_years_from_verified_payment"
-    || String(data.membership_expiry_rule || "").includes("care_back_private_premium_2026")) {
+    || String(data.membership_expiry_rule || "").includes("care_back_private_premium_2026")
+    || (data.membership_term === "1_year_plus_6_months"
+      && /^1_year_from_(?:current_expiry|verified_payment)_plus_november_returning_premium_2026$/.test(String(data.membership_expiry_rule || "")))) {
     return response;
   }
 
@@ -97,3 +100,4 @@ export async function reconcilePremiumReviewedMembershipTerm(request, response, 
     premium_term_reconciled: true,
   });
 }
+

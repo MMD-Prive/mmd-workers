@@ -274,3 +274,57 @@ for (const paymentState of ["pending", "rejected"]) {
   assert.equal(body.entitlement_materialized,false);assert.equal(body.payment_status,paymentState==="rejected"?"rejected":"pending_review");assert.equal(body.renewal_settlement.reason,"canonical_payment_verification_required");assert.equal(JSON.stringify(h.tables),before);
  });
 }
+
+for (const [packageCode, amount, capability, duration] of [
+  ["standard", 1000, "private_standard", 365],
+  ["premium", 2500, "private_premium", 730],
+]) test("November signed web " + packageCode + " uses six calendar months and persists its term label", async () => {
+  const h = harness();
+  Object.assign(h.tables.payments[0].fields, { amount_thb: amount, package_code: packageCode, paid_at: "2026-11-01T03:00:00.000Z" });
+  Object.assign(h.tables.renewals[0].fields, { requested_package: packageCode, renewal_amount_thb: amount });
+  Object.assign(h.tables.packages[0].fields, { code: packageCode, duration_days: duration, renew_price: amount });
+  Object.assign(h.tables.entitlements[0].fields, { package_code: packageCode, capability, entitlement_level: packageCode, expire_at: "2027-08-30T17:15:00.000Z" });
+  const body = await (await reconcileCanonicalWebRenewalProof(renewalRequest(), slipResponse(), h.env)).json();
+  assert.equal(body.entitlement_materialized, true);
+  assert.equal(body.membership_expire_at, "2029-02-27T17:15:00.000Z");
+  assert.equal(body.membership_term, "1_year_plus_6_months");
+  const row = h.tables.entitlements.find(row => row.fields.payment_ref === "PAY-WEB-RENEW-1");
+  assert.equal(row.fields.start_at, "2027-08-30T17:15:00.000Z");
+  assert.equal(row.fields.membership_term, "1_year_plus_6_months");
+});
+
+for (const [paidAt, expiry] of [
+  ["2026-10-31T17:00:00.000Z", "2028-04-30T17:00:00.000Z"],
+  ["2026-12-31T16:59:59.999Z", "2028-06-30T16:59:59.999Z"],
+]) test("signed web paid-time November policy boundary " + paidAt + " grants the canonical bonus", async () => {
+  const h = harness();
+  h.tables.payments[0].fields.paid_at = paidAt;
+  h.tables.entitlements[0].fields.expire_at = new Date(Date.parse(paidAt) - 30 * 86400000).toISOString();
+  const body = await (await reconcileCanonicalWebRenewalProof(renewalRequest(), slipResponse(), h.env)).json();
+  assert.equal(body.entitlement_materialized, true);
+  assert.equal(body.membership_expire_at, expiry);
+  assert.equal(body.membership_term, "1_year_plus_6_months");
+});
+
+test("November signed renewal still rejects a payment one millisecond beyond the renewal-price window", async () => {
+  const h = harness();
+  const paidAt = "2026-11-01T03:00:00.000Z";
+  h.tables.payments[0].fields.paid_at = paidAt;
+  h.tables.entitlements[0].fields.expire_at = new Date(Date.parse(paidAt) - 90 * 86400000 - 1).toISOString();
+  const body = await (await reconcileCanonicalWebRenewalProof(renewalRequest(), slipResponse(), h.env)).json();
+  assert.equal(body.entitlement_materialized, false);
+  assert.equal(body.renewal_settlement.reason, "renewal_expired_over_90_days_review_required");
+  assert.equal(h.tables.entitlements.length, 1);
+});
+
+test("November pending proof never grants the advertised six-month benefit", async () => {
+  const h = harness();
+  h.tables.payments[0].fields.paid_at = "2026-11-01T03:00:00.000Z";
+  h.tables.proofs[0].fields.status = "pending";
+  const before = structuredClone(h.tables.entitlements);
+  const body = await (await reconcileCanonicalWebRenewalProof(renewalRequest(), slipResponse(), h.env)).json();
+  assert.equal(body.entitlement_materialized, false);
+  assert.deepEqual(h.tables.entitlements, before);
+});
+
+
