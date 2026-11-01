@@ -1,3 +1,4 @@
+import { stageMedia, storage, readBytes, reviewQueue, PREFIX, hash } from './new-model-production.mjs';
 // PER · AI OPS / FLUSH ALL MEDIA: owner-triggered, metadata-only preflight.
 // This endpoint never downloads originals, writes R2/Airtable/CMS, or publishes media.
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
@@ -16,9 +17,12 @@ export const MODEL_MEDIA_SOURCE_ROOTS = Object.freeze([
   { key: "farang", label: "07 · Farang", lane: "catalogue", id: "1QNEEdwIokYxooXOf5IdW-GS75V5_Z5si" },
   { key: "up_country", label: "08 · Up Country", lane: "catalogue", id: "1VaX4eAgbOMJrizmB4h1p6_RN2SAvANhL" },
   { key: "new_entry", label: "New Entry · New Release", lane: "mmd_now", id: "1pULVWINaICROMQ3ozBvPh5SG1N5RH2Db" },
+  { key: "mmd_recommend", label: "MMD Recommend", lane: "mmd_now", id: "1LJdpoVJzuw2xgPFEZa4A0bKwRKXmRcw9" },
   { key: "hot_cha", label: "Hot Cha", lane: "mmd_now", id: "1kzEAekqrtbjd4SDa-SyzKv4kCYbI8sRe" },
 ]);
 
+// Production acceptance release: hard-pinned to synthetic fixtures until separately approved.
+export const MODEL_MEDIA_TEST_ROOT = Object.freeze({key:"nmp_test",label:"NMP-TEST-20261101",lane:"catalogue",id:"1ylEy2w18qTfYWWY2iJYtEPT7HtFpCDyH"});
 const DRIVE_API = "https://www.googleapis.com/drive/v3";
 const FOLDER = "application/vnd.google-apps.folder";
 const PROD_ORIGINS = new Set(["https://mmdbkk.com", "https://www.mmdbkk.com"]);
@@ -53,7 +57,7 @@ async function googleJson(path, params, token, http) {
   return data;
 }
 
-async function scanRoot(source, token, http) {
+async function scanRoot(source, token, http, candidates = null) {
   const base = await googleJson("/files/" + encodeURIComponent(source.id), {
     supportsAllDrives: "true", fields: "id,name,mimeType,trashed,owners(emailAddress)",
   }, token, http);
@@ -62,7 +66,7 @@ async function scanRoot(source, token, http) {
     return { key: source.key, label: source.label, lane: source.lane, state: "source_unverified", complete: false };
   }
 
-  const queue = [{ id: source.id, depth: 0 }];
+  const queue = [{ id: source.id, depth: 0, visibility: "review", ancestry: [source.id] }];
   const seenFolders = new Set(), seenFiles = new Set();
   let images = 0, videos = 0, excludedFolders = 0, unverifiedOwner = 0, complete = true;
   while (queue.length && seenFolders.size < LIMITS.maxFolders && images + videos < LIMITS.maxMedia) {
@@ -73,7 +77,7 @@ async function scanRoot(source, token, http) {
     for (let page = 0; page < LIMITS.maxPages; page++) {
       const data = await googleJson("/files", {
         q: "'" + folder.id.replace(/'/g, "\\'") + "' in parents and trashed=false",
-        fields: "nextPageToken,files(id,name,mimeType,parents,trashed,owners(emailAddress))",
+        fields: "nextPageToken,files(id,name,mimeType,parents,trashed,owners(emailAddress),size,version,modifiedTime)",
         pageSize: "100", includeItemsFromAllDrives: "true", supportsAllDrives: "true",
         ...(cursor ? { pageToken: cursor } : {}),
       }, token, http);
@@ -86,13 +90,14 @@ async function scanRoot(source, token, http) {
           unverifiedOwner++; continue;
         }
         if (file.mimeType === FOLDER) {
-          if (HIDDEN_FOLDER.test(String(file.name || ""))) { excludedFolders++; continue; }
-          if (folder.depth < LIMITS.maxDepth && !seenFolders.has(file.id)) queue.push({ id: file.id, depth: folder.depth + 1 });
+          if (HIDDEN_FOLDER.test(String(file.name || "")) && !/^(review|hidden)(?:\b|[\s_-])/i.test(String(file.name || ""))) { excludedFolders++; continue; }
+          if (folder.depth < LIMITS.maxDepth && !seenFolders.has(file.id)) queue.push({ id: file.id, depth: folder.depth + 1, visibility: folder.visibility === "hidden" || /^hidden(?:\b|[\s_-])/i.test(file.name) ? "hidden" : "review", ancestry: [...folder.ancestry, file.id] });
           else complete = false;
         } else if (MEDIA_MIMES.has(file.mimeType) && !seenFiles.has(file.id)) {
           seenFiles.add(file.id);
           // Do not treat files named Hidden/Review as publishable candidates.
-          if (HIDDEN_FOLDER.test(String(file.name || ""))) { excludedFolders++; continue; }
+          if (HIDDEN_FOLDER.test(String(file.name || "")) && !/^(review|hidden)(?:\b|[\s_-])/i.test(String(file.name || ""))) { excludedFolders++; continue; }
+          if (candidates) candidates.push({root_id:source.id,category:source.key,lane:source.lane,file_id:file.id,version:String(file.version || ""),mimeType:file.mimeType,size:Number(file.size),visibility:folder.visibility === "hidden" || /^hidden(?:\b|[\s_-])/i.test(file.name) ? "hidden" : "review",ancestry:folder.ancestry});
           if (file.mimeType.startsWith("image/")) images++;
           else videos++;
         }
@@ -126,8 +131,13 @@ export async function handleModelMediaFlushPreview(request, env = {}, deps = {})
   const actor = await (deps.readActor || readCredentialBoundAdminActor)(request, env);
   if (!isOwnerActor(actor)) return respond({ ok: false, error: "owner_required" }, 403);
   const input = await request.json().catch(() => null);
-  if (!input || input.action !== "preview_all" || Object.keys(input).some(k => k !== "action")) {
+  if (!input || !["preview_all", "stage_all", "review_queue"].includes(input.action) || Object.keys(input).some(k => !["action", "run_id"].includes(k)) || (input.run_id && !/^[a-f0-9-]{36}$/.test(input.run_id))) {
     return respond({ ok: false, error: "preview_action_required" }, 400);
+  }
+  const sourceRoots = deps.sourceRoots || [MODEL_MEDIA_TEST_ROOT];
+  if (input.action === "review_queue") {
+    try { return respond({ok:true,...await reviewQueue(env, {allowedRootIds:sourceRoots.map(source=>source.id)})}); }
+    catch { return respond({ok:false,error:"review_queue_unavailable"},503); }
   }
   // Never silently switch to a fallback Google account when OAuth is unavailable.
   if (env.COMPCARD_DRIVE_OWNER_EMAIL && !owner(env.COMPCARD_DRIVE_OWNER_EMAIL)) {
@@ -139,14 +149,23 @@ export async function handleModelMediaFlushPreview(request, env = {}, deps = {})
     const about = await googleJson("/about", { fields: "user(emailAddress)" }, token, http);
     if (!owner(about.user?.emailAddress)) return respond({ ok: false, error: "source_account_mismatch" }, 503);
 
+    if (input.action === "stage_all" && input.run_id) {
+      return await continueStaging(env, actor, input.run_id, token, http, sourceRoots);
+    }
+    const candidates = input.action === "stage_all" ? [] : null;
     const rows = [];
     // Small, bounded batches avoid a 10-source burst against Drive.
-    for (let i = 0; i < MODEL_MEDIA_SOURCE_ROOTS.length; i += 2) {
-      const part = await Promise.all(MODEL_MEDIA_SOURCE_ROOTS.slice(i, i + 2).map(async source => {
-        try { return await scanRoot(source, token, http); }
+    for (let i = 0; i < sourceRoots.length; i += 2) {
+      const part = await Promise.all(sourceRoots.slice(i, i + 2).map(async source => {
+        try { return await scanRoot(source, token, http, candidates); }
         catch { return { key: source.key, label: source.label, lane: source.lane, state: "source_unavailable", complete: false }; }
       }));
       rows.push(...part);
+    }
+    if (candidates) {
+      const runId = crypto.randomUUID();
+      await storage(env).put(PREFIX+"runs/"+runId+".json",JSON.stringify({actor_id:actor.id,created_at:Date.now(),candidates,rows}),{onlyIf:{etagDoesNotMatch:"*"},httpMetadata:{contentType:"application/json",cacheControl:"private, no-store"}});
+      return await continueStaging(env, actor, runId, token, http, sourceRoots);
     }
     return respond({
       ok: true, schema: "mmd.per_ai_ops.manual_media_flush_preview.v1",
@@ -155,9 +174,7 @@ export async function handleModelMediaFlushPreview(request, env = {}, deps = {})
       catalogue: rows.filter(row => row.lane === "catalogue"),
       mmd_now: [
         ...rows.filter(row => row.lane === "mmd_now"),
-        { key: "mmd_recommend", label: "MMD Recommend", source: "telegram_standard_topic", state: "topic_id_unresolved", complete: false },
       ],
-      telegram: { source: "telegram_standard", mmd_recommended_topic: "unresolved", hot_call: "excluded_from_mmd_now" },
       writes: { drive: false, r2: false, airtable: false, cms: false, website: false },
       next: "owner_review_and_canonical_model_matching_required_before_ingest",
       checked_at: new Date().toISOString(),
@@ -165,4 +182,42 @@ export async function handleModelMediaFlushPreview(request, env = {}, deps = {})
   } catch {
     return respond({ ok: false, error: "drive_source_unavailable", mode: "preview_only", writes: false }, 503);
   }
+}
+
+
+async function continueStaging(env, actor, runId, token, http, sourceRoots) {
+  const key=PREFIX+"runs/"+runId+".json", obj=await storage(env).get(key);
+  if(!obj) return respond({ok:false,error:"staging_run_missing"},404);
+  const run=await obj.json();
+  if(run.actor_id!==actor.id || !Number.isFinite(run.created_at) || run.created_at+3600000<Date.now()) return respond({ok:false,error:"staging_run_expired_or_forbidden"},409);
+  if(!Array.isArray(run.candidates)||run.candidates.some(c=>!sourceRoots.some(root=>root.id===c.root_id)))return respond({ok:false,error:"test_source_scope_required"},403);
+  const results=[];let remaining=false, attempted=0;
+  for(const candidate of run.candidates) {
+    // Completed receipts make retries and repeated clicks idempotent.
+    const id=await hash(JSON.stringify([candidate.root_id,candidate.file_id,candidate.version,candidate.visibility]));
+    const receiptObj=await storage(env).get(PREFIX+"receipts/"+id+".json");
+    if(receiptObj){const receipt=await receiptObj.json();const head=await storage(env).head(receipt.key);if(receipt.id===id&&head?.customMetadata?.sha256===receipt.sha256)continue;}
+    if(attempted>=4){remaining=true;break;} attempted++;
+    try {
+      results.push(await stageMedia(env,candidate,actor,async c=>{
+        if(!c.version)throw Error("source_version_missing");
+        const metadata=async id=>googleJson("/files/"+encodeURIComponent(id),{fields:"id,mimeType,size,version,parents,trashed,owners(emailAddress)"},token,http);
+        for(let i=0;i<c.ancestry.length;i++) {
+          const f=await metadata(c.ancestry[i]);
+          if(f.id!==c.ancestry[i]||f.trashed||f.mimeType!==FOLDER||!f.owners?.some(x=>owner(x.emailAddress)) || (i>0&&!f.parents?.includes(c.ancestry[i-1])))throw Error("source_scope_changed");
+        }
+        const before=await metadata(c.file_id);
+        const matches=f=>f.id===c.file_id&&!f.trashed&&String(f.version)===c.version&&f.mimeType===c.mimeType&&Number(f.size)===c.size&&f.parents?.includes(c.ancestry.at(-1))&&f.owners?.some(x=>owner(x.emailAddress));
+        if(!matches(before))throw Error("source_changed");
+        const response=await http(DRIVE_API+"/files/"+encodeURIComponent(c.file_id)+"?alt=media",{headers:{authorization:"Bearer "+token},redirect:"manual",signal:AbortSignal.timeout(12000)});
+        const bytes=await readBytes(response,c.size,c.mimeType);
+        if(!matches(await metadata(c.file_id)))throw Error("source_changed");
+        return bytes;
+      }));
+    } catch {results.push({id,state:"failed_retry_required"});}
+  }
+  const failures=results.some(r=>!["pending_review","already_staged"].includes(r.state));
+  return respond({ok:true,mode:"private_staging",run_id:runId,continue_required:remaining&&!failures,state:failures?"partial_failure":remaining?"staging":"pending_review",results,
+    catalogue:run.rows.filter(r=>r.lane==="catalogue"),mmd_now:run.rows.filter(r=>r.lane==="mmd_now"),
+    source_scan_complete:run.rows.every(r=>r.complete),publication:false,checked_at:new Date().toISOString()});
 }
