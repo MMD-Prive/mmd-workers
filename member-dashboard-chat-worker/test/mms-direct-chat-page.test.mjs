@@ -161,3 +161,25 @@ test('graphic progress holds completed milestones, freezes errors and hides only
   ui.begin(); ui.cancel(); assert.equal(root.hidden, true);
   dom.window.close();
 });
+
+
+test('private test card labels chat readiness without claiming Online or opening matching', async () => {
+  const f = fixture();
+  f.record.fields['Matching Enabled'] = false;
+  f.record.fields['Manual Review Only'] = true;
+  f.record.fields['Availability Status'] = 'Unavailable';
+  f.record.fields['Display Name'] = 'TEST ONLY · Per';
+  f.manifest.profile_visibility = 'private';
+  f.env.MMS_CHAT_TEST_PAIR = JSON.stringify({ customer_id: CUSTOMER.id, therapist_id: THERAPIST.id, expires_at: new Date(Date.now() + 600000).toISOString() });
+  const customer = page('customer', f);
+  try {
+    await customer.ready(); await customer.agree();
+    await settle(() => customer.$('therapists').querySelector('button'));
+    const card = customer.$('therapists').querySelector('article');
+    assert.equal(card.querySelector('p').textContent, 'พร้อมทดสอบแชตเท่านั้น');
+    assert.doesNotMatch(card.textContent, /Online|เปิดรับคำขอ/);
+    assert.equal(card.querySelector('button').disabled, false);
+    assert.equal(f.record.fields['Matching Enabled'], false);
+    assert.equal(f.record.fields['Availability Status'], 'Unavailable');
+  } finally { customer.close(); f.restore(); }
+});

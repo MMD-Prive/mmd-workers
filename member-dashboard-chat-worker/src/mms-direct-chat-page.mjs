@@ -94,7 +94,7 @@ function chatClient(config) {
     if ($('zone').options.length === 1) for (const zone of result.zones) { const option = node('option', zone.label); option.value = zone.code; $('zone').append(option); }
     if (!append) $('therapists').replaceChildren();
     for (const therapist of result.therapists) {
-      const card = node('article', null, 'card'); card.append(node('h3', therapist.display_name), node('p', therapist.available ? 'Online · เปิดรับคำขอ' : 'Offline · ยังไม่เปิดบทสนทนาใหม่', 'muted'));
+      const card = node('article', null, 'card'); card.append(node('h3', therapist.display_name), node('p', therapist.is_test === true ? 'พร้อมทดสอบแชตเท่านั้น' : therapist.available ? 'Online · เปิดรับคำขอ' : 'Offline · ยังไม่เปิดบทสนทนาใหม่', 'muted'));
       if (therapist.intro) card.append(node('p', therapist.intro));
       for (const course of therapist.courses) card.append(node('p', `${course.name} · ${course.duration_minutes} นาที · ${Number(course.price_thb).toLocaleString('th-TH')} บาท`, 'course'));
       card.append(node('p', 'ราคาคอร์สยังไม่รวมค่าเดินทาง กรุณาตกลงรายละเอียดก่อนจองครับ', 'muted'));
