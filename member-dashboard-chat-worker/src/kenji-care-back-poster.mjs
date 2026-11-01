@@ -15,8 +15,16 @@ export function careBackPosterMessages(text, extraMessages, approvedReply, poste
     type: 'action', action: { type: 'uri', label: approvedReply.label, uri: approvedReply.route },
   }] } };
   if (now >= end) {
-    // The public announcement has ended. Only this exact neutral navigation
-    // remains eligible for a button; stale advertising is never decorated.
+    // The October artwork remains retired. The approved November wave is
+    // text plus its existing URI button, with no substitute or stale image.
+    if (now < Date.parse('2026-12-01T00:00:00+07:00') &&
+        approvedReply.text === 'CARE BACK ต่อโปรถึง 30 พ.ย. 2569 ครับ 🖤\nสมาชิกปัจจุบันต่ออายุล่วงหน้า รับเพิ่ม 6 เดือน\nหมดอายุไม่เกิน 6 เดือน สมัครแล้วรับเพิ่ม 6 เดือน\nหมดอายุเกิน 6 เดือน รับเพิ่ม 6 เดือนเช่นกัน\nตรวจรายการจากบัญชีเดิมก่อนชำระครับ' &&
+        approvedReply.route === 'https://miniapp.line.me/2010862595-yT4DCEMc/?intent=signup&view=signup&world=private' &&
+        approvedReply.label === 'สมัคร / เช็กสิทธิ์') {
+      return { text: approvedReply.text, extra_messages: [ctaMessage] };
+    }
+    // Neutral rights navigation remains available after an announcement wave;
+    // no public deadline changes the customer's underlying eligibility.
     if (approvedReply.text !== 'กดตรวจข้อเสนอและสิทธิ์ล่าสุดจากบัญชีเดิมได้เลยครับ' ||
         approvedReply.route !== 'https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=overview' ||
         approvedReply.label !== 'ตรวจข้อเสนอล่าสุด') return null;
@@ -36,3 +44,4 @@ export function careBackPosterMessages(text, extraMessages, approvedReply, poste
     ],
   };
 }
+

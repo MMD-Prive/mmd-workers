@@ -20,12 +20,18 @@ export const RENEWAL_COPY = Object.freeze({
 
 export function renewalViewHtml(now = new Date()) {
   // Server clock controls announcement visibility only. Personal bonus and
-  // expiry still come from the verified offer, including after October ends.
+  // expiry still come from the verified offer, including after the public wave.
   const announceCareBack = isPrivateCareBackAnnouncementVisible(now);
+  const novemberWave = new Date(now).getTime() >= Date.parse("2026-11-01T00:00:00+07:00");
+  const campaign = novemberWave ? {
+    campaignTitle: "สมาชิกเดิม รับอายุสมาชิกเพิ่ม 6 เดือน",
+    campaignTerms: "ต่ออายุล่วงหน้า หรือกลับมาสมัครหลังหมดอายุไม่เกิน 6 เดือนหรือเกิน 6 เดือน รับเพิ่ม 6 เดือน เมื่อผ่านเงื่อนไข",
+    campaignAnnouncement: "รอบประชาสัมพันธ์ถึง 30 พ.ย. 2569",
+  } : RENEWAL_COPY;
   return `<div id="renewal-card" class="mmd-renewal" data-renewal-version="${RENEWAL_VIEW_VERSION}" aria-labelledby="renewal-title">
   <header class="rn-brand"><span class="rn-logo"><span id="rn-logo-fallback" class="rn-wordmark" aria-label="MMD Privé">MMD<small>PRIVÉ</small></span><img id="rn-logo-image" hidden src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa585ecbbff208b541228df_02-horizontal-lockup-256px.webp" alt="MMD Privé" width="84" height="32"></span><button type="button" data-view="home" class="rn-home">${RENEWAL_COPY.home} <span aria-hidden="true">↗</span></button></header>
   <div class="rn-heading"><p class="rn-kicker">${RENEWAL_COPY.eyebrow}</p><h2 id="renewal-title">${RENEWAL_COPY.title}<br><span>${RENEWAL_COPY.titleAccent}</span></h2><p class="rn-intro">${RENEWAL_COPY.intro}</p></div>
-  ${announceCareBack ? `<aside class="rn-campaign" aria-label="CARE BACK Membership"><div><span class="rn-kicker">CARE BACK MEMBERSHIP</span><small>${RENEWAL_COPY.campaignAnnouncement}</small></div><strong>${RENEWAL_COPY.campaignTitle}</strong><p>${RENEWAL_COPY.campaignTerms}</p><button type="button" class="rn-coupon-entry" data-view="care">${RENEWAL_COPY.campaignCoupon} ↗</button><small>คูปองค่าบริการแยกจากค่าสมัครและค่าต่ออายุสมาชิก</small></aside>` : ""}
+  ${announceCareBack ? `<aside class="rn-campaign" aria-label="CARE BACK Membership"><div><span class="rn-kicker">CARE BACK MEMBERSHIP</span><small>${campaign.campaignAnnouncement}</small></div><strong>${campaign.campaignTitle}</strong><p>${campaign.campaignTerms}</p><button type="button" class="rn-coupon-entry" data-view="care">${RENEWAL_COPY.campaignCoupon} ↗</button><small>คูปองค่าบริการแยกจากค่าสมัครและค่าต่ออายุสมาชิก</small></aside>` : ""}
   <ol class="rn-steps" aria-label="ขั้นตอนต่ออายุสมาชิก"><li aria-current="step"><b>1</b> เลือกแพ็กเกจ</li><li><b>2</b> ชำระเงิน</li><li><b>3</b> ยืนยันสิทธิ์</li></ol>
   <div class="rn-member"><span class="rn-monogram" aria-hidden="true">M</span><div><span>${RENEWAL_COPY.current}</span><strong id="rn-current">กำลังตรวจสถานะ</strong></div><span id="rn-expiry" class="rn-expiry"></span></div>
   <fieldset class="rn-packages"><legend>${RENEWAL_COPY.heading}<small>ต่ออายุพื้นฐาน 1 ปี</small></legend>
@@ -161,8 +167,9 @@ export function createRenewalView({ document, fetcher, navigate, showView, check
       row.append(key, val); $("renewal-rows").append(row);
     };
     const bonusYears = Number.isInteger(offer.bonus_years) && offer.bonus_years > 0 ? offer.bonus_years : 0;
+    const bonusMonths = Number.isInteger(offer.bonus_months) && offer.bonus_months > 0 ? offer.bonus_months : 0;
     const bonusDays = Number.isInteger(offer.bonus_days) && offer.bonus_days > 0 ? offer.bonus_days : 0;
-    const bonus = [bonusYears ? bonusYears + " ปี" : "", bonusDays ? bonusDays + " วัน" : ""].filter(Boolean).join(" + ");
+    const bonus = [bonusYears ? bonusYears + " ปี" : "", bonusMonths ? bonusMonths + " เดือน" : "", bonusDays ? bonusDays + " วัน" : ""].filter(Boolean).join(" + ");
     addRow("ระยะต่ออายุพื้นฐาน", "1 ปี");
     if (bonus) addRow("CARE BACK เพิ่ม", bonus);
     $("rn-selection").textContent = rules[selected].label + " · " + (bonus ? "1 ปี + " + bonus : "ต่ออายุ 1 ปี");
@@ -173,7 +180,7 @@ export function createRenewalView({ document, fetcher, navigate, showView, check
     $("rn-new-expiry").textContent = date(offer.new_expires_at);
     if (offer.promotion_label) {
       $("renewal-promo").textContent = String(offer.promotion_label)
-        + (bonusYears === 1 && bonusDays === 0 ? " · รวมระยะสมาชิก 2 ปี" : "");
+        + (bonusYears === 1 && bonusMonths === 0 && bonusDays === 0 ? " · รวมระยะสมาชิก 2 ปี" : "");
       $("renewal-promo").hidden = false;
     }
     $("renewal-note").textContent = "ราคานี้ผ่านการตรวจสิทธิ์แล้ว ไปเลือกวิธีชำระใน LINE ได้เลย";
@@ -266,3 +273,4 @@ export function createRenewalView({ document, fetcher, navigate, showView, check
   async function lookup() { showView("package", false); await load(); }
   return { load, render, purchase, lookup, retry, selection: () => selected };
 }
+

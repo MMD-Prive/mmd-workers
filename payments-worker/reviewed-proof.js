@@ -318,7 +318,7 @@ async function materializeRecoveredMembership(env, input) {
     ? `${membershipTerm.membership_expiry_rule}_plus_${promotion.code}`
     : membershipTerm.membership_expiry_rule;
   const membershipTermLabel = promotion?.total_years === 2 ? "2_years" : promotion
-    ? `${membershipTerm.membership_term}_plus_${promotion.bonus_years ? `${promotion.bonus_years}_year` : `${promotion.bonus_days}_days`}`
+    ? `${membershipTerm.membership_term}_plus_${promotion.bonus_years ? `${promotion.bonus_years}_year` : promotion.bonus_months ? `${promotion.bonus_months}_months` : `${promotion.bonus_days}_days`}`
     : membershipTerm.membership_term;
   const entitlementLevel = input.package_code === "premium" ? "premium" : "standard_basic";
 
@@ -337,6 +337,7 @@ async function materializeRecoveredMembership(env, input) {
       start_at: startAt.toISOString(),
       expire_at: expireAt.toISOString(),
       renewal_status: "renewed",
+      membership_term: membershipTermLabel,
       membership_expiry_rule: membershipExpiryRule,
       telegram_access_status: "pending_invite",
       source: "renewal",
@@ -531,3 +532,4 @@ function clean(value) { return String(value ?? "").trim(); }
 function normalizePath(pathname = "") { const path = String(pathname || "/").replace(/\/{2,}/g, "/"); return path.length > 1 ? path.replace(/\/+$/g, "") : path; }
 function jsonHeaders() { return new Headers({ "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store, private", "X-MMD-Payment-Authority": "payments-worker" }); }
 function json(data, status = 200) { return new Response(JSON.stringify(data), { status, headers: jsonHeaders() }); }
+

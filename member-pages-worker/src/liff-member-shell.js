@@ -1829,6 +1829,7 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
       document.getElementById("renewal-title").textContent = "ต่ออายุสมาชิก " + String(offer.package_label || "");
       addRow("ระยะเวลาที่ซื้อ", String(offer.membership_years || 1) + " ปี");
       if (offer.bonus_days) addRow("CARE BACK เพิ่ม", String(offer.bonus_days) + " วัน");
+      if (offer.bonus_months) addRow("CARE BACK เพิ่ม", String(offer.bonus_months) + " เดือน");
       if (offer.bonus_years) addRow("CARE BACK เพิ่ม", String(offer.bonus_years) + " ปี");
       addRow("เริ่มต่ออายุ", renewalDate(offer.renewal_starts_at));
       addRow("ใช้ได้ถึง (ปัจจุบัน)", renewalDate(offer.current_expires_at));
@@ -2364,3 +2365,4 @@ function shellHeaders(extra = {}) {
     ...extra,
   };
 }
+

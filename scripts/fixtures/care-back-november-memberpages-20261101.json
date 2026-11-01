@@ -1,0 +1,108 @@
+{
+  "schema": "care_back_november_policy_patch_v1",
+  "worker": "member-pages-worker",
+  "baseline_version": "56563186-37f8-41b8-894c-0b4185d74c8c",
+  "baseline_deployment": "f9a494c9-b2e9-4bd4-9b46-af6bab70a508",
+  "main_module": "worker.js",
+  "modules": [
+    {
+      "name": "worker.js",
+      "type": "esm",
+      "before_sha256": "52e7b637b5cf4a4b4d4d82800b85eecc9def9392a4695677dd0c1eb67f1f05b1",
+      "after_sha256": "2b5f7901809749581492b6375e9f376c8eef5439a425d611ab05ec4a59037a5e",
+      "patches": [
+        {
+          "id": "currentPrivateMembershipPromotion",
+          "before": "function currentPrivateMembershipPromotion({ package_code = \"\", paid_at = \"\", action = \"\", existing_member = false, prior_expire_at = \"\" } = {}) {\n  const packageCode = token5(package_code);\n  const paidMs = Date.parse(String(paid_at || \"\"));\n  if (!Number.isFinite(paidMs) || paidMs < CARE_BACK_START_MS || paidMs >= PROMO_HONORED_BEFORE_MS) return null;\n  if (token5(action) === \"signup\" && existing_member === false) {\n    return packageCode === \"premium\" ? { code: \"private_premium_signup_total_two_years_2026\", total_years: 2, bonus_days: 0, bonus_years: 0, label: \"Premium signup total 2 years\", starts_at: CARE_BACK_START_AT } : null;\n  }\n  if (token5(action) !== \"renewal\" || existing_member !== true) return null;\n  const timing = privateRenewalTiming(prior_expire_at, paid_at);\n  if (!timing?.expiry_known || timing.expired_one_year_or_more) return null;\n  const policy = PRIVATE_CARE_BACK[packageCode];\n  return policy ? { ...policy, code: `october_prepaid_${packageCode}_2026`, starts_at: CARE_BACK_START_AT, ends_before: PROMO_PUBLIC_ENDS_BEFORE, honored_before: PROMO_HONORED_BEFORE } : null;\n}",
+          "after": "function currentPrivateMembershipPromotion({ package_code = \"\", paid_at = \"\", action = \"\", existing_member = false, prior_expire_at = \"\" } = {}) {\n  const packageCode = token5(package_code);\n  const paidMs = Date.parse(String(paid_at || \"\"));\n  if (!Number.isFinite(paidMs) || paidMs < CARE_BACK_START_MS || paidMs >= PROMO_HONORED_BEFORE_MS) return null;\n  if (token5(action) === \"signup\" && existing_member === false) {\n    return packageCode === \"premium\" ? { code: \"private_premium_signup_total_two_years_2026\", total_years: 2, bonus_days: 0, bonus_years: 0, label: \"Premium signup total 2 years\", starts_at: CARE_BACK_START_AT } : null;\n  }\n  if (paidMs >= Date.parse(\"2026-11-01T00:00:00+07:00\")) {\n    if (existing_member !== true) return null;\n    const timing = privateRenewalTiming(prior_expire_at, paid_at);\n    if (!timing?.expiry_known) return null;\n    const actionCode = token5(action);\n    if (actionCode !== \"renewal\" && !(actionCode === \"signup\" && !timing.active)) return null;\n    return Object.hasOwn(PRIVATE_CARE_BACK, packageCode) ? {\n      bonus_days: 0, bonus_years: 0, bonus_months: 6, label: \"CARE BACK +6 months\",\n      code: `november_returning_${packageCode}_2026`,\n      starts_at: \"2026-11-01T00:00:00+07:00\",\n      ends_before: \"2026-12-01T00:00:00+07:00\",\n      honored_before: PROMO_HONORED_BEFORE\n    } : null;\n  }\n  if (token5(action) !== \"renewal\" || existing_member !== true) return null;\n  const timing = privateRenewalTiming(prior_expire_at, paid_at);\n  if (!timing?.expiry_known || timing.expired_one_year_or_more) return null;\n  const policy = PRIVATE_CARE_BACK[packageCode];\n  return policy ? { ...policy, code: `october_prepaid_${packageCode}_2026`, starts_at: CARE_BACK_START_AT, ends_before: PROMO_PUBLIC_ENDS_BEFORE, honored_before: PROMO_HONORED_BEFORE } : null;\n}",
+          "before_sha256": "97a49850c3e366d6319d27a9545f02d15da5fd5b7d898f15a0e12356a06a0d50",
+          "after_sha256": "77dbdb4932c95c4ff59ee45a214a11d04b71c1b9857c38c98108610226af8388"
+        },
+        {
+          "id": "applyMembershipPromotion",
+          "before": "function applyMembershipPromotion(expireAtValue, promotion, { start_at = \"\" } = {}) {\n  const expireAt = new Date(expireAtValue);\n  if (Number.isNaN(expireAt.getTime()) || !promotion) return null;\n  if (promotion.total_years === 2) {\n    const start = new Date(start_at);\n    if (!Number.isFinite(start.getTime())) return null;\n    addBangkokCalendarYears(start, 2);\n    return start;\n  }\n  const bonusYears = Number(promotion.bonus_years || 0);\n  if (Number.isInteger(bonusYears) && bonusYears > 0) addBangkokCalendarYears(expireAt, bonusYears);\n  const bonusDays = Number(promotion.bonus_days || 0);\n  if (Number.isInteger(bonusDays) && bonusDays > 0) expireAt.setUTCDate(expireAt.getUTCDate() + bonusDays);\n  return expireAt;\n}",
+          "after": "function applyMembershipPromotion(expireAtValue, promotion, { start_at = \"\" } = {}) {\n  const expireAt = new Date(expireAtValue);\n  if (Number.isNaN(expireAt.getTime()) || !promotion) return null;\n  if (promotion.total_years === 2) {\n    const start = new Date(start_at);\n    if (!Number.isFinite(start.getTime())) return null;\n    addBangkokCalendarYears(start, 2);\n    return start;\n  }\n  const bonusYears = Number(promotion.bonus_years || 0);\n  if (Number.isInteger(bonusYears) && bonusYears > 0) addBangkokCalendarYears(expireAt, bonusYears);\n  const bonusMonths = Number(promotion.bonus_months || 0);\n  if (Number.isInteger(bonusMonths) && bonusMonths > 0) {\n    expireAt.setTime(expireAt.getTime() + 7 * 60 * 60 * 1000);\n    const day = expireAt.getUTCDate();\n    expireAt.setUTCDate(1);\n    expireAt.setUTCMonth(expireAt.getUTCMonth() + bonusMonths);\n    const lastDay = new Date(Date.UTC(expireAt.getUTCFullYear(), expireAt.getUTCMonth() + 1, 0)).getUTCDate();\n    expireAt.setUTCDate(Math.min(day, lastDay));\n    expireAt.setTime(expireAt.getTime() - 7 * 60 * 60 * 1000);\n  }\n  const bonusDays = Number(promotion.bonus_days || 0);\n  if (Number.isInteger(bonusDays) && bonusDays > 0) expireAt.setUTCDate(expireAt.getUTCDate() + bonusDays);\n  return expireAt;\n}",
+          "before_sha256": "a213028cc19ad44f8ede857a5852500789d430a06ac38767f1f4df7880d1707a",
+          "after_sha256": "a17cc8a7cd0dab8f73ffe17790ba43efd01315e853391298e3fd6f5ca89fed70"
+        },
+        {
+          "id": "isPrivateCareBackAnnouncementVisible",
+          "before": "function isPrivateCareBackAnnouncementVisible(at = /* @__PURE__ */ new Date()) {\n  const time = at instanceof Date ? at.getTime() : Date.parse(String(at || \"\"));\n  return Number.isFinite(time) && time >= CARE_BACK_START_MS && time < Date.parse(PROMO_PUBLIC_ENDS_BEFORE);\n}",
+          "after": "function isPrivateCareBackAnnouncementVisible(at = /* @__PURE__ */ new Date()) {\n  const time = at instanceof Date ? at.getTime() : Date.parse(String(at || \"\"));\n  return Number.isFinite(time) && time >= CARE_BACK_START_MS && time < Date.parse(\"2026-12-01T00:00:00+07:00\");\n}",
+          "before_sha256": "88301b3ca0b1adf70dba9a0e5b53659bdc40e23ee5d1c760a574769703b57b0c",
+          "after_sha256": "049ee8850f53b6ddba4d2fd4c27c19c21648a64a316bdc8931dc511dc47475db"
+        },
+        {
+          "id": "promoLabel",
+          "before": "function promoLabel(promotion) {\n  if (!promotion) return \"\";\n  const years = Number(promotion.bonus_years || 0);\n  const days = Number(promotion.bonus_days || 0);\n  if (years > 0) return `\\u0E42\\u0E1B\\u0E23\\u0E15\\u0E48\\u0E2D\\u0E2D\\u0E32\\u0E22\\u0E38: \\u0E40\\u0E1E\\u0E34\\u0E48\\u0E21 ${years} \\u0E1B\\u0E35`;\n  if (days > 0) return `\\u0E42\\u0E1B\\u0E23\\u0E15\\u0E48\\u0E2D\\u0E2D\\u0E32\\u0E22\\u0E38: \\u0E40\\u0E1E\\u0E34\\u0E48\\u0E21 ${days} \\u0E27\\u0E31\\u0E19`;\n  return \"\";\n}",
+          "after": "function promoLabel(promotion) {\n  if (!promotion) return \"\";\n  const years = Number(promotion.bonus_years || 0);\n  const months = Number(promotion.bonus_months || 0);\n  const days = Number(promotion.bonus_days || 0);\n  if (years > 0) return `โปรต่ออายุ: เพิ่ม ${years} ปี`;\n  if (months > 0) return `โปรต่ออายุ: เพิ่ม ${months} เดือน`;\n  if (days > 0) return `โปรต่ออายุ: เพิ่ม ${days} วัน`;\n  return \"\";\n}",
+          "before_sha256": "46732d37b5cf3c87eba2a87ec5d5d9949cc9829e877b078063eced8b71460947",
+          "after_sha256": "3096ddcb8534c97302ca116ac177149e6f4d02cd2fcb3b190ebdc0fb63fab317"
+        },
+        {
+          "id": "handleOffer",
+          "before": "async function handleOffer(request, env) {\n  if (request.method !== \"GET\") return json13({ ok: false, error: { code: \"METHOD_NOT_ALLOWED\" } }, 405);\n  const { session, offer, error: error2 } = await resolveOffer(request, env);\n  if (error2) return error2;\n  if (offer.status !== \"ready\") {\n    return json13({\n      ok: true,\n      schema: \"mmd_liff_renewal_offer_v1\",\n      status: offer.classification === \"new_signup\" ? \"signup_instead\" : \"contact_owner\",\n      payment_available: false\n    });\n  }\n  const profileExpiry = clean17(session.memberProfile?.membership_expires_at, 40);\n  return json13({\n    ok: true,\n    schema: \"mmd_liff_renewal_offer_v1\",\n    status: \"ready\",\n    payment_available: true,\n    package_code: offer.package_code,\n    package_label: PACKAGE_LABELS[offer.package_code] || offer.package_code,\n    amount_thb: offer.amount_thb,\n    current_expires_at: Number.isFinite(Date.parse(profileExpiry)) ? new Date(profileExpiry).toISOString() : null,\n    renewal_starts_at: offer.membership_start_at,\n    new_expires_at: expiryAfter(offer),\n    promotion_label: promoLabel(offer.promotion),\n    membership_years: offer.membership_years,\n    bonus_days: Number(offer.promotion?.bonus_days || 0),\n    bonus_years: Number(offer.promotion?.bonus_years || 0),\n    promotion_ends_before: offer.promotion?.ends_before || null,\n    price_rule: offer.price_rule,\n    entitlement_granted: false,\n    official_verification_required: true\n  });\n}",
+          "after": "async function handleOffer(request, env) {\n  if (request.method !== \"GET\") return json13({ ok: false, error: { code: \"METHOD_NOT_ALLOWED\" } }, 405);\n  const { session, offer, error: error2 } = await resolveOffer(request, env);\n  if (error2) return error2;\n  if (offer.status !== \"ready\") {\n    return json13({\n      ok: true,\n      schema: \"mmd_liff_renewal_offer_v1\",\n      status: offer.classification === \"new_signup\" ? \"signup_instead\" : \"contact_owner\",\n      payment_available: false\n    });\n  }\n  const profileExpiry = clean17(session.memberProfile?.membership_expires_at, 40);\n  return json13({\n    ok: true,\n    schema: \"mmd_liff_renewal_offer_v1\",\n    status: \"ready\",\n    payment_available: true,\n    package_code: offer.package_code,\n    package_label: PACKAGE_LABELS[offer.package_code] || offer.package_code,\n    amount_thb: offer.amount_thb,\n    current_expires_at: Number.isFinite(Date.parse(profileExpiry)) ? new Date(profileExpiry).toISOString() : null,\n    renewal_starts_at: offer.membership_start_at,\n    new_expires_at: expiryAfter(offer),\n    promotion_label: promoLabel(offer.promotion),\n    membership_years: offer.membership_years,\n    bonus_days: Number(offer.promotion?.bonus_days || 0),\n    bonus_months: Number(offer.promotion?.bonus_months || 0),\n    bonus_years: Number(offer.promotion?.bonus_years || 0),\n    promotion_ends_before: offer.promotion?.ends_before || null,\n    price_rule: offer.price_rule,\n    entitlement_granted: false,\n    official_verification_required: true\n  });\n}",
+          "before_sha256": "64bd5b22c9f5c3a0d85fb49d7823b91244a89e085db3d00601b322f0fe5db14e",
+          "after_sha256": "d092ded3cead71545e82518bf068389af33e12262c1744d010d75f196157e7d6"
+        },
+        {
+          "id": "projectKenjiRenewalPromotion",
+          "before": "function projectKenjiRenewalPromotion(membership = {}, now = /* @__PURE__ */ new Date()) {\n  const authority = \"owner_approved_october_renewal_2026_v1\";\n  const packageCode = { private_standard: \"standard\", private_premium: \"premium\" }[membership.level];\n  if (membership.member_blocked || ![\"active\", \"expiring_soon\", \"grace\", \"expired\"].includes(membership.lifecycle) || !packageCode) {\n    return { authority, status: \"not_applicable\" };\n  }\n  const timing = privateRenewalTiming(membership.expire_at, now);\n  if (!timing?.expiry_known) return { authority, status: \"review_required\", reason: \"canonical_expiry_required\" };\n  if (timing.expired_one_year_or_more) return { authority, status: \"not_applicable\", reason: \"expired_one_calendar_year_or_more\" };\n  const offer = currentPrivateMembershipPromotion({ package_code: packageCode, paid_at: now.toISOString(), action: \"renewal\", existing_member: true, prior_expire_at: membership.expire_at });\n  const promotionYears = Number(offer?.bonus_years || 0), promotionDays = Number(offer?.bonus_days || 0);\n  return offer ? { authority, status: \"conditional_eligible\", package_code: packageCode, total_years: 1 + promotionYears, base_years: 1, promotion_years: promotionYears, promotion_days: promotionDays, starts_from: timing.active ? \"existing_expiry\" : \"verified_renewal_time\", ends_before: offer.ends_before, requires_verified_payment: true, checkout_status: \"review_required\", reason: \"payment_term_policy_alignment_required\" } : { authority, status: \"not_applicable\", reason: \"outside_approved_campaign_window\" };\n}",
+          "after": "function projectKenjiRenewalPromotion(membership = {}, now = new Date()) {\n  const authority = now.getTime() >= Date.parse(\"2026-11-01T00:00:00+07:00\")\n    ? \"owner_approved_november_returning_2026_v1\" : \"owner_approved_october_renewal_2026_v1\";\n  const packageCode = { private_standard: \"standard\", private_premium: \"premium\" }[membership.level];\n  if (membership.member_blocked || ![\"active\", \"expiring_soon\", \"grace\", \"expired\"].includes(membership.lifecycle) || !packageCode) {\n    return { authority, status: \"not_applicable\" };\n  }\n  const timing = privateRenewalTiming(membership.expire_at, now);\n  if (!timing?.expiry_known) return { authority, status: \"review_required\", reason: \"canonical_expiry_required\" };\n  // Candidate payment time is only a preview. Payment truth re-evaluates the\n  // actual paid_at; this projection neither awards nor extends membership.\n  const offer = currentPrivateMembershipPromotion({ package_code: packageCode, paid_at: now.toISOString(), action: \"renewal\", existing_member: true, prior_expire_at: membership.expire_at });\n  // The paid-time policy preserves historical October terms and selects the\n  // six-calendar-month November benefit. It does not authorize a renewal price.\n  if (!offer) return { authority, status: \"not_applicable\", reason: timing.expired_one_year_or_more ? \"expired_one_calendar_year_or_more\" : \"outside_approved_campaign_window\" };\n  const promotionYears = Number(offer?.bonus_years || 0), promotionDays = Number(offer?.bonus_days || 0);\n  const promotionMonths = Number(offer.bonus_months || 0);\n  const benefit = { authority, package_code: packageCode, promotion_years: promotionYears, promotion_months: promotionMonths, promotion_days: promotionDays, bonus_months: promotionMonths, ends_before: offer.ends_before, requires_verified_payment: true, checkout_status: \"review_required\" };\n  // Returning members outside the existing 90-day price window still receive\n  // the policy benefit, but require a separately verified signup/rejoin quote.\n  // Do not manufacture its purchased term or a discounted renewal offer here.\n  if (promotionMonths === 6 && !(timing.expiry_known === true && (timing.active === true || timing.expired_within_90_days === true))) {\n    return { ...benefit, status: \"review_required\", reason: \"renewal_expired_over_90_days_review_required\" };\n  }\n  return { ...benefit, status: \"conditional_eligible\", total_years: 1 + promotionYears, base_years: 1, starts_from: timing.active ? \"existing_expiry\" : \"verified_renewal_time\", reason: \"payment_term_policy_alignment_required\" };\n}",
+          "before_sha256": "1e5a001dc20495c1c668748009c4515d238f366df27b333f871b22eafe75ab76",
+          "after_sha256": "9cdb2479627401aed7c361cc8609432d05f18a077e0ddd4a098202e91c827b1d"
+        },
+        {
+          "id": "renewalViewHtml-campaign",
+          "before": "  const announceCareBack = isPrivateCareBackAnnouncementVisible(now);",
+          "after": "  const announceCareBack = isPrivateCareBackAnnouncementVisible(now);\n  const novemberWave = new Date(now).getTime() >= Date.parse(\"2026-11-01T00:00:00+07:00\");\n  const campaign = novemberWave ? {\n    campaignTitle: \"สมาชิกเดิม รับอายุสมาชิกเพิ่ม 6 เดือน\",\n    campaignTerms: \"ต่ออายุล่วงหน้า หรือกลับมาสมัครหลังหมดอายุไม่เกิน 6 เดือนหรือเกิน 6 เดือน รับเพิ่ม 6 เดือน เมื่อผ่านเงื่อนไข\",\n    campaignAnnouncement: \"รอบประชาสัมพันธ์ถึง 30 พ.ย. 2569\",\n  } : RENEWAL_COPY;",
+          "before_sha256": "ba027997c47815a33d0ef809c0cf0925537467add935100c0376f4a10b15112d",
+          "after_sha256": "321e927ee72fc7d3aa417ef6c85fdac0f623582ab3c5adecca2c642f13345334"
+        },
+        {
+          "id": "renewalViewHtml-campaignAnnouncement",
+          "before": "${RENEWAL_COPY.campaignAnnouncement}",
+          "after": "${campaign.campaignAnnouncement}",
+          "before_sha256": "1789f0bf74debca0b3521d433050a3e8bc0564c5ea9fe8d6e50e4aaf9aca10b2",
+          "after_sha256": "cebcdd1835a9a2f2b44754241d8ef8f51229aabc07b339f9bb1e93dbb7a6f3fc"
+        },
+        {
+          "id": "renewalViewHtml-campaignTitle",
+          "before": "${RENEWAL_COPY.campaignTitle}",
+          "after": "${campaign.campaignTitle}",
+          "before_sha256": "6bacbc5fd275dbcd0dbba8993d8e72302902d22771c4d5ab73dc7846f32e503d",
+          "after_sha256": "a77d97dc183261d3bcc8c0d4f6163025c02389ffa62e7c833654b008264b3cea"
+        },
+        {
+          "id": "renewalViewHtml-campaignTerms",
+          "before": "${RENEWAL_COPY.campaignTerms}",
+          "after": "${campaign.campaignTerms}",
+          "before_sha256": "2dd5d6d308290180ff3b19b8208d9766ed66820d48b88aace597b4e0e0c0c05a",
+          "after_sha256": "ecd55be877afb7c3b3d2b2a6c7f8de9289b24736987a157191ae98f29ccc75a8"
+        },
+        {
+          "id": "createRenewalView-months",
+          "before": "    const bonusYears = Number.isInteger(offer.bonus_years) && offer.bonus_years > 0 ? offer.bonus_years : 0;\n    const bonusDays = Number.isInteger(offer.bonus_days) && offer.bonus_days > 0 ? offer.bonus_days : 0;\n    const bonus = [bonusYears ? bonusYears + \" \\u0E1B\\u0E35\" : \"\", bonusDays ? bonusDays + \" \\u0E27\\u0E31\\u0E19\" : \"\"].filter(Boolean).join(\" + \");",
+          "after": "    const bonusYears = Number.isInteger(offer.bonus_years) && offer.bonus_years > 0 ? offer.bonus_years : 0;\n    const bonusMonths = Number.isInteger(offer.bonus_months) && offer.bonus_months > 0 ? offer.bonus_months : 0;\n    const bonusDays = Number.isInteger(offer.bonus_days) && offer.bonus_days > 0 ? offer.bonus_days : 0;\n    const bonus = [bonusYears ? bonusYears + \" ปี\" : \"\", bonusMonths ? bonusMonths + \" เดือน\" : \"\", bonusDays ? bonusDays + \" วัน\" : \"\"].filter(Boolean).join(\" + \");",
+          "before_sha256": "d6234af53fb88ba1a3787f1ae6cf87a91d4fea4e19f90e7af4b878871def0030",
+          "after_sha256": "f7fb7389c8c23970a724ec8b60bdd6ed5232f28c9df152245c3d8dbd2e2fc048"
+        },
+        {
+          "id": "createRenewalView-total",
+          "before": "bonusYears === 1 && bonusDays === 0",
+          "after": "bonusYears === 1 && bonusMonths === 0 && bonusDays === 0",
+          "before_sha256": "e01dbce0bab86f55128ed463767f59d102482d4419a85c765fd125823c782f28",
+          "after_sha256": "091cf4fb522de2d74d63f6df5e6091297acd70a1bf39f6da2fc05a53d7c41022"
+        },
+        {
+          "id": "renderShell-renewal-months",
+          "before": "      if (offer.bonus_days) addRow(\"CARE BACK \\u0E40\\u0E1E\\u0E34\\u0E48\\u0E21\", String(offer.bonus_days) + \" \\u0E27\\u0E31\\u0E19\");",
+          "after": "      if (offer.bonus_days) addRow(\"CARE BACK \\u0E40\\u0E1E\\u0E34\\u0E48\\u0E21\", String(offer.bonus_days) + \" \\u0E27\\u0E31\\u0E19\");\n      if (offer.bonus_months) addRow(\"CARE BACK เพิ่ม\", String(offer.bonus_months) + \" เดือน\");",
+          "before_sha256": "b7df939ad6c3ae187747d30e94507f0011b12a1c4ef7b84db179f77dddda05df",
+          "after_sha256": "02679a0180ea20ccefc94064fb8f6c49bb611dd8d8a27d5f9bbfdb2cc325cfb6"
+        }
+      ]
+    }
+  ]
+}
