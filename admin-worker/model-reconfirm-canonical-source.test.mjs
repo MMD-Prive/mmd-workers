@@ -232,8 +232,11 @@ test("persisted 16:00 schedule waits until 18:00, then alerts owner at 19:00", a
     reconfirm_reminder_at: "2026-10-17T18:00:00+07:00",
     reconfirm_overdue_at: "2026-10-17T19:00:00+07:00",
   }));
-  await runModelReconfirmSweep(ENV, { now: NOW - 60 * 60_000 });
-  assert.equal(h.log.line.length, 0);
+  for (const now of [NOW - 2 * 60 * 60_000, NOW - 1]) {
+    await runModelReconfirmSweep(ENV, { now });
+    assert.equal(h.log.line.length, 0);
+    assert.equal(h.log.telegram.length, 0);
+  }
   await runModelReconfirmSweep(ENV, { now: NOW });
   assert.equal(h.log.line.length, 1);
   await runModelReconfirmSweep(ENV, { now: NOW + 60 * 60_000 });

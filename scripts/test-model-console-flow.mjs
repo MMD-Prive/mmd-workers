@@ -2,6 +2,7 @@ import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 
 export const tests = [
+  'admin-worker/customer-change-resolution.test.mjs',
   'admin-worker/job-orchestrator-owner-ops.test.mjs',
   'admin-worker/model-reconfirm-canonical-source.test.mjs',
   'admin-worker/model-reconfirm-freshness.test.mjs',
