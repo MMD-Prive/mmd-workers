@@ -162,15 +162,18 @@ test('test concurrency cannot block or bypass the production release queue',()=>
 });
 
 test('November artifact mode is isolated and requires every exact artifact pin behind the existing owner gate',()=>{
- const inputs={...authorized,execution_mode:'care-back-november',patch_manifest:'scripts/fixtures/reviewed.json',expected_manifest_sha256:'a'.repeat(64),expected_module_sha256:'b'.repeat(64)};
- assert.equal(jobCondition('production-approval')(dispatch,inputs),true);
- assert.equal(jobCondition('care-back-november-release')(dispatch,inputs),true);
- for(const id of ['approval-boundary-only','release','lv15-release']) assert.equal(jobCondition(id)(dispatch,inputs),false);
- for(const key of ['expected_version','expected_deployment','patch_manifest','expected_manifest_sha256','expected_module_sha256']) assert.equal(jobCondition('care-back-november-release')(dispatch,{...inputs,[key]:''}),false);
+ for(const execution_mode of ['care-back-november','care-back-november-resume']) {
+  const inputs={...authorized,execution_mode,patch_manifest:'scripts/fixtures/reviewed.json',expected_manifest_sha256:'a'.repeat(64),expected_module_sha256:'b'.repeat(64)};
+  assert.equal(jobCondition('production-approval')(dispatch,inputs),true);
+  assert.equal(jobCondition('care-back-november-release')(dispatch,inputs),true);
+  for(const id of ['approval-boundary-only','release','lv15-release']) assert.equal(jobCondition(id)(dispatch,inputs),false);
+  for(const key of ['expected_version','expected_deployment','patch_manifest','expected_manifest_sha256','expected_module_sha256']) assert.equal(jobCondition('care-back-november-release')(dispatch,{...inputs,[key]:''}),false);
+  assert.equal(jobCondition('care-back-november-release')(dispatch,{...inputs,production_approved:false}),false);
+ }
  const job=workflowJobs.get('care-back-november-release');
  assert.match(job,/needs: \[production-approval\]/);
  assert.match(job,/environment: member-pages-code-only-owner/);
- assert.match(job,/run: node scripts\/care-back-november-policy-release.mjs --execute-approved/);
+ assert.ok(job.includes("run: node scripts/care-back-november-policy-release.mjs ${{ inputs.execution_mode == 'care-back-november-resume' && '--promote-reviewed-upload' || '--execute-approved' }}"));
  assert.doesNotMatch(job,/--preflight|wrangler|SOURCE_DIRECTORY|release-source/);
 });
 
