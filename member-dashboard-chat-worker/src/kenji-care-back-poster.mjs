@@ -2,7 +2,7 @@
 export function careBackPosterMessages(text, extraMessages, approvedReply, poster, now = Date.now()) {
   const start = Date.parse('2026-10-31T00:00:00+07:00');
   const end = Date.parse('2026-11-01T00:00:00+07:00');
-  if (!Number.isFinite(now) || now < start || now >= end || typeof text !== 'string') return null;
+  if (!Number.isFinite(now) || now < start || typeof text !== 'string') return null;
   if (extraMessages !== undefined && (!Array.isArray(extraMessages) || extraMessages.length !== 0)) return null;
   if (!approvedReply || typeof approvedReply.text !== 'string' || !approvedReply.text ||
       typeof approvedReply.label !== 'string' || !approvedReply.label ||
@@ -11,6 +11,17 @@ export function careBackPosterMessages(text, extraMessages, approvedReply, poste
   const cta = `${approvedReply.label} → ${approvedReply.route}`;
   // These are the two existing common/Sales V2 renderings. No keyword matching.
   if (text !== `${approvedReply.text}\n${cta}` && text !== `${approvedReply.text}\n\n${cta}`) return null;
+  const ctaMessage = { type: 'text', text: cta, quickReply: { items: [{
+    type: 'action', action: { type: 'uri', label: approvedReply.label, uri: approvedReply.route },
+  }] } };
+  if (now >= end) {
+    // The public announcement has ended. Only this exact neutral navigation
+    // remains eligible for a button; stale advertising is never decorated.
+    if (approvedReply.text !== 'กดตรวจข้อเสนอและสิทธิ์ล่าสุดจากบัญชีเดิมได้เลยครับ' ||
+        approvedReply.route !== 'https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=overview' ||
+        approvedReply.label !== 'ตรวจข้อเสนอล่าสุด') return null;
+    return { text: approvedReply.text, extra_messages: [ctaMessage] };
+  }
   let imageUrl, previewUrl;
   try {
     const images = [new URL(poster.url), new URL(poster.preview_url)];
@@ -21,9 +32,7 @@ export function careBackPosterMessages(text, extraMessages, approvedReply, poste
     text: approvedReply.text,
     extra_messages: [
       { type: 'image', originalContentUrl: imageUrl, previewImageUrl: previewUrl },
-      { type: 'text', text: cta, quickReply: { items: [{
-        type: 'action', action: { type: 'uri', label: approvedReply.label, uri: approvedReply.route },
-      }] } },
+      ctaMessage,
     ],
   };
 }

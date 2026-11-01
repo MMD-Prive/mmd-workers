@@ -29,6 +29,30 @@ test('announcement media stops at Nov 1 Bangkok while this helper never changes 
   assert.ok(careBackPosterMessages(text, [], REPLY, POSTER, Date.parse('2026-10-31T23:59:59.999+07:00')));
 });
 
+test('after the wave only exact neutral status navigation gets one CTA button and no image', () => {
+  const neutral = {
+    text: 'กดตรวจข้อเสนอและสิทธิ์ล่าสุดจากบัญชีเดิมได้เลยครับ',
+    route: 'https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=overview',
+    label: 'ตรวจข้อเสนอล่าสุด',
+  };
+  for (const now of [Date.parse('2026-11-01T00:00:00+07:00'), Date.parse('2026-12-31T12:00:00+07:00')]) {
+    for (const separator of ['\n', '\n\n']) {
+      const cta = `${neutral.label} → ${neutral.route}`;
+      const result = careBackPosterMessages(neutral.text + separator + cta, [], neutral, null, now);
+      assert.deepEqual(result, { text: neutral.text, extra_messages: [{
+        type: 'text', text: cta, quickReply: { items: [{ type: 'action', action: {
+          type: 'uri', label: neutral.label, uri: neutral.route,
+        } }] },
+      }] });
+      assert.equal(result.extra_messages.some(message => message.type === 'image'), false);
+    }
+    for (const invalid of [REPLY, { ...neutral, text: REPLY.text },
+      { ...neutral, route: REPLY.route }, { ...neutral, label: REPLY.label }]) {
+      assert.equal(careBackPosterMessages(`${invalid.text}\n${invalid.label} → ${invalid.route}`, [], invalid, POSTER, now), null);
+    }
+  }
+});
+
 test('unrelated text, partial matches, Checkpts, Model replies and changed CTA stay untouched', () => {
   for (const text of ['checkpts', 'GWs37', 'CARE BACK', REPLY.text, `${REPLY.text}\nสมัครเลย → https://other.example/`,
     `ชื่อผู้รับ ${REPLY.text}\n${CTA}`, `${REPLY.text}\n${CTA}\nข้อความอื่น`, { text: REPLY.text }]) {

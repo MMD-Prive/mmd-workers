@@ -118,14 +118,31 @@ test('carrier preserves all original arguments for nonmatching text, Checkpts, M
   assert.deepEqual(await sender(...args), args);
 });
 
-test('at Bangkok midnight the old poster is never added and the neutral CTA remains', async () => {
+test('after Bangkok midnight actual sender emits neutral text and one current-route CTA button without an image', async () => {
   const now = Date.parse('2026-11-01T00:00:00+07:00');
   const reply = afterReply('care_back_overview', '', now);
-  const text = `${reply.text}\n${reply.label} → ${reply.route}`;
-  const args = [{}, 'reply-token', text];
-  assert.deepEqual(await wrappedSender(now)(...args), args);
+  const cta = `${reply.label} → ${reply.route}`;
+  const text = `${reply.text}\n${cta}`;
+  class FixtureDate extends Date { static now() { return now; } }
+  let captured;
+  const sender = new Function('Date', 'fetch', 'text28', 'LINE_REPLY_URL3', 'EMS_ALBUMS_URL', 'GWS_ALBUMS_URL',
+    `${neutralizeEndedCopy(source.careBackOctoberReply)}\n${helper}\n` +
+    `${source.sendReply.replace('async function sendReply(', 'async function sendReplyBeforeCareBackPoster(')}\n` +
+    `${carrierWrapper(manifest.poster)}\nreturn sendReply;`)(FixtureDate,
+      async (_url, init) => { captured = JSON.parse(init.body); return { ok: true, status: 200 }; },
+      value => { assert.equal(typeof value, 'string'); return value; },
+      'https://api.line.me/v2/bot/message/reply', 'https://example.test/ems', 'https://example.test/gws');
+  assert.deepEqual(await sender({ LINE_CHANNEL_ACCESS_TOKEN: 'fixture-token' }, 'fixture-reply', text), { ok: true, status: 200 });
+  assert.deepEqual(captured.messages, [
+    { type: 'text', text: NEUTRAL_COPY },
+    { type: 'text', text: cta, quickReply: { items: [{ type: 'action', action: { type: 'uri', label: reply.label, uri: reply.route } }] } },
+  ]);
+  assert.equal(captured.messages.some(message => message.type === 'image'), false);
   assert.equal(reply.text, NEUTRAL_COPY);
   assert.equal(reply.route, beforeReply('care_back_overview', '', now).route);
+  const stale = beforeReply('care_back_overview', '', NOW);
+  const staleArgs = [{}, 'reply-token', `${stale.text}\n${stale.label} → ${stale.route}`];
+  assert.deepEqual(await wrappedSender(now)(...staleArgs), staleArgs);
 });
 
 const PREFIX = 'const retainedPriceGate = "ready:d.size>=2";\n';
