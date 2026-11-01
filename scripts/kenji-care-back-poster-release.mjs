@@ -87,7 +87,12 @@ export async function verifyPosterAssets(poster, request = fetch) {
     let response;
     try { response = await request(asset.url, { method: 'GET', redirect: 'error', cache: 'no-store', signal: AbortSignal.timeout(30000) }); }
     catch { throw new Error('Approved poster asset read failed; stop without retry: ' + asset.role); }
-    assert.equal(response.status, 200, 'approved poster must be publicly readable: ' + asset.role);
+    if (response.status === 206) {
+      assert.equal(response.headers.get('content-range'), `bytes 0-${asset.size - 1}/${asset.size}`,
+        'approved poster 206 must cover the exact complete object: ' + asset.role);
+    } else {
+      assert.equal(response.status, 200, 'approved poster must be publicly readable: ' + asset.role);
+    }
     assert.equal((response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase(), asset.type,
       'approved poster content type mismatch: ' + asset.role);
     const bytes = new Uint8Array(await response.arrayBuffer());

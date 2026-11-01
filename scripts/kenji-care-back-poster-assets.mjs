@@ -56,11 +56,16 @@ export function loadAssets(read = readFileSync) {
   });
 }
 
-async function verifiedBytes(response, asset, label) {
-  assert.equal(response.status, 200, label + ' failed: ' + response.status);
+export async function verifiedBytes(response, asset, label, { publicReadback = false } = {}) {
+  if (response.status === 206 && publicReadback) {
+    // The existing asset-host Worker can report a full R2 object range even
+    // without a Range request. Accept only the exact complete representation.
+    assert.equal(response.headers.get('content-range'),
+      `bytes 0-${asset.size_bytes - 1}/${asset.size_bytes}`, label + ' incomplete Content-Range');
+  } else assert.equal(response.status, 200, label + ' failed: ' + response.status);
   assert.equal(mime(response), asset.content_type, label + ' MIME mismatch');
-  const length = Number(response.headers.get('content-length') || 0);
-  assert.ok(!length || length === asset.size_bytes, label + ' length mismatch');
+  const length = response.headers.get('content-length');
+  if (length !== null) assert.equal(length, String(asset.size_bytes), label + ' length mismatch');
   const bytes = Buffer.from(await response.arrayBuffer());
   assert.equal(bytes.length, asset.size_bytes, label + ' byte size mismatch');
   assert.equal(digest(bytes), asset.sha256, label + ' SHA-256 mismatch');
@@ -71,7 +76,7 @@ export async function publishPosterAssets({ request = fetch, token, approve, sav
   assert.ok(token, 'dedicated R2 publisher credential required');
   const assets = loadAssets(read);
   const receipt = { schema: 'mmd.care_back_poster_asset_receipt.v1', account_id: ACCOUNT,
-    bucket: BUCKET, phase: 'preflight', complete: false, objects: [] };
+    bucket: BUCKET, mode: 'publish', read_only: false, phase: 'preflight', complete: false, objects: [] };
   const checkpoint = () => save(structuredClone(receipt));
   const get = (url, authenticated = true) => request(url, { method: 'GET', redirect: 'error',
     signal: AbortSignal.timeout(30000), headers: authenticated ? { Authorization: `Bearer ${token}` } : {} });
@@ -113,7 +118,10 @@ export async function publishPosterAssets({ request = fetch, token, approve, sav
     receipt.phase = 'public_readback'; checkpoint();
     for (let index = 0; index < assets.length; index++) {
       const asset = assets[index];
-      await verifiedBytes(await get(publicUrl(asset), false), asset, 'public CDN readback');
+      const response = await get(publicUrl(asset), false);
+      receipt.objects[index].public_http = response.status;
+      receipt.objects[index].public_content_range = response.headers.get('content-range');
+      await verifiedBytes(response, asset, 'public CDN readback', { publicReadback: true });
       receipt.objects[index].public_verified = true; checkpoint();
     }
     receipt.phase = 'complete'; receipt.complete = true; checkpoint();
@@ -125,13 +133,56 @@ export async function publishPosterAssets({ request = fetch, token, approve, sav
   }
 }
 
+// Separate read-only operation: missing or mismatched storage never enters the
+// publisher and cannot trigger upload, repair, cache purge or a write retry.
+export async function verifyPublishedPosterAssets({ request = fetch, token, approve, save = () => {}, read = readFileSync }) {
+  assert.ok(token, 'dedicated R2 read credential required');
+  const assets = loadAssets(read);
+  const receipt = { schema: 'mmd.care_back_poster_asset_receipt.v1', account_id: ACCOUNT,
+    bucket: BUCKET, mode: 'verify', read_only: true, phase: 'storage_readback', complete: false, objects: [] };
+  const checkpoint = () => save(structuredClone(receipt));
+  const get = (url, authenticated = true) => request(url, { method: 'GET', redirect: 'error',
+    signal: AbortSignal.timeout(30000), headers: authenticated ? { Authorization: `Bearer ${token}` } : {} });
+  await approve();
+  checkpoint();
+  try {
+    for (const asset of assets) {
+      const item = { role: asset.role, object_key: key(asset), url: publicUrl(asset),
+        sha256: asset.sha256, size_bytes: asset.size_bytes, content_type: asset.content_type,
+        upload_attempted: false, storage_verified: false, public_verified: false };
+      receipt.objects.push(item);
+      const response = await get(objectUrl(asset));
+      item.storage_http = response.status;
+      await verifiedBytes(response, asset, 'existing storage readback');
+      item.storage_verified = true; checkpoint();
+    }
+    receipt.phase = 'public_readback'; checkpoint();
+    for (let index = 0; index < assets.length; index++) {
+      const asset = assets[index], item = receipt.objects[index];
+      const response = await get(publicUrl(asset), false);
+      item.public_http = response.status;
+      item.public_content_range = response.headers.get('content-range');
+      await verifiedBytes(response, asset, 'public CDN readback', { publicReadback: true });
+      item.public_verified = true; checkpoint();
+    }
+    await approve();
+    receipt.phase = 'complete'; receipt.complete = true; checkpoint();
+    return receipt;
+  } catch (error) {
+    receipt.phase = 'stopped'; receipt.complete = false;
+    receipt.error = String(error.message || 'asset verification failed').slice(0, 500);
+    checkpoint(); throw error;
+  }
+}
+
 async function main() {
   const assets = loadAssets();
   if (process.argv[2] === '--check-assets') {
     console.log(JSON.stringify({ valid: true, assets: assets.map(({ body, ...asset }) => ({ ...asset, url: publicUrl(asset) })) }));
     return;
   }
-  assert.equal(process.argv[2], '--execute-approved', 'explicit publication mode required');
+  const mode = process.argv[2];
+  assert.ok(['--execute-approved', '--verify-published'].includes(mode), 'explicit asset operation mode required');
   assert.equal(process.env.PRODUCTION_APPROVED, 'true', 'owner-authorized dispatch required');
   const sha = process.env.GITHUB_SHA;
   const git = (...args) => execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
@@ -147,7 +198,8 @@ async function main() {
     assert.equal(response.status, 200, 'cannot verify current main');
     assert.equal((await response.json()).object?.sha, sha, 'current main moved; review new SHA');
   };
-  const result = await publishPosterAssets({ token: process.env.CLOUDFLARE_R2_API_TOKEN, approve,
+  const operation = mode === '--verify-published' ? verifyPublishedPosterAssets : publishPosterAssets;
+  const result = await operation({ token: process.env.CLOUDFLARE_R2_API_TOKEN, approve,
     save: receipt => writeFileSync(join(process.env.RUNNER_TEMP || '/tmp', 'care-back-poster-assets-receipt.json'),
       JSON.stringify({ ...receipt, source_sha: sha, run_id: process.env.GITHUB_RUN_ID, checked_at: new Date().toISOString() }, null, 2), { mode: 0o600 }) });
   console.log(JSON.stringify(result));
