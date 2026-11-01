@@ -87,7 +87,8 @@ test("accepted job projection unlocks private disclosure only for the accepted o
   assert.match(src, /Accepted Therapist ID/);
   assert.match(src, /locationUnlocked: accepted/);
   assert.match(src, /accepted \? clean\(fields\["Exact Address Private"\]/);
-  assert.match(src, /accepted \? clean\(fields\["Customer Contact Private"\]/);
+  assert.match(src, /contactLabel: null/);
+  assert.match(src, /shared\?\.disclosureAllowed === true/);
 });
 
 test("first accept wins in a per-job Durable Object and preserves expiry/idempotency", async () => {

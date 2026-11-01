@@ -1,4 +1,5 @@
 import { renderMmsDirectChatPage } from './mms-direct-chat-page.mjs';
+import { publicBookingState } from '../../mms-worker/src/shared-booking-state.mjs';
 
 const WORKER_NAME = "member-dashboard-chat-worker";
 const CUSTOMER_UI_PREFIX = "/male-massage";
@@ -320,25 +321,18 @@ async function readPrebookings(env, memberRef) {
   };
 }
 
-function bookingStatus(value) {
-  const state = safeString(value, 64).toLowerCase();
-  if (state === "confirmed") return "confirmed";
-  if (state === "completed") return "completed";
-  if (state === "cancelled") return "cancelled";
-  if (["received", "coordination_pending", "matching", "waiting_customer", "action_required", "reviewing"].includes(state)) return "pending";
-  return "checking";
-}
-
 function bookingFromRequest(record) {
   const id = safeString(record?.prebooking_id || record?.request_id, 80).toLowerCase();
   if (!PREBOOKING_ID_RE.test(id)) return null;
-  const rawStatus = safeString(record?.status, 64).toLowerCase();
+  const rawStatus = safeString(record?.request_status ?? record?.status, 64).toLowerCase();
   const date = safeString(record?.service_date, 16);
   const time = safeString(record?.service_time, 8);
   const skills = Array.isArray(record?.skills)
     ? record.skills.map((item) => safeString(item, 80)).filter(Boolean).slice(0, 8)
     : [];
   const needsAttention = ["waiting_customer", "action_required"].includes(rawStatus);
+  const bookingState = publicBookingState(record?.bookingState);
+  const canShowTravel = bookingState.source === 'dispatch_coordinator' && bookingState.assignment === 'accepted' && bookingState.service === 'not_started';
   return {
     id,
     refDisplay: id,
@@ -347,9 +341,10 @@ function bookingFromRequest(record) {
     durationLabel: null,
     areaLabel: safeString(record?.zone, 120) || null,
     therapist: null,
-    status: bookingStatus(rawStatus),
-    travelStatus: record?.travel_status === "en_route" ? "en_route" : record?.travel_status === "checking" ? "checking" : null,
-    etaMinutes: Number.isInteger(record?.eta_minutes) && record.eta_minutes > 0 ? record.eta_minutes : null,
+    status: bookingState.status,
+    bookingState,
+    travelStatus: canShowTravel && record?.travel_status === "en_route" ? "en_route" : bookingState.source === 'checking' || record?.travel_status === "checking" ? "checking" : null,
+    etaMinutes: canShowTravel && record?.travel_status === 'en_route' && Number.isInteger(record?.eta_minutes) && record.eta_minutes > 0 ? record.eta_minutes : null,
     paymentState: "checking",
     amountSummary: null,
     nextAction: needsAttention

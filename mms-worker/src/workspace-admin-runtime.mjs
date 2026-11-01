@@ -1,3 +1,4 @@
+import { readSharedMmsJob, mapMmsReads } from './shared-booking-state.mjs';
 const PREFIX = '/internal/mms/admin';
 const ID = /^mmst_[a-f0-9]{24}$/;
 const JOB = /^mmsjob_[a-f0-9]{24}$/;
@@ -29,12 +30,13 @@ export function therapistWorkspaceReadiness(record) {
   };
 }
 
-function jobProjection(record) {
+function jobProjection(record, shared) {
   const f = record.fields || {}, p = object(f['Internal Payload JSON']);
   return {
     job_id: text(f['Job ID'], 80), service: text(f.Service), status: select(f['Job Status']),
+    bookingState: shared.bookingState,
     duration_minutes: Number(f['Duration Minutes']) || 0, area_label: text(f['Safe Area Label']),
-    therapist_id: text(f['Accepted Therapist ID'] || p.target_therapist_id, 80) || null,
+    therapist_id: shared.owner || null,
     is_test: p.is_test === true, coordinator_initialized: p.coordinator_initialized === true,
     payout_thb: typeof f['Therapist Payout THB'] === 'number' ? f['Therapist Payout THB'] : null,
     payment_state_label: text(f['Payment State Label']), updated_at: text(f['Updated At'], 80),
@@ -47,10 +49,18 @@ export async function maybeHandleWorkspaceAdmin(request, env = {}) {
   if (u.hostname !== text(env.MMS_INTERNAL_HOST || 'mms.internal')) return reply({ ok: false, error: { code: 'NOT_FOUND' } }, 404);
   try {
     if (u.pathname.endsWith('/workspace') && request.method === 'GET') {
-      const [therapists, jobs, offers] = await Promise.all(['THERAPISTS', 'JOBS', 'OFFERS'].map(k => list(env, k)));
-      return reply({ ok: true, complete: therapists.complete && jobs.complete && offers.complete,
+      const signal = AbortSignal.any([request.signal, AbortSignal.timeout(6000)]);
+      const [therapists, jobs, offers] = await Promise.all(['THERAPISTS', 'JOBS', 'OFFERS'].map(k => list(env, k, signal)));
+      const seen = new Set();
+      for (const job of jobs.records) {
+        const id = job?.fields?.['Job ID'];
+        if (!JOB.test(id || '') || seen.has(id)) fail(503, 'WORKSPACE_JOB_SCOPE_CONFLICT');
+        seen.add(id);
+      }
+      const shared = await mapMmsReads(jobs.records, job => readSharedMmsJob(env, job, { signal }));
+      return reply({ ok: true, complete: therapists.complete && jobs.complete && offers.complete && shared.every(job => job.state !== 'CHECKING'),
         therapists: therapists.records.map(therapistWorkspaceReadiness),
-        jobs: jobs.records.map(jobProjection).sort((a,b) => b.updated_at.localeCompare(a.updated_at)),
+        jobs: shared.map(job => jobProjection(job.record, job)).sort((a,b) => b.updated_at.localeCompare(a.updated_at)),
         offers: offers.records.map(r => ({ job_id: text(r.fields?.['Job ID'],80), therapist_id: text(r.fields?.['Therapist ID'],80), status: select(r.fields?.['Offer Status']), expires_at: text(r.fields?.['Expires At'],80) })),
       });
     }
@@ -119,7 +129,7 @@ async function airtable(env,k,suffix='',init={}) {
   const r = await fetch(`https://api.airtable.com/v0/${env.AIRTABLE_BASE_ID}/${table(env,k)}${suffix}`,{...init,headers:{Authorization:`Bearer ${env.AIRTABLE_API_TOKEN}`,'Content-Type':'application/json'}});
   if (!r.ok) fail(503,'WORKSPACE_STORAGE_UNAVAILABLE'); return r.json();
 }
-async function list(env,k) { let offset='',records=[]; for(let i=0;i<10;i++){const q=new URLSearchParams({pageSize:'100'});if(offset)q.set('offset',offset);const r=await airtable(env,k,'?'+q);records.push(...(r.records || []));offset=r.offset || '';if(!offset)break;}return {records,complete:!offset}; }
+async function list(env,k,signal) { let offset='',records=[]; for(let i=0;i<10;i++){const q=new URLSearchParams({pageSize:'100'});if(offset)q.set('offset',offset);const r=await airtable(env,k,'?'+q,{signal});if(!Array.isArray(r.records))fail(503,'WORKSPACE_STORAGE_INVALID');records.push(...r.records);offset=r.offset || '';if(!offset)break;}return {records,complete:!offset}; }
 async function unique(env,k,field,value) { const q=new URLSearchParams({maxRecords:'2',filterByFormula:`{${field}}='${String(value).replace(/\\/g,'\\\\').replace(/'/g,"\\'")}'`});const r=await airtable(env,k,'?'+q);if(r.records?.length>1)fail(409,'WORKSPACE_IDENTITY_CONFLICT');return r.records?.[0] || null; }
 async function create(env,k,fields){return airtable(env,k,'',{method:'POST',body:JSON.stringify({fields,typecast:false})});}
 async function patch(env,k,id,fields){if(!/^rec[A-Za-z0-9]{14}$/.test(id))fail(503,'RECORD_ID_INVALID');return airtable(env,k,'/'+id,{method:'PATCH',body:JSON.stringify({fields,typecast:false})});}

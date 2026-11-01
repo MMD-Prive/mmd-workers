@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { maybeHandleWorkspaceAdmin, therapistWorkspaceReadiness } from '../src/workspace-admin-runtime.mjs';
 
-const tid='mmst_48508463eced1e2de3227bb6', jid='mmsjob_87b38040dc13fab9e2e84bcd';
-const active={id:'recQZvEey9aeMaUkA',fields:{'Therapist ID':tid,'Display Name':'Tamp',Status:'Active','Therapist Auth Status':'Active','LINE Subject Hash':'private-hash','MY MMS Access':'Approved','Availability Status':'Available'}};
+const tid='mmst_'+'a'.repeat(24), jid='mmsjob_'+'b'.repeat(24);
+const active={id:'recQZvEey9aeMaUkA',fields:{'Therapist ID':tid,'Display Name':'Fixture Therapist',Status:'Active','Therapist Auth Status':'Active','LINE Subject Hash':'private-hash','MY MMS Access':'Approved','Availability Status':'Available'}};
 function fixture(t=structuredClone(active)) {
  const tables={tblTC9ZHQa4hAUwLu:[t],tbl0p7UdOH9BjzmFX:[],tblrSS5OegYNnGiEU:[]}, calls=[];
  let state=null,offers=[];
@@ -25,13 +25,13 @@ test('external host and an unready therapist cannot create test jobs',async()=>{
 });
 test('workspace reads the MMS tables and never returns private identity or customer fields',async()=>{
  const f=fixture();f.tables.tbl0p7UdOH9BjzmFX.push({id:'rec00000000000001',fields:{'Job ID':jid,Service:'[TEST ONLY] test','Internal Payload JSON':JSON.stringify({is_test:true,target_therapist_id:tid,customer_contact:'private-phone'}),'Customer Contact Private':'private-phone'}});
- await withFixture(f,async()=>{const r=await maybeHandleWorkspaceAdmin(new Request('https://mms.internal/internal/mms/admin/workspace'),f.env),d=await r.json();assert.equal(d.complete,true);assert.equal(d.jobs[0].is_test,true);assert.equal(d.therapists[0].can_test,true);assert.ok(!JSON.stringify(d).includes('private-hash'));assert.ok(!JSON.stringify(d).includes('private-phone'));assert.match(r.headers.get('cache-control'),/no-store/)});
+ await withFixture(f,async()=>{const r=await maybeHandleWorkspaceAdmin(new Request('https://mms.internal/internal/mms/admin/workspace'),f.env),d=await r.json();assert.equal(d.complete,false);assert.equal(d.jobs[0].status,'Checking');assert.equal(d.jobs[0].is_test,true);assert.equal(d.therapists[0].can_test,true);assert.ok(!JSON.stringify(d).includes('private-hash'));assert.ok(!JSON.stringify(d).includes('private-phone'));assert.match(r.headers.get('cache-control'),/no-store/)});
 });
 test('test offer initializes the real coordinator and a retry preserves one job and offer',async()=>{
  const f=fixture();await withFixture(f,async()=>{const req={therapist_id:tid,request_key:'owner-test-1'};const r=await maybeHandleWorkspaceAdmin(request(req),f.env);assert.equal(r.status,200);const d=await r.json();assert.equal(d.data.state,'OFFERED');assert.equal((await maybeHandleWorkspaceAdmin(request(req),f.env)).status,200);f.setState('COMPLETED');const done=await (await maybeHandleWorkspaceAdmin(request(req),f.env)).json();assert.equal(done.data.state,'COMPLETED');assert.equal(done.data.duplicate,true)});
  assert.equal(f.tables.tbl0p7UdOH9BjzmFX.length,1);assert.equal(f.tables.tblrSS5OegYNnGiEU.length,1);const fields=f.tables.tbl0p7UdOH9BjzmFX[0].fields,p=JSON.parse(fields['Internal Payload JSON']);assert.equal(fields['Therapist Payout THB'],0);assert.equal(p.is_test,true);assert.equal(p.payment_verified,false);assert.equal(p.coordinator_initialized,true);assert.ok(f.calls.includes('initialize'));assert.ok(!fields['Customer Contact Private']);
 });
-test('prepared Tamp test is reused, but real jobs cannot become test jobs',async()=>{
+test('prepared synthetic test is reused, but real jobs cannot become test jobs',async()=>{
  const f=fixture();f.tables.tbl0p7UdOH9BjzmFX.push({id:'rec59Dg8EMXdMSKyt',fields:{'Job ID':jid,'Job Status':'Matching','Internal Payload JSON':JSON.stringify({is_test:true,target_therapist_id:tid})}});
  await withFixture(f,async()=>{assert.equal((await maybeHandleWorkspaceAdmin(request({therapist_id:tid,request_key:'owner-test-2',prepared_job_id:jid}),f.env)).status,200);assert.equal(f.tables.tbl0p7UdOH9BjzmFX.length,1);f.tables.tbl0p7UdOH9BjzmFX[0].fields['Internal Payload JSON']='{}';assert.equal((await maybeHandleWorkspaceAdmin(request({therapist_id:tid,request_key:'owner-test-2',prepared_job_id:jid}),f.env)).status,409)});
 });

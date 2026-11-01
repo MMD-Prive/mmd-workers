@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { sharedBookingState } from "../../mms-worker/src/shared-booking-state.mjs";
 
 import {
   handleMyMmsCustomerApi,
@@ -221,7 +222,8 @@ test("booking reads resolve member identity server-side then call mms-worker", a
           data: {
             requests: [{
               prebooking_id: "mmspre_aaaaaaaaaaaaaaaaaaaaaaaa",
-              status: "confirmed",
+              status: "pending",
+              bookingState: sharedBookingState("ACCEPTED"),
               service_date: "2026-09-20",
               service_time: "19:30",
               zone: "Sukhumvit",
@@ -241,7 +243,8 @@ test("booking reads resolve member identity server-side then call mms-worker", a
   const body = await response.json();
   assert.equal(response.status, 200);
   assert.equal(body.data.id, "mmspre_aaaaaaaaaaaaaaaaaaaaaaaa");
-  assert.equal(body.data.status, "confirmed");
+  assert.equal(body.data.status, "pending");
+  assert.equal(body.data.bookingState.confirmation, "checking");
   assert.equal(body.data.serviceLabel, "Aroma Oil");
   assert.equal(body.data.paymentState, "checking");
   assert.equal(body.data.travelStatus, "en_route");

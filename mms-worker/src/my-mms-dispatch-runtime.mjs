@@ -5,6 +5,7 @@ import { mmsJobPricing } from "./mms-job-pricing.mjs";
 import { computeGoogleEtaMinutes, numericEtaLabel } from "./my-mms-travel-runtime.mjs";
 import { evaluateDepartureClaim } from "./my-mms-departure-claim.mjs";
 import { claimDispatchJobWinner } from "./my-mms-dispatch-claim.mjs";
+import { readSharedMmsJob, sharedBookingState, mapMmsReads, mmsReadRecords } from './shared-booking-state.mjs';
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const INTERNAL_HOST = "mms.internal";
@@ -291,7 +292,8 @@ export async function maybeHandleMyMmsDispatch(request, env = {}) {
       if (request.method !== "GET") return methodNotAllowed(request, env);
       const job = await findUniqueByField(env, tableId(env, "JOBS"), "Job ID", internalJob[1]);
       if (!job) throw dispatchError(404, "JOB_NOT_FOUND");
-      return json({ ok: true, data: internalJobProjection(job) }, 200, request, env);
+      const shared = await readSharedMmsJob(env, job, { signal: request.signal });
+      return json({ ok: true, data: { ...internalJobProjection(shared.record), bookingState: shared.bookingState } }, 200, request, env);
     }
 
     const internalCancel = path.match(INTERNAL_CANCEL_RE);
@@ -342,6 +344,9 @@ export async function maybeHandleMyMmsDispatch(request, env = {}) {
       if (!offer) throw dispatchError(404, "OFFER_NOT_FOUND");
       const job = await findUniqueByField(env, tableId(env, "JOBS"), "Job ID", acceptMatch[1]);
       if (!job) throw dispatchError(404, "JOB_NOT_FOUND");
+      const current = await readSharedMmsJob(env, job, { signal: request.signal });
+      if (current.state === 'CHECKING') throw dispatchError(503, 'MMS_JOB_STATE_CHECKING');
+      if (current.state === 'CANCELLED') throw dispatchError(409, 'JOB_CANCELLED');
       const window = serviceWindow(job.fields || {});
       const now = Date.now();
       const schedule = therapistScheduleStub(env, therapistId);
@@ -391,6 +396,7 @@ export async function maybeHandleMyMmsDispatch(request, env = {}) {
       const requestKey = requiredRequestKey(body.requestKey ?? body.request_key, `start:${startMatch[1]}:${therapistId}`);
       const owned = await findOwnedJob(env, startMatch[1], therapistId);
       if (!owned) throw dispatchError(404, "JOB_NOT_FOUND");
+      if (owned.fields['Job Status'] === 'Cancelled') throw dispatchError(409, 'JOB_CANCELLED');
       const window = serviceWindow(owned.fields || {});
       const now = Date.now();
       const schedule = therapistScheduleStub(env, therapistId);
@@ -423,6 +429,7 @@ export async function maybeHandleMyMmsDispatch(request, env = {}) {
       const requestKey = requiredRequestKey(body.requestKey ?? body.request_key, `complete:${completeMatch[1]}:${therapistId}`);
       const owned = await findOwnedJob(env, completeMatch[1], therapistId);
       if (!owned) throw dispatchError(404, "JOB_NOT_FOUND");
+      if (owned.fields['Job Status'] === 'Cancelled') throw dispatchError(409, 'JOB_CANCELLED');
       const result = await dispatchStub(env, completeMatch[1]).transition(completeMatch[1], therapistId, requestKey, "complete", Date.now());
       if (result.state === "COMPLETED") await therapistScheduleStub(env, therapistId).release(completeMatch[1], Date.now());
       await projectJobState(env, completeMatch[1], result);
@@ -670,10 +677,19 @@ async function readTherapistOffer(env, therapistId, jobId) {
 }
 
 async function listTherapistJobs(env, therapistId) {
-  const records = await listByFormula(env, tableId(env, "JOBS"), `{Accepted Therapist ID}=${formulaString(therapistId)}`);
-  return records
-    .sort((a, b) => Date.parse(clean(b.fields?.["Service Start At"], 80)) - Date.parse(clean(a.fields?.["Service Start At"], 80)))
-    .map((record) => jobProjection(record));
+  const signal = AbortSignal.timeout(6000);
+  const records = await mmsReadRecords(env, 'JOBS', `{Accepted Therapist ID}=${formulaString(therapistId)}`, signal);
+  const seen = new Set();
+  for (const record of records) {
+    const id = record?.fields?.['Job ID'];
+    if (record?.fields?.['Accepted Therapist ID'] !== therapistId || seen.has(id)) throw dispatchError(503, 'MMS_JOB_SCOPE_CONFLICT');
+    seen.add(id);
+  }
+  const shared = await mapMmsReads(records, record => readSharedMmsJob(env, record, { signal }));
+  if (shared.some(item => item.state === 'CHECKING')) throw dispatchError(503, 'MMS_JOB_STATE_CHECKING');
+  return shared.filter(item => item.owner === therapistId)
+    .sort((a, b) => Date.parse(clean(b.record.fields?.["Service Start At"], 80)) - Date.parse(clean(a.record.fields?.["Service Start At"], 80)))
+    .map(item => jobProjection(item.record, item));
 }
 
 async function listActiveTherapistSchedules(env, therapistId, now, excludeJobId = "") {
@@ -700,14 +716,28 @@ async function listActiveTherapistSchedules(env, therapistId, now, excludeJobId 
 }
 
 async function readTherapistJob(env, therapistId, jobId) {
-  const record = await findOwnedJob(env, jobId, therapistId);
-  return record ? jobProjection(record) : null;
+  const signal = AbortSignal.timeout(6000);
+  const rows = await mmsReadRecords(env, 'JOBS', `{Job ID}=${formulaString(jobId)}`, signal);
+  if (rows.length > 1) throw dispatchError(503, 'CANONICAL_ID_CONFLICT');
+  const record = rows[0];
+  if (record && record.fields?.['Job ID'] !== jobId) throw dispatchError(503, 'MMS_JOB_SCOPE_CONFLICT');
+  if (!record || clean(record.fields?.['Accepted Therapist ID'], 80) !== therapistId) return null;
+  const shared = await readSharedMmsJob(env, record, { signal });
+  if (shared.state === 'CHECKING') throw dispatchError(503, 'MMS_JOB_STATE_CHECKING');
+  return shared.owner === therapistId ? jobProjection(shared.record, shared) : null;
 }
 
 async function findOwnedJob(env, jobId, therapistId) {
-  const record = await findUniqueByField(env, tableId(env, "JOBS"), "Job ID", jobId);
+  const signal = AbortSignal.timeout(6000);
+  const rows = await mmsReadRecords(env, 'JOBS', `{Job ID}=${formulaString(jobId)}`, signal);
+  if (rows.length > 1) throw dispatchError(503, 'CANONICAL_ID_CONFLICT');
+  const record = rows[0];
+  if (record && record.fields?.['Job ID'] !== jobId) throw dispatchError(503, 'MMS_JOB_SCOPE_CONFLICT');
   if (!record) return null;
-  return clean(record.fields?.["Accepted Therapist ID"], 80) === therapistId ? record : null;
+  if (clean(record.fields?.['Accepted Therapist ID'], 80) !== therapistId) return null;
+  const shared = await readSharedMmsJob(env, record, { signal });
+  if (shared.state === 'CHECKING') throw dispatchError(503, 'MMS_JOB_STATE_CHECKING');
+  return shared.owner === therapistId ? shared.record : null;
 }
 
 async function findOfferForTherapist(env, jobId, therapistId) {
@@ -822,11 +852,11 @@ function offerProjection(offerRecord, jobRecord) {
   };
 }
 
-function jobProjection(record) {
+function jobProjection(record, shared) {
   const fields = record?.fields || {};
   const internal = parseObject(fields["Internal Payload JSON"]);
-  const state = clientJobState(selectName(fields["Job Status"]));
-  const accepted = ["ACCEPTED", "IN_PROGRESS", "COMPLETED", "CANCELLED"].includes(state);
+  const state = shared?.state || 'CHECKING';
+  const accepted = shared?.disclosureAllowed === true;
   const base = {
     jobId: clean(fields["Job ID"], 80),
     refDisplay: displayRef(clean(fields["Job ID"], 80)),
@@ -844,12 +874,14 @@ function jobProjection(record) {
   };
   return {
     ...base,
+    bookingState: shared?.bookingState || sharedBookingState('CHECKING', { available: false }),
     disclosure: {
       locationUnlocked: accepted && Boolean(clean(fields["Exact Address Private"], 2000)),
       addressLabel: accepted ? clean(fields["Exact Address Private"], 2000) || null : null,
       mapUrl: accepted ? safeHttpsUrl(fields["Map URL Private"]) : null,
       customerDisplayLabel: accepted ? clean(fields["Customer Display Private"] || internal.customer_display_label, 160) || null : null,
-      contactLabel: accepted ? clean(fields["Customer Contact Private"] || internal.customer_contact, 240) || null : null,
+      // Meeting-dependent contact access is not implemented in Phase 1.
+      contactLabel: null,
       contactUrl: null,
     },
     payoutSummaryLabel: clean(fields["Payout Note"], 240) || null,
@@ -893,7 +925,7 @@ function actionJson(jobId, result, request, env) {
   const state = canonicalClientState(result?.state);
   const status = result?.code ? (state === "EXPIRED" ? 410 : 409) : state === "TAKEN" ? 409 : state === "EXPIRED" ? 410 : state === "CHECKING" ? 409 : 200;
   const messageMap = {
-    ACCEPTED: "JOB CONFIRMED ✓",
+    ACCEPTED: "รับงานแล้ว · การยืนยันนัดและมัดจำต้องตรวจจาก MY MMS",
     DECLINED: "ปฏิเสธงานนี้แล้ว",
     TAKEN: "งานนี้มี Therapist รับแล้ว",
     EXPIRED: "งานนี้หมดเวลาตอบรับแล้ว",
@@ -901,7 +933,7 @@ function actionJson(jobId, result, request, env) {
     COMPLETED: "งานเสร็จสิ้น",
     CANCELLED: "งานนี้ถูกยกเลิก",
   };
-  return json({ ok: status < 400, data: { jobId, state, message: messageMap[state] || null }, ...(status >= 400 ? { error: { code: clean(result?.code, 120) || state } } : {}) }, status, request, env);
+  return json({ ok: status < 400, data: { jobId, state, bookingState: sharedBookingState(state), message: messageMap[state] || null }, ...(status >= 400 ? { error: { code: clean(result?.code, 120) || state } } : {}) }, status, request, env);
 }
 
 function timelineFor(fields, state) {
