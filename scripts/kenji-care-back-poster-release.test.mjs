@@ -104,6 +104,28 @@ test('public asset readback requires successful HTTPS response, exact type, size
   await assert.rejects(verifyPosterAssets(poster, async () => new Response('missing', { status: 404 })), /publicly readable/);
 });
 
+test('206 public readback accepts only an exact complete Content-Range and retains all body checks', async () => {
+  const original = new Uint8Array([1, 2, 3]), preview = new Uint8Array([4, 5]);
+  const poster = { url: 'https://example.test/original.png', content_size: original.length, content_type: 'image/png', content_sha256: digest(original),
+    preview_url: 'https://example.test/preview.jpg', preview_size: preview.length, preview_content_type: 'image/jpeg', preview_sha256: digest(preview) };
+  const request = ({ range, body, contentType } = {}) => async (url, init) => {
+    assert.equal(init.method, 'GET'); assert.equal(init.redirect, 'error');
+    const isPreview = url === poster.preview_url;
+    const expectedBytes = isPreview ? preview : original;
+    const headers = new Headers({ 'content-type': isPreview ? (contentType || 'image/jpeg') : 'image/png' });
+    const value = isPreview && range !== undefined ? range : `bytes 0-${expectedBytes.length - 1}/${expectedBytes.length}`;
+    if (value !== null) headers.set('content-range', value);
+    return new Response(isPreview && body ? body : expectedBytes, { status: 206, headers });
+  };
+  assert.equal((await verifyPosterAssets(poster, request())).every(item => item.verified), true);
+  for (const range of [null, '', 'bytes 1-1/2', 'bytes 0-0/2', 'bytes 0-1/3', 'bytes 0-2/2', 'bytes */2', 'items 0-1/2']) {
+    await assert.rejects(verifyPosterAssets(poster, request({ range })), /206 must cover the exact complete object/);
+  }
+  await assert.rejects(verifyPosterAssets(poster, request({ body: new Uint8Array([4]) })), /byte count mismatch/);
+  await assert.rejects(verifyPosterAssets(poster, request({ body: new Uint8Array([4, 6]) })), /content digest mismatch/);
+  await assert.rejects(verifyPosterAssets(poster, request({ contentType: 'image/png' })), /content type mismatch/);
+});
+
 test('carrier preserves all original arguments for nonmatching text, Checkpts, Models and existing extras', async () => {
   const sender = wrappedSender(NOW);
   for (const text of ['checkpts', 'ชื่อ Model และราคา', 'สถานะสมาชิกพร้อม Points', 'ข้อความหลังรับสลิป']) {
