@@ -38,3 +38,16 @@ Before publication or endpoint activation:
 6. Obtain explicit production approval before Webflow publish, route mutation, or deployment.
 
 No production route, Worker binding, secret, API, or Webflow publication is included in this handoff.
+
+
+## Black Card completion update (Codexmin)
+
+The release candidate page is blackcard-flow-embed.html and is the exact embed saved in Webflow /blackcard/confirm (page 69a73c0cc748b273547a76e5). It uses the signed customer confirmation token t and calls the payments-worker authority:
+
+- POST /v1/confirm/companion-preference with {t, expected_role:"customer", read:true} to read the stored choice.
+- POST /v1/confirm/companion-preference with {t, expected_role:"customer", companion_id} to write it.
+- The backend validates session ownership, Black Card product, payment state, and the canonical Personal Main catalog. It writes one idempotent preference marker to the canonical Session note; it never grants entitlement.
+- The page no longer sends a Companion name through LINE, trusts localStorage, or displays “saved” before a successful API response.
+- After a successful slip submission or a provider-confirmed return, the existing t is preserved and the customer can open this page directly with ?t=...&step=companion.
+
+The Webflow edit is saved as a draft only. Do not publish until the staging end-to-end and real PayPal return checks are approved.

@@ -7,15 +7,26 @@ export const CONFIRM_MODEL_REISSUE_PATH = "/v1/internal/confirm/reissue-model";
 const SESSION_FIELDS = Object.freeze({
   sessionId: "fldLTq2kZbyRv22IA",
   paymentRef: "fldojgjSQLaO0uQLX",
+  paymentStatus: "fldTY5lE6m0kQf72n",
   customerUrl: "fldi9ZdoiUXzSv1rI",
   modelUrl: "fld0mFma9J9yfEaKb",
 });
 
 const PAYMENT_FIELDS = Object.freeze({
   paymentRef: "fldOO6SY49iDw8VBZ",
+  sessionId: "fld2wdhBvc8xrV6y5",
+  paymentStatus: "fldEJ1hmm7KwWuI6q",
+  verificationStatus: "fldJ7a0Ube9F0bmRy",
   paymentStage: "fldrr9g8ZZjqAbdKQ",
   paymentType: "fldydUWHhqVLMkNSC",
 });
+
+function approvedForConfirmation(session, payment, sessionId) {
+  return new Set(["partial", "paid"]).has(clean(session.fields?.[SESSION_FIELDS.paymentStatus], 80).toLowerCase())
+    && clean(payment.fields?.[PAYMENT_FIELDS.sessionId], 220) === sessionId
+    && clean(payment.fields?.[PAYMENT_FIELDS.paymentStatus], 80).toLowerCase() === "paid"
+    && clean(payment.fields?.[PAYMENT_FIELDS.verificationStatus], 80).toLowerCase() === "verified";
+}
 
 function clean(value, max = 4096) {
   return String(value ?? "").replace(/[\u0000-\u001F\u007F]/g, "").trim().slice(0, max);
@@ -101,6 +112,9 @@ export async function handleConfirmationReissue(request, env = {}) {
 
     const payment = await findSingle(env, paymentsTable, "payment_ref", paymentRef);
     if (!payment?.id) return json({ ok: false, error: "payment_not_found" }, 409);
+    if (!approvedForConfirmation(session, payment, sessionId)) {
+      return json({ ok: false, error: "payment_approval_required" }, 409);
+    }
 
     const paymentType = clean(
       payment.fields?.[PAYMENT_FIELDS.paymentStage] || payment.fields?.[PAYMENT_FIELDS.paymentType] || "deposit",
@@ -188,6 +202,9 @@ export async function handleModelConfirmationReissue(request, env = {}) {
 
     const payment = await findSingle(env, paymentsTable, "payment_ref", paymentRef);
     if (!payment?.id) return json({ ok: false, error: "payment_not_found" }, 409);
+    if (!approvedForConfirmation(session, payment, sessionId)) {
+      return json({ ok: false, error: "payment_approval_required" }, 409);
+    }
 
     const paymentType = clean(
       payment.fields?.[PAYMENT_FIELDS.paymentStage] || payment.fields?.[PAYMENT_FIELDS.paymentType] || "deposit",

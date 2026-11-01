@@ -49,12 +49,20 @@
   "durable_objects": {
     "bindings": [
       {
+        "name": "MMS_DIRECT_CHAT",
+        "class_name": "MmsDirectChat"
+      },
+      {
         "name": "MMS_COORDINATOR",
         "class_name": "MmsCoordinator"
       },
       {
         "name": "MMS_DISPATCH_COORDINATOR",
         "class_name": "MmsDispatchCoordinator"
+      },
+      {
+        "name": "MMS_THERAPIST_SCHEDULE_COORDINATOR",
+        "class_name": "MmsTherapistScheduleCoordinator"
       },
       {
         "name": "RELAX_SPA_LEDGER",
@@ -74,6 +82,14 @@
     {
       "tag": "v3-relax-spa-ledger",
       "new_sqlite_classes": ["RelaxSpaLedger"]
+    },
+    {
+      "tag": "v4-mms-direct-chat",
+      "new_sqlite_classes": ["MmsDirectChat"]
+    },
+    {
+      "tag": "v5-mms-therapist-schedule",
+      "new_sqlite_classes": ["MmsTherapistScheduleCoordinator"]
     }
   ]
 }

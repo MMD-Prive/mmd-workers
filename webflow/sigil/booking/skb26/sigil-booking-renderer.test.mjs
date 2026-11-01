@@ -16,33 +16,30 @@ const projectedMedia = vm.runInNewContext(
 const mediaId = (character) => `media_${character.repeat(8)}-${character.repeat(4)}-${character.repeat(4)}-${character.repeat(4)}-${character.repeat(12)}`;
 const mediaUrl = (id) => `https://sigil.mmdbkk.com/sigil/api/models/media/${encodeURIComponent(id)}`;
 
-test('renderer accepts only per-item API projection and rejects foreign media URLs', () => {
+test('renderer keeps approved cover separate from Model gallery and ignores forged storage links', () => {
   const primaryId = mediaId('a');
   const photoId = mediaId('b');
   const clipId = mediaId('c');
   const item = {
-    model_id: 'recOwnModel',
-    media_source: 'mmd_model_media_assets',
-    cover_url: 'https://example.test/legacy.jpg',
-    primary_media_id: primaryId,
-    primary_image_url: mediaUrl(primaryId),
-    additional_images: [
-      { media_id: photoId, media_type: 'public_gallery', url: mediaUrl(photoId) },
-      { media_id: mediaId('d'), media_type: 'private_original', url: mediaUrl(mediaId('d')) },
-      { media_id: mediaId('e'), media_type: 'public_gallery', url: 'https://example.test/other-model.jpg' },
-      { media_id: mediaId('f'), media_type: 'public_gallery', url: `${mediaUrl(mediaId('f'))}?id=${mediaId('f')}` },
+    model_id: 'recOwnModel', media_source: 'mmd_model_media_assets',
+    cover_url: 'https://example.test/legacy.jpg', primary_media_id: primaryId,
+    approved_media: [
+      { media_id: primaryId, media_source: 'mmd_model_media_assets', kind: 'photo' },
+      { media_id: clipId, media_source: 'mmd_model_media_assets', kind: 'clip' },
     ],
-    clips: [{ media_id: clipId, media_type: 'intro_video', url: mediaUrl(clipId) }],
+    gallery_media: [
+      { media_id: photoId, media_source: 'mmd_model_media_assets', kind: 'photo' },
+      { media_id: mediaId('d'), media_source: 'private', kind: 'photo' },
+    ],
   };
   const result = projectedMedia(item);
   assert.equal(result.primary.url, mediaUrl(primaryId));
   assert.deepEqual(Array.from(result.photos, ({ media_id }) => media_id), [photoId]);
   assert.deepEqual(Array.from(result.clips, ({ media_id }) => media_id), [clipId]);
-  const compactId = `media_${'f'.repeat(32)}`;
-  assert.equal(projectedMedia({ ...item, primary_media_id: compactId, primary_image_url: mediaUrl(compactId) }).primary.media_id, compactId);
-  assert.equal(projectedMedia({ ...item, primary_media_id: `media_${'z'.repeat(32)}` }).primary, null);
+  assert.equal(projectedMedia({ ...item, approved_media: [] }).primary, null);
   assert.equal(projectedMedia({ ...item, media_source: 'legacy' }).primary, null);
   assert.equal(projectedMedia({ model_id: 'recOtherModel', media_source: 'mmd_model_media_assets' }).photos.length, 0);
+  assert.match(footer, /cover=media.primary;/);
 });
 
 test('renderer keeps a safe no-media state and API failure state', () => {
@@ -88,7 +85,7 @@ test('customer offer cards label rates by duration and never imply the 90-minute
   assert.match(footer, /m\+' นาที · '/);
   assert.match(footer, /ให้ MMD ตรวจราคา/);
   assert.match(footer, /qs\.set\('duration_minutes',v\('duration_minutes'\)\)/);
-  assert.match(footer, /รูปเพิ่มเติมที่อนุมัติ/);
+  assert.match(footer, /รูปเพิ่มเติมจาก Model/);
   assert.doesNotMatch(footer, /drive_folder_id/);
   assert.doesNotMatch(footer, /drive\.google\.com/);
 });

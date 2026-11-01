@@ -185,6 +185,43 @@ test("existing GET and HEAD /internal/admin behavior remains unchanged", async (
   assert.equal(head.status, 401);
 });
 
+test("diagnostic button page requires the existing credential-bound session and makes no RPC", async () => {
+  const service = rpc();
+  const environment = env(service);
+  const path = "/internal/admin/work/member-resolver-check";
+  for (const Cookie of ["", "mmd_admin_gate_v1=forged.payload", await signedCookie({ auth_method: "legacy" })]) {
+    const response = await request(path, { headers: { Cookie } }, environment);
+    assert.equal(response.status, 404);
+    assert.equal(await response.text(), "");
+  }
+  const Cookie = await login(environment);
+  const response = await request(path, { headers: { Cookie } }, environment);
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  assert.match(html, /<html[^>]*lang="th"/);
+  assert.match(html, /<form method="post" action="\/internal\/admin" enctype="text\/plain">/);
+  assert.match(html, /<button type="submit">ตรวจการเชื่อมต่อข้อมูลสมาชิก<\/button>/);
+  const form = html.match(/<form\b[^>]*>[\s\S]*?<\/form>/)?.[0];
+  assert.ok(form);
+  assert.doesNotMatch(form, /<input|<textarea|<select|\bname=|<script/);
+  assert.doesNotMatch(html, /focused-resolver|rec_private/);
+  assert.equal(response.headers.get("cache-control"), "no-store, private");
+  assert.match(response.headers.get("content-security-policy"), /form-action 'self'; frame-ancestors 'none'/);
+  assert.equal(response.headers.get("referrer-policy"), "same-origin");
+  assert.equal((await request(path + "?debug=1", { headers: { Cookie } }, environment)).status, 404);
+  assert.deepEqual(service.calls, []);
+});
+
+test("opaque null Origin from a no-referrer native form remains rejected before RPC", async () => {
+  const service = rpc();
+  const environment = env(service);
+  const Cookie = await login(environment);
+  const response = await invoke({ Cookie, origin: "null", body: "" }, environment);
+  assert.equal(response.status, 404);
+  assert.equal(await response.text(), "");
+  assert.deepEqual(service.calls, []);
+});
+
 test("wrangler adds one named service binding and no diagnostic route or secret", async () => {
   const wrangler = await readFile(new URL("./wrangler.toml", import.meta.url), "utf8");
   assert.match(wrangler, /binding = "MEMBER_PAGES_RESOLVER_DIAGNOSTIC"\s+service = "member-pages-worker"\s+entrypoint = "MemberResolverDiagnosticEntrypoint"/);

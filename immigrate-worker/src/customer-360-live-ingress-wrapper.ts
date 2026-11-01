@@ -1,3 +1,4 @@
+import { decorateCeoModels } from "./ceo-models-page.mjs";
 import canonicalWorker from "./control-room-dashboard-ingress-wrapper";
 import { decorateInternalSilverTheme } from "./internal-silver-theme";
 import { CUSTOMER_360_LIVE_CLIENT } from "./customer-360-live-client";
@@ -7,6 +8,7 @@ import { augmentClientIntelligenceWithIdentityAlignment } from "./customer-ident
 import type { Env } from "./types";
 
 const CUSTOMER_PAGE = "/internal/admin/customer-data";
+const MEMBERSHIP_ACCESS_PAGE = "/internal/admin/membership-access";
 const CUSTOMER_QUEUE = "/v1/admin/customer-data/queue";
 const CLIENT_INTELLIGENCE = "/v1/admin/clients/intelligence";
 const CREATE_JOB_PAGE = "/internal/admin/jobs/create-job";
@@ -87,7 +89,7 @@ export default {
       : null;
     if (publicHandoff) return publicHandoff;
 
-    const response = await decorateInternalSilverTheme(request, await canonicalWorker.fetch(request, env));
+    const response = await decorateInternalSilverTheme(request, await decorateCeoModels(request, await canonicalWorker.fetch(request, env)));
     if ((method === "GET" || method === "HEAD") && path === CREATE_JOB_PAGE) {
       // Incident hotfix 2026-09-28: restore the canonical Worker-rendered Create Job
       // surface. The Lovable presentation cutover introduced production usability
@@ -96,6 +98,7 @@ export default {
       return response;
     }
     if (method === "GET" && path === CUSTOMER_PAGE) {
+      if (!url.searchParams.has("client_id")) return decorateCustomerDirectoryQuery(renderCustomerDirectory(response));
       const isLovable = response.headers.get("x-mmd-presentation-source") === "lovable";
       // The Lovable directory owns its list UI. Legacy exact-client decorators
       // require a different HTML contract; explicit client scopes still fail closed.
@@ -103,6 +106,9 @@ export default {
         ? null
         : resolveRequestedClientId(url.searchParams);
       return decorateCustomer360Page(response, scope);
+    }
+    if (method === "GET" && path === MEMBERSHIP_ACCESS_PAGE) {
+      return decorateMembershipAccessPage(response);
     }
     if (method === "GET" && path === CUSTOMER_QUEUE) {
       return redactCustomerQueueResponse(response);
@@ -274,6 +280,32 @@ export async function decorateCustomer360Page(response: Response, requestedClien
   return new Response(body, { status: response.status, statusText: response.statusText, headers });
 }
 
+export async function decorateMembershipAccessPage(response: Response): Promise<Response> {
+  if (!response.ok || !(response.headers.get("content-type") || "").includes("text/html")) return response;
+  let html = await response.text();
+  if (!html.includes('data-mmd-membership-client-handoff="v1"')) {
+    const script = `<script data-mmd-membership-client-handoff="v1">(()=>{'use strict';const ids=new URL(location.href).searchParams.getAll('client_id'),id=ids.length===1?String(ids[0]||'').trim():'';if(!/^rec[A-Za-z0-9]{6,32}$/.test(id))return;const form=document.querySelector('[data-form]'),input=form&&form.querySelector('[data-query]'),list=document.querySelector('[data-list]');if(!form||!input||!list)return;const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')?.set;if(setter)setter.call(input,id);else input.value=id;input.dispatchEvent(new Event('input',{bubbles:true}));let done=false;const select=()=>{if(done)return;const row=Array.from(list.querySelectorAll('[data-id]')).find(node=>String(node.getAttribute('data-id')||'').trim()===id);if(row){done=true;observer.disconnect();row.click()}};const observer=new MutationObserver(select);observer.observe(list,{childList:true,subtree:true});form.requestSubmit?form.requestSubmit():form.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));select();setTimeout(()=>observer.disconnect(),8000)})();</script>`;
+    html = html.includes("</body>") ? html.replace("</body>", `${script}</body>`) : `${html}${script}`;
+  }
+  const headers = new Headers(response.headers);
+  headers.delete("content-length");
+  headers.set("cache-control", "no-store, private");
+  headers.set("x-mmd-membership-client-handoff", "canonical-client-v1");
+  return new Response(html, { status: response.status, statusText: response.statusText, headers });
+}
+
+export async function decorateCustomerDirectoryQuery(response: Response): Promise<Response> {
+  if (!response.ok || !(response.headers.get("content-type") || "").includes("text/html")) return response;
+  let html = await response.text();
+  if (!html.includes('data-mmd-customer-directory-query="v1"')) {
+    const script = `<script data-mmd-customer-directory-query="v1">(()=>{const values=new URL(location.href).searchParams.getAll('q'),value=values.length===1?String(values[0]||'').trim():'';if(!value)return;const form=document.getElementById('search'),input=document.getElementById('query');if(!form||!input)return;input.value=value;form.requestSubmit?form.requestSubmit():form.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}))})();</script>`;
+    html = html.includes("</body>") ? html.replace("</body>", `${script}</body>`) : html.replace("</html>", `${script}</html>`);
+  }
+  const headers = new Headers(response.headers);
+  headers.delete("content-length");
+  return new Response(html, { status: response.status, statusText: response.statusText, headers });
+}
+
 export async function enforceExactCanonicalClientScope(response: Response, requestedClientId: string): Promise<Response> {
   if (!/^rec[A-Za-z0-9]{6,32}$/.test(requestedClientId)) {
     return Response.json({ ok: false, error: "invalid_client_scope" }, { status: 400, headers: { "cache-control": "no-store" } });
@@ -312,3 +344,14 @@ export async function redactCustomerQueueResponse(response: Response): Promise<R
 }
 
 export { augmentClientIntelligenceWithIdentityAlignment } from "./customer-identity-alignment";
+
+// Only replace a successfully authenticated Customer 360 HTML response.
+// Explicit, invalid and repeated client scopes retain the exact-client guard.
+export function renderCustomerDirectory(response: Response): Response {
+  if (!response.ok || !(response.headers.get("content-type") || "").includes("text/html") || !response.headers.has("x-mmd-customer-data-ui")) return response;
+  const headers = new Headers(response.headers);
+  headers.delete("content-length");
+  headers.set("cache-control", "no-store, private");
+  headers.set("x-mmd-customer-directory", "canonical-search-v1");
+  return new Response("<!doctype html><html lang=\"th\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Customer 360 · SĪGIL</title><style>\n*{box-sizing:border-box}body{margin:0;background:#fff;color:#252a2e;font:16px/1.6 system-ui,sans-serif}main{max-width:860px;margin:auto;padding:24px 16px}a{color:#833c13}h1{margin:14px 0 4px}p{color:#555e65}form{display:flex;gap:8px}input,button{font:inherit;border:1px solid #c8cdd1;border-radius:10px;min-height:46px;padding:10px 14px}input{min-width:0;flex:1}button{background:#ffe0bf;color:#65300e;cursor:pointer}button:disabled{opacity:.65}#results{display:grid;gap:10px}#results a{display:block;border:1px solid #d8dde1;border-radius:12px;padding:14px;text-decoration:none;color:#252a2e}#results a:hover{background:#fff4e8}small{display:block;color:#5c6369}progress{width:100%;accent-color:#c66b26}footer{margin-top:24px;font-size:14px}</style><main><a href=\"/internal/admin/dashboard\">← หน้าหลัก</a><h1>Customer 360</h1><p>ค้นชื่อที่เปอร์ตั้ง ชื่อ LINE อีเมล หรือเบอร์ แล้วเลือกลูกค้าที่ต้องการ</p><form id=\"search\"><input id=\"query\" type=\"search\" aria-label=\"ค้นหาลูกค้า\" placeholder=\"ค้นหาลูกค้า\" maxlength=\"160\" required><button>ค้นหา</button></form><p id=\"status\" role=\"status\">พิมพ์ชื่อเพื่อเริ่มค้นหา</p><progress hidden aria-label=\"กำลังค้นหา\"></progress><section id=\"results\" aria-label=\"ผลการค้นหาลูกค้า\"></section><footer>เลือกลูกค้าก่อนเปิดประวัติหรือสร้างงาน</footer></main><script>\nconst form=document.getElementById('search'),input=document.getElementById('query'),status=document.getElementById('status'),results=document.getElementById('results'),progress=document.querySelector('progress');let sequence=0;\ninput.addEventListener('input',()=>{sequence++;results.replaceChildren();status.textContent='กดค้นหาเพื่อดูผลของชื่อนี้';progress.hidden=true;form.querySelector('button').disabled=false});\nform.addEventListener('submit',async e=>{e.preventDefault();const query=input.value.trim();if(!query)return;const seq=++sequence;results.replaceChildren();status.textContent='กำลังค้นหา…';progress.hidden=false;form.querySelector('button').disabled=true;\ntry{const r=await fetch('/v1/admin/clients/lineage-lookup',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({query,canonical_only:true})});const d=await r.json();if(seq!==sequence)return;if(!r.ok||d.ok===false)throw new Error(r.status===401||r.status===403?'เซสชันหมดอายุ กรุณาเข้าระบบใหม่':'ค้นหาไม่สำเร็จ กรุณาลองอีกครั้ง');const rows=(Array.isArray(d.items)?d.items:Array.isArray(d.records)?d.records:[]).filter(x=>/^rec[A-Za-z0-9]{6,32}$/.test(x.client_id||'')&&!x.manual_public_only);status.textContent=rows.length?'พบ '+rows.length+' รายการ · เลือกลูกค้าเพื่อเปิดรายละเอียด':'ยังไม่พบ ลองชื่อที่เปอร์ตั้งหรือชื่อ LINE';for(const x of rows){const a=document.createElement('a');a.href='/internal/admin/customer-data?client_id='+encodeURIComponent(x.client_id);const name=document.createElement('strong');name.textContent=x.client_name||x.canonical_name||x.remembered_name||x.line_display_name||'ลูกค้า';a.append(name);if(x.line_display_name){const detail=document.createElement('small');detail.textContent=x.line_display_name;a.append(detail)}results.append(a)}}catch(error){if(seq===sequence)status.textContent=error.message||'ค้นหาไม่สำเร็จ'}finally{if(seq===sequence){progress.hidden=true;form.querySelector('button').disabled=false}}});\n</script></html>", {status: response.status, headers});
+}

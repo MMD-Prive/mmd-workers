@@ -68,7 +68,7 @@ export async function verifyHimaiShopRoutes({
     const catalogResponse = await getRoute(`${origin}/shop/api/products`, fetchImpl, attempts, pause);
     const catalog = await readJson(catalogResponse, 200, "himai_catalog");
     requireValue(catalog.ok === true && catalog.shop === "shop", "himai_catalog_brand_mismatch");
-    requireValue(catalog.pricing_source === "Himai Selling Price THB", "himai_pricing_source_mismatch");
+    requireValue(!Object.hasOwn(catalog, "pricing_source") && !Object.hasOwn(catalog, "source_table"), "internal_catalog_metadata_exposed");
     requireValue(Array.isArray(catalog.products), "himai_catalog_products_missing");
     for (const product of catalog.products) {
       requireValue(product && typeof product === "object", "himai_catalog_product_invalid");

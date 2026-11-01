@@ -240,6 +240,37 @@ test("matching uses customer scope, zone and selected skills without leaking sen
   assert.equal(JSON.stringify(result).includes("Sexual Orientation"), false);
 });
 
+test("dispatch matching prioritizes a Therapist's base zone and rotates ties stably per job", () => {
+  const fields = (id, baseZone, coverageZones = []) => ({
+    "Therapist ID": id,
+    "Display Name": id,
+    "Customer Gender Scope": "ได้ทั้งคู่",
+    "Verified Skills": ["Thai Massage"],
+    "Base Zone": baseZone,
+    "Coverage Zones": coverageZones,
+    "Availability Status": "Available",
+    "Matching Enabled": true,
+    "Manual Review Only": false,
+    Status: "Active",
+  });
+  const records = [
+    { fields: fields("mms_coverage", "Sathorn / Silom", ["Sukhumvit"]) },
+    { fields: fields("mms_base_a", "Sukhumvit") },
+    { fields: fields("mms_base_b", "Sukhumvit") },
+  ];
+  const match = (rotation_key) => matchTherapists(records, {
+    recipient_gender: "ผู้หญิง",
+    zone: "sukhumvit",
+    skills: ["thai_massage"],
+    rotation_key,
+  }).matches.map((item) => item.therapist_id);
+  const first = match("mmsjob_000000000000000000000001");
+  assert.equal(first[2], "mms_coverage", "explicit base-zone therapists rank before coverage-zone therapists");
+  assert.deepEqual(match("mmsjob_000000000000000000000001"), first, "retries preserve the same offer order");
+  const firstChoices = new Set(Array.from({ length: 12 }, (_, index) => match(`mmsjob_${String(index).padStart(24, "0")}`)[0]));
+  assert.ok(firstChoices.has("mms_base_a") && firstChoices.has("mms_base_b"), "different jobs rotate the first offer across equally ranked base-zone therapists");
+});
+
 test("non-binary or undisclosed recipient gender routes to manual coordination", () => {
   const result = matchTherapists([], {
     recipient_gender: "ไม่ประสงค์ระบุ",

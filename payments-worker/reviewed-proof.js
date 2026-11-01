@@ -1,4 +1,4 @@
-import { addBangkokCalendarYears, applyMembershipPromotion, currentPrivateMembershipPromotion, isProtectedPrivateMembership, privateRenewalTiming } from "../shared/membership-promotion-policy.mjs";
+import { addBangkokCalendarYears, applyMembershipPromotion, currentPrivateMembershipPromotion, isProtectedPrivateMembership, privateRenewalTiming, privateRenewalBaseYears } from "../shared/membership-promotion-policy.mjs";
 import { constantTimeEqual, formulaValue, httpError } from "./lib/payment-primitives.js";
 
 const REVIEW_SOURCE = "payment_review_console";
@@ -295,15 +295,20 @@ async function materializeRecoveredMembership(env, input) {
   const exact = own.filter(row => canonicalPackage(row.fields?.package_code) === input.package_code);
   const expiries = exact.map(row => validDate(row.fields?.expire_at)).filter(Boolean).sort((a,b)=>b-a);
   const timing = privateRenewalTiming(expiries[0]?.toISOString(), paidAt);
-  if (timing?.expired_one_year_or_more) throw httpError(409, "recovery_expired_one_year_or_more_policy_review_required");
   if (!timing?.expiry_known) throw httpError(409,"recovery_canonical_expiry_required");
+  if (!timing.active && !timing.expired_within_90_days) throw httpError(409, "renewal_expired_over_90_days_review_required");
   const packages=await airtableList(env, env.AIRTABLE_TABLE_PACKAGES || "tblg2z8dENx75yHka", {filterByFormula:`{code}='${formulaValue(input.package_code)}'`,maxRecords:2});
   const catalog=packages.length===1 ? packages[0].fields : null;
   if (!catalog || catalog.is_active === false || catalog.require_approval === true || Number(catalog.duration_days)!==MEMBERSHIP_YEARS[input.package_code]*365) throw httpError(409,"recovery_package_term_review_required");
-  const expectedAmount=timing.expired_less_than_one_year ? ({standard:1000,premium:2500}[input.package_code]) : Number(catalog.renew_price);
+  const expectedAmount=({standard:1000,premium:2500}[input.package_code]);
   if (!(expectedAmount>0) || input.amount_thb!==expectedAmount) throw httpError(409,"recovery_renewal_price_policy_required");
   const startAt = new Date(timing.start_at);
-  const membershipTerm = membershipTermForPackage(input.package_code, startAt);
+  const renewalYears = privateRenewalBaseYears(input.package_code);
+  const membershipTerm = renewalYears ? {
+    expire_at: addBangkokCalendarYears(new Date(startAt), renewalYears),
+    membership_term: `${renewalYears}_year`,
+    membership_expiry_rule: `${renewalYears}_year_from_${timing.active ? "current_expiry" : "verified_payment"}`,
+  } : null;
   if (!membershipTerm) throw httpError(409, "recovery_membership_term_invalid");
   const promotion = currentPrivateMembershipPromotion({ package_code: input.package_code, paid_at: paidAt.toISOString(), action: "renewal", existing_member:true, prior_expire_at:expiries[0].toISOString() });
   const promotedExpireAt = applyMembershipPromotion(membershipTerm.expire_at, promotion, {start_at:startAt.toISOString()});
@@ -313,14 +318,14 @@ async function materializeRecoveredMembership(env, input) {
     ? `${membershipTerm.membership_expiry_rule}_plus_${promotion.code}`
     : membershipTerm.membership_expiry_rule;
   const membershipTermLabel = promotion?.total_years === 2 ? "2_years" : promotion
-    ? `${membershipTerm.membership_term}_plus_${promotion.bonus_years ? `${promotion.bonus_years}_year` : `${promotion.bonus_days}_days`}`
+    ? `${membershipTerm.membership_term}_plus_${promotion.bonus_years ? `${promotion.bonus_years}_year` : promotion.bonus_months ? `${promotion.bonus_months}_months` : `${promotion.bonus_days}_days`}`
     : membershipTerm.membership_term;
   const entitlementLevel = input.package_code === "premium" ? "premium" : "standard_basic";
 
   let entitlement = existing[0] || null;
   if (!entitlement) {
     entitlement = await airtableCreate(env, entitlementsTable(env), {
-      entitlement_id: `renewal_${code(input.payment_ref).slice(0, 80)}`,
+      entitlement_id: `pay_${code(input.payment_ref).slice(0, 80)}_${input.package_code}`.slice(0, 180),
       member: [input.member_record_id],
       member_id: input.member_id,
       client: [input.client_record_id],
@@ -332,6 +337,7 @@ async function materializeRecoveredMembership(env, input) {
       start_at: startAt.toISOString(),
       expire_at: expireAt.toISOString(),
       renewal_status: "renewed",
+      membership_term: membershipTermLabel,
       membership_expiry_rule: membershipExpiryRule,
       telegram_access_status: "pending_invite",
       source: "renewal",
@@ -434,9 +440,9 @@ async function airtableCreate(env, tableName, fields) {
   requireAirtable(env);
   const url = `${AIRTABLE_API}/${encodeURIComponent(clean(env.AIRTABLE_BASE_ID))}/${encodeURIComponent(tableName)}`;
   const request = new Request(url, {
-    method: "POST",
+    method: "PATCH",
     headers: { Authorization: `Bearer ${clean(env.AIRTABLE_API_KEY)}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ records: [{ fields }], typecast: false }),
+    body: JSON.stringify({ performUpsert: { fieldsToMergeOn: ["payment_ref"] }, records: [{ fields }], typecast: false }),
   });
   const response = env.AIRTABLE_HTTP?.fetch ? await env.AIRTABLE_HTTP.fetch(request) : await fetch(request);
   const payload = await response.json().catch(() => ({}));
@@ -526,3 +532,4 @@ function clean(value) { return String(value ?? "").trim(); }
 function normalizePath(pathname = "") { const path = String(pathname || "/").replace(/\/{2,}/g, "/"); return path.length > 1 ? path.replace(/\/+$/g, "") : path; }
 function jsonHeaders() { return new Headers({ "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store, private", "X-MMD-Payment-Authority": "payments-worker" }); }
 function json(data, status = 200) { return new Response(JSON.stringify(data), { status, headers: jsonHeaders() }); }
+

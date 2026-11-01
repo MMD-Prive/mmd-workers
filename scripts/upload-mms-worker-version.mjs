@@ -7,9 +7,10 @@ export function uploadMmsVersion({ config, run, tag, message, secretsFile, allow
   if (config.name !== 'mms-worker' || (config.routes || []).length || config.route || (config.triggers?.crons || []).length) {
     throw Error('MMS migration deployment must use the route-free mms-worker config');
   }
-  const flags = ['--keep-vars', '--env=', '--tag', tag, '--message', message];
-  if (secretsFile) flags.push('--secrets-file', secretsFile);
-  const upload = ['versions', 'upload', ...flags];
+  const deployFlags = ['--keep-vars', '--env=', '--message', message];
+  if (secretsFile) deployFlags.push('--secrets-file', secretsFile);
+  const uploadFlags = [...deployFlags, '--tag', tag];
+  const upload = ['versions', 'upload', ...uploadFlags];
   const first = run(upload);
   if (first.status === 0) return { ...first, migrationApplied: false };
   const confirmedMigration = /\[code:\s*10211\]/.test(first.output)
@@ -17,7 +18,7 @@ export function uploadMmsVersion({ config, run, tag, message, secretsFile, allow
   if (!confirmedMigration) throw Error('Version upload failed without confirmed Cloudflare migration error 10211; refusing direct deploy');
   if (!allowMigration) throw Error('Migration requires separate explicit approval; refusing direct deploy');
   if (!(config.migrations || []).length) throw Error('Cloudflare reported migration 10211 but config has no migrations');
-  const direct = run(['deploy', ...flags]);
+  const direct = run(['deploy', ...deployFlags]);
   if (direct.status !== 0) throw Error('MMS migration deployment failed; refusing version promotion');
   const retry = run(upload);
   if (retry.status !== 0) throw Error('MMS version upload failed after migration deployment; refusing version promotion');
@@ -31,6 +32,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     if (!/^[a-f0-9]{40}$/.test(sha)) throw Error('GITHUB_SHA is required');
     const result = uploadMmsVersion({
       config, tag: `gha-${sha.slice(0, 12)}`, message: `GitHub Actions ${sha}`, secretsFile: process.argv[2] || undefined,
+      allowMigration: process.env.MMS_ALLOW_DURABLE_OBJECT_MIGRATION_DEPLOY === 'true',
       run(args) {
         const result = spawnSync('npx', ['wrangler', ...args], { cwd: fileURLToPath(new URL('../mms-worker', import.meta.url)), encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 });
         const output = (result.stdout || '') + (result.stderr || '');

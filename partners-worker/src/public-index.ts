@@ -1,3 +1,4 @@
+import { renderPartnerDashboardHero, PARTNER_DASHBOARD_SKIN_CSS } from "./partner-dashboard-skin";
 import app from "./index";
 import { PARTNER_CONTROL_ROOM_CSS, PARTNER_CONTROL_ROOM_JS } from "./partner-control-room";
 
@@ -190,18 +191,18 @@ function renderPartnerSystemPage(request: Request, url: URL, route: PartnerPubli
   const html = "<!doctype html>" +
     "<html lang=\"th\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta name=\"referrer\" content=\"no-referrer\">" +
     "<meta name=\"robots\" content=\"noindex,nofollow\"><title>" + escapeHtml(copy.title) + "</title>" +
-    "<style data-mmd-partner-design>" + PARTNER_DESIGN_CSS + PARTNER_CONTROL_ROOM_CSS + "</style></head>" +
+    "<style data-mmd-partner-design>" + PARTNER_DESIGN_CSS + PARTNER_CONTROL_ROOM_CSS + (page === "dashboard" ? PARTNER_DASHBOARD_SKIN_CSS : "") + "</style></head>" +
     "<body data-mmd-partner-page=\"" + escapeHtml(route.page) + "\"><main class=\"mmd-partner-system\" data-system-page=\"" + escapeHtml(page) + "\">" +
     "<nav class=\"mmdp-nav\"><a class=\"mmdp-brand\" href=\"/partner\"><b lang='en'>SĪGIL</b><span lang='en'>Partner Division</span></a>" +
     "<div><a href=\"/partner/model\">Modeling Partner</a><a href=\"/partner/apply\">เริ่ม Partner Intake</a><a href=\"/partner/terms\">อ่าน Partner Terms</a></div></nav>" +
-    "<section class=\"mmdp-hero\"><div><p class=\"mmdp-eyebrow\" lang=\"en\">SĪGIL Partner Lane</p><h1>" + escapeHtml(copy.heading) + "</h1>" +
+    (page === "dashboard" ? "" : "<section class=\"mmdp-hero\"><div><p class=\"mmdp-eyebrow\" lang=\"en\">SĪGIL Partner Lane</p><h1>" + escapeHtml(copy.heading) + "</h1>" +
     "<p class=\"mmdp-lead\">" + escapeHtml(copy.lead) + "</p><p>" + escapeHtml(copy.body) + "</p>" +
     renderSystemActions(page, tokenQuery, reviewHref, termsHref, dashboardHref) + "</div>" +
-    "<aside class=\"mmdp-card\"><small lang='en'>MMD REVIEW</small><strong>" + escapeHtml(copy.card) + "</strong><span lang='en'>Partner Control Layer</span></aside></section>" +
+    "<aside class=\"mmdp-card\"><small lang='en'>MMD REVIEW</small><strong>" + escapeHtml(copy.card) + "</strong><span lang='en'>Partner Control Layer</span></aside></section>") +
     renderDashboardPanel(page, token) +
-    "<section class=\"mmdp-grid\"><article><span>01</span><h2>Intake</h2><p>ส่งข้อมูลที่จำเป็นต่อ Partner Review พร้อมกำหนดขอบเขตความเป็นส่วนตัวของแต่ละเคส</p></article>" +
+    (page === "dashboard" ? "<div class=\"pcr-dashboard-links\"><a href=\"" + escapeHtml(termsHref) + "\">Partner Terms</a><a href=\"/partner/dashboard/relax-spa" + escapeHtml(tokenQuery) + "\">Relax Spa by 9</a></div>" : "<section class=\"mmdp-grid\"><article><span>01</span><h2>Intake</h2><p>ส่งข้อมูลที่จำเป็นต่อ Partner Review พร้อมกำหนดขอบเขตความเป็นส่วนตัวของแต่ละเคส</p></article>" +
     "<article><span>02</span><h2>Review</h2><p>MMD Partner Desk จัด lane จากบทบาท แหล่งที่มา ความพร้อม และรูปแบบความร่วมมือที่เหมาะสม</p></article>" +
-    "<article><span>03</span><h2>Recognition</h2><p>เมื่อสถานะพร้อมเดินต่อ ให้ยืนยันผ่าน LINE แล้วเข้าสู่ Partner Terms และ Dashboard</p></article></section>" +
+    "<article><span>03</span><h2>Recognition</h2><p>เมื่อสถานะพร้อมเดินต่อ ให้ยืนยันผ่าน LINE แล้วเข้าสู่ Partner Terms และ Dashboard</p></article></section>") +
     "</main><footer class=\"mmd-partner-canon-footer\"><span>MMD PRIVÉ · BANGKOK</span><span>Private by design.</span></footer>" + renderDashboardScript(page) + "</body></html>";
 
   const response = new Response(request.method.toUpperCase() === "HEAD" ? null : html, {
@@ -264,7 +265,7 @@ function renderDashboardPanel(page: string, token: string): string {
     "<p class=\"pcr-flash\" data-flash hidden></p>" +
     "<div class=\"pcr-privacy\"><span aria-hidden=\"true\">🔒</span><div><b>Partner Private by default</b><p>Partner เป็นผู้ควบคุมข้อมูลส่วนตัวและโน้ตภายใน พร้อมเลือก Share with MMD เฉพาะรายการที่ต้องใช้ร่วมกัน</p></div></div>" +
     "<div class=\"pcr-shell\"><aside class=\"pcr-side\"><small>Control Room</small><button type=\"button\" data-view=\"home\" aria-current=\"page\">Home & Jobs</button><button type=\"button\" data-view=\"models\">Models</button><button type=\"button\" data-view=\"earnings\">Earnings</button><button type=\"button\" data-view=\"privacy\">Private Vault</button></aside>" +
-    "<div class=\"pcr-main\"><p class=\"pcr-loading\" data-loading></p>" +
+    "<div class=\"pcr-main\">" + renderPartnerDashboardHero() + "<p class=\"pcr-loading\" data-loading role=\"status\" aria-live=\"polite\"></p>" +
     "<section data-view-panel=\"home\"><header class=\"pcr-top\"><div><p class=\"mmdp-eyebrow\">TODAY · ASIA/BANGKOK</p><h2 data-partner-name>Partner</h2><p>คิวงานและสถานะโมเดลในสังกัด</p></div></header><div class=\"pcr-metrics\" data-metrics></div><div class=\"pcr-telegram\" data-telegram></div><div class=\"pcr-section\"><div class=\"pcr-section-head\"><h3>ตารางงาน</h3></div><div class=\"pcr-jobs\" data-jobs></div></div></section>" +
     "<section data-view-panel=\"models\" hidden><header class=\"pcr-top\"><div><p class=\"mmdp-eyebrow\">PARTNER ROSTER</p><h2>Models</h2><p>โปรไฟล์ เรท และกลุ่มลูกค้าที่มองเห็น</p></div><button type=\"button\" data-open-add>+ Add model</button></header><div class=\"pcr-models\" data-models></div></section>" +
     "<section data-view-panel=\"earnings\" hidden><header class=\"pcr-top\"><div><p class=\"mmdp-eyebrow\">PAYOUT LEDGER</p><h2>Earnings</h2><p>รายการค่าตอบแทนจากข้อมูลจริง</p></div></header><div class=\"pcr-section\" data-earnings></div></section>" +
@@ -371,21 +372,21 @@ const PARTNER_DESIGN_CSS = String.raw`
 @font-face{font-family:"Satoshi";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6ab149126876bbe61da30a9c_Satoshi-Bold.ttf") format("truetype");font-weight:700;font-style:normal;font-display:swap}
 :root{
   color-scheme:dark;
-  --mmdp-bg:#0a0908;
-  --mmdp-bg-mid:#0f0d0b;
-  --mmdp-panel:rgba(18,16,14,.94);
-  --mmdp-panel-warm:rgba(23,19,16,.92);
+  --mmdp-bg:#160d08;
+  --mmdp-bg-mid:#1d110a;
+  --mmdp-panel:rgba(36,22,14,.94);
+  --mmdp-panel-warm:rgba(43,26,17,.92);
   --mmdp-wine:#2a0e13;
-  --mmdp-wine-glow:rgba(79,17,28,.26);
-  --mmdp-ivory:#fff9f0;
-  --mmdp-copy:#d9d1c7;
-  --mmdp-muted:#91887f;
-  --mmdp-placeholder:#91877f;
-  --mmdp-ink:#17120b;
-  --mmdp-line:rgba(215,175,103,.28);
-  --mmdp-line-strong:rgba(231,199,139,.50);
-  --mmdp-gold:#d7af67;
-  --mmdp-gold-2:#f5e2b5;
+  --mmdp-wine-glow:rgba(105,53,19,.19);
+  --mmdp-ivory:#f0cd83;
+  --mmdp-copy:#ead9b9;
+  --mmdp-muted:#c2a77f;
+  --mmdp-placeholder:#c2a77f;
+  --mmdp-ink:#25150b;
+  --mmdp-line:rgba(198,139,73,.35);
+  --mmdp-line-strong:rgba(235,186,106,.62);
+  --mmdp-gold:#e3b861;
+  --mmdp-gold-2:#f3d58e;
   --mmdp-success:#5d8f70;
   --mmdp-review:#b89455;
   --mmdp-danger:#d98282;
@@ -398,8 +399,8 @@ body[data-mmd-partner-page]{
   margin:0;
   background:
     radial-gradient(circle at 9% 2%,var(--mmdp-wine-glow),transparent 32rem),
-    radial-gradient(circle at 92% 12%,rgba(215,175,103,.10),transparent 34rem),
-    linear-gradient(180deg,var(--mmdp-bg) 0%,var(--mmdp-bg-mid) 48%,#050505 100%);
+    radial-gradient(circle at 92% 12%,rgba(190,106,42,.14),transparent 34rem),
+    linear-gradient(180deg,var(--mmdp-bg) 0%,var(--mmdp-bg-mid) 48%,#100905 100%);
   color:var(--mmdp-copy);
   font-family:var(--mmdp-font-th);
   font-size:16px;
@@ -432,10 +433,10 @@ body[data-mmd-partner-page] :is(.mmdp-metrics strong,[data-kpi],[data-metric-val
 .mmdp-nav{
   position:sticky;top:0;z-index:20;width:min(1180px,calc(100% - 32px));margin:0 auto;
   min-height:74px;display:flex;align-items:center;justify-content:space-between;gap:18px;
-  background:linear-gradient(to bottom,rgba(6,5,5,.92),rgba(6,5,5,.60),transparent);
+  background:linear-gradient(to bottom,rgba(21,12,7,.94),rgba(21,12,7,.66),transparent);
   backdrop-filter:blur(18px)
 }
-.mmdp-nav a{font-family:var(--mmdp-font-en);text-decoration:none;color:var(--mmdp-muted);font-weight:600}
+.mmdp-nav a{font-family:var(--mmdp-font-en);text-decoration:none;color:var(--mmdp-copy);font-weight:600}
 .mmdp-nav a:hover{color:var(--mmdp-ivory)}
 .mmdp-nav div{display:flex;gap:16px;flex-wrap:wrap}
 .mmdp-brand{display:flex;align-items:baseline;gap:10px}
@@ -514,10 +515,10 @@ body[data-mmd-partner-page] :is(.mmdp-lead,p,li,label,small){
 .mmd-partner-canon-footer{
   min-height:190px;display:flex;align-items:flex-end;justify-content:space-between;gap:24px;
   margin-top:clamp(52px,8vw,110px);padding:0 clamp(22px,5vw,64px) 30px;
-  border-top:1px solid rgba(255,255,255,.045);background:#090807;color:#bdb4aa;
+  border-top:1px solid var(--mmdp-line);background:#120b07;color:var(--mmdp-copy);
   font-family:var(--mmdp-font-en);font-size:12px;font-weight:500;line-height:1.3;letter-spacing:.12em;text-transform:uppercase
 }
-.mmd-partner-canon-footer span:last-child{color:#817970;letter-spacing:.02em;text-transform:none;font-size:13px}
+.mmd-partner-canon-footer span:last-child{color:var(--mmdp-muted);letter-spacing:.02em;text-transform:none;font-size:13px}
 @media(max-width:820px){.mmd-partner-canon-footer{min-height:128px;padding:0 18px 20px;font-size:10px}.mmd-partner-canon-footer span:last-child{font-size:11px}
   .mmdp-nav{align-items:flex-start;flex-direction:column;padding:16px 0}
   .mmdp-hero{grid-template-columns:1fr;min-height:auto;padding:36px 0}

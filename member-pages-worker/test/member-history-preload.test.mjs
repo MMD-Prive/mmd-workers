@@ -2,11 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   lifetimePointsFromPreload,
+  invalidateMemberHistoryPreload,
   readMemberHistoryPreload,
   recoveryStatusFromPreload,
   validateProjection,
 } from "../src/member-history-preload.js";
-import { runMemberHistoryRecovery } from "../src/member-history-recovery.js";
+import { readMemberHistoryRecoveryStatus, runMemberHistoryRecovery } from "../src/member-history-recovery.js";
 
 const NOW = new Date("2026-09-22T12:00:00.000Z");
 const LINE_ID = `U${"a".repeat(32)}`;
@@ -19,7 +20,7 @@ function projection(overrides = {}) {
     computed_at: "2026-09-22T10:00:00.000Z",
     client_id: CLIENT_ID,
     member_id: MEMBER_ID,
-    identity: { state: "ready", member_linked: true },
+    identity: { state: "ready", member_linked: true, member_match_count: 1 },
     history_backfill_status: "reconciled",
     source_note_count: 3,
     unresolved_history_reviews: 0,
@@ -91,6 +92,42 @@ function fakeEnv(preloadedProjection = projection()) {
   };
 }
 
+test("internal recovery status can read a matching reconciled preload on a cache miss", async () => {
+  const { env, calls } = fakeEnv(projection({ computed_at: new Date().toISOString() }));
+  const status = await readMemberHistoryRecoveryStatus(env, LINE_ID, { readPreloadOnMiss: true, memberId: MEMBER_ID });
+  assert.equal(status.state, "reconciled");
+  assert.equal(status.reason, "batch_preload_ready");
+  assert.equal(calls.length, 2);
+  assert.ok([...env.LIFF_IDENTITY_KV.values.keys()].every(key => key.startsWith("my-mmd-preload:")));
+});
+
+test("preload recovery fallback stays closed for stale, foreign or review-required evidence", async () => {
+  for (const [overrides, memberId, expected] of [
+    [{ computed_at: "2000-01-01T00:00:00Z" }, MEMBER_ID, "checking"],
+    [{ computed_at: new Date().toISOString() }, "other-member", "checking"],
+    [{ computed_at: new Date().toISOString(), identity: { state: "unknown" } }, MEMBER_ID, "checking"],
+    [{ computed_at: new Date().toISOString(), history_backfill_status: "review_required" }, MEMBER_ID, "review_required"],
+  ]) {
+    const { env } = fakeEnv(projection(overrides));
+    const status = await readMemberHistoryRecoveryStatus(env, LINE_ID, { readPreloadOnMiss: true, memberId });
+    assert.equal(status.state, expected);
+  }
+});
+
+test("existing review and blocked status, KV failure and non-opted-in callers never use preload fallback", async () => {
+  for (const state of ["blocked", "review_required", "in_progress", "reconciled"]) {
+    const { env, calls } = fakeEnv();
+    env.LIFF_IDENTITY_KV.get = async () => ({ state });
+    assert.equal((await readMemberHistoryRecoveryStatus(env, LINE_ID, { readPreloadOnMiss: true, memberId: MEMBER_ID })).state, state);
+    assert.equal(calls.length, 0);
+  }
+  const { env, calls } = fakeEnv();
+  assert.equal((await readMemberHistoryRecoveryStatus(env, LINE_ID)).state, "checking");
+  env.LIFF_IDENTITY_KV.get = async () => { throw Error("fixture_kv_unavailable"); };
+  assert.equal((await readMemberHistoryRecoveryStatus(env, LINE_ID, { readPreloadOnMiss: true, memberId: MEMBER_ID })).state, "checking");
+  assert.equal(calls.length, 0);
+});
+
 test("preload resolves the canonical client projection once and then uses KV cache", async () => {
   const { env, calls } = fakeEnv();
   const first = await readMemberHistoryPreload(env, LINE_ID, { now: NOW });
@@ -119,6 +156,27 @@ test("projection exposes expiring lots even when the 365-day spend is lower", ()
   assert.equal(status.preload_source, "my_mmd_batch_preload_v1");
 });
 
+test("contact enrichment pending remains readable only with unique canonical ownership", () => {
+  const preload = validateProjection(projection({
+    identity: { state: "contact_enrichment_pending", member_linked: true, member_match_count: 1 },
+  }), { clientId: CLIENT_ID, now: NOW });
+  const points = lifetimePointsFromPreload(preload, MEMBER_ID);
+  assert.equal(points?.confirmedBalance, 1475);
+});
+
+test("missing, ambiguous, review, and unknown identity states never expose preload points", () => {
+  for (const identity of [
+    { state: "contact_enrichment_pending", member_linked: false, member_match_count: 1 },
+    { state: "contact_enrichment_pending", member_linked: true, member_match_count: 2 },
+    { state: "review_required", member_linked: true, member_match_count: 1 },
+    { state: "line_identity_missing", member_linked: true, member_match_count: 1 },
+    { state: "unexpected", member_linked: true, member_match_count: 1 },
+  ]) {
+    const preload = validateProjection(projection({ identity }), { clientId: CLIENT_ID, now: NOW });
+    assert.equal(lifetimePointsFromPreload(preload, MEMBER_ID), null);
+  }
+});
+
 test("stale or rolling-expiry projections are rejected and fall back", () => {
   const stale = validateProjection(projection({ computed_at: "2026-09-20T10:00:00.000Z" }), { clientId: CLIENT_ID, now: NOW });
   const rolling = validateProjection(projection({ points_policy: { expires: false, mode: "lifetime_total" } }), { clientId: CLIENT_ID, now: NOW });
@@ -143,4 +201,66 @@ test("history recovery uses a fresh batch projection without scanning source tab
   assert.equal(result.points_expire, true);
   assert.equal(result.preload_source, "my_mmd_batch_preload_v1");
   assert.deepEqual(calls.map((call) => call.table), ["tblVv58TCbwh5j1fS", "tblNV1b5sMC2fQPxt"]);
+});
+
+test("collect-only recovery reads source evidence without status or canonical writes", async () => {
+  const writes = [];
+  const env = {
+    LIFF_IDENTITY_KV: {
+      async get() { return null; },
+      async put(...args) { writes.push(["put", args]); },
+      async delete(...args) { writes.push(["delete", args]); },
+    },
+  };
+  const store = { async list() { return []; } };
+  const result = await runMemberHistoryRecovery({ env, store, lineUserId: LINE_ID, collectOnly: true, now: NOW });
+  assert.equal(result.state, "checking");
+  assert.equal(result.reason, "collect_only_evidence_collected");
+  assert.equal(result.current_points_total, null);
+  assert.equal(result.historical_points_added, 0);
+  assert.deepEqual(writes, []);
+});
+
+
+test('owner import invalidation prevents cached and persisted old projections from replacing fresh totals',async()=>{
+ const {env}=fakeEnv();
+ assert.equal((await readMemberHistoryPreload(env,LINE_ID,{now:NOW})).available,true);
+ await invalidateMemberHistoryPreload(env,LINE_ID,NOW);
+ const stale=await readMemberHistoryPreload(env,LINE_ID,{now:NOW});
+ assert.equal(stale.available,false);assert.equal(stale.reason,'source_changed');
+ for(const key of [...env.LIFF_IDENTITY_KV.values.keys()])if(!key.endsWith(':invalidated'))env.LIFF_IDENTITY_KV.values.delete(key);
+ assert.equal((await readMemberHistoryPreload(env,LINE_ID,{now:NOW})).reason,'source_changed');
+});
+
+test('reviewed refresh scans source evidence even when the batch projection is fresh',async()=>{
+ const {env,calls}=fakeEnv();
+ await readMemberHistoryPreload(env,LINE_ID,{now:NOW});calls.length=0;
+ const result=await runMemberHistoryRecovery({env,lineUserId:LINE_ID,forceSourceRefresh:true,now:NOW});
+ assert.notEqual(result.reason,'batch_preload_ready');
+ assert.ok(calls.some(x=>x.table==='tblOs8yyLK09SKrCt'));
+ assert.ok(!calls.some(x=>x.table==='tblNV1b5sMC2fQPxt'));
+});
+
+
+
+import {recentServicesFromPreload} from "../src/member-history-preload.js";
+const recentNow = new Date("2026-10-27");
+const recentRow = i => ({id:"service-"+i, kind:"booking", statusLabel:"Completed", occurredAt:"2026-10-"+String(i+1).padStart(2,"0"), model:"Model "+i, totalAmountThb:12000, internal_note:"private"});
+const recentReady = () => ({available:true, projection:{member_id:"member-1", identity:{member_linked:true,member_match_count:1,state:"ready"},history_backfill_status:"reconciled",recent_services:Array.from({length:8},(_,i)=>recentRow(i))}});
+test("recent services exposes only five newest own-member jobs and allowlisted fields", () => {
+  const result=recentServicesFromPreload(recentReady(),"member-1",recentNow);
+  assert.equal(result.length,5); assert.equal(result[0].occurredAt,"2026-10-08");
+  assert.equal(result[0].totalAmountThb,12000); assert.equal(result[0].model,"Model 7");
+  assert.equal(result[0].internal_note,undefined);
+});
+test("another member, ambiguous identity, pending evidence and unavailable preloads fall back", () => {
+  assert.equal(recentServicesFromPreload(recentReady(),"member-2",recentNow),null);
+  for(const mutate of [p=>p.available=false,p=>p.projection.history_backfill_status="review_required",p=>p.projection.identity.member_match_count=2,p=>p.projection.identity.state="review_required"]) {
+    const p=recentReady(); mutate(p); assert.equal(recentServicesFromPreload(p,"member-1",recentNow),null);
+  }
+});
+test("future, missing amounts and duplicates do not appear as customer bills", () => {
+  const p=recentReady(); p.projection.recent_services=[recentRow(0),recentRow(0),{...recentRow(1),totalAmountThb:0},{...recentRow(2),occurredAt:"2027-01-01"},{...recentRow(3),model:"https://private.invalid"}];
+  const result=recentServicesFromPreload(p,"member-1",recentNow);
+  assert.equal(result.length,2); assert.equal(result[0].model,null);
 });

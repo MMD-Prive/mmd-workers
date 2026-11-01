@@ -34,8 +34,35 @@ test("HENNA separates stable replies from manual-only decisions", () => {
   assert.equal(classifyHennaIntent("วันนี้ใครว่าง"), "manual_availability");
   assert.equal(classifyHennaIntent("ขอคุยกับพี่เปอร์"), "manual_handoff");
   assert.equal(classifyHennaIntent("คำถามที่ไม่มีข้อมูลยืนยัน"), "manual_unknown");
-  assert.match(hennaReply("booking"), /พี่เฮนน่า/);
+  assert.match(hennaReply("booking"), /MMS/);
   assert.equal(hennaReply("manual_price"), "");
+});
+
+test("HENNA chooses one safe CTA for each MMS audience", () => {
+  const cases = [
+    ["MMS คืออะไร", "home", "/male-massage/home"],
+    ["พร้อมจองนวด", "booking", "/male-massage/member/mms-booking"],
+    ["มีบริการอะไรบ้าง", "services", "/male-massage/therapists/mms"],
+    ["เปิด MY MMS", "my_mms", "/male-massage/my-mms"],
+    ["อยากเป็น Therapist", "recruit", "/therapists"],
+    ["ข้อดีของ Therapist", "benefits", "/apply/mms-therapist-benefits"],
+    ["Therapist Rules", "rules", "/apply/mms-therapist-rules"],
+    ["อยากเรียนการนวด", "fast_track", "/male-massage/apply/mms-fast-track"],
+    ["สมัครเป็น Therapist", "apply", "/apply/mms-therapist"],
+    ["เข้า MY Therapist", "therapist_login", "/male-massage/therapists/login"],
+  ];
+  for (const [message, intent, path] of cases) {
+    assert.equal(classifyHennaIntent(message), intent, message);
+    const reply = hennaReply(intent);
+    assert.ok(reply.includes(`https://www.mmdbkk.com${path}`), message);
+    assert.equal((reply.match(/https:\/\//g) || []).length, 1, message);
+    assert.doesNotMatch(reply, /ทีมงาน|\/internal\/admin\//);
+  }
+  assert.match(hennaReply("booking"), /ยังไม่ใช่การยืนยันคิว/);
+  assert.match(hennaReply("apply"), /ยังไม่ใช่การอนุมัติ/);
+  assert.match(hennaReply("therapist_login"), /อนุมัติแล้ว/);
+  assert.equal(classifyHennaIntent("วันนี้ใครว่าง"), "manual_availability");
+  assert.equal(classifyHennaIntent("ราคาเท่าไหร่"), "manual_price");
 });
 
 test("HENNA recognizes shared MMD capability pack 1-7 without taking cross-system authority", () => {

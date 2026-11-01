@@ -48,6 +48,10 @@ export async function handlePublicProfilesCatalogRequest(request, env) {
   const method = request.method.toUpperCase();
   const cors = corsHeaders(request, env);
   if (method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
+  if (env.LEGACY_PUBLIC_MEDIA_CLOSED === "true") {
+    cors.set("x-mmd-route-owner", "sigil-booking-worker");
+    return json({ ok: false, error: "legacy_catalog_retired", items: [] }, 410, cors, method);
+  }
   if (!env.MMD_MODEL_ASSETS || typeof env.MMD_MODEL_ASSETS.list !== "function") {
     return json({ ok: false, error: "public_model_catalog_unavailable", items: [] }, 503, cors, method);
   }

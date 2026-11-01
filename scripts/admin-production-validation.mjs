@@ -2,7 +2,7 @@
 import { writeFileSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { environmentName } from './admin-production-approval.mjs';
+import { environmentName, soloReviewer } from './admin-production-approval.mjs';
 
 export async function inspectEnvironment(env, request = fetch) {
   if (!/^[\w.-]+\/[\w.-]+$/.test(env.GITHUB_REPOSITORY || '') || !env.GH_TOKEN) {
@@ -34,12 +34,14 @@ export async function inspectEnvironment(env, request = fetch) {
   }
   const p = exact.value;
   const rules = p.protection_rules?.filter(rule => rule.type === 'required_reviewers');
-  const validReviewers = rules?.length === 1 && rules[0].reviewers?.length > 0 &&
-    rules[0].reviewers.every(entry => ['User', 'Team'].includes(entry.type) && Number.isSafeInteger(entry.reviewer?.id) && entry.reviewer.id > 0);
-  report.required_reviewers = validReviewers ? rules[0].reviewers.map(entry => ({ type: entry.type, id: entry.reviewer.id })) : [];
-  report.prevent_self_review = rules?.[0]?.prevent_self_review === true;
+  const validReviewers = rules?.length === 1 && rules[0].reviewers?.length === 1 &&
+    rules[0].reviewers[0].type === 'User' &&
+    rules[0].reviewers[0].reviewer?.login === soloReviewer.login &&
+    rules[0].reviewers[0].reviewer?.id === soloReviewer.id;
+  report.required_reviewers = validReviewers ? [{ type: 'User', id: soloReviewer.id }] : [];
+  report.self_review_allowed = rules?.[0]?.prevent_self_review === false;
   report.admin_bypass_disabled = p.can_admins_bypass === false;
-  if (!validReviewers || !report.prevent_self_review || !report.admin_bypass_disabled) {
+  if (!validReviewers || !report.self_review_allowed || !report.admin_bypass_disabled) {
     return { ...report, status: 'missing_protection' };
   }
   if (p.deployment_branch_policy?.custom_branch_policies !== true ||

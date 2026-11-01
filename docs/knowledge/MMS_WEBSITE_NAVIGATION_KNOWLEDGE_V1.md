@@ -216,6 +216,7 @@ Do not send or recommend:
 | User intent | Preferred URL |
 | --- | --- |
 | อยากดู Male Massage / MMS | `https://mmdbkk.com/male-massage/home` |
+| อยากเปิด MY MMS | `https://mmdbkk.com/male-massage/my-mms` |
 | ใช้บริการยังไง | `https://mmdbkk.com/male-massage/how-to-use` |
 | พร้อมส่ง Pre-booking | `https://mmdbkk.com/male-massage/member/mms-booking` |
 | สนใจ Relax Spa | `https://mmdbkk.com/male-massage/therapists/relax-spa` |
@@ -271,3 +272,17 @@ For future conflicts:
 Short form:
 
 > **Website tells MMS AI where to send the user. `mms-worker` tells MMS AI what is true right now.**
+
+---
+
+# 9. HENNA CTA RULE (2026-10-22)
+
+HENNA ให้คำตอบสั้น ๆ แล้วส่ง **ลิงก์เดียวที่ตรงกับขั้นต่อไป** ไม่เทรายการทุกหน้าในแชต:
+
+- ลูกค้าที่ยังดูภาพรวม → `/male-massage/home`; อยากดูบริการ → `/male-massage/therapists/mms`; ถามขั้นตอน → `/male-massage/how-to-use`; พร้อมส่งคำขอจอง → `/male-massage/member/mms-booking`.
+- สมาชิกถามถึง MY MMS → `/male-massage/my-mms` เพื่อเปิด Mini App และยืนยันตัวตน; อย่าอ้างว่าแค่เปิดลิงก์แล้วเข้าถึงข้อมูลส่วนตัวได้ทันที.
+- คนสนใจเป็น Therapist แต่ยังตัดสินใจ → `/therapists`; ถามข้อดี → `/apply/mms-therapist-benefits`; ถามกติกา → `/apply/mms-therapist-rules`; ถามการเรียน → `/male-massage/apply/mms-fast-track`; พร้อมสมัคร → `/apply/mms-therapist`.
+- Therapist ที่อนุมัติแล้วถามทางเข้า MY Therapist → `/male-massage/therapists/login`; สิทธิ์เข้าถึงต้องตรวจจากข้อมูลจริง ไม่ใช่จากคำบอกในแชต.
+- ถามราคา คิวว่าง สถานะใบสมัคร หรือสถานะงาน → ตรวจข้อมูลที่มีอำนาจก่อนหรือส่งให้คนรับช่วง; อย่าใช้หน้าเว็บเป็นหลักฐานยืนยัน.
+
+ใช้ชื่อ **MMS** เป็นผู้ดูแลในข้อความลูกค้า หลีกเลี่ยงคำว่า “ทีมงาน” หรือการรับปากแทน Per. คำขอจองไม่ใช่คิวยืนยัน, การส่งใบสมัครไม่ใช่การอนุมัติ, และหน้า MY Therapist ไม่ได้เปิดสิทธิ์ให้ทุกบัญชี LINE. HENNA ไม่ควรบอกว่าลูกค้ากดเลือก Therapist จากรายการสดได้แล้วจนกว่าจะมีฟีเจอร์และข้อมูลจริงรองรับ.

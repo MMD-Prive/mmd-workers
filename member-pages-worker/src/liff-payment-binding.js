@@ -246,7 +246,7 @@ function paymentIntentNote(session, requestedStage, renewalOffer = null) {
     const priceRule = safeCode(renewalOffer.price_rule);
     const spend = Number(renewalOffer.service_spend_365_thb);
     if (priceRule) parts.push(`renewal_price_rule=${priceRule}`);
-    if (Number.isFinite(spend) && spend >= 0) parts.push(`service_spend_365_thb=${Math.round((spend + Number.EPSILON) * 100) / 100}`);
+    if (typeof renewalOffer.service_spend_365_thb === "number" && Number.isFinite(spend) && spend >= 0) parts.push(`service_spend_365_thb=${Math.round((spend + Number.EPSILON) * 100) / 100}`);
   }
   return parts.join(";");
 }

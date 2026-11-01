@@ -4,7 +4,7 @@ import { assertConfirmationUrlPair } from './confirmation-link-role-guard.js';
 
 const PATH = /^\/v1\/admin\/jobs\/([^/]+)\/confirm-links\/reissue\/?$/;
 const ORIGINS = new Set(['https://mmdbkk.com', 'https://www.mmdbkk.com']);
-const F = { id: 'fldLTq2kZbyRv22IA', ref: 'fldojgjSQLaO0uQLX', state: 'fldmwuvOaiCFdzzRa',
+const F = { id: 'fldLTq2kZbyRv22IA', ref: 'fldojgjSQLaO0uQLX', state: 'fldmwuvOaiCFdzzRa', paymentStatus: 'fldTY5lE6m0kQf72n',
   customer: 'fldi9ZdoiUXzSv1rI', model: 'fld0mFma9J9yfEaKb' };
 export const isJobConfirmationReissuePath = path => PATH.test(path);
 const json = (body, status = 200) => Response.json(body, { status,
@@ -53,6 +53,9 @@ export async function handleJobConfirmationReissue(request, env = {}) {
     const before = await session(env, id);
     if (!before) return json({ ok: false, error: 'session_not_found' }, 404);
     if (/cancel|void|refund/i.test(String(before.fields[F.state] || ''))) return json({ ok: false, error: 'session_not_reissuable' }, 409);
+    if (!['partial', 'paid'].includes(String(before.fields[F.paymentStatus] || '').trim().toLowerCase())) {
+      return json({ ok: false, error: 'payment_approval_required' }, 409);
+    }
     const ref = before.fields[F.ref];
     if (!ref) return json({ ok: false, error: 'session_payment_ref_missing' }, 409);
     // The existing issuer owns signing and TTL. Never create another Payment or retry an ambiguous write.
@@ -63,7 +66,8 @@ export async function handleJobConfirmationReissue(request, env = {}) {
     issued = true;
     if (data.session_id !== id || data.payment_ref !== ref || data.payment_state_mutated !== false) throw Error('issuer_contract_mismatch');
     const after = await session(env, id);
-    if (!after || after.fields[F.id] !== id || after.fields[F.ref] !== ref || /cancel|void|refund/i.test(String(after.fields[F.state] || ''))) throw Error('session_changed');
+    if (!after || after.fields[F.id] !== id || after.fields[F.ref] !== ref || /cancel|void|refund/i.test(String(after.fields[F.state] || ''))
+      || !['partial', 'paid'].includes(String(after.fields[F.paymentStatus] || '').trim().toLowerCase())) throw Error('session_changed');
     assertConfirmationUrlPair(after.fields[F.customer], after.fields[F.model]);
     const customer = checkedUrl(after.fields[F.customer], 'customer', id, ref);
     const model = checkedUrl(after.fields[F.model], 'model', id, ref);

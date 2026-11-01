@@ -8,7 +8,7 @@ const ROUTES = Object.freeze({
   privateMembershipSignup: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=signup&view=signup",
   membershipRenewal: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=renew&view=package",
   points: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=points",
-  payments: "https://mmdbkk.com/member/payments",
+  payments: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=continue_payment",
   history: "https://mmdbkk.com/my-mmd/history",
   mms: "https://mmdbkk.com/male-massage/home",
   partnerVenue: "https://mmdbkk.com/male-massage/therapists/relax-spa",
@@ -105,6 +105,9 @@ export function resolveKenjiNextAction({ intent = "", decision = {}, continuity 
   });
 
   if (!text(decision.text)) return { ...noAction("no_customer_reply"), policy };
+  if (value === "membership_renewal" || (value === "membership_status" && decision.truth_status !== "verified")) {
+    return { ...noAction("membership_requires_in_chat_truth_or_review"), policy };
+  }
 
   let action = noAction();
   if (value === "membership_status") {

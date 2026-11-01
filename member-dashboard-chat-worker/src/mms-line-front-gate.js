@@ -7,7 +7,7 @@ const STATUS_PATHS = new Set(["/member/api/liff/status", "/member/api/liff/statu
 const LIFF_SHELL_PATHS = new Set(["/member/liff", "/member/liff/"]);
 const LIFF_API_PREFIX = "/member/api/liff/";
 const CARE_BACK_LINK_ENDPOINT = "/member/api/care-back/link-wish";
-const DEFAULT_STATUS_RETURN_TARGET = "";
+const DEFAULT_STATUS_RETURN_TARGET = "/my-mmd/";
 const COUPON_STATUS_RETURN_TARGET = "/my-mmd/coupons";
 const RETURN_TARGET_BASE = "https://www.mmdbkk.com";
 const TMIB_ACT_PATH = /^\/tmib\/act-\d{3}$/;
@@ -128,9 +128,11 @@ export function statusReturnTarget(request) {
   try { url = new URL(request.url); } catch { return DEFAULT_STATUS_RETURN_TARGET; }
   const stateParams = liffStateSearchParams(url);
   const returnTo = String(url.searchParams.get("return_to") || stateParams.get("return_to") || "").trim();
-  if (!returnTo) return DEFAULT_STATUS_RETURN_TARGET;
+  // Album launches already have a dedicated verified return in the inner shell.
+  const view = String(url.searchParams.get("view") || stateParams.get("view") || "").trim().toLowerCase();
+  if (!returnTo) return new Set(["ems_albums", "gws_albums"]).has(view) ? "" : DEFAULT_STATUS_RETURN_TARGET;
   if (returnTo.toLowerCase() === "coupon") return COUPON_STATUS_RETURN_TARGET;
-  return safeStatusReturnTarget(returnTo) || DEFAULT_STATUS_RETURN_TARGET;
+  return safeStatusReturnTarget(returnTo);
 }
 
 export function isStatusLiffShellRequest(request) {
@@ -180,7 +182,7 @@ export function stabilizeStatusShell(html, request) {
   let output = String(html || "");
   output = output.replace(
     /(^|\n)[ \t]*const existingProfile = await readProfile\(\);[ \t]*\n[ \t]*if \(existingProfile\) return;/m,
-    "$1      // Explicit return_to uses LIFF as an auth-only bridge. Direct status stays in the LIFF dashboard.\n      const existingProfile = null;",
+    "$1      // Verified LINE uses LIFF as an auth-only bridge.\n      const existingProfile = null;",
   );
   output = output.replace(
     /(^|\n)[ \t]*if \(started && started\.member_resolved\) await readProfile\(\);/gm,
@@ -189,6 +191,21 @@ export function stabilizeStatusShell(html, request) {
   output = output.replace(
     /const target = ["']\/my-mmd\/["'];/g,
     `const target = ${targetJson};`,
+  );
+  // Current Digital Home shell: redirect only after its existing server checks
+  // accept the session/profile or LINE ID token. Keep the same host-only cookie.
+  const redirect = `window.location.replace(${targetJson});`;
+  output = output.replace(
+    '      preflightVerifiedSession = true;',
+    `      preflightVerifiedSession = true;\n      ${redirect}\n      return true;`,
+  );
+  output = output.replace(
+    '      renderProfile(payload.data || {}, response.headers.get("x-mmd-member-display-authority") || "", response.headers.get("x-mmd-brand-authority") || "");',
+    `      // mmd-liff-lovable-return-v1: authenticated profile, no entitlement inferred.\n      ${redirect}\n      return payload.data || {};`,
+  );
+  output = output.replace(
+    '    render(payload.data || {});\n    return payload.data || {};',
+    `    if (endpoint === CONFIG.startEndpoint) { ${redirect} return payload.data || {}; }\n    render(payload.data || {});\n    return payload.data || {};`,
   );
   return output;
 }

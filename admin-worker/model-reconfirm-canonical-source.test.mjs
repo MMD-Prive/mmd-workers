@@ -112,6 +112,18 @@ for (const guard of ["false", "true"]) {
     assert.equal(result.notified, 1);
     assert.equal(h.log.line.length, 1);
     assert.equal(h.log.line[0].to, LINE1);
+    const [notice, card] = h.log.line[0].messages;
+    assert.equal(notice.type, "text");
+    assert.match(notice.text, /งานวันที่ 2026-10-18/);
+    assert.equal(card.type, "template");
+    assert.equal(card.template.type, "buttons");
+    assert.ok(card.template.text.length <= 160);
+    assert.deepEqual(card.template.actions, [{
+      type: "uri",
+      label: "เปิด MY MODEL",
+      uri: "https://www.mmdbkk.com/sigil/model/dashboard",
+    }]);
+    assert.equal(h.record.fields.reconfirm_acknowledged_at || null, null);
     assert.match(h.log.retryKeys[0], /^[a-f0-9-]{36}$/);
     assert.doesNotMatch(JSON.stringify(h.log.line[0]), /Private fixture|5400/);
     await runModelReconfirmSweep(env, { now: NOW + 15 * 60_000 });
@@ -196,6 +208,10 @@ test("18:00 and 19:00 remain deduped after canonical initial delivery", async t 
   await runModelReconfirmSweep(ENV, { now: NOW + 2 * 3_600_000 });
   await runModelReconfirmSweep(ENV, { now: NOW + 2 * 3_600_000 + 15 * 60_000 });
   assert.equal(h.log.line.length, 2);
+  const [reminder, card] = h.log.line[1].messages;
+  assert.match(reminder.text, /MY MODEL · Reminder/);
+  assert.deepEqual(card, h.log.line[0].messages[1]);
+  assert.equal(h.record.fields.reconfirm_acknowledged_at || null, null);
   assert.notEqual(h.log.retryKeys[0], h.log.retryKeys[1]);
   await runModelReconfirmSweep(ENV, { now: NOW + 3 * 3_600_000 });
   await runModelReconfirmSweep(ENV, { now: NOW + 3 * 3_600_000 + 15 * 60_000 });
@@ -212,3 +228,4 @@ test("canonical acknowledgement suppresses later reminder and escalation", async
   assert.equal(h.log.line.length, 1);
   assert.equal(h.log.telegram.length, 0);
 });
+

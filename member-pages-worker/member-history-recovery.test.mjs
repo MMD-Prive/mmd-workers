@@ -117,7 +117,7 @@ test("an explicit cancel marker excludes the job and points", async () => {
     eligible_amount_thb: 0,
     points: 0,
     rate_thb_per_point: 100,
-    expires: false,
+    expires: true,
   });
 });
 
@@ -162,7 +162,7 @@ test("first LINE login is source-ready even when no Client or Member wallet is l
   assert.equal(result.materialized_count, 0);
 });
 
-test("historical points use the combined note total and do not expire", () => {
+test("historical points use the combined note total and existing expiry policy", () => {
   const result = notePointSummary([
     { note_present: true, cancelled: false, points_eligible_amount_thb: 1550 },
     { note_present: true, cancelled: false, points_eligible_amount_thb: 950 },
@@ -170,7 +170,7 @@ test("historical points use the combined note total and do not expire", () => {
   ]);
   assert.equal(result.eligible_amount_thb, 2500);
   assert.equal(result.points, 25);
-  assert.equal(result.expires, false);
+  assert.equal(result.expires, true);
 });
 
 test("aggregate historical points are updated idempotently instead of duplicated", async () => {
@@ -196,7 +196,7 @@ test("aggregate historical points are updated idempotently instead of duplicated
   assert.equal(second.current_points_total, 25);
   assert.equal(second.historical_points_added, 0);
   assert.equal(db.rows("tbl5dfnwjUFMLbnWL").length, 1);
-  assert.equal(db.rows("tbl5dfnwjUFMLbnWL")[0].fields.expires_at, undefined);
+  assert.equal(db.rows("tbl5dfnwjUFMLbnWL")[0].fields.expires_at, "2027-09-14T03:00:00.000Z");
 });
 
 test("verified slip with no note match remains orphan evidence for later stitching", () => {
@@ -246,8 +246,40 @@ test("public recovery status includes total points policy but never raw evidence
     line_user_id: LINE_ID,
   });
   assert.equal(status.current_points_total, 325);
-  assert.equal(status.points_expire, false);
+  assert.equal(status.points_expire, true);
   assert.equal(status.history_window_years, 5);
   assert.equal("raw_note" in status, false);
   assert.equal("line_user_id" in status, false);
+});
+
+
+test('reviewed private note refresh creates history and points once, and corrections update the same records',async()=>{
+ const db=new FakeDb(),kv=new Map();
+ db.rows('tblVv58TCbwh5j1fS').push({id:CLIENT_ID,fields:{line_user_id:LINE_ID,'Contact Email':'fixture@example.com'}});
+ db.rows('tblgWc5VRon5o8Mhk').push({id:'recMemberFixture',fields:{member_id:'MMD-FIXTURE','Contact Email':'fixture@example.com'}});
+ db.rows('tbl1u0foFBvgFpT9G').push({id:'recIdentityOnly',fields:{import_id:'identity-only',raw_row_json:JSON.stringify({identity_only:true})}});
+ const note={id:'recPrivateNote',fields:{'Import ID':'fixture-note','Source Hash':'fixture-hash','Raw LINE Notes':'บริการ MMD เสร็จแล้ว fixture note','Service History Candidate JSON':JSON.stringify({service_date:'2026-09-01',service_amount_thb:2500})}};
+ db.rows('tblOs8yyLK09SKrCt').push(note);
+ const env={LIFF_IDENTITY_KV:{get:async(k,t)=>kv.has(k)?(t==='json'?JSON.parse(kv.get(k)):kv.get(k)):null,put:async(k,v)=>kv.set(k,v),delete:async k=>kv.delete(k)}};
+ const run=now=>runMemberHistoryRecovery({env,store:db,lineUserId:LINE_ID,forceSourceRefresh:true,now:new Date(now)});
+ const first=await run('2026-09-14T03:00:00Z');assert.equal(first.current_points_total,25);assert.equal(first.state,'reconciled');
+ const again=await run('2026-09-14T04:00:00Z');assert.equal(again.current_points_total,25);assert.equal(again.historical_points_added,0);
+ assert.equal(db.rows('tbl5dfnwjUFMLbnWL').length,1);assert.equal(db.rows('tblC98mKWbzmPuNzX').length,1);assert.equal(db.rows('tblnpDFQMpo8AmNQv').length,1);
+ note.fields['Service History Candidate JSON']=JSON.stringify({service_date:'2026-09-01',service_amount_thb:3000});
+ const corrected=await run('2026-09-14T05:00:00Z');assert.equal(corrected.current_points_total,30);assert.equal(db.rows('tbl5dfnwjUFMLbnWL').length,1);assert.equal(db.rows('tblC98mKWbzmPuNzX')[0].fields.amount_thb,3000);
+});
+
+test('refresh does not revive an unchanged expired points aggregate',async()=>{
+ const db=new FakeDb(),wallet={member_id:'MMD-FIXTURE'},pointsTarget={points:25,eligible_amount_thb:2500};
+ await __test.reconcileHistoricalPointsTotal({db,wallet,clientId:CLIENT_ID,pointsTarget,now:new Date('2025-09-01T00:00:00Z')});
+ const result=await __test.reconcileHistoricalPointsTotal({db,wallet,clientId:CLIENT_ID,pointsTarget,now:new Date('2026-10-24T00:00:00Z')});
+ assert.equal(result.current_points_total,0);assert.equal(db.rows('tbl5dfnwjUFMLbnWL')[0].fields.expires_at,'2026-09-01T00:00:00.000Z');
+});
+
+
+test('refresh reports an existing recovery as in progress and never releases its lock',async()=>{
+ let deletes=0,writes=0;
+ const env={LIFF_IDENTITY_KV:{get:async()=>({started_at:new Date().toISOString(),state:'reconciled',current_points_total:999}),put:async()=>{writes++},delete:async()=>{deletes++}}};
+ const result=await runMemberHistoryRecovery({env,store:new FakeDb(),lineUserId:LINE_ID,forceSourceRefresh:true});
+ assert.equal(result.state,'in_progress');assert.equal(result.current_points_total,null);assert.equal(deletes,0);assert.equal(writes,0);
 });

@@ -1,7 +1,11 @@
+import { MMD_MEMBERSHIP_STATUS_COPY_TH } from "./mmd-i18n.mjs";
+
 const MEMBER_TRUTH_URL = "https://member-pages-worker.internal/__internal/kenji/member-truth";
+const MEMBER_SNAPSHOT_URL = "https://member-pages-worker.internal/__internal/kenji/member-reply-snapshot";
 const AUTHORITY = "my_mmd_entitlement_resolver_v1";
 const TIMEOUT_MS = 1600;
-const LIVE_TRUTH_INTENTS = new Set(["membership_status", "points_status"]);
+const MEMBERSHIP_TIMEOUT_MS = 4500;
+const LIVE_TRUTH_INTENTS = new Set(["membership_status", "membership_renewal", "points_status"]);
 const POINTS_LIFF_URL = "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=points";
 
 function text(value) {
@@ -32,12 +36,32 @@ function safeEnvelope(value) {
   return ["none", "standard", "premium", "vip", "svip", "black_card"].includes(envelope) ? envelope : "none";
 }
 
+function hasVerifiedPoints(points) {
+  return points?.status === "verified" && Number.isSafeInteger(points.active_points) && points.active_points >= 0;
+}
+
 function boundedTruth(payload = {}) {
+  const owner = payload.owner_membership_context;
+  const reviewed = owner?.renewal_offer;
+  if (payload.ok === true && payload.authority === AUTHORITY && payload.identity_status === "owner_oa_linked" &&
+    owner?.authority === "owner_per_rename_membership_context_v1" && owner.access_verified === false &&
+    owner.level === "private_premium" && owner.status === "owner_confirmed_expiry" && !owner.conflict &&
+    reviewed?.authority === "owner_reviewed_account_renewal_v1" && reviewed.status === "ready" &&
+    reviewed.source_record_id === owner.source_record_id && reviewed.approval_ref &&
+    reviewed.package_code === "premium" && reviewed.amount_thb === 2500 && reviewed.membership_years === 1 && reviewed.bonus_years === 1 &&
+    reviewed.grants_access === false && reviewed.requires_verified_payment === true &&
+    Date.now() >= Date.parse(reviewed.approved_at) && Date.now() < Date.parse(reviewed.valid_before)) {
+    return { ok: true, authority: AUTHORITY, identity_status: "owner_oa_linked", owner_membership_context: owner,
+      membership: {level: "private_premium", label: "Premium", lifecycle: "expired", expire_at: owner.expire_at,
+        public_service_access:false, private_visibility_envelope:"none", member_blocked:false},
+      points:{status:"unavailable",active_points:null},renewal:{...reviewed} };
+  }
   if (payload?.ok !== true || payload?.authority !== AUTHORITY || payload?.identity_status !== "resolved") return null;
   const membership = payload?.membership && typeof payload.membership === "object" ? payload.membership : {};
   const former = payload?.former_private_membership && typeof payload.former_private_membership === "object" ? payload.former_private_membership : null;
   const points = payload?.points && typeof payload.points === "object" ? payload.points : {};
-  const activePoints = Number(points.active_points);
+  const verifiedPoints = hasVerifiedPoints(points);
+  const renewalPromotion = payload.renewal?.promotion || payload.renewal || {};
   return {
     ok: true,
     authority: AUTHORITY,
@@ -61,9 +85,20 @@ function boundedTruth(payload = {}) {
         expire_at: /^\d{4}-\d{2}-\d{2}(?:T.*)?$/.test(text(former.expire_at)) ? text(former.expire_at) : "",
       } : null,
     points: {
-      status: text(points.status) === "verified" && Number.isFinite(activePoints) && activePoints >= 0 ? "verified" : "unavailable",
-      active_points: text(points.status) === "verified" && Number.isFinite(activePoints) && activePoints >= 0 ? Math.floor(activePoints) : null,
+      status: verifiedPoints ? "verified" : "unavailable",
+      active_points: verifiedPoints ? points.active_points : null,
     },
+    renewal: payload.renewal?.status === "ready" && payload.membership?.member_blocked !== true &&
+      ({private_standard:"standard",private_premium:"premium"})[membership.level] === payload.renewal.package_code &&
+      Number.isSafeInteger(payload.renewal.amount_thb) && payload.renewal.amount_thb > 0 &&
+      Number.isSafeInteger(payload.renewal.membership_years) && payload.renewal.membership_years > 0 &&
+      payload.renewal.discount_verified === true
+      ? { status: "ready", package_code: payload.renewal.package_code,
+        amount_thb: payload.renewal.amount_thb, membership_years: payload.renewal.membership_years, discount_verified: true,
+        bonus_years: Number.isSafeInteger(renewalPromotion.bonus_years) && renewalPromotion.bonus_years > 0 ? renewalPromotion.bonus_years : 0,
+        bonus_months: Number.isSafeInteger(renewalPromotion.bonus_months) && renewalPromotion.bonus_months > 0 ? renewalPromotion.bonus_months : 0,
+        bonus_days: Number.isSafeInteger(renewalPromotion.bonus_days) && renewalPromotion.bonus_days > 0 ? renewalPromotion.bonus_days : 0 }
+      : { status: "review_required" },
   };
 }
 
@@ -82,8 +117,15 @@ export async function resolveKenjiLineLiveTruth({ env = {}, event = {}, intent =
   }
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort("kenji_live_truth_timeout"), TIMEOUT_MS);
+  let timer;
+  const deadline = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort("kenji_live_truth_timeout");
+      reject(new Error("kenji_live_truth_timeout"));
+    }, ["membership_status", "membership_renewal"].includes(effectiveIntent) ? MEMBERSHIP_TIMEOUT_MS : TIMEOUT_MS);
+  });
   try {
+    const payloadResult = await Promise.race([deadline, (async () => {
     const response = await env.MEMBER_PAGES_WORKER.fetch(new Request(MEMBER_TRUTH_URL, {
       method: "POST",
       headers: {
@@ -94,10 +136,70 @@ export async function resolveKenjiLineLiveTruth({ env = {}, event = {}, intent =
       body: JSON.stringify({ line_user_id: lineUserId, intent: effectiveIntent }),
       signal: controller.signal,
     }));
-    if (!response.ok) return { ok: false, status: "unavailable", authority: AUTHORITY };
     const payload = await response.json().catch(() => null);
+    return { response, payload };
+    })()]);
+    const { response, payload } = payloadResult;
+    // Expected unknown-identity/no-entitlement results use HTTP 200 too.
+    // Preserve only our authority's bounded failure vocabulary.
+    const failure = text(payload?.failure_class || payload?.status);
+    if (payload?.ok === false && payload?.authority === AUTHORITY &&
+      ["identity_unresolved", "no_entitlement", "upstream_error", "projection_invalid"].includes(failure)) {
+      return { ok: false, status: failure, failure_class: failure, authority: AUTHORITY };
+    }
+    if (!response.ok) return { ok: false, status: "upstream_error", failure_class: "upstream_error", authority: AUTHORITY };
     const truth = boundedTruth(payload || {});
     return truth || { ok: false, status: "unavailable", authority: AUTHORITY };
+  } catch {
+    if (controller.signal.aborted) return { ok: false, status: "upstream_error", failure_class: "upstream_error", failure_reason: "timeout", authority: AUTHORITY };
+    return { ok: false, status: "unavailable", authority: AUTHORITY };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Retry only a pending exact Checkpts snapshot against the canonical payment-backed
+// ledger. Conflicting verified membership snapshots never share a Points balance.
+export async function resolveKenjiCheckptsTruth({ env = {}, event = {}, useSnapshot = true } = {}) {
+  if (!useSnapshot) return resolveKenjiLineLiveTruth({ env, event, intent: "points_status" });
+  const snapshot = await resolveKenjiLineSnapshotTruth({ env, event });
+  if (snapshot.ok === true && snapshot.authority === AUTHORITY &&
+      snapshot.identity_status === "resolved" && hasVerifiedPoints(snapshot.points)) return snapshot;
+  const fresh = await resolveKenjiLineLiveTruth({ env, event, intent: "points_status" });
+  if (fresh.ok === true && fresh.authority === AUTHORITY && fresh.identity_status === "resolved" &&
+      hasVerifiedPoints(fresh.points)) {
+    if (snapshot.ok !== true) return fresh;
+    const fingerprint = (v) => [v?.membership?.level, v?.membership?.lifecycle,
+      v?.membership?.expire_at].map(text).join("|");
+    if (snapshot.authority === AUTHORITY && snapshot.identity_status === "resolved" &&
+        fingerprint(snapshot) === fingerprint(fresh)) return fresh;
+    return { ...snapshot, points: { status: "unavailable", active_points: null } };
+  }
+  // Preserve independently confirmed membership even when Points remain pending.
+  return snapshot.ok === true ? snapshot : fresh;
+}
+
+export async function resolveKenjiLineSnapshotTruth({ env = {}, event = {} } = {}) {
+  const lineUserId = lineUserIdOf(event);
+  if (!lineUserId || !env.MEMBER_PAGES_WORKER?.fetch) {
+    return { ok: false, status: "unavailable", authority: AUTHORITY };
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort("kenji_snapshot_timeout"), 900);
+  try {
+    const response = await env.MEMBER_PAGES_WORKER.fetch(new Request(MEMBER_SNAPSHOT_URL, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-mmd-internal-call": "true",
+        "x-mmd-service-binding": "member-dashboard-chat-worker",
+      },
+      body: JSON.stringify({ line_user_id: lineUserId }),
+      signal: controller.signal,
+    }));
+    if (!response.ok) return { ok: false, status: "unavailable", authority: AUTHORITY };
+    return boundedTruth(await response.json().catch(() => null)) ||
+      { ok: false, status: "unavailable", authority: AUTHORITY };
   } catch {
     return { ok: false, status: "unavailable", authority: AUTHORITY };
   } finally {
@@ -157,8 +259,31 @@ function knownIdentity(continuity = {}) {
 export function buildKenjiLiveTruthDecision(intent = "", liveTruth = {}, continuity = {}) {
   const value = text(intent).toLowerCase();
   if (!kenjiLiveTruthRequired(value)) return null;
+  if (value === "membership_status" && boundedTruth(liveTruth)?.identity_status === "owner_oa_linked") {
+    return buildKenjiLiveTruthDecision("membership_renewal", liveTruth, continuity);
+  }
 
-  if (liveTruth?.ok === true && liveTruth.authority === AUTHORITY) {
+  if (value === "membership_renewal") {
+    const trusted = boundedTruth(liveTruth);
+    const quote = trusted?.renewal;
+    const ready = quote?.status === "ready";
+    const extraTerm = ready ? [
+      quote.bonus_months ? `CARE BACK เพิ่ม ${quote.bonus_months} เดือน` : "",
+      quote.bonus_days ? `CARE BACK เพิ่ม ${quote.bonus_days} วัน` : "",
+    ].filter(Boolean).join("\n") : "";
+    return {
+      text: ready ? `${membershipStatusText(trusted.membership)}\n${MMD_MEMBERSHIP_STATUS_COPY_TH.renewal_offer({
+        label: quote.package_code === "standard" ? "Standard" : "Premium",
+        amount: quote.amount_thb.toLocaleString("th-TH"), years: quote.bonus_years ? MMD_MEMBERSHIP_STATUS_COPY_TH.renewal_term_bonus({years:quote.membership_years,bonus:quote.bonus_years}) : quote.membership_years,
+      })}${extraTerm ? "\n" + extraTerm : ""}\n${MMD_MEMBERSHIP_STATUS_COPY_TH.renewal_payment_pending}` : MMD_MEMBERSHIP_STATUS_COPY_TH.renewal_pending,
+      reply_source: ready ? "live_truth" : "live_truth_unavailable",
+      truth_status: ready ? "verified" : "unavailable", truth_authority: AUTHORITY,
+      handoff_required: true, handoff_reason: ready ? "renewal:payment_destination_required" : "renewal:evidence_required",
+      guard_blocked: false, live_truth_used: ready, live_truth_verified: ready,
+    };
+  }
+
+  if (liveTruth?.ok === true && liveTruth.authority === AUTHORITY && liveTruth.identity_status === "resolved") {
     if (value === "membership_status") {
       return {
         text: `${membershipStatusText(liveTruth.membership || {})}${membershipRightsText(liveTruth.membership || {})}`,
@@ -173,8 +298,8 @@ export function buildKenjiLiveTruthDecision(intent = "", liveTruth = {}, continu
         live_truth_verified: true,
       };
     }
-    if (value === "points_status" && liveTruth?.points?.status === "verified") {
-      const points = Number(liveTruth.points.active_points) || 0;
+    if (value === "points_status" && hasVerifiedPoints(liveTruth.points)) {
+      const points = liveTruth.points.active_points;
       const name = text(liveTruth.display_name);
       return {
         text: `${name ? `คุณ${name} ` : ""}ตอนนี้มี ${points.toLocaleString("th-TH")} Points ครับ\nดูรายละเอียดใน My MMD > Points ได้ที่นี่ครับ → ${POINTS_LIFF_URL}`,
@@ -206,6 +331,23 @@ export function buildKenjiLiveTruthDecision(intent = "", liveTruth = {}, continu
     };
   }
 
+  const failureClass = text(liveTruth?.failure_class || liveTruth?.status).toLowerCase();
+  if (value === "membership_status" && ["identity_unresolved", "no_entitlement", "upstream_error", "projection_invalid"].includes(failureClass)) {
+    const message = MMD_MEMBERSHIP_STATUS_COPY_TH[failureClass];
+    return {
+      text: message,
+      reply_source: "live_truth_unavailable",
+      guard_blocked: false,
+      guard_reason: `membership_status:${failureClass}`,
+      handoff_required: false,
+      handoff_reason: "",
+      truth_authority: AUTHORITY,
+      truth_status: failureClass,
+      live_truth_used: false,
+      live_truth_verified: false,
+    };
+  }
+
   if (knownIdentity(continuity)) {
     return {
       text: "ผมเจอบัญชีที่ผูกไว้แล้วครับ แต่สถานะล่าสุดยังอ่านจากตัวตรวจสิทธิ์ไม่สำเร็จ เลยยังไม่ยืนยันระดับหรือวันหมดอายุให้ผิดครับ",
@@ -221,7 +363,21 @@ export function buildKenjiLiveTruthDecision(intent = "", liveTruth = {}, continu
     };
   }
 
-  return null;
+  // A missing Client link is not permission to bypass the canonical result and
+  // fall through to legacy status copy (or infer identity from a typed name).
+  return {
+    text: "ตอนนี้ยังอ่านสิทธิ์สมาชิกจากบัญชี LINE นี้ไม่สำเร็จครับ จึงยังไม่ยืนยันระดับหรือวันหมดอายุได้",
+    reply_source: "live_truth_unavailable",
+    guard_blocked: false,
+    guard_reason: "live_truth_unavailable",
+    handoff_required: true,
+    handoff_reason: `${value}:live_truth_unavailable`,
+    truth_authority: AUTHORITY,
+    truth_status: "unavailable",
+    live_truth_used: false,
+    live_truth_verified: false,
+  };
 }
 
 export const KENJI_LIVE_TRUTH_AUTHORITY = AUTHORITY;
+

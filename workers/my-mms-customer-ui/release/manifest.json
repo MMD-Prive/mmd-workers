@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "repository": "MMD-Prive/my-mms-therapist",
+  "sourceCommit": "8b4d2356e602df0a146d8c65bdb28ea123cdd313",
+  "sourceTree": "f4f4699fe6200213b6108fe264961d64862723c2",
+  "sourceFileCount": 150,
+  "archive": "my-mms-customer-source-8b4d235.tar.gz",
+  "sha256": "6ff6db497cd6b712c32f4f229ef28e9007a6f410f19ae59608972d82ca899f90",
+  "tag": "mms-ui-8b4d235"
+}

@@ -1,4 +1,15 @@
-import { MY_MMD_LOVABLE_DESIGN_CSS } from "./liff-lovable-design.js";
+import { renderApprovedEntry, renderApprovedLoader, createHypeLoaderMotion, createEntryPercentMotion, installApprovedEntryLoading } from "./liff-approved-entry.js";
+import { resolveEmsAlbumReturnTarget } from '../../shared/ems-album-navigation.mjs';
+import { createAccountView } from "./liff-account-view.js";
+import {renderPersonalMain, PERSONAL_MAIN_CSS, createPersonalMainUI} from "./liff-personal-main.js";
+import {resolveVerifiedCustomerBrand,createCustomerBrand,renderCustomerBrand,CUSTOMER_V6_CSS} from "./liff-customer-brand-v6.js";
+import { MY_MMD_SIGIL_PRIVATE_CSS } from "./liff-sigil-private-theme.js";
+import { customerGraphic, customerIcon, CUSTOMER_GRAPHICS_CSS } from "./liff-customer-graphics.js";
+import { createCustomerProgress, renderCustomerProgress } from "./liff-customer-progress.js";
+import { loadDoubleMomentCard } from "./liff-promotion-client.js";
+import { MY_MMD_LOVABLE_DESIGN_CSS, MY_MMD_PUBLIC_BLEND_CSS, MY_MMD_VERIFICATION_CSS } from "./liff-lovable-design.js";
+import { MY_MMD_LIFF_COMPACT_V4_CSS } from "./liff-member-compact-v4-style.js";
+import { MY_MMD_LIFF_LV15_CSS } from "./liff-member-lv15-style.js";
 import { travelClientBundle, travelClientCss } from '../../shared/model-travel-client-source.mjs';
 
 const LIFF_SHELL_PATHS = new Set(["/member/liff", "/member/liff/"]);
@@ -28,7 +39,16 @@ export function handleLiffMemberShell(request, env = {}) {
   }
 
   const url = new URL(request.url);
+  // LINE can deliver the entry query inside liff.state on the first redirect.
+  const stateValue = url.searchParams.get("liff.state") || url.searchParams.get("liff_state") || "";
+  const state = new URLSearchParams(stateValue.includes("?") ? stateValue.slice(stateValue.indexOf("?") + 1) : stateValue);
+  for (const key of ["intent", "liff_intent", "campaign", "view", "lang"]) {
+    if (!url.searchParams.has(key) && state.has(key)) url.searchParams.set(key, state.get(key));
+  }
   const config = {
+    returnTo: !normalizeCampaign(url.searchParams.get("campaign")) &&
+      ["status", "unknown"].includes(normalizeIntent(url.searchParams.get("intent") || url.searchParams.get("liff_intent")))
+      ? resolveEmsAlbumReturnTarget(url.searchParams, state) : "",
     liffId: publicLiffId(env),
     intent: normalizeIntent(url.searchParams.get("intent") || url.searchParams.get("liff_intent")),
     campaign: normalizeCampaign(url.searchParams.get("campaign")),
@@ -57,7 +77,7 @@ export function handleLiffMemberShell(request, env = {}) {
   const html = renderShell(config, nonce);
   const headers = shellHeaders({
     "content-type": "text/html; charset=utf-8",
-    "content-security-policy": `default-src 'self'; script-src 'self' https://static.line-scdn.net 'nonce-${nonce}'; connect-src 'self' https://api.line.me https://access.line.me; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; base-uri 'none'; form-action 'self'; object-src 'none'`,
+    "content-security-policy": `default-src 'self'; script-src 'self' https://static.line-scdn.net 'nonce-${nonce}'; connect-src 'self' https://api.line.me https://access.line.me; img-src 'self' data: https:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; base-uri 'none'; form-action 'self'; object-src 'none'`,
   });
   return new Response(method === "HEAD" ? null : html, { status: 200, headers });
 }
@@ -77,7 +97,7 @@ function renderShell(config, nonce) {
     *{box-sizing:border-box}body:not(.app-entered):not(.signup-mode){padding:20px 16px 40px}
     main{width:min(100%,760px);margin:0 auto;padding:24px 16px;border:1px solid rgba(212,181,123,.22);border-radius:8px;background:#101011;box-shadow:0 28px 80px rgba(0,0,0,.45)}
     .mark{font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:#d7bd8a}.title{margin:10px 0 8px;font-size:30px;line-height:1.08;font-weight:650}.sub{margin:0;color:#aaa29a;font-size:14px;line-height:1.55}
-    #message{white-space:pre-line;margin:30px 0 0;font-size:18px;line-height:1.65}.actions{display:grid;gap:10px;margin-top:24px}.actions:empty{display:none}
+.actions{display:grid;gap:10px;margin-top:24px}.actions:empty{display:none}
     button,textarea,input,select{width:100%;border:1px solid rgba(216,189,137,.28);border-radius:12px;padding:12px 14px;background:#171511;color:#f7f3eb;font:inherit;text-align:left}button{cursor:pointer}button:disabled{opacity:.55;cursor:default}textarea{min-height:124px;resize:vertical;line-height:1.55}input[type=file]{padding:10px}.form-stack{display:grid;gap:10px}.form-stack label{display:grid;gap:6px}.form-stack button{background:#f0d892;color:#181207;font-weight:700;text-align:center}.form-note{margin:0;color:#aaa29a;font-size:12px;line-height:1.55}.wish{display:grid;gap:12px;margin-top:16px}.wish-result{white-space:pre-line;color:#e7d5ad;line-height:1.65}
     .signup{display:grid;gap:12px;margin-top:24px}.signup h2{margin:0;color:#f0d892;font-size:22px}.signup .card{display:grid;gap:8px}.signup .card strong{font-size:18px}.signup .card button{margin-top:4px;text-align:center;background:#f0d892;color:#181207;font-weight:700}.signup .card button:disabled{opacity:.5}.signup .private-link{display:block;border:1px solid rgba(216,189,137,.28);border-radius:16px;padding:14px 16px;color:#f0d892;text-align:center;text-decoration:none}.signup-note{color:#b7afa4;font-size:13px;line-height:1.6}.profile{display:block;margin-top:14px}.section-rail{display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;scroll-behavior:smooth;overscroll-behavior-x:contain;padding:0 2px 12px;scrollbar-width:none}.section-rail::-webkit-scrollbar{display:none}.panel{display:flex;flex:0 0 100%;min-height:430px;flex-direction:column;gap:12px;scroll-snap-align:start;scroll-snap-stop:always}.summary{display:grid;grid-template-columns:1.2fr .8fr;gap:12px}.card{border:1px solid rgba(216,189,137,.18);border-radius:8px;padding:17px;background:#080809}.label{color:#948c82;font-size:11px;letter-spacing:.12em;text-transform:uppercase}.value{display:block;margin-top:6px;font-size:22px;line-height:1.15}.points{font-size:34px;color:#e6cb91}.history,.stack{display:grid;gap:9px;margin-top:12px}.event{display:grid;grid-template-columns:72px 1fr auto;gap:10px;align-items:center;padding:11px 0;border-top:1px solid rgba(255,255,255,.07);font-size:13px}.event:first-child{border-top:0}.event-date,.event-status{color:#8f8880}.event-delta{color:#d9bd82}.care{border-color:rgba(225,193,126,.38);background:#15120f}.care h2{margin:8px 0;font-size:21px}.care p{margin:0;color:#b7afa4;font-size:13px;line-height:1.6}.care-code{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:14px 0;padding:13px 14px;border-radius:8px;background:#080807}.care-code strong{font-size:24px;letter-spacing:.15em;color:#ecd18f}.care button{margin-top:14px;text-align:center;background:#f0d892;color:#181207;font-weight:700}.details{border-top:1px solid rgba(255,255,255,.08);padding-top:12px}.details summary{cursor:pointer;color:#e7e2d8;font-size:14px}.details[open] summary{margin-bottom:10px}.group-title{margin:4px 0;font-size:14px;color:#e7e2d8}.empty{margin:0;color:#aaa29a;font-size:14px;line-height:1.55}
     .member-nav{display:flex;gap:8px;overflow-x:auto;margin:22px 0 0;padding:4px;border:1px solid rgba(216,189,137,.18);border-radius:8px;background:rgba(0,0,0,.22);scrollbar-width:none}.member-nav::-webkit-scrollbar{display:none}.member-nav button{width:auto;white-space:nowrap;border:0;border-radius:999px;padding:10px 12px;background:transparent;color:#aaa29a;font-size:12px;text-align:center}.member-nav button[aria-current="true"]{background:#f0d892;color:#181207;font-weight:800}.status{margin-top:22px;color:#7f7972;font-size:12px;line-height:1.5}.hidden{display:none!important}@media(max-width:390px){main{padding:24px 16px}.summary,.detail-grid{grid-template-columns:1fr}.event{grid-template-columns:66px 1fr}.event-status{grid-column:2}}@media(min-width:700px){.panel{flex-basis:calc(50% - 6px)}.section-rail{flex-wrap:wrap;overflow:visible;scroll-snap-type:none}}@media(prefers-reduced-motion:reduce){.section-rail{scroll-behavior:auto}*{animation:none!important;transition:none!important}}
@@ -85,7 +105,7 @@ function renderShell(config, nonce) {
     body.signup-mode{width:100%;max-width:100%;min-height:100vh;min-height:100dvh;padding:0;overflow-x:clip;overflow-y:auto;background:radial-gradient(circle at 50% -8%,#473026 0,transparent 38%),#080809}
     body.signup-mode main{width:100%;max-width:none;min-height:100vh;min-height:100dvh;margin:0;padding:calc(26px + env(safe-area-inset-top)) max(18px,env(safe-area-inset-right)) calc(34px + env(safe-area-inset-bottom)) max(18px,env(safe-area-inset-left));border:0;border-radius:0;background:linear-gradient(160deg,#241d1c,#101012 55%,#09090b);box-shadow:none}
     body.signup-mode .mark{font-size:10px;letter-spacing:.25em}body.signup-mode .title{margin:12px 0 6px;color:#fff7ed;font-size:32px}body.signup-mode .sub{color:#c6bdb3}
-    body.signup-mode #message{margin:16px 0 0;padding:11px 13px;border-left:2px solid #d9ae77;border-radius:0 8px 8px 0;background:#dfb58014;color:#e5d0b2;font-size:13px;line-height:1.55}
+
     body.signup-mode .member-nav,body.signup-mode #profile{display:none!important}body.signup-mode .signup{margin-top:18px;gap:15px}
     .signup-hero{position:relative;display:flex;align-items:center;min-height:150px;overflow:hidden;padding:22px;border:1px solid #e7bb8159;border-radius:18px;background:radial-gradient(circle at 85% 12%,#b6824f55,transparent 42%),linear-gradient(130deg,#292321,#131315 70%);box-shadow:0 18px 44px #0004}
     .signup-hero::before,.signup-hero::after{content:"";position:absolute;right:-43px;top:-78px;width:230px;height:230px;border:1px solid #f1cd9c45;border-radius:50%;pointer-events:none}.signup-hero::after{right:-14px;top:-49px;width:172px;height:172px;border-color:#f1cd9c30}
@@ -113,14 +133,14 @@ function renderShell(config, nonce) {
     body.world-public:not(.signup-mode) .mark{color:#8d684a}
     body.world-public:not(.signup-mode) .title{color:#26211d}
     body.world-public:not(.signup-mode) .sub{color:#76695d}
-    body.world-public:not(.signup-mode) #message{color:#4e443a;border-left:2px solid #b98357;background:#fffaf3}
+
     body.world-public:not(.signup-mode) .member-nav{border-color:#d9cabb;background:#fffaf4}
     body.world-public:not(.signup-mode) .member-nav button{color:#7b6f64}
     body.world-public:not(.signup-mode) .member-nav button[aria-current="true"]{background:#1f1b18;color:#fffaf4}
     body.world-private:not(.signup-mode){background:radial-gradient(circle at 50% -10%,#2a201d 0,transparent 42%),#080809;color:#f5f2eb}
     body.world-private:not(.signup-mode) main{border-color:rgba(212,181,123,.22);background:#101011;box-shadow:0 28px 80px rgba(0,0,0,.45)}
     body.world-private:not(.signup-mode) .mark{color:#d7bd8a}
-    body.world-private:not(.signup-mode) #message{color:#e5d0b2;border-left:2px solid #d9ae77;background:#dfb58014}
+
     body.world-private:not(.signup-mode) .member-nav button[aria-current="true"]{background:#f0d892;color:#181207}
     /* Full-screen mobile-first intro, then a deliberate hand-off into the app. */
     body.world-public:not(.signup-mode):not(.app-entered),
@@ -131,7 +151,7 @@ function renderShell(config, nonce) {
     body.world-private:not(.signup-mode):not(.app-entered) .intro-screen{min-height:100svh;display:flex;flex-direction:column;justify-content:center;gap:0}
     .intro-screen .title{max-width:680px;margin-top:14px;font-size:clamp(34px,10vw,68px);letter-spacing:-.04em}
     .intro-screen .sub{max-width:640px;margin-top:12px;font-size:clamp(14px,3.8vw,19px)}
-    .intro-screen #message{max-width:680px;margin-top:clamp(22px,6vw,46px);font-size:clamp(15px,4.2vw,20px);line-height:1.78}
+
     .intro-continue{width:100%;max-width:360px;margin-top:clamp(24px,7vw,52px);padding:15px 20px;border:0;border-radius:999px;text-align:center;font-size:15px;font-weight:800;letter-spacing:.01em;box-shadow:0 12px 28px rgba(0,0,0,.16)}.remember-login-note{max-width:680px;margin:10px 0 0;color:rgba(244,237,225,.62);font-size:11px;line-height:1.5}
     body.world-public:not(.signup-mode):not(.app-entered) .intro-continue{background:#b94a3f;color:#fffaf4}
     body.world-private:not(.signup-mode):not(.app-entered) .intro-continue{background:#e5bf72;color:#20170f}
@@ -143,14 +163,14 @@ function renderShell(config, nonce) {
     body.signup-mode.app-entered #signup{width:100%;max-width:560px;margin-left:auto;margin-right:auto}
     body.app-entered.world-public main,body.app-entered.world-private main{width:100%;max-width:none;min-height:100vh;min-height:100dvh;margin:0;padding:0;border:0;border-radius:0;display:block;box-shadow:none}
     body.app-entered.world-public,body.app-entered.world-private{min-height:100vh;min-height:100dvh;padding:0;overflow-x:clip;overflow-y:auto}
-    @media(max-width:430px){.intro-screen #message{max-height:46svh;overflow:auto;padding-right:4px}.intro-continue{max-width:none}}
+    @media(max-width:430px){.intro-continue{max-width:none}}
     /* MMD Memory theme locks: Bangkok ivory for Public, SIGIL Wall for Private. */
     body.world-public:not(.signup-mode){font-family:"Manrope","Noto Sans Thai","LINE Seed Sans TH",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:radial-gradient(ellipse at 50% 110%,rgba(184,132,82,.22),transparent 48%),linear-gradient(180deg,#fffdf8 0%,#f6ede2 56%,#e7d8c7 100%);color:#2a2521}
     body.world-public:not(.signup-mode) main{background:linear-gradient(160deg,rgba(255,253,249,.96),rgba(248,239,228,.94) 62%,rgba(235,220,203,.95));border-color:#d8c6b2;box-shadow:0 28px 90px rgba(105,77,47,.18)}
     body.world-public:not(.signup-mode) .mark{font-weight:800;letter-spacing:.22em;color:#9c6744}
     body.world-public:not(.signup-mode) .title{font-family:"Manrope","Noto Sans Thai",sans-serif;font-weight:800;color:#231e1a}
     body.world-public:not(.signup-mode) .sub{color:#715f51}
-    body.world-public:not(.signup-mode) #message{color:#493d34;border-left-color:#b86f45;background:rgba(255,250,243,.84)}
+
     body.world-public:not(.signup-mode):not(.app-entered) .intro-continue{background:linear-gradient(100deg,#b7473d,#d06c55);color:#fffaf4;box-shadow:0 14px 30px rgba(152,62,47,.24)}
     body.world-public:not(.signup-mode) .member-nav{border-color:#d8c6b3;background:rgba(255,250,244,.86)}
     body.world-public:not(.signup-mode) .member-nav button{color:#78675b}
@@ -160,7 +180,7 @@ function renderShell(config, nonce) {
     body.world-private:not(.signup-mode) .mark{font-weight:800;letter-spacing:.24em;color:#e0bf7a}
     body.world-private:not(.signup-mode) .title{font-family:"Noto Sans Thai","LINE Seed Sans TH",sans-serif;font-weight:750;color:#f7e8c9}
     body.world-private:not(.signup-mode) .sub{color:#c2b29a}
-    body.world-private:not(.signup-mode) #message{color:#ecdcbd;border-left-color:#d2a95d;background:rgba(218,172,83,.08)}
+
     body.world-private:not(.signup-mode):not(.app-entered) .intro-continue{background:linear-gradient(100deg,#c79a4d,#f0d38c);color:#21170c;box-shadow:0 14px 32px rgba(194,148,63,.24)}
     body.world-private:not(.signup-mode) .member-nav{border-color:rgba(214,174,94,.28);background:rgba(13,11,10,.78)}
     body.world-private:not(.signup-mode) .member-nav button{color:#bcae96}
@@ -168,8 +188,8 @@ function renderShell(config, nonce) {
     .welcome-benefits{display:grid;gap:7px;margin:18px 0 0;padding:0;list-style:none;color:#594b3e;font-size:14px;line-height:1.5}
     .welcome-benefits li::before{content:"•";margin-right:9px;color:#b94a3f;font-weight:900}
     body.world-private .welcome-benefits{color:#e1d1b5}.world-private .welcome-benefits li::before{color:#e5bf72}
-    .per-letter{max-width:680px;margin-top:18px;border-top:1px solid currentColor;padding-top:13px;color:inherit}
-    .per-letter summary{cursor:pointer;font-weight:750}.per-letter-copy{max-height:42svh;overflow:auto;margin-top:12px;padding-right:6px;white-space:pre-line;font-size:14px;line-height:1.75}
+
+
     /* MY MMD customer welcome: member world only, before the board. */
     body:not(.app-entered){background:#171715;color:#f4ede1}
     body:not(.app-entered) main,
@@ -188,20 +208,18 @@ function renderShell(config, nonce) {
     body.world-private:not(.signup-mode):not(.app-entered) .my-mmd-welcome .title{color:#f4ede1;font-family:Georgia,"Times New Roman","Noto Sans Thai",serif;font-weight:400}
     body.world-public:not(.signup-mode):not(.app-entered) .my-mmd-welcome .sub,
     body.world-private:not(.signup-mode):not(.app-entered) .my-mmd-welcome .sub{color:rgba(244,237,225,.68)}
-    .my-mmd-welcome #message{max-width:680px;margin:18px 0 0;padding:12px 14px;border:1px solid rgba(201,168,102,.28);border-left:2px solid #c9a866;border-radius:0 8px 8px 0;background:rgba(201,168,102,.07);color:#eadcc1;font-size:13px;line-height:1.65}
-    .my-mmd-welcome .per-letter{max-width:680px;margin:24px 0 0;padding:0;border:0;color:#f4ede1}.my-mmd-welcome .per-letter-copy{max-height:none;overflow:visible;margin:0;padding:0;white-space:pre-line;font-size:16px;line-height:1.65}
+
+
     .welcome-divider{width:min(100%,680px);height:1px;margin:30px 0 0;background:rgba(201,168,102,.34)}.my-mmd-welcome .intro-continue{width:195px;min-height:48px;margin:26px 0 0;padding:12px 20px;border:0;border-radius:999px;background:#c9a866!important;color:#171715!important;box-shadow:none;font-size:14px;font-weight:800;text-align:center;letter-spacing:.05em}.my-mmd-welcome .intro-continue:disabled{opacity:.55}
     .hype-loader{display:none}body.context-resolving .hype-loader{position:fixed;inset:0;z-index:2147483000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:24px;background:#000;color:#f6f1e8;text-align:center}
-    .hype-loader img{display:block;width:min(72vw,280px);height:auto;max-height:52svh;object-fit:contain;filter:drop-shadow(0 18px 42px rgba(203,163,84,.16))}
     .hype-loader-text{color:#caa45e;font-size:12px;font-weight:800;letter-spacing:.22em}.hype-loader-text::after{content:"";display:inline-block;width:1.6em;text-align:left;animation:hype-dots 1.2s steps(4,end) infinite}
     .hype-progress{display:flex;align-items:center;gap:12px;width:min(72vw,280px);margin-top:10px;color:#f6f1e8;font-size:14px;font-variant-numeric:tabular-nums}
-    .hype-progress progress{flex:1;height:8px;appearance:none;border:1px solid #61543c;border-radius:999px;background:#29251d;overflow:hidden}
-    .hype-progress progress::-webkit-progress-bar{background:#29251d}.hype-progress progress::-webkit-progress-value{background:#caa45e;border-radius:999px;transition:width .2s ease-out}.hype-progress progress::-moz-progress-bar{background:#caa45e;border-radius:999px}
+    .hype-progress progress{flex:1;height:8px;accent-color:#caa45e;border-radius:999px}
     @keyframes hype-dots{0%{content:""}25%{content:"."}50%{content:".."}75%{content:"..."}}
-    @media(prefers-reduced-motion:reduce){.hype-loader-text::after{animation:none;content:"..."}.hype-progress progress::-webkit-progress-value{transition:none}}
+    @media(prefers-reduced-motion:reduce){.hype-loader-text::after{animation:none;content:"..."}}
     body.context-resolving .my-mmd-welcome{visibility:visible}body.context-resolving .my-mmd-welcome .intro-continue{opacity:.55}
-    @media(max-width:430px){.welcome-hero{min-height:178px}.welcome-letter{padding:24px 26px max(38px,env(safe-area-inset-bottom))}.my-mmd-welcome .per-letter-copy{font-size:16px;line-height:1.65}.my-mmd-welcome .intro-continue{width:195px;max-width:100%}}
-    @media(max-width:340px){.welcome-hero{min-height:168px}.welcome-brand{left:24px;bottom:20px}.welcome-letter{padding-left:24px;padding-right:24px}.my-mmd-welcome .per-letter-copy{font-size:15px}}
+    @media(max-width:430px){.welcome-hero{min-height:178px}.welcome-letter{padding:24px 26px max(38px,env(safe-area-inset-bottom))}.my-mmd-welcome .intro-continue{width:195px;max-width:100%}}
+    @media(max-width:340px){.welcome-hero{min-height:168px}.welcome-brand{left:24px;bottom:20px}.welcome-letter{padding-left:24px;padding-right:24px}}
     @media(min-width:700px){.welcome-hero{min-height:188px}.welcome-letter{width:min(100%,760px);margin:0 auto}}
     body.context-resolving .intro-screen{visibility:visible}
 
@@ -279,29 +297,21 @@ function renderShell(config, nonce) {
     @media(max-height:690px){body.app-entered:not(.signup-mode) main{padding-top:12px}.digital-hello{margin-top:12px}.digital-kenji{margin:7px 0}}
     ${MY_MMD_LOVABLE_DESIGN_CSS}
   ${travelClientCss}
+  ${MY_MMD_LIFF_COMPACT_V4_CSS}
+  ${CUSTOMER_GRAPHICS_CSS}
+  ${CUSTOMER_V6_CSS}
+  ${MY_MMD_PUBLIC_BLEND_CSS}
+${PERSONAL_MAIN_CSS}
+${MY_MMD_VERIFICATION_CSS}
+${MY_MMD_SIGIL_PRIVATE_CSS}
+  ${MY_MMD_LIFF_LV15_CSS}
 </style>
 </head>
-<body class="${config.intent === "signup" ? "signup-mode app-entered " : "context-resolving "}world-${config.world}" data-world="${config.world}" data-mmd-liff-digital="v3" data-mmd-liff-compact="v4">
-${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" role="status" aria-label="กำลังเปิด MY MMD"><img id="hype-loader-img" src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a9be30ba79b9386ecdbe9ab_HYPE_NOW_LOADING_10FRAMES.gif" alt="HYPE" width="280" height="280"><div class="hype-loader-text">NOW LOADING</div><div class="hype-progress"><progress id="hype-progress" max="100" value="10" aria-label="ความคืบหน้าการเปิดหน้า"></progress><span id="hype-progress-number" aria-hidden="true">10%</span></div></div>`}
+<body class="${config.intent === "signup" ? "signup-mode app-entered " : "context-resolving "}world-${config.world}" data-world="${config.world}" data-mmd-liff-digital="v3" data-mmd-liff-compact="v4" data-mmd-graphics="v6" data-brand-audience="unresolved" data-mmd-liff-level="15">
+${config.intent === "signup" ? "" : renderApprovedLoader()}
 <main>
-  <section id="intro-screen" class="intro-screen my-mmd-welcome" aria-labelledby="intro-title">
-    <div class="welcome-hero">
-      <div class="welcome-brand">
-        <span class="welcome-logo"><img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a6c4486e7585ba74ab2eeb1_MMD_Prive%CC%81_logo_signature_transparent%20Final.webp" alt="MMD Privé" width="31" height="31"></span>
-        <span><strong>MY MMD</strong><small>MMD PRIVÉ · MEMBER APP</small></span>
-      </div>
-    </div>
-    <div class="welcome-letter">
-      <div class="mark" data-copy="mark">MMD PRIVÉ · MY MMD</div>
-      <h1 id="intro-title" class="title" data-copy="title">ยินดีที่ได้รู้จัก</h1>
-      <p class="sub" data-copy="subtitle">MY MMD · แอปที่ออกแบบจากประสบการณ์จริงของเปอร์</p>
-      <div id="message" class="welcome-context-note hidden" role="status" aria-live="polite"></div>
-      <div id="per-letter" class="per-letter"><div id="per-letter-copy" class="per-letter-copy"></div></div>
-      <div class="welcome-divider" aria-hidden="true"></div>
-      <button id="intro-continue" class="intro-continue" type="button" aria-label="เข้าสู่บอร์ดสมาชิก MY MMD" aria-expanded="false" disabled>กำลังตรวจสอบ…</button>
-      <p class="remember-login-note">ระบบจำการเข้าสู่ระบบในอุปกรณ์นี้ 30 วัน · ออกจากระบบได้ทุกเมื่อ</p>
-    </div>
-  </section>
+  ${renderApprovedEntry()}
+  <div id="customer-entry-progress" class="customer-entry-progress"></div>
   <div id="app-status" class="app-status" role="status" aria-live="polite"></div>
   <div id="actions" class="actions" aria-label="ตัวเลือก"></div>
   <section id="signup" class="signup${config.intent === "signup" ? "" : " hidden"}" aria-label="สมัครสมาชิกใน LINE">
@@ -314,7 +324,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     <p id="signup-note" class="signup-note">ราคาจากระบบ MMD เลือกแพ็กเกจเพื่อไปหน้าชำระเงิน</p>
     ${config.liffId ? `<a id="signup-line-entry" class="signup-line-entry" href="https://miniapp.line.me/${config.liffId}/?intent=signup&amp;view=signup">เปิดใน LINE เพื่อสมัคร</a>` : ""}
     <div id="signup-packages" class="stack" aria-live="polite"><p class="signup-loading">ยืนยัน LINE เพื่อดูแพ็กเกจที่สมัครได้</p></div>
-    <div class="card signup-private"><strong>Standard / Premium / Private Access</strong><p class="signup-note">ให้เปอร์ช่วยตรวจตัวเลือกและเงื่อนไข Standard / Premium ก่อนครับ เปิดแชต MMD แล้วพิมพ์ “ขอคุยกับเปอร์ สนใจ Standard / Premium” ขั้นตอนนี้ยังไม่ใช่การสมัคร ชำระเงิน หรือเปิดสิทธิ์</p><a id="private-review-chat" class="private-link" href="https://lin.ee/xRqsALs" rel="noreferrer">เปิดแชต MMD เพื่อส่งเรื่องให้เปอร์</a></div>
+    <div class="card signup-private"><strong>Private Membership</strong><p class="signup-note">เลือก Standard หรือ Premium เพื่อให้ระบบตรวจสอบสิทธิ์และเตรียมหน้าชำระเงินให้ครับ</p><div id="private-signup-packages" class="stack" aria-live="polite"><p class="signup-loading">ยืนยัน LINE ก่อนจึงจะแสดงแพ็กเกจ Private ครับ</p></div></div>
     <p class="signup-footer">สิทธิสมาชิกเริ่มหลังระบบตรวจสอบการชำระเงินอย่างเป็นทางการ · ติดตามสถานะได้ที่ MY MMD</p>
   </section>
   <nav class="member-nav" aria-label="Member sections">
@@ -331,13 +341,19 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   <section id="profile" class="profile hidden" aria-label="Member profile">
     <div class="section-rail">
     <section id="home" class="panel digital-home" aria-label="Home" data-active="true">
-    <header class="digital-top"><div class="digital-brand">MMD PRIVÉ<small>MY MMD · MEMBER APP</small></div><div><span class="digital-session" id="digital-session">● LINE VERIFIED</span> <button id="member-logout" class="digital-signout" type="button">ออกจากระบบ</button></div></header>
+    <header class="digital-top">${renderCustomerBrand()}<div><span class="digital-session" id="digital-session">${customerIcon("icon-check")} LINE VERIFIED</span> <button id="member-logout" class="digital-signout" type="button">ออกจากระบบ</button></div></header>
     <svg class="digital-bangkok-trace" viewBox="0 0 520 34" preserveAspectRatio="none" fill="none" aria-hidden="true" focusable="false" role="presentation">
       <path d="M9 28H511M61 28V17h24v11M82 17V9h11v19M132 28V14h18V5h25v23M182 28V19h27V12h13v16M254 28V11h20V2h18v26M291 28V21h34V15h15v13M385 28V20h18V9h29v19M441 28V18h25v10" stroke="currentColor" stroke-width="1" stroke-linejoin="round"/>
       <path d="M8 8H96M420 6h94M24 13h21M476 15h36M10 32h500" stroke="currentColor" stroke-width=".8" opacity=".55"/>
     </svg>
-    <section class="digital-hello"><p class="digital-eyebrow">MMD TODAY</p><h1 id="digital-greeting">MY MMD</h1><p class="digital-sub">เรื่องที่ต้องรู้ เรื่องที่ต้องทำ และอัปเดตจาก MMD ในที่เดียว</p></section>
-    <section class="digital-snapshot" aria-label="สถานะสมาชิก"><div class="digital-snapshot-member"><span class="digital-snapshot-icon" aria-hidden="true">◇</span><div><span class="digital-snapshot-label">สมาชิก MMD Privé</span><strong id="profile-tier">Member</strong><p id="profile-status">กำลังตรวจสอบสถานะ</p></div></div><div class="digital-snapshot-points"><span class="digital-snapshot-label">Points</span><strong id="profile-points" class="digital-points">—</strong><span id="profile-points-note" class="digital-points-note">กำลังตรวจสอบยอด</span></div></section>
+    <section class="digital-hello"><p class="digital-public-wordmark" aria-label="MY MMD"><span>MY</span> MMD</p><p class="digital-public-slogan">Discreet by desire, Elegance by choice.</p><p class="digital-eyebrow">MMD TODAY</p><h1 id="digital-greeting">MY MMD</h1><p class="digital-sub">เรื่องที่ต้องรู้ เรื่องที่ต้องทำ และอัปเดตจาก MMD ในที่เดียว</p></section>
+    <details class="digital-news-disclosure" id="digital-news-disclosure">
+      <summary class="digital-news-summary">
+        <span class="digital-sectionline"><h2 id="digital-news-title"><small>MMD UPDATE</small>MMD NOW</h2><span class="digital-unread" id="digital-unread" hidden></span></span>
+      </summary>
+      <div class="digital-news-feed" id="digital-news-feed"><div class="digital-quiet">กำลังตรวจสอบอัปเดตล่าสุด</div></div>
+    </details>
+    <section class="digital-snapshot" aria-label="สถานะสมาชิก">${customerGraphic("membership-frame")}<div class="digital-snapshot-member"><span class="digital-snapshot-icon" aria-hidden="true">◇</span><div><span class="digital-snapshot-label">สมาชิก MMD Privé</span><strong id="profile-tier">Member</strong><p id="profile-status">กำลังตรวจสอบสถานะ</p></div></div><div class="digital-snapshot-points"><span class="digital-snapshot-label">Points</span><strong id="profile-points" class="digital-points">—</strong><span id="profile-points-note" class="digital-points-note">กำลังตรวจสอบยอด</span></div></section>
     <details id="minimal-member-display" class="digital-history-review" aria-label="ข้อมูลย้อนหลังอยู่ระหว่างตรวจสอบ" hidden>
       <summary>ข้อมูลประวัติยังอยู่ระหว่างตรวจสอบ</summary>
       <div class="digital-history-review-content">
@@ -346,37 +362,35 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
         <small id="minimal-member-diag" class="label" hidden></small>
       </div>
     </details>
+    ${renderPersonalMain()}
     <section id="digital-companion" class="digital-design-slot" aria-label="Your Companion" hidden><span class="digital-eyebrow">FOR YOU · YOUR COMPANION</span><strong id="digital-companion-name"></strong><p id="digital-companion-note"></p></section>
     <div class="digital-needs" id="digital-needs" hidden><div><b>NEEDS YOU</b><span id="digital-needs-label"></span></div><button id="digital-needs-action" type="button">ดูขั้นตอน ↗</button></div>
-    <section id="digital-mission" class="digital-mission" aria-labelledby="digital-mission-title" hidden>
+    <section id="digital-mission" class="digital-mission" aria-labelledby="digital-mission-title" hidden>${customerGraphic("current-booking")}
       <div class="digital-sectionline"><h2 id="digital-mission-title"><small>CURRENT JOB</small>MMD MISSION</h2><span class="digital-mission-state" id="digital-mission-state"></span></div>
       <div class="digital-mission-head"><strong id="digital-mission-model">MMD</strong><p id="digital-mission-meta"></p><p id="digital-mission-eta" hidden></p></div>
-      <button id="digital-mission-toggle" class="digital-mission-toggle" type="button" aria-expanded="false">ดู MISSION ↗</button>
+      <button id="digital-mission-toggle" class="digital-mission-toggle" type="button" aria-expanded="false">${customerIcon("icon-booking")}ดู MISSION ↗</button>
       <div id="digital-mission-detail" class="digital-mission-detail" hidden><ol id="digital-mission-timeline" class="digital-mission-timeline"></ol></div>
     </section>
-    <details class="digital-news-disclosure" id="digital-news-disclosure">
-      <summary class="digital-news-summary">
-        <span class="digital-sectionline"><h2 id="digital-news-title"><small>PRIVATE FEED</small>MMD NOW</h2><span class="digital-unread" id="digital-unread" hidden></span></span>
-      </summary>
-      <div class="digital-news-feed" id="digital-news-feed"><div class="digital-quiet">กำลังตรวจสอบอัปเดตล่าสุด</div></div>
-    </details>
+    <div id="customer-no-booking" class="customer-booking-empty" hidden>${customerGraphic("no-current-booking")}ยังไม่มีงานปัจจุบันที่ยืนยันแล้วครับ</div>
+
     <section id="digital-tmib-story" class="digital-design-slot" aria-label="TMIB Story" hidden><span class="digital-eyebrow">TMIB STORY</span><strong id="digital-tmib-story-title"></strong><p id="digital-tmib-story-note"></p></section>
-    <section class="digital-quick" aria-label="Quick access"><div class="digital-sectionline"><h2 style="font-size:12px;letter-spacing:.1em">QUICK ACCESS</h2><span style="font-size:9px;color:var(--digital-muted)">MY MMD</span></div><div class="digital-quick-grid"><button type="button" data-view="package"><i>◇</i>Member</button><button type="button" data-view="points"><i>✦</i>Points</button><button type="button" data-view="credits"><i>▤</i>Wallet</button><button type="button" data-view="coupons"><i>▣</i>Coupons</button></div></section>
-    <section class="digital-kenji" aria-label="Kenji AI"><div class="digital-orb" aria-hidden="true"><span class="digital-core"></span></div><div><strong>Kenji AI</strong><p>ช่วยหาข้อมูลและพาไปขั้นตอนที่เกี่ยวข้อง โดยยึดข้อมูลที่ระบบยืนยันแล้ว</p><a href="/member/kenji">เปิด Kenji ↗</a></div></section>
+    <section class="digital-quick" aria-label="Quick access"><div class="digital-sectionline"><h2 style="font-size:12px;letter-spacing:.1em">QUICK ACCESS</h2><span style="font-size:9px;color:var(--digital-muted)">MY MMD</span></div><div class="digital-quick-grid"><button type="button" data-view="package"><i>${customerIcon("icon-profile")}</i>Member</button><button type="button" data-view="points"><i>✦</i>Points</button><button type="button" data-view="credits"><i>▤</i>Wallet</button><button type="button" data-view="coupons"><i>▣</i>Coupons</button><button type="button" data-view="jobs"><i>↗</i>งานของฉัน</button><button type="button" data-view="history"><i>≡</i>ประวัติ</button><button type="button" data-view="history" data-payment-history><i>▤</i>การชำระเงิน</button><button type="button" data-view="account"><i>○</i>โปรไฟล์</button></div></section>
+    <p class="digital-blackcard-entry"><a href="/my-mmd/payments/blackcard">Black Card · ชำระต่อ / เลือก Companion →</a></p>
     <div class="digital-data-cache" aria-hidden="true">
       <strong id="profile-name">สมาชิก MMD</strong><span id="profile-email">—</span><span id="profile-phone">—</span>
       <div id="member-details" class="detail-grid hidden"><div id="expiry-card" class="card hidden"><strong id="profile-expiry">—</strong></div><div id="payment-card" class="card hidden"><strong id="profile-payment">—</strong></div></div>
       <div id="points-card"></div><strong id="home-package">—</strong><p id="home-package-note"></p><div id="next-job"></div><div id="history"></div>
     </div>
     </section>
+    <section id="account" class="panel digital-view" aria-label="Profile"><div class="card"><h2>โปรไฟล์ของคุณ</h2><div id="digital-account" aria-live="polite"></div></div><button type="button" data-view="home">กลับ MMD NOW</button></section>
     <section id="points" class="panel digital-view" aria-label="Points">
       <div class="card" id="history-preview-card"><h2>ประวัติและคะแนนประมาณการ</h2><p>ข้อมูลยังแสดงไม่ครบ</p><p id="history-preview-notice" class="sub">ยอดประวัติเบื้องต้น อยู่ระหว่างตรวจสอบ</p><strong id="history-preview-points" class="value">—</strong><p id="history-preview-amount" class="sub"></p><p class="sub">ประมาณการจากประวัติงานที่บันทึก · ทุก 100 บาท = 1 คะแนน · ก่อนหักหรือหมดอายุ · ยังใช้แลกหรือยืนยันสิทธิ์ไม่ได้</p></div>
-      <div class="card"><h2 data-copy="pointsTitle">⭐ Points</h2><strong id="points-total" class="value points">—</strong><p id="points-rate" class="sub"></p><p id="points-expiry" class="sub"></p></div>
+      <div class="card">${customerGraphic("points-ledger")}<h2 data-copy="pointsTitle">⭐ Points</h2><strong id="points-total" class="value points">—</strong><p id="points-rate" class="sub"></p><p id="points-expiry" class="sub"></p></div>
       <div class="card"><span id="service-spend-label" class="label">Service spend</span><div class="detail-grid"><div><span id="lifetime-spend-label" class="label">Lifetime</span><strong id="points-lifetime-spend" class="value">—</strong></div><div><span id="spend-365-label" class="label">Last 365 days</span><strong id="points-365-spend" class="value">—</strong></div></div></div>
       <div class="card"><span class="label" data-copy="pointsHistoryLabel">Points history</span><div id="points-history" class="history"></div></div>
     </section>
     <section id="credits" class="panel digital-view" aria-label="Service Credit Wallet">
-      <div class="card"><span class="label" data-copy="creditWalletLabel">MY MMD CREDIT</span><h2 data-copy="creditWalletTitle">💳 เครดิตบริการของฉัน</h2><p id="credit-wallet-message" class="sub" data-copy="creditChecking">กำลังตรวจสอบเครดิตบริการของคุณครับ</p>
+      <div class="card"><span class="label" data-copy="creditWalletLabel">MY MMD CREDIT</span>${customerGraphic("credit-wallet")}<h2 data-copy="creditWalletTitle">💳 เครดิตบริการของฉัน</h2><p id="credit-wallet-message" class="sub" data-copy="creditChecking">กำลังตรวจสอบเครดิตบริการของคุณครับ</p>
         <div class="detail-grid"><div><span class="label" data-copy="creditAvailableLabel">ใช้ได้</span><strong id="credit-available" class="value">—</strong></div><div><span class="label" data-copy="creditReservedLabel">จองไว้</span><strong id="credit-reserved" class="value">—</strong></div><div><span class="label" data-copy="creditUsedLabel">ใช้แล้ว</span><strong id="credit-used" class="value">—</strong></div></div>
       </div>
       <div class="card"><span class="label" data-copy="creditRecentLabel">รายการล่าสุด</span><div id="credit-wallet" class="history"><p class="empty" data-copy="creditChecking">กำลังตรวจสอบเครดิตบริการของคุณครับ</p></div></div>
@@ -401,10 +415,16 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
       <details class="card details"><summary data-copy="mmsLabel">MMS prebookings</summary><div id="mms" class="stack"></div></details>
     </section>
     <section id="history-panel" class="panel digital-view" aria-label="History">
-      <div class="card"><h2 data-copy="historyTitle">🧾 History</h2><p id="history-window" class="sub"></p><div id="v2-history" class="history"></div></div>
+      <div class="card">${customerGraphic("history-archive")}<h2 data-copy="historyTitle">🧾 History</h2><p id="history-window" class="sub"></p><div id="v2-history" class="history"></div></div>
       <details class="card details"><summary data-copy="paymentHistoryLabel">Payment history</summary><div id="payment-history" class="stack"></div></details>
     </section>
-    <section id="care" class="panel digital-care" aria-label="Care"><div class="card care">
+    <section id="care" class="panel digital-care" aria-label="Care">
+      <div id="double-moment-card" class="card renewal-card" hidden aria-live="polite">
+        <span class="label">PROMOTION</span><h2>Double Moment</h2>
+        <div id="double-moment-rows" class="renewal-rows"></div>
+        <p id="double-moment-note" class="renewal-note" role="status"></p>
+        <button id="double-moment-action" class="renewal-action" type="button" hidden></button>
+      </div><div id="care-back-content" class="card care">
       <span class="label" data-copy="careLabel">6 Years · Care Back</span><h2 data-copy="careTitle">Personal Care-Back Privilege</h2>
       <p id="care-message">ตรวจสอบผ่าน LINE เพื่อเปิดสิทธิ์ CARE BACK ก่อน คูปองส่วนตัวจะเปิดหลังส่งคำอวยพรถึง MMD สำเร็จครับ</p>
       <div id="care-benefits" class="benefit-grid hidden" aria-label="Personalized benefits"></div>
@@ -417,11 +437,11 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
         <div id="wish-result" class="wish-result hidden" role="status" aria-live="polite"></div>
       </div>
     </div></section>
-    <section id="coupons" class="panel digital-view" aria-label="Coupon Wallet"><div class="card">
+    <section id="coupons" class="panel digital-view" aria-label="Coupon Wallet"><div class="card">${customerGraphic("coupon")}
       <span class="label" data-copy="couponWalletLabel">MY MMD</span><h2 data-copy="couponWalletTitle">🎟 คูปองของฉัน</h2>
       <div id="coupon-wallet" class="stack"><p class="empty" data-copy="couponWalletEmpty">ยังไม่มีคูปองที่ออกให้กับบัญชีนี้ครับ</p></div>
     </div></section>
-    <section id="my-requests" class="panel digital-requests" aria-label="My requests">
+    <section id="my-requests" class="panel digital-requests" aria-label="My requests">${customerGraphic("payment-proof")}
       <details class="card details digital-request-block">
         <summary><span><small>MY DETAILS</small><strong>ข้อมูลที่อยากให้ MMD ใช้ดูแลคุณ</strong></span></summary>
         <div class="digital-request-body"><p class="form-note">ข้อมูลนี้ส่งให้ทีม MMD ตรวจสอบก่อนอัปเดต จึงไม่เปลี่ยนประวัติที่ยืนยันแล้วเอง</p>
@@ -440,18 +460,30 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     </section>
     </div>
   </section>
-  <nav class="digital-dock" aria-label="เมนู MY MMD"><button type="button" data-view="home" aria-current="page"><i>⌂</i>HOME</button><button type="button" data-view="history" aria-current="false"><i>▤</i>HISTORY</button><button type="button" data-view="credits" aria-current="false"><i>◈</i>WALLET</button><a href="/member/kenji"><i>✦</i>KENJI</a></nav>
+  <nav class="digital-dock" aria-label="เมนู MY MMD"><button type="button" data-view="home" aria-current="page"><i>${customerIcon("icon-home")}</i>HOME</button><button type="button" data-view="history" aria-current="false"><i>${customerIcon("icon-history")}</i>HISTORY</button><button type="button" data-view="credits" aria-current="false"><i>${customerIcon("icon-lock")}</i>WALLET</button><button type="button" data-view="home" data-pm-dock><i>✦</i>ผู้ช่วย</button></nav>
   <div id="status" class="status">MY MMD</div>
 </main>
 <script src="${LIFF_SDK_URL}"></script>
 <script nonce="${nonce}">
 (() => {
   "use strict";
+  // Serialized functions may contain esbuild keepNames calls. Their helper must
+  // live in this browser scope, not only in the Worker bundle that renders it.
+  const __name = (target, value) => Object.defineProperty(target, "name", { value, configurable: true });
   const CONFIG = ${safeConfig};
+  const entryLoading = (${installApprovedEntryLoading.toString()})(${createHypeLoaderMotion.toString()}, ${createEntryPercentMotion.toString()});
+  const renderLoadingProgress = ${renderCustomerProgress.toString()};
+  const customerLoading = (${createCustomerProgress.toString()})({ render: (panel, state) => { renderLoadingProgress(panel, state); entryLoading.update(state); }, request: window.fetch.bind(window) });
+  const fetch = customerLoading.fetch;
+  const loadDoubleMomentCard = ${loadDoubleMomentCard.toString()};
   const CANONICAL_POINTS_PATH = "/my-mmd/points";
-  const message = document.getElementById("message");
   const appStatus = document.getElementById("app-status");
   const introContinue = document.getElementById("intro-continue");
+  const resolveVerifiedCustomerBrand = ${resolveVerifiedCustomerBrand.toString()};
+  const customerBrand = (${createCustomerBrand.toString()})(document.getElementById("customer-brand-v6"));
+  const resetCustomerBrand = () => customerBrand.reset();
+  const accountUI = (${createAccountView.toString()})(document.getElementById("digital-account"), memberApiFetch, () => currentMemberRef, () => clearMemberProfile());
+  const personalMainUI = (${createPersonalMainUI.toString()})(document.getElementById("personal-main"), memberApiFetch);
   const logoutButton = document.getElementById("member-logout");
   const actions = document.getElementById("actions");
   const signupLineEntry = document.getElementById("signup-line-entry");
@@ -468,7 +500,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   const yourRequestStatus = document.getElementById("your-request-status");
   const locale = CONFIG.language || "th";
   const copy = {
-    th: { mark:"MMD Privé · MY MMD", title:"My MMD", subtitle:"พื้นที่สมาชิกแบบดิจิทัลใน LINE ของ MMD", navProfile:"ภาพรวม", navHome:"👤 HOME", navPoints:"⭐ POINTS", navCredits:"💳 CREDIT", navPackage:"📦 PACKAGE", navJobs:"💼 JOBS", navHistory:"🧾 HISTORY", navCare:"🎁 CARE", memberLabel:"สวัสดีครับ", contactLabel:"ข้อมูลติดต่อ", emailLabel:"อีเมล", phoneLabel:"เบอร์โทร", tierLabel:"ระดับสมาชิก", pointsLabel:"คะแนนที่ใช้งานได้", expiryLabel:"สมาชิกใช้ได้ถึง", paymentLabel:"สถานะการชำระ", historyLabel:"History · Last 1 Year", pointsTitle:"⭐ Points", pointsHistoryLabel:"รายการคะแนน", creditWalletLabel:"MY MMD CREDIT", creditWalletTitle:"💳 เครดิตบริการของฉัน", creditChecking:"กำลังตรวจสอบเครดิตบริการของคุณครับ", creditAvailableLabel:"ใช้ได้", creditReservedLabel:"จองไว้", creditUsedLabel:"ใช้แล้ว", creditRecentLabel:"รายการล่าสุด", creditEmpty:"ยังไม่มีเครดิตบริการที่ยืนยันแล้วสำหรับบัญชีนี้ครับ", creditVerified:"แสดงเฉพาะเครดิตที่ยืนยันแล้ว", creditExpiry:"ใช้ได้ถึง", packageTitle:"📦 Package", packageHistoryLabel:"ประวัติแพ็กเกจ", jobsTitle:"💼 Jobs", requestsLabel:"คำขอล่าสุด", mmsLabel:"MMS prebookings", historyTitle:"🧾 History", paymentHistoryLabel:"ประวัติการชำระ", careLabel:"6 Years · Care Back", careTitle:"Personal Care-Back Privilege", careIntro:"ผมจะช่วยตรวจสอบสิทธิ์ CARE BACK ให้ก่อนครับ คูปองส่วนตัวจะเปิดหลังส่งคำอวยพรถึง MMD สำเร็จ", careButton:"ตรวจสิทธิ์ CARE BACK", wishPlaceholder:"ฝากคำอวยพรวันเกิดให้ MMD ได้ที่นี่ครับ", wishSubmit:"ส่งคำอวยพรให้ MMD", ready:"ผมเตรียมข้อมูลที่ยืนยันได้ของคุณไว้แล้วครับ", checking:"ผมกำลังตรวจสอบข้อมูลของคุณครับ", checkingPoints:"กำลังตรวจสอบคะแนนของคุณครับ", pointsRate:"ทุก 100 บาท = 1 คะแนน", expiring:"คะแนนใกล้หมดอายุ", empty:"ยังไม่มีรายการที่ยืนยันได้ในช่วงนี้ครับ", careLoading:"กำลังตรวจสอบสิทธิ์", careRetry:"ลองตรวจสอบอีกครั้ง", wishEmpty:"กรุณาเขียนคำอวยพรก่อนส่งครับ", wishSaving:"กำลังเก็บคำอวยพร", wishError:"ตอนนี้ยังเก็บคำอวยพรไม่ได้ครับ กรุณาลองใหม่อีกครั้ง", wishRetry:"ลองส่งอีกครั้ง", careChecked:"สิทธิ์ CARE BACK ของคุณถูกตรวจแล้ว ส่งคำอวยพรถึง MMD สำเร็จเพื่อเปิดคูปองส่วนตัว 10% ครับ", wishDone:"MMD ได้รับคำอวยพรของคุณแล้วครับ", wishPending:"ระบบกำลังยืนยันการบันทึกคำอวยพรเดิมอย่างปลอดภัย กรุณากลับมาตรวจสอบอีกครั้งครับ", wishReview:"ข้อมูลนี้ยังต้องตรวจสอบก่อนครับ ผมจะเก็บเส้นทางของคุณไว้อย่างปลอดภัย", couponReady:"ส่งคำอวยพรเพื่อเปิดคูปอง", claimMessage:"ผมจะอัปเดตสิทธิ์ตามสถานะสมาชิกและการยืนยันที่เกี่ยวข้องครับ", careCheckedButton:"ตรวจสิทธิ์ CARE BACK แล้ว", careResumedButton:"อัปเดตสิทธิ์ CARE BACK แล้ว", promoLoading:"กำลังตรวจสอบสิทธิ์ CARE BACK อย่างปลอดภัยครับ" },
+    th: { mark:"MMD Privé · MY MMD", title:"My MMD", subtitle:"พื้นที่สมาชิกแบบดิจิทัลใน LINE ของ MMD", navProfile:"ภาพรวม", navHome:"👤 HOME", navPoints:"⭐ POINTS", navCredits:"💳 CREDIT", navPackage:"📦 PACKAGE", navJobs:"💼 JOBS", navHistory:"🧾 HISTORY", navCare:"🎁 CARE", memberLabel:"สมาชิก", contactLabel:"ข้อมูลติดต่อ", emailLabel:"อีเมล", phoneLabel:"เบอร์โทร", tierLabel:"ระดับสมาชิก", pointsLabel:"คะแนนที่ใช้งานได้", expiryLabel:"สมาชิกใช้ได้ถึง", paymentLabel:"สถานะการชำระ", historyLabel:"History · Last 1 Year", pointsTitle:"⭐ Points", pointsHistoryLabel:"รายการคะแนน", creditWalletLabel:"MY MMD CREDIT", creditWalletTitle:"💳 เครดิตบริการของฉัน", creditChecking:"กำลังตรวจสอบเครดิตบริการของคุณครับ", creditAvailableLabel:"ใช้ได้", creditReservedLabel:"จองไว้", creditUsedLabel:"ใช้แล้ว", creditRecentLabel:"รายการล่าสุด", creditEmpty:"ยังไม่มีเครดิตบริการที่ยืนยันแล้วสำหรับบัญชีนี้ครับ", creditVerified:"แสดงเฉพาะเครดิตที่ยืนยันแล้ว", creditExpiry:"ใช้ได้ถึง", packageTitle:"📦 Package", packageHistoryLabel:"ประวัติแพ็กเกจ", jobsTitle:"💼 Jobs", requestsLabel:"คำขอล่าสุด", mmsLabel:"MMS prebookings", historyTitle:"🧾 History", paymentHistoryLabel:"ประวัติการชำระ", careLabel:"6 Years · Care Back", careTitle:"Personal Care-Back Privilege", careIntro:"ผมจะช่วยตรวจสอบสิทธิ์ CARE BACK ให้ก่อนครับ คูปองส่วนตัวจะเปิดหลังส่งคำอวยพรถึง MMD สำเร็จ", careButton:"ตรวจสิทธิ์ CARE BACK", wishPlaceholder:"ฝากคำอวยพรวันเกิดให้ MMD ได้ที่นี่ครับ", wishSubmit:"ส่งคำอวยพรให้ MMD", ready:"ผมเตรียมข้อมูลที่ยืนยันได้ของคุณไว้แล้วครับ", checking:"ผมกำลังตรวจสอบข้อมูลของคุณครับ", checkingPoints:"กำลังตรวจสอบคะแนนของคุณครับ", pointsRate:"ทุก 100 บาท = 1 คะแนน", expiring:"คะแนนใกล้หมดอายุ", empty:"ยังไม่มีรายการที่ยืนยันได้ในช่วงนี้ครับ", careLoading:"กำลังตรวจสอบสิทธิ์", careRetry:"ลองตรวจสอบอีกครั้ง", wishEmpty:"กรุณาเขียนคำอวยพรก่อนส่งครับ", wishSaving:"กำลังเก็บคำอวยพร", wishError:"ตอนนี้ยังเก็บคำอวยพรไม่ได้ครับ กรุณาลองใหม่อีกครั้ง", wishRetry:"ลองส่งอีกครั้ง", careChecked:"สิทธิ์ CARE BACK ของคุณถูกตรวจแล้ว ส่งคำอวยพรถึง MMD สำเร็จเพื่อเปิดคูปองส่วนตัว 10% ครับ", wishDone:"MMD ได้รับคำอวยพรของคุณแล้วครับ", wishPending:"ระบบกำลังยืนยันการบันทึกคำอวยพรเดิมอย่างปลอดภัย กรุณากลับมาตรวจสอบอีกครั้งครับ", wishReview:"ข้อมูลนี้ยังต้องตรวจสอบก่อนครับ ผมจะเก็บเส้นทางของคุณไว้อย่างปลอดภัย", couponReady:"ส่งคำอวยพรเพื่อเปิดคูปอง", claimMessage:"ผมจะอัปเดตสิทธิ์ตามสถานะสมาชิกและการยืนยันที่เกี่ยวข้องครับ", careCheckedButton:"ตรวจสิทธิ์ CARE BACK แล้ว", careResumedButton:"อัปเดตสิทธิ์ CARE BACK แล้ว", promoLoading:"กำลังตรวจสอบสิทธิ์ CARE BACK อย่างปลอดภัยครับ" },
     en: { mark:"MMD Privé · MY MMD", title:"My MMD", subtitle:"Your digital member space inside LINE.", navProfile:"Overview", navHome:"👤 HOME", navPoints:"⭐ POINTS", navPackage:"📦 PACKAGE", navJobs:"💼 JOBS", navHistory:"🧾 HISTORY", navCare:"🎁 CARE", memberLabel:"Member", contactLabel:"Contact", emailLabel:"Email", phoneLabel:"Phone", tierLabel:"Member tier", pointsLabel:"Active points", expiryLabel:"Membership valid until", paymentLabel:"Payment status", historyLabel:"History · Last 1 Year", pointsTitle:"⭐ Points", pointsHistoryLabel:"Points history", packageTitle:"📦 Package", packageHistoryLabel:"Package history", jobsTitle:"💼 Jobs", requestsLabel:"Recent requests", mmsLabel:"MMS prebookings", historyTitle:"🧾 History", paymentHistoryLabel:"Payment history", careLabel:"6 Years · Care Back", careTitle:"Personal Care-Back Privilege", careIntro:"We will check CARE BACK first. Your personal coupon becomes available after your wish is submitted successfully.", careButton:"Check CARE BACK", wishPlaceholder:"Leave a birthday wish for MMD here.", wishSubmit:"Send wish to MMD", ready:"Your confirmed information is ready.", checking:"We are checking your information.", checkingPoints:"Your points are being checked.", pointsRate:"Every THB 100 = 1 point", expiring:"Points expiring soon", empty:"No confirmed activity is available here yet.", careLoading:"Checking eligibility", careRetry:"Try checking again", wishEmpty:"Please write a wish before sending.", wishSaving:"Saving your wish", wishError:"Your wish could not be saved. Please try again.", wishRetry:"Try sending again", careChecked:"Your CARE BACK eligibility is checked. Submit a wish to unlock your personal 10% coupon.", wishDone:"MMD has received your wish.", wishPending:"We are securely confirming your previous wish. Please check again later.", wishReview:"This request needs further review. We have kept your route secure.", couponReady:"Send a wish to unlock the coupon", claimMessage:"MMD will update your privilege after the required membership and verification checks.", careCheckedButton:"CARE BACK checked", careResumedButton:"CARE BACK updated", promoLoading:"Checking your CARE BACK eligibility securely" },
     zh: { mark:"MMD Privé · MY MMD", title:"我的 MMD", subtitle:"在 LINE 内使用您的数字会员空间。", navProfile:"概览", navHome:"👤 HOME", navPoints:"⭐ POINTS", navPackage:"📦 PACKAGE", navJobs:"💼 JOBS", navHistory:"🧾 HISTORY", navCare:"🎁 CARE", memberLabel:"会员", contactLabel:"联系方式", emailLabel:"邮箱", phoneLabel:"电话", tierLabel:"会员等级", pointsLabel:"可用积分", expiryLabel:"会员有效期至", paymentLabel:"付款状态", historyLabel:"最近一年记录", pointsTitle:"⭐ 积分", pointsHistoryLabel:"积分记录", packageTitle:"📦 套餐", packageHistoryLabel:"套餐历史", jobsTitle:"💼 服务", requestsLabel:"最近请求", mmsLabel:"MMS 预订", historyTitle:"🧾 记录", paymentHistoryLabel:"付款记录", careLabel:"6 Years · Care Back", careTitle:"专属 Care Back 礼遇", careIntro:"请先检查 CARE BACK。成功提交祝福后，您的专属优惠券将会开启。", careButton:"检查 CARE BACK", wishPlaceholder:"在这里留下给 MMD 的生日祝福。", wishSubmit:"向 MMD 发送祝福", ready:"您的已确认信息已准备好。", checking:"正在检查您的信息。", checkingPoints:"正在检查您的积分。", pointsRate:"每 THB 100 = 1 积分", expiring:"即将到期的积分", empty:"目前没有可显示的已确认记录。", careLoading:"正在检查资格", careRetry:"再次检查", wishEmpty:"请先写下祝福再发送。", wishSaving:"正在保存祝福", wishError:"祝福暂时无法保存，请稍后再试。", wishRetry:"再次发送", careChecked:"您的 CARE BACK 资格已检查。成功提交祝福后即可开启专属 10% 优惠券。", wishDone:"MMD 已收到您的祝福。", wishPending:"系统正在安全确认您之前提交的祝福，请稍后再查看。", wishReview:"此请求仍需进一步审核，我们已安全保留您的流程。", couponReady:"发送祝福以开启优惠券", claimMessage:"MMD 将在完成会员与验证检查后更新您的礼遇。", careCheckedButton:"CARE BACK 已检查", careResumedButton:"CARE BACK 已更新", promoLoading:"正在安全检查 CARE BACK 资格" },
   }[locale] || {};
@@ -480,37 +512,36 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   const allowedIntentIds = new Set(["signup", "renew", "status"]);
   let busy = false;
   let digitalPersonalizedFeed = [];
+  let digitalHomeReady = Promise.resolve();
+  let digitalUpdatesLoaded = false;
+  let digitalUpdatesPending = null;
+  let digitalUpdatesGeneration = 0;
+  // Initialize session-bound state before the first profile bootstrap below.
+  let memberApiChain = Promise.resolve();
+  let profileReady = false;
+  let currentMemberRef = "";
+  let profileGeneration = 0;
+  const secondaryReads = new Map();
 
   document.documentElement.lang = locale === "zh" ? "zh-CN" : locale;
   const resolveTrustedWelcomeWorldInBrowser = (${resolveTrustedWelcomeWorld.toString()});
-  const WELCOME_COPY = {
-    checking: { title: "MY MMD", subtitle: "กำลังเตรียมพื้นที่ของคุณ", note: "", letter: "" },
-    new: { title: "ยินดีที่ได้รู้จัก", subtitle: "MY MMD · แอปที่ออกแบบจากประสบการณ์จริงของเปอร์", note: "", letter: "ยินดีที่ได้รู้จัก\\n\\nMY MMD คือ APP ที่เปอร์สร้างขึ้นจากประสบการณ์การทำงานที่ผ่านมา และจากสิ่งที่เปอร์ค้นพบว่า ในยุคที่กำลังย่างเข้าสู่ปี 2027 โลกไปไกลมากแล้ว การมีระบบดูแลที่ดีจึงเป็นสิ่งที่ปลอดภัยที่สุด\\n\\nการใช้งานของคุณจะสะดวกขึ้น ค้นหาได้ง่ายขึ้น ตอบโจทย์ขึ้น และได้รับความสุขมากขึ้น\\n\\nที่นี่คุณสามารถใช้ค้นหา รับข่าวสาร รวมถึงบริการจองและจ่ายเงิน แล้วออกไปมีความสุขโดยไม่ต้องพะวงว่าจะมีเหตุการณ์เซอร์ไพรส์ ด้วยระบบ ETA นับถอยหลังนายแบบ การบรีฟงานที่เป็นลายลักษณ์อักษรอย่างชัดเจน รวมถึงรูปที่อัปเดตที่สุดจากน้อง ๆ เช่นกัน\\n\\nขอให้มีความสุข\\nเปอร์" },
-    existing: { title: "ฮายยย เปอร์เองครับ เปอร์กลับมาแล้ววว", subtitle: "MY MMD · ขอบคุณที่ยังอยู่และยังรอ", note: "กด Verify เพื่อรับสิทธิ์ต่ออายุสมาชิก 1 ปี ทั้งสมาชิกปัจจุบันและสมาชิกที่หมดอายุแล้ว เมื่อสมัครหรือต่ออายุอีกครั้ง ระบบจะรวมสิทธิ์ให้เป็น 2 ปี", letter: "ฮายยย เปอร์เองครับ เปอร์กลับมาแล้ววว\\n\\nเปอร์หายไปนานจริง ๆ\\n(จริง ๆ ไม่นานหรอก…นานมากกก!!)\\n\\nถึงจะยังเห็นอัปเดตกันอยู่เรื่อย ๆ แต่เมื่อก่อนเปอร์อัปเดตถี่กว่านี้มาก\\n\\nเปอร์ไม่ได้หายไปติดผู้ชายนะครับ 5555\\nแต่ใช้เวลาปีกว่า ๆ ศึกษา เรียนรู้ และสร้างแอปกับระบบนี้ขึ้นมาจากที่ทำไม่เป็นเลย\\n\\nจริงๆแล้วเราจะทำงานกันแบบเดิมก็ได้ ที่ต้องมานั่งจ้องมือถือกัน\\nเมื่อไหร่จะจองสักทีวะ เมื่อไหร่จะตอบสักที\\n(อุ๊ย! ขออภัยที่คิดดัง) เมื่อไหร่จะตอบซักที ถามไป หายไม่มีคนตอบ\\nมีใครสะดวกบ้างก็ไม่รุ้ แล้วรำคาญกันไหม AI เปอร์ก็รำคาญนะ 555\\n\\nแต่เปอร์เลือกลงทุนเกือบสองแสนบาท และทำทุกอย่างด้วยตัวเอง\\nเพื่อให้ทุกคนค้นหา จอง จ่าย และติดตามงานกับ MMD ได้สะดวกและปลอดภัยขึ้น\\n\\nมันอาจยังไม่สมบูรณ์ทั้งหมดในวันนี้\\nแต่ทุกอย่างที่ทำ เปอร์ตั้งใจทำเพื่อพวกคุณจริง ๆ\\n\\nขอบคุณที่ยังอยู่\\nขอบคุณที่ยังรอ\\n\\nเปอร์เองครับ" },
-  };
   function detectWorld(data, authority) {
     return resolveTrustedWelcomeWorldInBrowser(data, authority);
   }
   function resolveWelcomeAudience(data, authority) {
-    if (data?.audience === "existing" && (authority === "canonical_member_profile" || authority === "canonical_client")) return "existing";
+    if (data?.audience === "existing" && (authority === "member_profile_resolver" || authority === "canonical_member_profile" || authority === "canonical_client")) return "existing";
     if (data?.audience === "new" && authority === "canonical_member_client_absence") return "new";
     return "checking";
   }
   function applyWorldTheme(data, authority = "", audienceAuthority = "") {
+    if (!profileReady) resetCustomerBrand();
     const world = detectWorld(data, authority);
     const audience = resolveWelcomeAudience(data, audienceAuthority);
-    const welcomeCopy = WELCOME_COPY[audience];
     document.body.classList.toggle("world-public", world === "public");
     document.body.classList.toggle("world-private", world === "private");
     document.body.dataset.world = world;
     document.body.dataset.welcomeAudience = audience;
-    document.querySelector(".mark").textContent = "MMD PRIVÉ · MY MMD";
-    document.querySelector(".title").textContent = welcomeCopy.title;
-    document.querySelector(".sub").textContent = welcomeCopy.subtitle;
-    message.textContent = welcomeCopy.note;
-    message.classList.toggle("hidden", !welcomeCopy.note);
-    document.getElementById("per-letter-copy").textContent = welcomeCopy.letter;
-    if (introContinue) introContinue.textContent = "ENTER →";
+    if (introContinue) introContinue.innerHTML = '<span>ยืนยันผ่าน LINE</span><span aria-hidden="true">→</span>';
   }
   applyWorldTheme();
   let welcomeContextPromise;
@@ -533,7 +564,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
       const displayAuthority = response.headers.get("x-mmd-member-display-authority") || "";
       const audienceAuthority = response.headers.get("x-mmd-welcome-audience-authority") || "";
       applyWorldTheme(payload.data || {}, displayAuthority, audienceAuthority);
-      return new Set(["canonical_member_profile", "canonical_client", "canonical_member_client_absence"]).has(audienceAuthority);
+      return new Set(["member_profile_resolver", "canonical_member_profile", "canonical_client", "canonical_member_client_absence"]).has(audienceAuthority);
     } catch {
       return false;
     } finally {
@@ -544,7 +575,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   async function preflightWelcomeIdentity() {
     if (CONFIG.intent === "signup" || !CONFIG.liffId || !window.liff) return false;
     try {
-      await window.liff.init({ liffId: CONFIG.liffId });
+      await customerLoading.waitFor(() => window.liff.init({ liffId: CONFIG.liffId }), CONFIG.intent === "signup" ? "signup" : "home");
       if (!window.liff.isLoggedIn()) return false;
       const idToken = window.liff.getIDToken();
       if (!idToken) return false;
@@ -563,7 +594,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
       // This flag can ONLY skip the redundant intro for a confirmed returning
       // audience; it never grants member status, payout, Points or access.
       preflightVerifiedSession = true;
-      existingProfilePromise = readProfile({ hydrate: false }).catch(() => null);
+      existingProfilePromise = readProfile({ hydrate: false, silent: true }).catch(() => null);
       return true;
     } catch {
       return false;
@@ -634,6 +665,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   introContinue?.addEventListener("click", enterApp);\n  logoutButton?.addEventListener("click", async () => {
     if (logoutButton.disabled) return;
     logoutButton.disabled = true;
+    customerLoading.reset();
     try {
       const response = await fetch("/member/api/liff/logout", { method: "POST", credentials: "same-origin", headers: { accept: "application/json" } });
       if (!response.ok) throw new Error("logout_failed");
@@ -649,27 +681,13 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   }
   applyWorldTheme();
   welcomeContextPromise = resolveInitialWelcomeContext();
-  existingProfilePromise = readProfile({ hydrate: false }).catch(() => null);
+  existingProfilePromise = readProfile({ hydrate: false, silent: true }).catch(() => null);
   // Keep the HYPE loader up until we know whether to open the member home directly (an existing same-site session never calls liff.login) or show the ENTER welcome.
   if (CONFIG.intent !== "signup") {
-    const hypeImage = document.getElementById("hype-loader-img");
-    const progress = document.getElementById("hype-progress");
-    const progressNumber = document.getElementById("hype-progress-number");
-    let loadingPercent = 10;
-    function setLoadingPercent(value) {
-      loadingPercent = Math.max(loadingPercent, Math.min(100, value));
-      if (progress) progress.value = loadingPercent;
-      if (progressNumber) progressNumber.textContent = loadingPercent + "%";
-    }
-    // Milestone-only progress: the bar changes after actual context/profile
-    // checks. No fake timer advances it while requests are unresolved.
-    hypeImage?.addEventListener("error", () => hypeImage.remove(), { once: true });
     void welcomeContextPromise.catch(() => false).then(async () => {
-      setLoadingPercent(55);
       try {
         const profile = await Promise.race([existingProfilePromise, new Promise((resolve) => setTimeout(() => resolve(null), 6000))]);
         if (profile || (preflightVerifiedSession && document.body.dataset.welcomeAudience === "existing")) {
-          setLoadingPercent(85);
           await enterApp();
         }
       } catch {
@@ -677,7 +695,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
       } finally {
         // The opening decision is complete: either signed-in Home is ready
         // or a manual ENTER remains available for an unverified visitor.
-        setLoadingPercent(100);
+        entryLoading.complete();
         window.setTimeout(() => document.body.classList.remove("context-resolving"), 240);
       }
     });
@@ -694,7 +712,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   careButton.textContent = copy.careButton || careButton.textContent;
   wishText.placeholder = copy.wishPlaceholder || wishText.placeholder;
   wishSubmit.textContent = copy.wishSubmit || wishSubmit.textContent;
-  const initialView = CONFIG.view === "care" || CONFIG.intent === "promo" ? "care" : (CONFIG.view || "home");
+  const initialView = CONFIG.intent === "renew" ? "package" : CONFIG.view === "care" || CONFIG.intent === "promo" ? "care" : (CONFIG.view || "home");
   function showView(view, smooth = true) {
     if (view === "points") {
       window.location.assign(CANONICAL_POINTS_PATH);
@@ -707,16 +725,22 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
       const active = item.getAttribute("data-view") === (target.id === "history-panel" ? "history" : target.id);
       item.setAttribute("aria-current", active ? "page" : "false");
     }
+    if (profileReady && target.id === "account") void accountUI.load();
+    if (profileReady) void hydrateMemberHome(target.id === "history-panel" ? "history" : target.id);
     if (smooth) window.scrollTo({ top: 0, behavior: "smooth" });
   }
   showView(initialView, false);
   for (const button of document.querySelectorAll("[data-view]")) {
-    button.addEventListener("click", () => showView(button.getAttribute("data-view")));
+    button.addEventListener("click", () => {
+      const assistant = button.hasAttribute("data-pm-dock");
+      showView(button.getAttribute("data-view"), !assistant);
+      if (button.getAttribute("data-view") === "history" && button.hasAttribute("data-payment-history")) document.getElementById("payment-history")?.closest("details")?.setAttribute("open", "");
+      if (assistant) personalMainUI.open();
+    });
   }
 
   function show(text) {
     const value = String(text || "ไม่สามารถดำเนินการต่อได้ครับ กรุณากลับมาเปิดผ่าน LINE ของ MMD อีกครั้ง");
-    message.textContent = value;
     if (appStatus) { appStatus.textContent = value; appStatus.dataset.mmdStatusKind = "notice"; }
   }
 
@@ -724,15 +748,68 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     busy = Boolean(value);
     for (const button of actions.querySelectorAll("button")) button.disabled = busy;
     for (const button of signupPackages.querySelectorAll("button")) button.disabled = busy;
+    for (const button of document.querySelectorAll("#private-signup-packages button")) button.disabled = busy;
   }
 
   function verifiedCheckoutUrl(value) {
     try {
       const url = new URL(String(value || ""));
       const keys = [...url.searchParams.keys()];
-      return url.protocol === "https:" && url.hostname === "mmdbkk.com" && url.pathname === "/pay/checkout"
+      return url.protocol === "https:" && url.hostname === "mmdbkk.com" && url.pathname === "/pay/checkout" && !url.port && !url.username && !url.password
         && !url.hash && keys.length === 1 && keys[0] === "t" && Boolean(url.searchParams.get("t")) ? url.href : "";
     } catch { return ""; }
+  }
+
+  function canonicalSigilPaymentUrl(value) {
+    try {
+      const url = new URL(String(value || ""));
+      const keys = [...url.searchParams.keys()];
+      return url.protocol === "https:" && url.hostname === "mmdbkk.com" && !url.port && !url.username && !url.password
+        && url.pathname === "/sigil/pay" && !url.hash && keys.length === 1 && keys[0] === "t" && Boolean(url.searchParams.get("t")) ? url.href : "";
+    } catch { return ""; }
+  }
+
+  async function purchasePrivateMembership(packageCode) {
+    if (busy) return;
+    setBusy(true);
+    show("กำลังตรวจสอบแพ็กเกจและเตรียมหน้าชำระเงินครับ");
+    try {
+      const selected = await call("/member/api/liff/package", { requested_package_code: packageCode });
+      if (!selected) return;
+      const payment = await call("/member/api/liff/payment-intent", { package_code: packageCode, payment_stage: "membership" });
+      const url = canonicalSigilPaymentUrl(payment?.customer_payment_url || payment?.redirect_to);
+      if (!url) {
+        show("ตอนนี้ยังเปิดหน้าชำระเงินไม่ได้ครับ กรุณาลองอีกครั้ง");
+        return;
+      }
+      window.location.assign(url);
+    } catch {
+      show("ตอนนี้ยังเปิดหน้าชำระเงินไม่ได้ครับ กรุณาลองอีกครั้ง");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function renderPrivateSignupPackages() {
+    const container = document.getElementById("private-signup-packages");
+    if (!container || container.dataset.ready === "true") return;
+    container.replaceChildren();
+    for (const packageCode of ["standard", "premium"]) {
+      const card = document.createElement("div");
+      card.className = "card signup-package signup-package-" + packageCode;
+      const title = document.createElement("strong");
+      title.textContent = packageCode === "premium" ? "Premium" : "Standard";
+      const note = document.createElement("p");
+      note.className = "signup-period";
+      note.textContent = "ระบบจะแสดงราคาและระยะเวลาที่ตรวจสอบจากสิทธิ์ของคุณ";
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = locale === "th" ? "เลือกแพ็กเกจนี้  →" : "Choose this package  →";
+      button.addEventListener("click", () => purchasePrivateMembership(packageCode));
+      card.append(title, note, button);
+      container.append(card);
+    }
+    container.dataset.ready = "true";
   }
 
   async function purchasePublicMembership(packageCode) {
@@ -894,21 +971,23 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   }
 
   async function readCanonicalHistory() {
+    const generation = profileGeneration;
     try {
-      const response = await fetch(CONFIG.historyEndpoint, {
+      const response = await memberApiFetch(CONFIG.historyEndpoint, {
         method:"GET",
         credentials:"same-origin",
         cache:"no-store",
         headers:{accept:"application/json"},
       });
       const payload = await response.json().catch(() => null);
+      if (generation !== profileGeneration) return null;
       if (!response.ok || payload === null) return null;
 
       let recoveryState = "";
       const normalized = normalizeCanonicalHistory(payload);
       if (normalized.state !== "resolved") {
         try {
-          const recoveryResponse = await fetch(CONFIG.historyRecoveryEndpoint, {
+          const recoveryResponse = await memberApiFetch(CONFIG.historyRecoveryEndpoint, {
             method:"GET",
             credentials:"same-origin",
             cache:"no-store",
@@ -921,6 +1000,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
         } catch {}
       }
 
+      if (generation !== profileGeneration) return null;
       renderCanonicalHistory(payload, recoveryState);
       return payload;
     } catch {
@@ -928,21 +1008,27 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     }
   }
 
-  async function hydrateMemberHome() {
-    const hydrationReads = [
-      readCouponWallet(),
-      readCreditWallet(),
-      readCanonicalHistory(),
-      readCustomerRequests(),
-    ];
-    if (CONFIG.intent === "promo" && CONFIG.campaign === "care_back") hydrationReads.push(readCareBackState());
-    await Promise.allSettled(hydrationReads);
+  async function hydrateMemberHome(view = initialView) {
+    const readers = {
+      coupons: readCouponWallet,
+      credits: readCreditWallet,
+      history: readCanonicalHistory,
+      "my-requests": readCustomerRequests,
+      care: CONFIG.intent === "promo" && CONFIG.campaign === "care_back" ? readCareBackState : null,
+    };
+    const read = readers[view];
+    if (!profileReady || !read) return;
+    if (secondaryReads.has(view)) return secondaryReads.get(view);
+    const pending = Promise.resolve().then(read).catch(() => null);
+    secondaryReads.set(view, pending);
+    const result = await pending;
+    if ((result === null || result === false) && secondaryReads.get(view) === pending) secondaryReads.delete(view);
+    return result;
   }
 
   // Member session cookies rotate on every authenticated read and the prior cookie is
   // retired immediately. Parallel reads would reuse one cookie and lose with 401, so
   // session-bound reads run one at a time and each picks up the latest Set-Cookie.
-  let memberApiChain = Promise.resolve();
   // Keep the credential lane locked through headers AND body. A timeout aborts
   // the actual request; it must never release a second read alongside a live one.
   function memberApiFetch(url, init = {}) {
@@ -971,7 +1057,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     memberApiChain = run.then(() => undefined, () => undefined);
     return run;
   }
-  async function readOwnHistoryPreview() {
+  async function readOwnHistoryPreview(profileRequestGeneration = profileGeneration) {
     const generation = (readOwnHistoryPreview.generation || 0) + 1;
     readOwnHistoryPreview.generation = generation;
     const pointsNode = document.getElementById("history-preview-points");
@@ -987,7 +1073,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     try {
       const response = await memberApiFetch("/api/member/app/history/preview", {credentials:"same-origin", cache:"no-store", headers:{accept:"application/json"}});
       const body = await response.json().catch(() => null);
-      if (generation !== readOwnHistoryPreview.generation) return;
+      if (generation !== readOwnHistoryPreview.generation || profileRequestGeneration !== profileGeneration) return;
       const data = response.ok && body?.ok === true ? body.data : null;
       if (!data || data.redemptionEnabled !== false || data.automaticPrivilegeEnabled !== false || data.pointsMeaning !== "gross_estimate_before_any_deduction_not_redeemable") return;
       const minimal = document.getElementById("minimal-member-display");
@@ -1001,7 +1087,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     } catch {}
   }
 
-  async function readQuickMembershipStatus() {
+  async function readQuickMembershipStatus(profileRequestGeneration = profileGeneration) {
     const generation = (readQuickMembershipStatus.generation || 0) + 1;
     readQuickMembershipStatus.generation = generation;
     const minimalExpiry = document.getElementById("minimal-member-expiry");
@@ -1013,7 +1099,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
       // Let its canonical snapshot render while the full profile is loading.
       const response = await memberApiFetch("/api/member/app/membership", { credentials:"same-origin", cache:"no-store", headers:{ accept:"application/json" } });
       const body = await response.json().catch(() => null);
-      if (generation !== readQuickMembershipStatus.generation) return;
+      if (generation !== readQuickMembershipStatus.generation || profileRequestGeneration !== profileGeneration) return;
       if (!response.ok || !body || body.ok === false) {
         // Status code and state only; no member data. Shows why the card stayed empty.
         const diag = document.getElementById("minimal-member-diag");
@@ -1043,22 +1129,71 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
         statusNode.textContent = membershipStatus(status) + (expiry ? " · ถึง " + shortDate(expiry) : "");
       }
     } catch (error) {
+      if (profileRequestGeneration !== profileGeneration) return;
       const diagError = document.getElementById("minimal-member-diag");
       if (diagError) diagError.textContent = "อ่านข้อมูลสมาชิกผิดพลาด (" + String(error && error.name || "error").slice(0, 24) + ")";
     }
   }
 
-  async function readProfile({ hydrate = true } = {}) {
-    void readQuickMembershipStatus();
-    const profileRead = memberApiFetch(CONFIG.profileEndpoint, { method: "GET", credentials: "same-origin", headers: { "accept": "application/json" } });
-    void readOwnHistoryPreview();
-    const response = await profileRead;
-    const payload = await response.json().catch(() => null);
-    if (!response.ok || !payload || payload.ok !== true) return null;
-    renderProfile(payload.data || {}, response.headers.get("x-mmd-member-display-authority") || "");
-    renderCustomerContact(payload.data || {});
-    if (hydrate) await hydrateMemberHome();
-    return payload.data || {};
+  function hideMemberProfile() {
+    personalMainUI.reset();
+    resetCustomerBrand();
+    accountUI.reset();
+    if (typeof customerLoading !== "undefined") customerLoading.reset({ memberOnly:true });
+    profileReady = false;
+    currentMemberRef = "";
+    secondaryReads.clear();
+    profile.classList.add("hidden");
+    profile.inert = true;
+    digitalPersonalizedFeed = [];
+    digitalUpdatesGeneration++;
+    digitalUpdatesPending = null;
+    hydrateDigitalHome.generation = (hydrateDigitalHome.generation || 0) + 1;
+    hydrateDigitalMission.generation = (hydrateDigitalMission.generation || 0) + 1;
+    loadRenewalCard.generation = (loadRenewalCard.generation || 0) + 1;
+    for (const id of ["digital-mission", "customer-no-booking", "digital-needs", "renewal-card"]) {
+      const node = document.getElementById(id);
+      if (node) node.hidden = true;
+    }
+    for (const id of ["coupon-wallet", "credit-wallet", "credit-wallet-message", "customer-request-list", "saved-model-list"]) {
+      const node = document.getElementById(id);
+      if (node) node.textContent = "กำลังตรวจสอบข้อมูลของคุณครับ";
+    }
+    for (const id of ["credit-available", "credit-reserved", "credit-used"]) {
+      const node = document.getElementById(id);
+      if (node) node.textContent = "—";
+    }
+  }
+
+  function clearMemberProfile({ silent = false } = {}) {
+    hideMemberProfile();
+    if (appStatus) appStatus.dataset.mmdStatusKind = "checking";
+    if (!silent) show("กรุณาเปิด MY MMD อีกครั้งเพื่อตรวจสอบบัญชีของคุณครับ");
+  }
+
+  async function readProfile({ hydrate = true, silent = false } = {}) {
+    const generation = ++profileGeneration;
+    // Do not leave the prior Client's details visible while a new session is checked.
+    hideMemberProfile();
+    try {
+      const response = await memberApiFetch(CONFIG.profileEndpoint, { method: "GET", credentials: "same-origin", headers: { "accept": "application/json" } });
+      const payload = await response.json().catch(() => null);
+      if (generation !== profileGeneration) return null;
+      if (!response.ok || !payload || payload.ok !== true) {
+        clearMemberProfile({ silent });
+        return null;
+      }
+      renderProfile(payload.data || {}, response.headers.get("x-mmd-member-display-authority") || "", response.headers.get("x-mmd-brand-authority") || "");
+      renderCustomerContact(payload.data || {});
+      void personalMainUI.load();
+      void readQuickMembershipStatus(generation);
+      void readOwnHistoryPreview(generation);
+      if (hydrate) await hydrateMemberHome();
+      return payload.data || {};
+    } catch {
+      if (generation === profileGeneration) clearMemberProfile({ silent });
+      return null;
+    }
   }
 
   function requestId() {
@@ -1101,17 +1236,22 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   }
 
   async function readCustomerRequests() {
+    const generation = profileGeneration;
     const list = document.getElementById("customer-request-list");
     const saved = document.getElementById("saved-model-list");
     try {
-      const response = await fetch(CONFIG.customerRequestsEndpoint, { method:"GET", credentials:"same-origin", headers:{accept:"application/json"} });
+      const response = await memberApiFetch(CONFIG.customerRequestsEndpoint, { method:"GET", credentials:"same-origin", headers:{accept:"application/json"} });
       const payload = await response.json().catch(() => null);
+      if (generation !== profileGeneration) return false;
       if (!response.ok || payload?.ok !== true || !Array.isArray(payload.items)) throw new Error("unavailable");
       renderCustomerRequests(payload.items);
+      return true;
     } catch {
+      if (generation !== profileGeneration) return false;
       list.replaceChildren(); saved.replaceChildren();
       appendEmpty(list, "ตอนนี้ยังตรวจสอบคำขอไม่ได้ครับ กรุณาลองใหม่อีกครั้ง");
       appendEmpty(saved, "ตอนนี้ยังตรวจสอบรายการที่บันทึกไว้ไม่ได้ครับ");
+      return false;
     }
   }
 
@@ -1182,17 +1322,21 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   });
 
   async function readCouponWallet() {
-    const response = await fetch(CONFIG.couponWalletEndpoint, { method:"GET",credentials:"same-origin",headers:{"accept":"application/json"} });
+    const generation = profileGeneration;
+    const response = await memberApiFetch(CONFIG.couponWalletEndpoint, { method:"GET",credentials:"same-origin",headers:{"accept":"application/json"} });
     const payload = await response.json().catch(() => null);
+    if (generation !== profileGeneration) return null;
     if (!response.ok || !payload || payload.ok !== true) return null;
     renderCouponWallet(payload.wallet || {});
     return payload.wallet || {};
   }
 
   async function readCreditWallet() {
+    const generation = profileGeneration;
     try {
-      const response = await fetch(CONFIG.creditWalletEndpoint, { method:"GET",credentials:"same-origin",headers:{"accept":"application/json"} });
+      const response = await memberApiFetch(CONFIG.creditWalletEndpoint, { method:"GET",credentials:"same-origin",headers:{"accept":"application/json"} });
       const payload = await response.json().catch(() => null);
+      if (generation !== profileGeneration) return null;
       if (!response.ok || !payload || payload.state !== "resolved" || payload.verificationState !== "verified_only") {
         renderCreditWalletChecking();
         return null;
@@ -1200,14 +1344,17 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
       renderCreditWallet(payload);
       return payload;
     } catch {
+      if (generation !== profileGeneration) return null;
       renderCreditWalletChecking();
       return null;
     }
   }
 
   async function readCareBackState() {
-    const response = await fetch(CONFIG.careBackStateEndpoint, { method:"GET",credentials:"same-origin",headers:{"accept":"application/json"} });
+    const generation = profileGeneration;
+    const response = await memberApiFetch(CONFIG.careBackStateEndpoint, { method:"GET",credentials:"same-origin",headers:{"accept":"application/json"} });
     const payload = await response.json().catch(() => null);
+    if (generation !== profileGeneration) return null;
     if (!response.ok || !payload || payload.ok !== true) return null;
     renderCareBackState(payload);
     return payload;
@@ -1342,17 +1489,27 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   }
 
   async function hydrateDigitalMission() {
+    const generation = (hydrateDigitalMission.generation || 0) + 1;
+    hydrateDigitalMission.generation = generation;
     const mission = document.getElementById("digital-mission");
     if (mission) mission.hidden = true;
+    const empty = document.getElementById("customer-no-booking");
+    if (empty) empty.hidden = true;
     try {
       const selected = new URLSearchParams(location.search);
       const references = selected.getAll("session_id");
       const sessionId = references.length === 1 ? references[0] : null;
       if (references.length && (sessionId === null || !/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,159}$/.test(sessionId))) return;
       const endpoint = "/api/member/app/session/current" + (sessionId ? "?session_id=" + encodeURIComponent(sessionId) : "");
-      const response = await fetch(endpoint, { credentials:"same-origin", cache:"no-store", headers:{ accept:"application/json" } });
-      if (response.status === 204) return;
+      const response = await memberApiFetch(endpoint, { credentials:"same-origin", cache:"no-store", headers:{ accept:"application/json" } });
+      if (generation !== hydrateDigitalMission.generation) return;
+      if (response.status === 204) {
+        const empty = document.getElementById("customer-no-booking");
+        if (empty) empty.hidden = false;
+        return;
+      }
       const session = await response.json().catch(() => null);
+      if (generation !== hydrateDigitalMission.generation) return;
       if (!response.ok || !session || typeof session !== "object") return;
       if (sessionId && session.sessionId !== sessionId) return;
       renderDigitalMission(session);
@@ -1371,6 +1528,19 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
       .map((item, index) => ({ item, index, rank: digitalFeedCategory(item, false) === "EDITORIAL" ? 1 : 0 }))
       .sort((a, b) => a.rank - b.rank || a.index - b.index)
       .map((entry) => entry.item);
+  }
+
+  function safeDigitalNewsUrl(value, image = false) {
+    const raw = typeof value === "string" ? value.trim() : "";
+    if (!raw || raw.startsWith("//") || raw.includes("\\\\")) return "";
+    try {
+      const target = new URL(raw, location.origin);
+      if (target.protocol !== "https:" || target.username || target.password) return "";
+      const hosts = image
+        ? ["mmdbkk.com", "www.mmdbkk.com", "cdn.prod.website-files.com", "uploads-ssl.webflow.com"]
+        : ["mmdbkk.com", "www.mmdbkk.com"];
+      return hosts.includes(target.hostname) ? target.href : "";
+    } catch { return ""; }
   }
 
   function renderDigitalNews(personalizedItems, updateItems, unreadCount = 0) {
@@ -1411,9 +1581,28 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
       meta.append(category, date);
       const heading = document.createElement("h3"); heading.textContent = title;
       const excerptText = String(item?.excerpt || item?.summary || "").trim();
-      card.append(meta, heading);
-      if (excerptText) { const excerpt = document.createElement("p"); excerpt.textContent = excerptText; card.append(excerpt); }
-      if (targetView) { const cta = document.createElement("span"); cta.className = "digital-feed-cta"; cta.textContent = locale === "en" ? "OPEN →" : locale === "zh" ? "查看 →" : "ดูต่อ →"; card.append(cta); }
+      const copy = document.createElement("div"); copy.className = "digital-news-copy";
+      copy.append(meta, heading);
+      if (excerptText) { const excerpt = document.createElement("p"); excerpt.textContent = excerptText; copy.append(excerpt); }
+      if (targetView) { const cta = document.createElement("span"); cta.className = "digital-feed-cta"; cta.textContent = locale === "en" ? "OPEN →" : locale === "zh" ? "查看 →" : "ดูต่อ →"; copy.append(cta); }
+      if (!entry.personalized) {
+        const imageUrl = safeDigitalNewsUrl(item?.image_url, true);
+        if (imageUrl) {
+          const image = document.createElement("img"); image.className = "digital-news-image";
+          image.src = imageUrl; image.alt = String(item?.image_alt || "").slice(0, 160);
+          image.loading = "lazy"; image.referrerPolicy = "no-referrer";
+          image.addEventListener("error", () => { image.remove(); card.classList.remove("has-image"); });
+          card.classList.add("has-image"); card.append(image);
+        }
+        const ctaUrl = safeDigitalNewsUrl(item?.cta?.url);
+        const ctaLabel = String(item?.cta?.label || "").trim();
+        if (ctaUrl && ctaLabel) {
+          const link = document.createElement("a"); link.className = "digital-feed-cta";
+          link.href = ctaUrl; link.rel = "noopener noreferrer"; link.textContent = ctaLabel.slice(0, 100);
+          copy.append(link);
+        }
+      }
+      card.append(copy);
       feed.append(card);
     }
     if (!feed.children.length) {
@@ -1431,17 +1620,21 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   }
 
   async function hydrateDigitalHome(profileData = {}) {
+    const generation = (hydrateDigitalHome.generation || 0) + 1;
+    hydrateDigitalHome.generation = generation;
     const greeting = document.getElementById("digital-greeting");
     const needs = document.getElementById("digital-needs");
     const needsLabel = document.getElementById("digital-needs-label");
     const needsAction = document.getElementById("digital-needs-action");
     const name = String(profileData?.customer_360?.member?.display_name || profileData?.display_name || "").trim();
-    if (greeting) greeting.textContent = name ? (locale === "en" ? "Hello " + name : locale === "zh" ? "你好 " + name : "สวัสดี " + name) : "MY MMD";
-    void hydrateDigitalMission();
-
+    if (greeting) greeting.textContent = name || "MY MMD";
     try {
-      const response = await memberApiFetch("/api/member/app/dashboard", { credentials:"same-origin", cache:"no-store", headers:{ accept:"application/json" } });
+      const dashboardRead = memberApiFetch("/api/member/app/dashboard", { credentials:"same-origin", cache:"no-store", headers:{ accept:"application/json" } });
+      // Enqueue canonical Home data before Mission, keeping the shared session lane serialized.
+      void hydrateDigitalMission();
+      const response = await dashboardRead;
       const body = await response.json().catch(() => null);
+      if (generation !== hydrateDigitalHome.generation) return;
       if (response.ok && body && typeof body === "object") {
         // Digital Home display truth comes from the canonical member-app dashboard.
         // The LIFF profile is intentionally privacy-filtered and may collapse protected
@@ -1482,19 +1675,51 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
           needs.hidden = true;
         }
       }
-    } catch { needs.hidden = true; digitalPersonalizedFeed = []; }
+    } catch { if (generation === hydrateDigitalHome.generation) { needs.hidden = true; digitalPersonalizedFeed = []; } }
 
-    try {
-      const response = await fetch("/api/v1/member/updates/list?limit=10", { credentials:"same-origin", cache:"no-store", headers:{ accept:"application/json" } });
-      const body = await response.json().catch(() => null);
-      const items = Array.isArray(body?.items) ? body.items : Array.isArray(body?.news) ? body.news : [];
-      const unread = Number(body?.unread_count ?? body?.unreadCount ?? 0);
-      renderDigitalNews(digitalPersonalizedFeed, response.ok ? items : [], Number.isInteger(unread) ? unread : 0);
-    } catch { renderDigitalNews(digitalPersonalizedFeed, [], 0); }
   }
 
-  function renderProfile(data, authority = "") {
+  async function loadDigitalUpdates() {
+    if (digitalUpdatesLoaded || !profileReady) return;
+    if (digitalUpdatesPending) return digitalUpdatesPending;
+    const feed = document.getElementById("digital-news-feed");
+    const generation = digitalUpdatesGeneration;
+    const pending = (async () => {
+      try {
+        await digitalHomeReady;
+        if (generation !== digitalUpdatesGeneration) return;
+        const response = await memberApiFetch("/api/v1/member/updates/list?limit=10", { credentials:"same-origin", cache:"no-store", headers:{ accept:"application/json" } });
+        const body = await response.json().catch(() => null);
+        if (generation !== digitalUpdatesGeneration) return;
+        if (!response.ok || body?.ok === false || !Array.isArray(body?.items)) throw new Error("updates_unavailable");
+        const items = body.items;
+        const unread = Number(body.unread_count ?? body.unreadCount ?? 0);
+        renderDigitalNews(digitalPersonalizedFeed, items, Number.isInteger(unread) ? unread : 0);
+        digitalUpdatesLoaded = true;
+      } catch {
+        if (generation === digitalUpdatesGeneration && feed) {
+          feed.textContent = "ตอนนี้ยังโหลดอัปเดตไม่ได้ครับ";
+          if (typeof document.createElement === "function" && typeof feed.append === "function") {
+            const retry = document.createElement("button"); retry.className = "digital-news-retry";
+            retry.type = "button"; retry.textContent = "ลองอีกครั้ง";
+            retry.addEventListener("click", () => { feed.textContent = "กำลังตรวจสอบอัปเดตล่าสุด"; void loadDigitalUpdates(); });
+            feed.append(retry);
+          }
+        }
+      }
+    })();
+    digitalUpdatesPending = pending;
+    try { await pending; } finally { if (digitalUpdatesPending === pending) digitalUpdatesPending = null; }
+  }
+  document.getElementById("digital-news-disclosure")?.addEventListener("toggle", function() {
+    if (this.open) void loadDigitalUpdates();
+  });
+
+  function renderProfile(data, authority = "", brandAuthority = "") {
     applyWorldTheme(data, authority);
+    const verifiedAudience = customerBrand.render(resolveVerifiedCustomerBrand(data, brandAuthority));
+    personalMainUI.setAudience(verifiedAudience);
+    currentMemberRef = /^[a-f0-9]{64}$/.test(String(data?.member_binding || "")) ? data.member_binding : "";
     const view = data && typeof data.customer_360 === "object" ? data.customer_360 : legacyCustomerView(data);
     const member = view.member || {};
     const points = view.points || {};
@@ -1503,9 +1728,18 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     const payments = view.payments || {};
     const historyView = view.history || {};
     profile.classList.remove("hidden");
+    profile.inert = false;
     document.getElementById("profile-name").textContent = String(member.display_name || data.display_name || "สมาชิก MMD");
     document.getElementById("profile-tier").textContent = String(member.tier || data.tier || "Member");
-    void hydrateDigitalHome(data);
+    digitalUpdatesLoaded = false;
+    digitalUpdatesGeneration++;
+    digitalUpdatesPending = null;
+    digitalPersonalizedFeed = [];
+    const newsDetails = document.getElementById("digital-news-disclosure");
+    if (newsDetails) newsDetails.open = false;
+    const newsFeed = document.getElementById("digital-news-feed");
+    if (newsFeed) newsFeed.textContent = "เปิดเพื่อดูอัปเดตล่าสุด";
+    digitalHomeReady = hydrateDigitalHome(data);
     const contact = data.contactProfile || data.contact_profile || {};
     document.getElementById("profile-email").textContent = String(contact.email || "—");
     document.getElementById("profile-phone").textContent = String(contact.phone || "—");
@@ -1525,22 +1759,48 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     renderHistory(historyView, payments);
     show(copy.ready || "ผมเตรียมข้อมูลที่ยืนยันได้ของคุณไว้แล้วครับ");
     if (appStatus) appStatus.dataset.mmdStatusKind = "ready";
+    secondaryReads.clear();
+    profileReady = true;
+    // Only after the existing authenticated profile read succeeds. The album
+    // endpoint independently rechecks account and media permission on arrival.
+    if (CONFIG.returnTo === "/my-mmd/ems" || CONFIG.returnTo.startsWith("/my-mmd/ems/")) { window.location.replace(CONFIG.returnTo); return; }
+    if (newsDetails) newsDetails.open = true;
+    void loadDigitalUpdates();
     if (CONFIG.intent === "promo") showView("care", false);
-    else showView(CONFIG.view || "home", false);
-    loadRenewalCard();
+    else showView(CONFIG.intent === "renew" ? "package" : (CONFIG.view || "home"), false);
+    if (CONFIG.intent === "renew") loadRenewalCard();
+    if (CONFIG.intent === "promo" && CONFIG.campaign === "double_moment") {
+      document.getElementById("care-back-content").hidden = true;
+      loadDoubleMomentCard(memberApiFetch);
+    }
   }
 
   // Renewal card: every number and date below comes from the server offer
   // (/member/api/liff/renewal/offer). The browser sends only package_code.
   async function loadRenewalCard() {
+    const generation = (loadRenewalCard.generation || 0) + 1;
+    loadRenewalCard.generation = generation;
     const card = document.getElementById("renewal-card");
     if (!card) return;
+    document.getElementById("renewal-action").hidden = true;
+    document.getElementById("renewal-price").hidden = true;
+    document.getElementById("renewal-promo").hidden = true;
+    document.getElementById("renewal-rows").textContent = "";
+    document.getElementById("renewal-note").textContent = "กำลังตรวจสอบรายการต่ออายุของบัญชี LINE นี้";
+    card.hidden = false;
     try {
-      const response = await fetch("/member/api/liff/renewal/offer", { credentials:"same-origin", cache:"no-store", headers:{ accept:"application/json" } });
+      const response = await memberApiFetch("/member/api/liff/renewal/offer", { credentials:"same-origin", cache:"no-store", headers:{ accept:"application/json" } });
       const offer = response.ok ? await response.json().catch(() => null) : null;
-      if (!offer || offer.ok !== true) { card.hidden = true; return; }
+      if (generation !== loadRenewalCard.generation) return;
+      if (!offer || offer.ok !== true) throw new Error("renewal_unavailable");
       renderRenewalCard(card, offer);
-    } catch { card.hidden = true; }
+    } catch {
+      if (generation !== loadRenewalCard.generation) return;
+      card.hidden = false;
+      document.getElementById("renewal-note").textContent = "ยังยืนยันรายการต่ออายุไม่ได้ กรุณาลองอีกครั้ง หรือติดต่อ MMD ใน LINE";
+      const action = document.getElementById("renewal-action");
+      action.hidden = false; action.textContent = "ตรวจสอบอีกครั้ง"; action.onclick = loadRenewalCard;
+    }
   }
 
   function renewalDate(value) {
@@ -1567,12 +1827,19 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     };
     if (offer.status === "ready" && offer.payment_available === true && Number.isInteger(offer.amount_thb) && offer.amount_thb > 0) {
       document.getElementById("renewal-title").textContent = "ต่ออายุสมาชิก " + String(offer.package_label || "");
+      addRow("ระยะเวลาที่ซื้อ", String(offer.membership_years || 1) + " ปี");
+      if (offer.bonus_days) addRow("CARE BACK เพิ่ม", String(offer.bonus_days) + " วัน");
+      if (offer.bonus_months) addRow("CARE BACK เพิ่ม", String(offer.bonus_months) + " เดือน");
+      if (offer.bonus_years) addRow("CARE BACK เพิ่ม", String(offer.bonus_years) + " ปี");
+      addRow("เริ่มต่ออายุ", renewalDate(offer.renewal_starts_at));
       addRow("ใช้ได้ถึง (ปัจจุบัน)", renewalDate(offer.current_expires_at));
       addRow("ใช้ได้ถึง (หลังต่อ)", renewalDate(offer.new_expires_at));
       document.getElementById("renewal-amount").textContent = new Intl.NumberFormat("th-TH").format(offer.amount_thb);
       priceBox.hidden = false;
       if (offer.promotion_label) { promo.textContent = String(offer.promotion_label); promo.hidden = false; }
       note.textContent = "กดแล้วไปหน้าชำระเงินใน LINE ต่อทันที · สิทธิ์จะอัปเดตหลัง MMD ตรวจสอบการชำระเรียบร้อยแล้ว";
+      if (offer.promotion_ends_before) note.textContent += " · โปรประกาศถึง " + renewalDate(new Date(Date.parse(offer.promotion_ends_before) - 1).toISOString()) + " โดยยึดวันชำระที่ยืนยันแล้ว";
+      action.textContent = "ชำระ " + new Intl.NumberFormat("th-TH").format(offer.amount_thb) + " บาท →";
       action.hidden = false;
       action.onclick = () => purchaseRenewal(String(offer.package_code || ""));
       const needs = document.getElementById("digital-needs");
@@ -1600,7 +1867,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     if (action) action.disabled = true;
     messageBox.textContent = "กำลังเตรียมหน้าชำระเงินใน LINE ครับ";
     try {
-      const response = await fetch("/member/api/liff/renewal/purchase", {
+      const response = await memberApiFetch("/member/api/liff/renewal/purchase", {
         method:"POST", credentials:"same-origin",
         headers:{ "content-type":"application/json", "accept":"application/json" },
         body: JSON.stringify({ package_code: packageCode }),
@@ -1875,7 +2142,65 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
       show("กำลังเตรียมแพ็กเกจสมัครสมาชิกใน LINE ครับ");
       return;
     }
-    show(screen.copy || "กำลังตรวจสอบข้อมูลให้ครับ");
+    if (screen.key === "renew_member_lookup") {
+      const lookupCopy = {
+        th: {
+          waiting: "ยังยืนยันข้อมูลสมาชิกจาก LINE นี้ไม่ได้ครับ กรุณาติดต่อเปอร์ให้ตรวจการผูกบัญชีก่อนชำระเงินหรือส่งสลิป",
+          retry: "ตรวจสมาชิกอีกครั้ง",
+          checking: "กำลังตรวจข้อมูลสมาชิกจากระบบอีกครั้งครับ",
+          unresolved: "ยังยืนยันสมาชิกไม่ได้ครับ กรุณาติดต่อเปอร์ให้ตรวจ LINE กับข้อมูลสมาชิกก่อนชำระเงินหรือส่งสลิป",
+          found: "ยืนยันข้อมูลสมาชิกแล้วครับ กำลังเปิด MY MMD",
+        },
+        en: {
+          waiting: "We could not verify a member record for this LINE account. Contact Per to check the account link before paying or uploading a slip.",
+          retry: "Check membership again",
+          checking: "Checking the member record again.",
+          unresolved: "Membership is still unverified. Contact Per to check this LINE account before paying or uploading a slip.",
+          found: "Membership verified. Opening MY MMD.",
+        },
+        zh: {
+          waiting: "目前无法确认此 LINE 账号的会员资料。付款或上传凭证前，请联系 Per 检查账号绑定。",
+          retry: "重新检查会员资料",
+          checking: "正在重新检查会员资料。",
+          unresolved: "会员身份仍未确认。付款或上传凭证前，请联系 Per 检查此 LINE 账号。",
+          found: "会员资料已确认，正在打开 MY MMD。",
+        },
+      };
+      const messages = lookupCopy[locale] || lookupCopy.th;
+      show(messages.waiting);
+      actions.replaceChildren();
+      const retry = document.createElement("button");
+      retry.type = "button";
+      retry.textContent = messages.retry;
+      retry.addEventListener("click", async () => {
+        if (busy) return;
+        setBusy(true);
+        retry.disabled = true;
+        show(messages.checking);
+        try {
+          const profile = await readProfile({ hydrate: false, silent: true });
+          if (!/^[a-f0-9]{64}$/i.test(String(profile?.member_binding || ""))) {
+            show(messages.unresolved);
+            return;
+          }
+          actions.replaceChildren();
+          show(messages.found);
+          await hydrateMemberHome();
+        } catch {
+          show(messages.unresolved);
+        } finally {
+          setBusy(false);
+          retry.disabled = false;
+        }
+      });
+      actions.append(retry);
+      return;
+    }
+    if (screen.key === "start_intent") {
+      if (appStatus) appStatus.textContent = "";
+    } else {
+      show(screen.copy || "กำลังตรวจสอบข้อมูลให้ครับ");
+    }
     actions.replaceChildren();
     const serverActions = Array.isArray(screen.actions) ? screen.actions : [];
     for (const action of serverActions) {
@@ -1935,7 +2260,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
       return;
     }
     try {
-      await window.liff.init({ liffId: CONFIG.liffId });
+      await customerLoading.waitFor(() => window.liff.init({ liffId: CONFIG.liffId }), CONFIG.intent === "signup" ? "signup" : "home");
       if (window.liff.isInClient()) signupLineEntry?.classList.add("hidden");
       if (!window.liff.isLoggedIn()) {
         if (CONFIG.intent === "signup" && !window.liff.isInClient()) {
@@ -1956,6 +2281,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
       if (CONFIG.campaign) body.campaign = CONFIG.campaign;
       const started = await call(CONFIG.startEndpoint, body);
       if (started) {
+        if (started.member_resolved === false) renderPrivateSignupPackages();
         if (started.member_resolved) {
           await readProfile({ hydrate: false });
           void hydrateMemberHome();
@@ -1969,7 +2295,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
 
   careButton.addEventListener("click", claimCareBack);
   wishSubmit.addEventListener("click", submitBirthdayWish);
-  // Welcome remains user-led. An already-authenticated LINE client may preflight a same-site session only to select the correct returning/new copy; this path never calls liff.login before Continue.
+  // Entry remains user-led. An already-authenticated LINE client may preflight a same-site session; this path never calls liff.login before Continue.
 })();
 </script>
 </body>
@@ -1999,14 +2325,15 @@ function normalizePromoCode(value) {
 }
 
 function normalizeCampaign(value) {
-  return String(value || "").trim().toLowerCase() === "care_back" ? "care_back" : "";
+  const campaign = String(value || "").trim().toLowerCase();
+  return ["care_back", "double_moment"].includes(campaign) ? campaign : "";
 }
 
 function normalizeView(value) {
   const view = String(value || "home").trim().toLowerCase();
-  if (view === "profile") return "home";
+  if (view === "profile") return "account";
   if (view === "care_back") return "care";
-  return new Set(["home", "points", "credits", "package", "jobs", "history", "care", "coupons", "my-requests", "signup"]).has(view) ? view : "home";
+  return new Set(["home", "account", "points", "credits", "package", "jobs", "history", "care", "coupons", "my-requests", "signup"]).has(view) ? view : "home";
 }
 
 function normalizeWorld(value) {
@@ -2038,3 +2365,4 @@ function shellHeaders(extra = {}) {
     ...extra,
   };
 }
+

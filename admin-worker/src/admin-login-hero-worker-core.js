@@ -1,3 +1,4 @@
+import { LINE_NOTES_PAGE, renderLineNotesImportPage } from './line-notes-import-page.js';
 import { isJobConfirmationReissuePath, handleJobConfirmationReissue } from './job-confirmation-reissue.js';
 import worker from "./studio-telegram-worker.js";
 import dashboardWorker from "./dashboard-worker.js";
@@ -36,6 +37,7 @@ import {
   isKenjiModelAdminRequest,
 } from "./kenji-model-admin-adapter.js";
 import { handleKenjiControlRequest, isKenjiControlRequest } from "./kenji-control-endpoints.js";
+import { handleOwnerLinePage, OWNER_LINE_PAGE } from './kenji-owner-line-unlock.js';
 import {
   handleKenjiControlAction,
   handleKenjiRuntimeStatusRpc,
@@ -134,6 +136,7 @@ const ALLOWED_NEXT_PATHS = [
   "/internal/admin/model-applications",
   "/internal/admin/model-link",
   "/internal/admin/mmd-review",
+  "/internal/admin/booking-models",
   MMS_PARTNER_PAGE_PATH,
   "/internal/admin/payments",
   "/internal/admin/refunds",
@@ -150,6 +153,7 @@ const ALLOWED_NEXT_PATHS = [
   "/internal/ceo/payment-slip-inbox",
   "/internal/ceo/kenji-control",
   "/internal/ceo/models",
+  LINE_NOTES_PAGE,
   OWNER_MY_MMD_RECOVERY_PAGE_PATH,
   RECOVERY_CONTROL_PAGE_PATH,
   "/internal/jobs/create-job",
@@ -272,6 +276,7 @@ export default {
     const strictGate = await applyCredentialBoundAdminGate(request, env, path, method);
     if (strictGate.response) return strictGate.response;
     request = strictGate.request || request;
+    if (path === LINE_NOTES_PAGE && (method === "GET" || method === "HEAD")) return renderLineNotesImportPage();
 
     // Refund Ops is owned by the active credential-bound admin gate.
     // Do not delegate authenticated browser/API traffic back to legacy index.js,
@@ -388,6 +393,12 @@ export default {
       return handleKenjiPublicKnowledgeRequest(request, env);
     }
 
+    if (path === OWNER_LINE_PAGE && method === 'GET') {
+      // CEO pages are outside isBrowserAdminPath; validate the same signed
+      // credential here without widening the shared admin gate or trusting headers.
+      const actor = strictGate.actor || await readCredentialBoundAdminActor(request, env);
+      return handleOwnerLinePage(request, env, actor, () => worker.fetch(request, env, ctx));
+    }
     return worker.fetch(request, env, ctx);
   },
 };
@@ -464,7 +475,7 @@ function isMmsPartnerAllowedPath(path) {
 }
 
 function isBrowserAdminPath(path) {
-  return path === "/studio/api/payments/slip-intake" || path.startsWith("/internal/admin") || path.startsWith("/sigil/internal/admin") || path.startsWith("/v1/admin");
+  return path === LINE_NOTES_PAGE || path === "/studio/api/payments/slip-intake" || path.startsWith("/internal/admin") || path.startsWith("/sigil/internal/admin") || path.startsWith("/v1/admin");
 }
 
 function isApiAdminPath(path) {

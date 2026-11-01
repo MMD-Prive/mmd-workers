@@ -1,3 +1,4 @@
+import { runBlackCardPreferenceMaintenance, handleBlackCardRetentionAdmin, BLACKCARD_RETENTION_ADMIN_PATH } from "./blackcard-preference-lifecycle.js";
 import { handleKbankSandbox } from "./kbank-sandbox.mjs";
 export { KbankSandboxCoordinator } from "./kbank-sandbox.mjs";
 import phase1Worker from "./index.phase1.js";
@@ -36,6 +37,8 @@ import {
   handlePaymentInstructions,
   isPaymentInstructionsRequest,
 } from "./payment-instructions-v1.js";
+import { handleBlackCardMemberPayment } from './blackcard-member-payment.js';
+import { BLACKCARD_INTERNAL_PATH } from '../shared/blackcard-policy.mjs';
 import {
   enrichUnifiedConfirmVerify,
   handleUnifiedPaymentIntent,
@@ -89,7 +92,12 @@ function canonicalTelegramEnv(env = {}) {
 
 export default {
   async scheduled(event, env, ctx) {
-    await drainWebProofNotifications(canonicalTelegramEnv(env));
+    const [proofs, lifecycle] = await Promise.allSettled([
+      drainWebProofNotifications(canonicalTelegramEnv(env)),
+      runBlackCardPreferenceMaintenance(env),
+    ]);
+    if (lifecycle.status === 'rejected' || !lifecycle.value?.ok) console.warn(JSON.stringify({ event:'blackcard_lifecycle_retry_required', failed:lifecycle.value?.failed || 0 }));
+    if (proofs.status === 'rejected') throw proofs.reason;
     if (typeof phase1Worker.scheduled === "function") await phase1Worker.scheduled(event, env, ctx);
   },
   async fetch(request, env, ctx) {
@@ -155,6 +163,17 @@ export default {
 
     if (isFinalPaymentFlowRequest(path, method)) {
       return handleFinalPaymentFlow(request, env);
+    }
+
+    if (path === BLACKCARD_RETENTION_ADMIN_PATH) return handleBlackCardRetentionAdmin(request, env);
+
+    if (path === BLACKCARD_INTERNAL_PATH) {
+      return handleBlackCardMemberPayment(request, env, {
+        intent: next => handleUnifiedPaymentIntent(next, env, payment => phase1Worker.fetch(payment, env, ctx)),
+        instructions: next => handlePaymentInstructions(next, env, details =>
+          handleCustomerSessionDetails(details, env, payment => phase1Worker.fetch(payment, env, ctx))),
+        evidence: next => handleUnifiedSlipEvidence(next, env, payment => phase1Worker.fetch(payment, env, ctx)),
+      });
     }
 
     if (isDoubleMomentRequest(path, method)) {

@@ -1,7 +1,14 @@
+import { handleLegacyAssetHost } from "./src/legacy-media-retirement.js";
+import { handleModelDiscoverySettings } from "../admin-worker/src/model-customer-discovery-settings.js";
+import { attachDiscoverySession } from "../member-pages-worker/src/booking-discovery-viewer.js";
+import { applyModelDiscoverySettings, memberDiscoveryRef, ModelDiscoveryCoordinator } from "../admin-worker/src/model-customer-discovery-settings.js";
+import { webcrypto } from "node:crypto";
+import { handleDiscoveryViewer } from "../member-pages-worker/src/booking-discovery-viewer.js";
+import { customerDiscoveryAllowed, resolveDiscoveryViewer } from "./src/customer-discovery-policy.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import worker, { fetchPublicModelMedia, hydrateModelAssetPolicy, isPublicMedia } from "./src/model-image-policy-worker.js";
-import { buildCustomerDurationOffer, sanitizeModelForBooking } from "./src/index.js";
+import bookingWorker, { buildCustomerDurationOffer, sanitizeModelForBooking } from "./src/index.js";
 import runtimeWorker, { requestedScope } from "./src/runtime-index.js";
 
 const modelId = "recModel000000001";
@@ -119,207 +126,241 @@ test("Premium 90-minute offer may expose its canonical resolved customer rate", 
   assert.equal(offer.rate_review_required, false);
 });
 
-test("SIGIL hydrates MMD MODEL primary image, public gallery and intro clips only", async () => {
-  const records = [
-    item(primaryMediaId, { asset_role: "profile_main", media_type: "profile_photo" }),
-    item(galleryMediaId, { asset_role: "gallery_candidate", media_type: "public_gallery" }),
-    item(clipMediaId, { asset_role: "intro_video_candidate", media_type: "intro_video", file_type: "video/mp4" }),
-    item(`media_${"f".repeat(32)}`, { asset_role: "private_gallery", media_type: "private_gallery" }),
-    item(`media_${"1".repeat(32)}`, { asset_role: "gallery_candidate", media_type: "public_gallery", public_safe: false }),
-  ];
-  const originalFetch = globalThis.fetch;
-  const formulas = [];
-  globalThis.fetch = async (input) => {
-    formulas.push(new URL(input).searchParams.get("filterByFormula"));
-    return Response.json({ records });
-  };
-  try {
-    const grouped = await fetchPublicModelMedia({ AIRTABLE_API_KEY: "key", AIRTABLE_BASE_ID: "base" }, [{ model_id: modelId, working_name: "EMs21 J Dye" }]);
-    assert.deepEqual(formulas, ['OR(FIND("EMs21 J Dye",ARRAYJOIN({Model})))']);
-    const assets = grouped.get(modelId);
-    assert.equal(assets.primary.asset_role, "profile_main");
-    assert.deepEqual(assets.photos.map((photo) => photo.media_id), [galleryMediaId]);
-    assert.deepEqual(assets.clips.map((clip) => clip.media_id), [clipMediaId]);
-    assert.equal(assets.clips[0].url, `https://sigil.mmdbkk.com/sigil/api/models/media/${clipMediaId}`);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
-test("search projection uses approved media linked to each Model ID and clears legacy image fallbacks", async () => {
-  const records = [
-    item(primaryMediaId, { asset_role: "profile_main", media_type: "profile_photo" }),
-    item(galleryMediaId, { asset_role: "gallery_candidate", media_type: "public_gallery" }),
-    item(clipMediaId, { asset_role: "intro_video_candidate", media_type: "intro_video", file_type: "video/mp4" }),
-    item(secondPrimaryMediaId, { asset_role: "profile_main", media_type: "profile_photo", Model: [secondModelId] }),
-    item(`media_${"2".repeat(32)}`, { review_status: "pending_review", Model: [secondModelId] }),
-    item(`media_${"3".repeat(32)}`, { media_type: "private_gallery", Model: [secondModelId] }),
-    item(`media_${"4".repeat(32)}`, { public_safe: false, Model: [secondModelId] }),
-    item(`media_${"5".repeat(32)}`, { media_visibility: "private_candidate", Model: [secondModelId] }),
-    item(`media_${"6".repeat(32)}`, { Model: ["recModel000000003"] }),
-  ];
-  const models = [
-    { model_id: modelId, working_name: "Model One", public_image_url: "https://legacy.invalid/one.webp", cover_url: "https://legacy.invalid/one.webp", primary_image_key: "legacy-one", r2_key: "legacy-one" },
-    { model_id: secondModelId, working_name: "Model Two", public_image_url: "https://legacy.invalid/two.webp", cover_url: "https://legacy.invalid/two.webp", primary_image_url: "https://legacy.invalid/two.webp", primary_media_id: "legacy-two", primary_image_key: "legacy-two", r2_key: "legacy-two", additional_images: [{ url: "https://legacy.invalid/other.webp" }], clips: [{ url: "https://legacy.invalid/other.mp4" }] },
-  ];
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = async (input) => {
+test("registry lookup joins canonical Model links across pages without relying on names", async () => {
+  const original = globalThis.fetch;
+  const reads = [];
+  globalThis.fetch = async (input, init = {}) => {
+    assert.ok(!init.method || init.method === "GET");
     const url = new URL(input);
-    if (url.searchParams.has("filterByFormula")) return Response.json({ records });
-    return Response.json({ fields: { public_image_url: "https://legacy.invalid/from-record.webp", primary_image_key: "legacy-record" } });
+    reads.push(url);
+    assert.doesNotMatch(url.searchParams.get("filterByFormula"), /FIND|ARRAYJOIN|Same Name/);
+    return Response.json(url.searchParams.has("offset") ? { records: [
+      item(secondPrimaryMediaId, { Model: [secondModelId], asset_role: "profile_main" }),
+    ] } : { records: [
+      item(primaryMediaId, { asset_role: "profile_main", media_type: "profile_photo" }),
+      item(galleryMediaId),
+      item(clipMediaId, { media_type: "intro_video", file_type: "video/mp4" }),
+      item(`media_${"f".repeat(32)}`, { media_type: "private_gallery" }),
+      item(`media_${"1".repeat(32)}`, { public_safe: false }),
+    ], offset: "next-page" });
   };
   try {
-    const grouped = await fetchPublicModelMedia({ AIRTABLE_API_KEY: "key", AIRTABLE_BASE_ID: "base" }, models);
+    const grouped = await fetchPublicModelMedia(mediaEnv(), [{ model_id: modelId }, { model_id: secondModelId, working_name: "Same Name" }]);
+    assert.equal(reads.length, 2);
     assert.equal(grouped.get(modelId).primary.media_id, primaryMediaId);
+    assert.deepEqual(grouped.get(modelId).photos.map(m => m.media_id), [galleryMediaId]);
+    assert.deepEqual(grouped.get(modelId).clips.map(m => m.media_id), [clipMediaId]);
     assert.equal(grouped.get(secondModelId).primary.media_id, secondPrimaryMediaId);
-    assert.deepEqual(grouped.get(secondModelId).photos, []);
-    assert.deepEqual(grouped.get(secondModelId).clips, []);
+  } finally { globalThis.fetch = original; }
+});
 
-    const projected = await hydrateModelAssetPolicy({ AIRTABLE_API_KEY: "key", AIRTABLE_BASE_ID: "base" }, { ok: true, model: models[0], items: models });
-    const [first, second] = projected.items;
-    assert.equal(first.public_image_url, `https://sigil.mmdbkk.com/sigil/api/models/media/${primaryMediaId}`);
-    assert.equal(first.cover_url, first.public_image_url);
-    assert.equal(first.primary_media_id, primaryMediaId);
-    assert.deepEqual(first.additional_images.map((photo) => photo.media_id), [galleryMediaId]);
-    assert.deepEqual(first.clips.map((clip) => clip.media_id), [clipMediaId]);
-    assert.equal(projected.model.public_image_url, first.public_image_url);
-    assert.equal(second.primary_media_id, secondPrimaryMediaId);
-    assert.equal(second.public_image_url, `https://sigil.mmdbkk.com/sigil/api/models/media/${secondPrimaryMediaId}`);
-    assert.equal(second.source, "mmd_model_media_assets");
-    assert.equal(second.asset_source, "mmd_model_media_assets");
-    for (const key of ["primary_image_key", "r2_key", "r2_prefix"]) assert.equal(second[key], "", `${key} must not expose a storage key`);
-    assert.deepEqual(second.additional_images, []);
-    assert.deepEqual(second.clips, []);
-  } finally {
-    globalThis.fetch = originalFetch;
+test("search returns only approved_media descriptors and removes every legacy storage field", async () => {
+  await withMediaInventory({ assets: [
+    item(primaryMediaId, { asset_role: "profile_main" }), item(galleryMediaId),
+    item(clipMediaId, { media_type: "intro_video", file_type: "video/mp4" }),
+    item(`media_${"2".repeat(32)}`, { review_status: "pending_review" }),
+    item(`media_${"3".repeat(32)}`, { media_type: "private_gallery" }),
+  ] }, async () => {
+    const legacy = { model_id: modelId, scope: "public", working_name: "Public One", height_cm: 180,
+      public_image_url: "https://drive.google.com/secret", cover_url: "https://storage.invalid/secret",
+      r2_prefix: "private/secret", private_original_key: "private/secret", drive_folder_id: "secret",
+      primary_image_url: "https://storage.invalid/secret", additional_images: [{ url: "https://storage.invalid/secret" }],
+      approved_media: [{ media_id: "forged" }], arbitrary_url: "https://storage.invalid/secret" };
+    const projected = await hydrateModelAssetPolicy(mediaEnv(), { ok: true, model: legacy, items: [legacy] });
+    assert.deepEqual(projected.model, projected.items[0]);
+    assert.deepEqual(projected.model.approved_media, [
+      { media_id: primaryMediaId, media_source: "mmd_model_media_assets", kind: "photo" },
+      { media_id: clipMediaId, media_source: "mmd_model_media_assets", kind: "clip" },
+    ]);
+    assert.deepEqual(projected.model.gallery_media, [{ media_id: galleryMediaId, media_source: "mmd_model_media_assets", kind: "photo" }]);
+    assert.equal(projected.model.height_cm, 180);
+    assert.equal(projected.model.primary_media_id, primaryMediaId);
+    assert.doesNotMatch(JSON.stringify(projected), /https?:|drive_folder|private_original|r2_|public_image_url|cover_url|primary_image_url|additional_images/);
+  });
+});
+
+test("missing credentials, registry failure, non-public and hidden Models never restore media fallbacks", async () => {
+  const legacy = { model_id: modelId, scope: "public", public_image_url: "https://legacy.invalid/secret" };
+  const noCredentials = await hydrateModelAssetPolicy({}, { ok: true, model: legacy, items: [legacy] });
+  assert.deepEqual(noCredentials.model.approved_media, []);
+  assert.doesNotMatch(JSON.stringify(noCredentials), /legacy.invalid|public_image_url/);
+  for (const options of [
+    { registryDown: true }, { modelFields: { can_work_public: false, can_work_private: true } },
+    { modelFields: { status: "hidden" } }, { modelFields: { working_name: "EMs11 Protected" } }, { modelDown: true },
+  ]) {
+    await withMediaInventory(options, async () => {
+      const result = await hydrateModelAssetPolicy(mediaEnv(), { ok: true, items: [legacy] });
+      assert.deepEqual(result.items[0].approved_media, []);
+      assert.doesNotMatch(JSON.stringify(result), /legacy.invalid|public_image_url/);
+    });
   }
+  await withMediaInventory({}, async () => {
+    const result = await hydrateModelAssetPolicy(mediaEnv(), { ok: true, items: [{ ...legacy, scope: "private" }] });
+    assert.deepEqual(result.items[0].approved_media, []);
+  });
 });
 
-test("search projection is media-empty when registry credentials are unavailable", async () => {
-  const legacy = { model_id: secondModelId, source: "legacy", asset_source: "legacy", r2_prefix: "models/legacy", public_image_url: "https://legacy.invalid/model.webp", cover_url: "https://legacy.invalid/model.webp", additional_images: [{ url: "https://legacy.invalid/gallery.webp" }] };
-  const projected = await hydrateModelAssetPolicy({}, { ok: true, model: legacy, items: [legacy] });
-  assert.equal(projected.model.public_image_url, "");
-  assert.equal(projected.items[0].cover_url, "");
-  assert.equal(projected.items[0].source, "");
-  assert.equal(projected.items[0].asset_source, "");
-  assert.equal(projected.items[0].r2_prefix, "");
-  assert.deepEqual(projected.items[0].additional_images, []);
-});
-
-test("search projection does not restore legacy images when the media registry fails", async () => {
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = async (input) => {
-    const url = new URL(input);
-    if (url.searchParams.has("filterByFormula")) return new Response(null, { status: 503 });
-    return Response.json({ fields: { public_image_url: "https://legacy.invalid/from-record.webp" } });
-  };
-  try {
-    const model = { model_id: modelId, working_name: "Model One", public_image_url: "https://legacy.invalid/from-search.webp", cover_url: "https://legacy.invalid/from-search.webp" };
-    const projected = await hydrateModelAssetPolicy({ AIRTABLE_API_KEY: "key", AIRTABLE_BASE_ID: "base" }, { ok: true, items: [model] });
-    assert.equal(projected.items[0].public_image_url, "");
-    assert.equal(projected.items[0].cover_url, "");
-    assert.equal(projected.items[0].source, "");
-    assert.equal(projected.items[0].asset_source, "");
-    assert.equal(projected.items[0].r2_prefix, "");
-    assert.deepEqual(projected.items[0].additional_images, []);
-    assert.deepEqual(projected.items[0].clips, []);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
-test("public media gate rejects private, pending and unsafe registry records", () => {
-  const base = {
-    Model: [modelId],
-    media_type: "public_gallery",
-    asset_role: "gallery_candidate",
-    media_visibility: "public_candidate",
-    review_status: "active",
-    public_safe: true,
-    private_original_key: "models/model/public_gallery/image.webp",
-  };
+test("public media policy rejects unsafe, unapproved, ambiguous or mismatched registry assets", () => {
+  const base = item(mediaId).fields;
   assert.equal(isPublicMedia(base), true);
-  assert.equal(isPublicMedia({ ...base, Model: [] }), false);
-  assert.equal(isPublicMedia({ ...base, media_type: "private_gallery" }), false);
-  assert.equal(isPublicMedia({ ...base, review_status: "pending_review" }), false);
-  assert.equal(isPublicMedia({ ...base, public_safe: false }), false);
-  assert.equal(isPublicMedia({ ...base, media_visibility: "private_candidate" }), false);
+  assert.equal(isPublicMedia({ ...base, review_status: "active" }), true, "Model gallery is available after upload");
+  assert.equal(isPublicMedia({ ...base, review_status: "active", asset_role: "profile_main" }), false, "gallery cannot promote itself to cover");
+  for (const override of [
+    { Model: [] }, { Model: [modelId, secondModelId] }, { media_id: "unsafe/../id" },
+    { media_type: "private_gallery" }, { review_status: "pending_review" }, { review_status: "revoked" },
+    { public_safe: false }, { private_safe: true }, { flash_safe: true },
+    { media_visibility: "private_candidate" }, { asset_role: "private_gallery" },
+    { r2_bucket: "mmd-private-model-media" }, { private_original_key: "models/another/secret.webp" },
+    { private_original_key: `models/${modelId}/../secret.webp` }, { file_type: "text/html" },
+  ]) assert.equal(isPublicMedia({ ...base, ...override }), false, JSON.stringify(override));
 });
 
-test("public media route streams only eligible assets and honors video byte ranges", async () => {
-  const originalFetch = globalThis.fetch;
-  const calls = [];
-  globalThis.fetch = async () => Response.json({ records: [{ fields: {
-    Model: [modelId],
-    media_id: mediaId,
-    media_type: "intro_video",
-    asset_role: "intro_video_candidate",
-    media_visibility: "public_candidate",
-    review_status: "active",
-    public_safe: true,
-    private_original_key: "models/model/intro_video/clip.mp4",
-    file_type: "video/mp4",
-    file_size_bytes: 100,
-  } }] });
-  try {
-    const request = new Request(`https://sigil.mmdbkk.com/sigil/api/models/media/${mediaId}`, { headers: { range: "bytes=0-9", origin: "https://mmdbkk.com" } });
-    const response = await worker.fetch(request, {
-      AIRTABLE_API_KEY: "key",
-      AIRTABLE_BASE_ID: "base",
-      ALLOWED_ORIGINS: "https://mmdbkk.com",
-      MMD_MODEL_ASSETS: { get: async (key, options) => {
-        calls.push({ key, options });
-        return { body: new Uint8Array(10), size: 100, httpMetadata: { contentType: "video/mp4" } };
-      } },
-    });
-    assert.equal(response.status, 206);
-    assert.equal(response.headers.get("content-range"), "bytes 0-9/100");
-    assert.equal(response.headers.get("access-control-allow-origin"), "https://mmdbkk.com");
-    assert.equal(calls[0].key, "models/model/intro_video/clip.mp4");
-    assert.deepEqual(calls[0].options, { range: { offset: 0, length: 10 } });
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
+test("public media GET streams approved R2 bytes, supports ranges and prevents authorization caching", async () => {
+  await withMediaInventory({ assets: [item(mediaId, { media_type: "intro_video", file_type: "video/mp4" })] }, async (state) => {
+    for (const [range, status, contentRange, length] of [[null, 200, null, "100"], ["bytes=0-9", 206, "bytes 0-9/100", "10"], ["bytes=-10", 206, "bytes 90-99/100", "10"], ["bytes=95-200", 206, "bytes 95-99/100", "5"]]) {
+      const response = await worker.fetch(mediaRequest({ origin: "https://mmdbkk.com", ...(range ? { range } : {}) }), mediaEnv(state));
+      assert.equal(response.status, status);
+      assert.equal(response.headers.get("content-range"), contentRange);
+      assert.equal(response.headers.get("content-length"), length);
+      assert.equal(response.headers.get("access-control-allow-origin"), "https://mmdbkk.com");
+      assert.equal(response.headers.get("cache-control"), "private, no-store");
+      assert.equal(response.headers.get("cloudflare-cdn-cache-control"), "no-store");
+      assert.equal(response.headers.get("location"), null);
+      await response.arrayBuffer();
+    }
+    assert.equal(state.storageReads.length, 4);
+    assert.equal(state.modelReads, 4);
+    assert.equal(state.registryReads, 4);
+    assert.deepEqual(state.storageReads[1].options, { range: { offset: 0, length: 10 } });
+  });
 });
 
-test("public media route rejects an approved asset that is not linked to a Model", async () => {
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () => Response.json({ records: [{ fields: {
-    Model: [],
-    media_id: mediaId,
-    media_type: "public_gallery",
-    asset_role: "gallery_candidate",
-    media_visibility: "public_candidate",
-    review_status: "approved",
-    public_safe: true,
-    private_original_key: "models/unlinked/asset.webp",
-    file_type: "image/webp",
-  } }] });
-  try {
-    const response = await worker.fetch(new Request(`https://sigil.mmdbkk.com/sigil/api/models/media/${mediaId}`), {
-      AIRTABLE_API_KEY: "key",
-      AIRTABLE_BASE_ID: "base",
-      MMD_MODEL_ASSETS: { get: async () => { throw new Error("must not read unlinked storage"); } },
-    });
+test("media gate rechecks revocation and current public Model state on every request", async () => {
+  await withMediaInventory({}, async (state) => {
+    assert.equal((await worker.fetch(mediaRequest(), mediaEnv(state))).status, 200);
+    state.assets[0].fields.review_status = "revoked";
+    assert.equal((await worker.fetch(mediaRequest(), mediaEnv(state))).status, 404);
+    state.assets[0].fields.review_status = "approved";
+    state.modelFields.can_work_public = false;
+    state.modelFields.can_work_private = true;
+    assert.equal((await worker.fetch(mediaRequest(), mediaEnv(state))).status, 404);
+    state.modelFields.can_work_public = true;
+    state.modelFields.status = "hidden";
+    assert.equal((await worker.fetch(mediaRequest(), mediaEnv(state))).status, 404);
+    assert.equal(state.storageReads.length, 1);
+  });
+});
+
+test("direct media requests fail closed for missing, duplicated, unlinked or unverified assets", async () => {
+  for (const options of [
+    { assets: [] }, { assets: [item(mediaId), item(mediaId)] }, { assets: [item(mediaId, { Model: [] })] },
+    { registryDown: true }, { modelDown: true }, { objectOverride: { size: 99 } },
+    { objectOverride: { customMetadata: { media_id: "other" } } },
+    { objectOverride: { httpMetadata: { contentType: "text/html" } } },
+  ]) await withMediaInventory(options, async (state) => {
+    const response = await worker.fetch(mediaRequest({ origin: "https://sigil-booking.lovable.app" }), mediaEnv(state));
     assert.equal(response.status, 404);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
+    assert.equal(response.headers.get("access-control-allow-origin"), "https://sigil-booking.lovable.app");
+    assert.doesNotMatch(await response.text(), /models\/|private_original|api.airtable/);
+  });
 });
 
-function item(id, overrides) {
-  return { fields: {
-    Model: [modelId],
-    media_id: id,
-    media_type: "public_gallery",
-    asset_role: "gallery_candidate",
-    media_visibility: "public_candidate",
-    review_status: "active",
-    public_safe: true,
-    private_original_key: `models/${modelId}/asset/${id}.webp`,
-    file_type: id === "clip" ? "video/mp4" : "image/webp",
-    ...overrides,
-  } };
+test("MMD, Lovable and Webflow origins support GET, HEAD, preflight and readable denials", async () => {
+  await withMediaInventory({}, async (state) => {
+    for (const origin of mediaEnv().ALLOWED_ORIGINS.split(",")) {
+      for (const method of ["GET", "HEAD", "OPTIONS"]) {
+        const response = await worker.fetch(mediaRequest({ origin }, method), mediaEnv(state));
+        assert.equal(response.status, method === "OPTIONS" ? 204 : 200);
+        assert.equal(response.headers.get("access-control-allow-origin"), origin);
+        assert.equal(response.headers.get("vary"), "Origin");
+        if (method !== "GET") assert.equal((await response.arrayBuffer()).byteLength, 0);
+      }
+    }
+    const readCount = state.registryReads;
+    const blocked = await worker.fetch(mediaRequest({ origin: "https://untrusted.example" }), mediaEnv(state));
+    assert.equal(blocked.status, 403);
+    assert.equal(blocked.headers.get("access-control-allow-origin"), null);
+    assert.equal(state.registryReads, readCount);
+    const method = await worker.fetch(mediaRequest({ origin: "https://mmdbkk.com" }, "POST"), mediaEnv(state));
+    assert.equal(method.status, 405);
+    for (const range of ["bytes=100-", "bytes=-0", "bytes=20-10", "bytes=-", "bytes=1-2,5-6"]) {
+      assert.equal((await worker.fetch(mediaRequest({ range }), mediaEnv(state))).status, 416);
+    }
+    for (const suffix of ["../secret", "%broken", "not-a-media-id"]) {
+      const response = await worker.fetch(new Request(`https://sigil.mmdbkk.com/sigil/api/models/media/${suffix}`), mediaEnv(state));
+      assert.equal(response.status, 404);
+    }
+  });
+});
+
+test("runtime entrypoint GET and POST Public search expose the same approved_media contract without private Models", async () => {
+  await withMediaInventory({ inventory: [
+    { id: modelId, fields: { working_name: "Public One", can_work_public: true, status: "active" } },
+    { id: secondModelId, fields: { working_name: "Private One", can_work_private: true, private_tier: "premium" } },
+  ] }, async (state) => {
+    for (const method of ["GET", "POST"]) {
+      const response = await runtimeWorker.fetch(new Request(`https://sigil.mmdbkk.com/sigil/api/models/search${method === "GET" ? "?scope=public&search_mode=booking" : ""}`, {
+        method, headers: { origin: "https://sigil-booking.lovable.app", "content-type": "application/json" },
+        ...(method === "POST" ? { body: JSON.stringify({ scope: "public", search_mode: "booking" }) } : {}),
+      }), mediaEnv(state));
+      assert.equal(response.status, 200);
+      assert.equal(response.headers.get("access-control-allow-origin"), "https://sigil-booking.lovable.app");
+      const payload = await response.json();
+      assert.deepEqual(payload.items.map(model => model.model_id), [modelId]);
+      assert.deepEqual(payload.items[0].approved_media, []);
+      assert.deepEqual(payload.items[0].gallery_media, [{ media_id: mediaId, media_source: "mmd_model_media_assets", kind: "photo" }]);
+      assert.equal(payload.items[0].primary_media_id, "");
+      assert.doesNotMatch(JSON.stringify(payload), /public_image_url|cover_url|https?:|private_original_key|r2_key|drive_folder/);
+    }
+  });
+});
+
+function item(id, overrides = {}) {
+  const fields = {
+    Model: [modelId], media_id: id, media_type: "public_gallery", asset_role: "gallery_candidate",
+    media_visibility: "public_candidate", review_status: "approved", public_safe: true,
+    r2_bucket: "mmd-models", file_type: "image/webp", file_size_bytes: 100, ...overrides,
+  };
+  fields.private_original_key = overrides.private_original_key || `models/${fields.Model[0]}/asset/${id}.webp`;
+  return { id: `recAsset${id.replace(/[^a-z0-9]/gi, "")}`, fields };
+}
+function mediaRequest(headers = {}, method = "GET") {
+  return new Request(`https://sigil.mmdbkk.com/sigil/api/models/media/${mediaId}`, { method, headers });
+}
+function mediaEnv(state = {}) {
+  const read = async (key, options) => {
+    state.storageReads.push({ key, options });
+    const asset = state.assets.find(asset => asset.fields.private_original_key === key)?.fields;
+    if (!asset) return null;
+    return { body: new Uint8Array(options?.range?.length || 100), size: 100,
+      httpMetadata: { contentType: asset.file_type },
+      customMetadata: { media_id: asset.media_id, model_record_id: asset.Model[0], sha256: "a".repeat(64) },
+      ...state.objectOverride };
+  };
+  return { AIRTABLE_API_KEY: "synthetic", AIRTABLE_BASE_ID: "base",
+    ALLOWED_ORIGINS: "https://mmdbkk.com,https://www.mmdbkk.com,https://sigil-booking.lovable.app,https://mmdprive.webflow.io",
+    MMD_MODEL_ASSETS: { get: read, head: read } };
+}
+async function withMediaInventory(options, run) {
+  const state = { assets: [item(mediaId)], modelFields: { can_work_public: true, status: "active" },
+    storageReads: [], modelReads: 0, registryReads: 0, ...options };
+  const original = globalThis.fetch;
+  globalThis.fetch = async (input, init = {}) => {
+    assert.ok(!init.method || init.method === "GET", "media reads must never mutate records");
+    const url = new URL(input);
+    if (url.pathname.endsWith("/tblrpQXhHnbTU9RhW")) {
+      state.registryReads++;
+      return state.registryDown ? new Response(null, { status: 503 }) : Response.json({ records: state.assets });
+    }
+    if (/\/Models\/rec/.test(url.pathname)) {
+      state.modelReads++;
+      const id = url.pathname.split("/").pop();
+      return state.modelDown ? new Response(null, { status: 503 }) : Response.json({ id, fields: state.modelFields });
+    }
+    if (url.pathname.endsWith("/Models")) return Response.json({ records: state.inventory || [] });
+    return Response.json({ records: [] });
+  };
+  try { await run(state); } finally { globalThis.fetch = original; }
 }
 
 test("booking intake stores approved MMD media registry provenance and fails closed on unknown sources", async () => {
@@ -594,6 +635,432 @@ test("SIGIL private denial is readable to approved browser origins without leaki
     "https://sigil.mmdbkk.com/sigil/api/models/search?scope=private",
     { headers: { Origin: "https://untrusted.example" } },
   ), env);
-  assert.equal((await blocked.json()).blocked, true);
+  assert.equal((await blocked.json()).error, "origin_not_allowed");
   assert.equal(blocked.headers.get("access-control-allow-origin"), null);
+});
+
+
+const filterModel = (id, fields) => ({ id, fields: { working_name: id, status: "active", ...fields } });
+const filterSnapshot = {
+  schema_version: "my_mmd_entitlement_resolver_v1", fail_closed: true, member_blocked: false,
+  access: { private_visibility_envelope: "premium", new_model_reveals_allowed: true },
+};
+async function withFilterInventory(models, run, { stored = false, secondPage = [] } = {}) {
+  const original = globalThis.fetch;
+  const reads = [];
+  globalThis.fetch = async (input, init = {}) => {
+    assert.ok(!init.method || init.method === "GET", "search must never mutate a record");
+    const url = new URL(input);
+    reads.push(url);
+    const table = decodeURIComponent(url.pathname.split("/").pop());
+    if (table === "recFilterMember001") return Response.json({ id: "recFilterMember001", fields: { member_id: "fixture-filter-member", "MMD — Member Entitlements": ["recFilterEntitle01"] } });
+    if (table === "MMD — Member Entitlements") return Response.json({ records: [{ id: "recFilterEntitle01", fields: { member: ["recFilterMember001"], capability: "private_premium", member_status: "active", access_status: "active" } }] });
+    if (table === "Models") return Response.json(url.searchParams.get("offset") === "page-two"
+      ? { records: secondPage } : { records: models, ...(secondPage.length ? { offset: "page-two" } : {}) });
+    if (table === "SIGIL Booking Requests" && stored) return Response.json({ records: [{
+      id: "recStoredFilterRequest", fields: { member_status: "active", access_scope: "public_private",
+        resolver_payload_json: JSON.stringify({ entitlement_snapshot: filterSnapshot, access: { member_record_id: "recFilterMember001" } }) },
+    }] });
+    return Response.json({ records: [] });
+  };
+  try { await run(reads); } finally { globalThis.fetch = original; }
+}
+const filterEnv = { AIRTABLE_API_KEY: "synthetic-key", AIRTABLE_BASE_ID: "synthetic-base",
+  AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES: "fixture-service-secret-at-least-32-characters",
+  MEMBER_PAGES_WORKER: { fetch: async () => {
+    const digest = await webcrypto.subtle.digest("SHA-256", new TextEncoder().encode("mmd-discovery-member-v1:fixture-filter-member"));
+    return Response.json({ ok: true, memberRef: [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("") });
+  } },
+};
+
+test("Booking filters work without a name and include eligible records after the first Airtable page", async () => {
+  const hiddenPage = Array.from({ length: 100 }, (_, i) => filterModel(`recHidden${i}`, { status: "hidden", can_work_public: true }));
+  const publicPage = [
+    filterModel("recPublicStraight", { can_work_public: true, orientation_label: "Straight" }),
+    filterModel("recPublicBoth", { can_work_public: true, orientation_label: "Both" }),
+    filterModel("recPublicGay", { can_work_public: true, orientation_label: "Gay" }),
+    filterModel("recPublicUnknown", { can_work_public: true }),
+    filterModel("recPrivateOnly", { can_work_private: true, private_tier: "premium", orientation_label: "Straight" }),
+  ];
+  await withFilterInventory(hiddenPage, async (reads) => {
+    const response = await bookingWorker.fetch(new Request("https://sigil.mmdbkk.com/sigil/api/models/search?scope=public&search_mode=booking&customer_lane=straight"), filterEnv);
+    const body = await response.json();
+    assert.equal(body.ok, true);
+    assert.deepEqual(body.items.map(m => m.model_id), ["recPublicStraight", "recPublicBoth"]);
+    assert.ok(reads.some(url => url.searchParams.get("offset") === "page-two"));
+    assert.equal(body.items.some(m => m.scope === "private"), false);
+  }, { secondPage: publicPage });
+});
+
+test("customer body and skin filters use only canonical model profile values", async () => {
+  const inventory = [
+    filterModel("recProfileMatch", { can_work_public: true, height_cm: 178, weight_kg: 72, body_type: "athletic", skin_tone: "medium", private_admin_note: "never project" }),
+    filterModel("recProfileOther", { can_work_public: true, height_cm: 178, weight_kg: 72, body_type: "slim", skin_tone: "medium" }),
+    filterModel("recProfileMissing", { can_work_public: true, body_type: "athletic" }),
+  ];
+  await withFilterInventory(inventory, async () => {
+    const response = await bookingWorker.fetch(new Request("https://sigil.mmdbkk.com/sigil/api/models/search?scope=public&search_mode=booking&min_height_cm=170&max_height_cm=185&min_weight_kg=60&body_type=athletic&skin_tone=medium"), filterEnv);
+    const body = await response.json();
+    assert.deepEqual(body.items.map(model => model.model_id), ["recProfileMatch"]);
+    assert.deepEqual({ height_cm: body.items[0].height_cm, weight_kg: body.items[0].weight_kg, body_type: body.items[0].body_type, skin_tone: body.items[0].skin_tone },
+      { height_cm: 178, weight_kg: 72, body_type: "athletic", skin_tone: "medium" });
+    assert.equal(Object.hasOwn(body.items[0], "private_admin_note"), false);
+  });
+});
+
+test("Create Job scope filters combine allowed group, Straight/Gay and canonical PN/VIP capabilities", async () => {
+  const fields = { can_work_private: true, private_tier: "premium", orientation_label: "Straight" };
+  const inventory = [
+    filterModel("recVipPremium", { ...fields, private_service_level: "vip" }),
+    filterModel("recPnPremium", { ...fields, private_service_level: "pn" }),
+    filterModel("recUnknownPremium", fields),
+    filterModel("recVipGay", { ...fields, private_service_level: "vip", orientation_label: "Gay" }),
+    filterModel("recVipStandard", { ...fields, private_service_level: "vip", private_tier: "standard" }),
+    filterModel("recVipExclusive", { ...fields, private_service_level: "vip", private_tier: "exclusive" }),
+  ];
+  await withFilterInventory(inventory, async () => {
+    for (const [work, expected] of [["vip", ["recVipPremium"]], ["pn", ["recVipPremium", "recPnPremium"]]]) {
+      const response = await bookingWorker.fetch(new Request(`https://sigil.mmdbkk.com/sigil/api/models/search?scope=private&search_mode=booking&booking_ref=synthetic&selected_access_folder=premium&customer_lane=straight&work_lane=${work}`, { headers: { cookie: "__Secure-mmd_discovery_session=fixture" } }), filterEnv);
+      const body = await response.json();
+      assert.deepEqual(body.items.map(m => m.model_id), expected);
+      assert.deepEqual(body.items[0].private_work_capabilities, ["vip", "pn"]);
+      assert.equal(body.visibility_enforced, true);
+    }
+    const forbidden = await bookingWorker.fetch(new Request("https://sigil.mmdbkk.com/sigil/api/models/search?scope=private&search_mode=booking&booking_ref=synthetic&selected_access_folder=exclusive"), filterEnv);
+    assert.equal((await forbidden.json()).blocked, true);
+  }, { stored: true });
+});
+
+test("filter-only Private Booking remains closed without canonical membership", async () => {
+  await withFilterInventory([], async (reads) => {
+    const response = await bookingWorker.fetch(new Request("https://sigil.mmdbkk.com/sigil/api/models/search?scope=private&search_mode=booking&selected_access_folder=premium&customer_lane=straight&work_lane=pn"), filterEnv);
+    const body = await response.json();
+    assert.equal(body.blocked, true);
+    assert.deepEqual(body.items, []);
+    assert.equal(reads.some(url => url.pathname.endsWith("/Models")), false);
+  });
+});
+
+test("customer Booking rejects Live/Group and stores MK/Burn only as draft preferences", async () => {
+  const original = globalThis.fetch;
+  const persisted = [];
+  globalThis.fetch = async (input, init = {}) => {
+    if (init.method === "POST") {
+      const fields = JSON.parse(init.body).fields;
+      persisted.push(fields);
+      return Response.json({ id: "recSyntheticOptions", fields });
+    }
+    return Response.json({ records: [] });
+  };
+  const request = (options, scope = "private") => new Request("https://sigil.mmdbkk.com/sigil/api/booking/intake", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ booking_ref: "synthetic-option-draft", lane: scope, search_mode: "booking",
+      service_options: options, suppress_telegram_notify: true }),
+  });
+  try {
+    for (const options of [["live"], ["group"], ["mk", "live"], "mk"]) {
+      const response = await bookingWorker.fetch(request(options), filterEnv);
+      assert.equal(response.status, 422);
+      assert.equal((await response.json()).error, "customer_booking_service_option_invalid");
+    }
+    assert.equal(persisted.length, 0);
+    const publicResponse = await bookingWorker.fetch(request(["mk"], "public"), filterEnv);
+    assert.equal(publicResponse.status, 422);
+    const accepted = await bookingWorker.fetch(request(["mk", "burn", "mk"]), filterEnv);
+    assert.equal(accepted.status, 200);
+    assert.equal(persisted.length, 1);
+    assert.equal(persisted[0]["Request Status"], "draft");
+    const resolver = JSON.parse(persisted[0].resolver_payload_json);
+    assert.deepEqual(resolver.customer_search.service_options, ["mk", "burn"]);
+    assert.deepEqual(resolver.filters.service_options, ["mk", "burn"]);
+    assert.equal(resolver.job_creation_state, "waiting_for_per");
+  } finally { globalThis.fetch = original; }
+});
+
+
+
+test("MY MODEL visibility selections gate customer discovery and pending reviews fail closed", () => {
+  const base = { status: "active", can_work_public: true };
+  const model = visibility => sanitizeModelForBooking({
+    id: "recVisibility",
+    fields: { working_name: "Visible Name", ...base, ...visibility },
+  }, { scope: "public", privateAllowed: false, env: {} });
+
+  assert.equal(model({ client_visibility_status: "approved", approved_client_visibility: "standard", visibility_review_status: "approved" }).display_name, "Visible Name");
+  for (const selection of ["hidden", "internal", "private", ""]) {
+    assert.equal(model({ client_visibility_status: "approved", approved_client_visibility: selection, visibility_review_status: "approved" }), null);
+  }
+  assert.equal(model({ client_visibility_status: "pending", approved_client_visibility: "standard", visibility_review_status: "pending_review" }), null);
+  assert.equal(model({ client_visibility_status: "approved", approved_client_visibility: "vip", visibility_review_status: "approved" }), null);
+  assert.equal(model({ client_visibility_status: "approved", approved_client_visibility: "black_card", visibility_review_status: "approved" }), null);
+});
+
+test("protected visibility cannot be downgraded by a stale lower access folder", () => {
+  for (const visibility of ["vip", "black_card", "unknown_future_value"]) {
+    for (const scope of ["public", "private", "booking"]) {
+      const result = sanitizeModelForBooking({
+        id: "recConflictingVisibility",
+        fields: {
+          working_name: "Private Name", status: "active",
+          can_work_public: true, can_work_private: true,
+          access_folder: "standard", private_tier: "standard",
+          client_visibility_status: "approved",
+          approved_client_visibility: visibility,
+          visibility_review_status: "approved",
+        },
+      }, { scope, privateAllowed: true, allowedFolders: ["standard", "premium"], env: {} });
+      assert.equal(result, null);
+    }
+  }
+});
+
+test("name search formula excludes private identifiers and storage metadata", async () => {
+  const original = globalThis.fetch;
+  const seen = [];
+  globalThis.fetch = async input => {
+    const url = new URL(input);
+    const table = decodeURIComponent(url.pathname.split("/").pop());
+    if (table === "Models") {
+      const formula = url.searchParams.get("filterByFormula") || "";
+      seen.push(formula);
+      return Response.json({ records: [{
+        id: "recSearchSafe",
+        fields: { working_name: "Atom IX", can_work_public: true },
+      }] });
+    }
+    return Response.json({ records: [] });
+  };
+  try {
+    const response = await bookingWorker.fetch(new Request("https://sigil.mmdbkk.com/sigil/api/models/search?q=Atom%20IX&scope=public"), filterEnv);
+    const body = await response.json();
+    assert.equal(body.ok, true);
+    assert.equal(body.items[0].display_name, "Atom IX");
+    assert.equal(Object.hasOwn(body.items[0], "working_name"), false);
+    assert.equal(Object.hasOwn(body.items[0], "model_record_id"), false);
+    assert.equal(seen.length, 1);
+    assert.match(seen[0], /working_name/);
+    assert.match(seen[0], /nickname/);
+    assert.doesNotMatch(seen[0], /unique_key|folder_name|r2_prefix|primary_image_key|private_real_name/i);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+const blockedViewerRef = "a".repeat(64);
+const allowedViewerRef = "b".repeat(64);
+const restrictedDiscovery = JSON.stringify({
+  schema_version: "model_customer_discovery_v1",
+  require_verified_customer: true,
+  blocked_member_refs: [blockedViewerRef],
+});
+const verifiedViewerService = ref => ({ fetch: async request => {
+  assert.equal(new URL(request.url).pathname, "/__internal/booking/discovery-viewer");
+  assert.equal(request.headers.get("authorization"), null);
+  return Response.json({ ok: true, memberRef: ref });
+} });
+
+test("restricted Model discovery denies blocked and anonymous viewers; malformed rules fail closed", () => {
+  assert.equal(customerDiscoveryAllowed({}), true);
+  const fields = { customer_discovery_policy_json: restrictedDiscovery };
+  assert.equal(customerDiscoveryAllowed(fields, blockedViewerRef), false);
+  assert.equal(customerDiscoveryAllowed(fields), false);
+  assert.equal(customerDiscoveryAllowed(fields, allowedViewerRef), true);
+  for (const raw of ["{", "null", "{}", JSON.stringify({ schema_version: "future", blocked_member_refs: [] })]) {
+    assert.equal(customerDiscoveryAllowed({ customer_discovery_policy_json: raw }, allowedViewerRef), false);
+  }
+});
+
+test("customer claims in query, body or identity headers cannot replace verified session", async () => {
+  let calls = 0;
+  const service = { fetch: async () => { calls++; throw new Error("must not run"); } };
+  const request = new Request("https://sigil.mmdbkk.com/sigil/api/models/search?member_ref=" + allowedViewerRef + "&booking_ref=forged", {
+    method: "POST", headers: { "content-type": "application/json", "x-member-ref": allowedViewerRef },
+    body: JSON.stringify({ member_ref: allowedViewerRef, member_id: "recForged" }),
+  });
+  assert.equal(await resolveDiscoveryViewer(request, { AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES: "s".repeat(32), MEMBER_PAGES_WORKER: service }), "");
+  assert.equal(calls, 0);
+});
+
+test("viewer identity comes only from member-service session validation and failures stay closed", async () => {
+  const request = new Request("https://sigil.mmdbkk.com/sigil/api/models/search", {
+    headers: { cookie: "__Host-mmd_liff_session=opaque; unrelated=do-not-forward" },
+  });
+  const service = { fetch: async forwarded => {
+    assert.equal(forwarded.headers.get("cookie"), "__Host-mmd_liff_session=opaque");
+    return Response.json({ ok: true, memberRef: allowedViewerRef });
+  } };
+  assert.equal(await resolveDiscoveryViewer(request, { AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES: "s".repeat(32), MEMBER_PAGES_WORKER: service }), allowedViewerRef);
+  for (const payload of [
+    { memberRef: allowedViewerRef },
+    { ok: false, memberRef: allowedViewerRef },
+    { match_state: "matched", line_connected: true, memberRef: "recNotOpaque" },
+  ]) {
+    assert.equal(await resolveDiscoveryViewer(request, { AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES: "s".repeat(32), MEMBER_PAGES_WORKER: { fetch: async () => Response.json(payload) } }), "");
+  }
+  assert.equal(await resolveDiscoveryViewer(request, { AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES: "s".repeat(32), MEMBER_PAGES_WORKER: { fetch: async () => { throw new Error("offline"); } } }), "");
+});
+
+test("search excludes restricted Models without leaking deny rules or counts", async () => {
+  const models = [
+    filterModel("recOpenDiscovery", { can_work_public: true }),
+    filterModel("recRestrictedDiscovery", { can_work_public: true, customer_discovery_policy_json: restrictedDiscovery }),
+  ];
+  await withFilterInventory(models, async () => {
+    for (const [ref, expected] of [
+      ["", ["recOpenDiscovery"]],
+      [blockedViewerRef, ["recOpenDiscovery"]],
+      [allowedViewerRef, ["recOpenDiscovery", "recRestrictedDiscovery"]],
+    ]) {
+      const request = new Request("https://sigil.mmdbkk.com/sigil/api/models/search?scope=public", {
+        headers: ref ? { cookie: "__Host-mmd_liff_session=opaque" } : {},
+      });
+      const response = await bookingWorker.fetch(request, { ...filterEnv, AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES: "s".repeat(32), MEMBER_PAGES_WORKER: verifiedViewerService(ref) });
+      const body = await response.json();
+      assert.deepEqual(body.items.map(model => model.model_id), expected);
+      assert.doesNotMatch(JSON.stringify(body), /blocked_member_refs|customer_discovery_policy_json|blocked_count/);
+      assert.equal(JSON.stringify(body).includes(blockedViewerRef), false);
+    }
+  });
+});
+
+test("GET and HEAD media deny restricted viewers before storage reads and recheck revocation", async () => {
+  await withMediaInventory({ modelFields: { can_work_public: true, status: "active",
+    customer_discovery_policy_json: restrictedDiscovery } }, async state => {
+    for (const method of ["GET", "HEAD"]) {
+      for (const ref of ["", blockedViewerRef]) {
+        const headers = ref ? { cookie: "__Host-mmd_liff_session=opaque" } : {};
+        const response = await worker.fetch(mediaRequest(headers, method), {
+          ...mediaEnv(state), AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES: "s".repeat(32), MEMBER_PAGES_WORKER: verifiedViewerService(ref),
+        });
+        assert.equal(response.status, 404);
+        assert.equal(response.headers.get("cache-control"), "private, no-store");
+      }
+    }
+    assert.equal(state.storageReads.length, 0);
+    const allowed = await worker.fetch(mediaRequest({ cookie: "__Host-mmd_liff_session=opaque" }), {
+      ...mediaEnv(state), AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES: "s".repeat(32), MEMBER_PAGES_WORKER: verifiedViewerService(allowedViewerRef),
+    });
+    assert.equal(allowed.status, 200);
+    state.modelFields.customer_discovery_policy_json = JSON.stringify({
+      schema_version: "model_customer_discovery_v1", require_verified_customer: true,
+      blocked_member_refs: [blockedViewerRef, allowedViewerRef],
+    });
+    const denied = await worker.fetch(mediaRequest({ cookie: "__Host-mmd_liff_session=opaque" }), {
+      ...mediaEnv(state), AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES: "s".repeat(32), MEMBER_PAGES_WORKER: verifiedViewerService(allowedViewerRef),
+    });
+    assert.equal(denied.status, 404);
+    assert.equal(state.storageReads.length, 1);
+  });
+});
+
+test("service-only viewer reads are stable and never rotate or reveal the source session", async () => {
+  globalThis.crypto ||= webcrypto;
+  const env = { AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES: "s".repeat(32), LIFF_SESSION_SECRET: "k".repeat(32) };
+  const request = new Request("https://member-pages.internal/__internal/booking/discovery-viewer", {
+    headers: { "x-mmd-booking-service-secret": "s".repeat(32) },
+  });
+  let reads = 0;
+  const session = async () => { reads++; return { memberExists: true, memberId: "recCanonicalMember", lineUserId: "U" + "a".repeat(32), memberProfile: { membership_status: "active" } }; };
+  const unauthorized = await handleDiscoveryViewer(new Request(request.url), env, session);
+  assert.equal(unauthorized.status, 401);
+  assert.equal(reads, 0);
+  const first = await handleDiscoveryViewer(request, env, session);
+  const second = await handleDiscoveryViewer(request, env, session);
+  assert.equal(first.headers.get("set-cookie"), null);
+  const a = await first.json(), b = await second.json();
+  assert.equal(a.ok, true);
+  assert.match(a.memberRef, /^[a-f0-9]{64}$/);
+  assert.equal(a.memberRef, b.memberRef);
+  assert.equal(JSON.stringify(a).includes("recCanonicalMember"), false);
+  const blocked = await handleDiscoveryViewer(request, env, async () => ({
+    memberExists: true, memberId: "recCanonicalMember", lineUserId: "U" + "a".repeat(32), memberProfile: { membership_status: "blocked" },
+  }));
+  assert.equal(blocked.status, 401);
+});
+
+test("cross-host discovery uses a short-lived scoped alias and preserves the primary cookie", async () => {
+  globalThis.crypto ||= webcrypto;
+  const records = new Map();
+  const env = { LIFF_IDENTITY_KV: { put: async (key, value) => records.set(key, JSON.parse(value)), get: async key => records.get(key) } };
+  const token = "c".repeat(64);
+  const source = new Request("https://mmdbkk.com/member/api/liff/start");
+  const response = new Response("{}", { headers: { "set-cookie": "__Host-mmd_liff_session=" + token + "; Path=/; HttpOnly; Secure; SameSite=Lax" } });
+  const identity = async () => ({ memberExists: true, memberId: "MMD-TEST", lineUserId: "U" + "a".repeat(32), memberProfile: { membership_status: "active" } });
+  const issued = await attachDiscoverySession(source, env, response, identity);
+  assert.equal(records.size, 1);
+  const cookies = issued.headers.get("set-cookie");
+  assert.match(cookies, /__Host-mmd_liff_session=/);
+  assert.match(cookies, /__Secure-mmd_discovery_session=[a-f0-9]{64}; Domain=mmdbkk.com; Path=\/sigil\/api\/; Max-Age=1800; HttpOnly; Secure; SameSite=Strict/);
+  const alias = [...records.keys()][0].slice("booking-discovery:".length);
+  const verified = await handleDiscoveryViewer(new Request("https://internal/__internal/booking/discovery-viewer", {
+    headers: { "x-mmd-booking-service-secret": "s".repeat(32), cookie: "__Secure-mmd_discovery_session=" + alias },
+  }), { ...env, AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES: "s".repeat(32) }, async request => {
+    assert.equal(request.headers.get("cookie"), "__Host-mmd_liff_session=" + token);
+    return identity();
+  });
+  assert.equal(verified.status, 200);
+  const foreign = await attachDiscoverySession(new Request("https://untrusted.example/member/api/liff/start"), env,
+    new Response("{}", { headers: { "set-cookie": "__Host-mmd_liff_session=" + token } }), identity);
+  assert.doesNotMatch(foreign.headers.get("set-cookie"), /__Secure-mmd_discovery_session/);
+});
+
+test("Model block writes verify owned jobs and canonical member linkage; stale concurrent revisions cannot overwrite", async () => {
+  globalThis.crypto ||= webcrypto;
+  const original = globalThis.fetch;
+  let raw = "", writes = 0;
+  const id = "recModelPrivacy123";
+  const env = { AIRTABLE_API_KEY: "synthetic", AIRTABLE_BASE_ID: "base" };
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(input);
+    if (url.pathname.endsWith("/tblI4B0bI446vp9GX/" + id)) {
+      if (init.method === "PATCH") { raw = JSON.parse(init.body).fields.customer_discovery_policy_json; writes++; }
+      return Response.json({ id, fields: { status: "active", customer_discovery_policy_json: raw, discovery_asset_isolation_status: "verified" } });
+    }
+    if (url.pathname.endsWith("/tblC98mKWbzmPuNzX")) return Response.json({ records: [{ id: "recJobPrivacy", fields: {
+      fldrXQAyOMPCvbOaY: [id], fld6P6if0vDZCeV0C: ["recClient123"], fldHsczyzr8axfwUC: "MMD-TEST",
+    } }] });
+    if (url.pathname.endsWith("/tblgWc5VRon5o8Mhk")) return Response.json({ records: [{ id: "recMember123", fields: { fldlhDy68MDQgUihs: ["recClient123"] } }] });
+    if (url.hostname === "models.mmdbkk.com" || url.pathname.endsWith("/public-catalog")) return new Response(null, { status: 410, headers: { "x-mmd-route-owner": "sigil-booking-worker" } });
+    throw new Error("unexpected source");
+  };
+  try {
+    const base = { model_id: id, action: "block", session_id: "JOB-TEST", revision: await memberDiscoveryRef("") };
+    const coordinator = new ModelDiscoveryCoordinator({}, env);
+    const request = () => new Request("https://internal/control", { method: "POST", body: JSON.stringify(base) });
+    const responses = await Promise.all([coordinator.fetch(request()), coordinator.fetch(request())]);
+    assert.deepEqual(responses.map(response => response.status), [200, 409]);
+    assert.equal(writes, 1);
+    const policy = JSON.parse(raw);
+    assert.deepEqual(policy.blocked_member_refs, [await memberDiscoveryRef("MMD-TEST")]);
+    const visible = await applyModelDiscoverySettings(env, { model_id: id, read_only: true });
+    assert.doesNotMatch(JSON.stringify(await visible.json()), /blocked_member_refs|recClient123|MMD-TEST/);
+  } finally { globalThis.fetch = original; }
+});
+
+test("legacy storage media including encoded names is closed before any bucket read; static UI assets remain available", async () => {
+  let reads = 0;
+  const env = { MMD_MODEL_ASSETS: { get: async key => { reads++; assert.ok(["webflow/app.js", "MMD-logo.svg"].includes(key)); return {
+    body: new TextEncoder().encode("export{}"), size: 8, httpEtag: '"static"',
+    writeHttpMetadata: headers => headers.set("content-type", "application/javascript"),
+  }; } } };
+  for (const path of ["/models/recAny/photo.webp", "/%6dodels/recAny/photo.webp", "/MMD%20Public%20Models/Name/photo.webp"]) {
+    const response = await handleLegacyAssetHost(new Request("https://models.mmdbkk.com" + path), env);
+    assert.equal(response.status, 410);
+    assert.equal(response.headers.get("cache-control"), "private, no-store");
+  }
+  assert.equal(reads, 0);
+  const staticAsset = await handleLegacyAssetHost(new Request("https://models.mmdbkk.com/webflow/app.js"), env);
+  assert.equal(staticAsset.status, 200);
+  assert.equal(staticAsset.headers.get("content-type"), "application/javascript");
+  assert.equal(reads, 1);
+  assert.equal((await handleLegacyAssetHost(new Request("https://models.mmdbkk.com/MMD-logo.svg"), env)).status, 200);
+});
+
+test("privacy settings reject cross-origin writes and unauthenticated Model access", async () => {
+  const endpoint = "https://mmdbkk.com/v1/model/settings/customer-visibility";
+  const denied = await handleModelDiscoverySettings(new Request(endpoint, {
+    method: "POST", headers: { origin: "https://untrusted.example", "content-type": "application/json" }, body: "{}",
+  }), {});
+  assert.equal(denied.status, 403);
+  assert.equal((await handleModelDiscoverySettings(new Request(endpoint), {})).status, 401);
 });

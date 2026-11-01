@@ -61,10 +61,10 @@ const post = (url,body,headers={}) => new Request(url,{method:"POST",headers:{"C
 const lineRequest = (origin="https://mmdbkk.com") => post(origin+"/v1/partner/line/exchange",{id_token:"fixture-id-token"},{Origin:origin});
 const callback = (body={},host="partners-worker.internal") => post("https://"+host+"/__internal/partner-job-confirm",{session_record_id:SESSION_ID,telegram_user_id:"123456789",action:"confirm",...body},{"x-mmd-service-binding":"telegram-worker"});
 
-test("LINE exchange uses the approved existing identity and opens the native MMD dashboard", async t => {
+test("LINE exchange uses the approved existing identity and opens the LV10 dashboard", async t => {
   const f=await fixture(t);const response=await worker.fetch(lineRequest(),f.env,{});const body=await response.json();
   assert.equal(response.status,200);assert.equal(response.headers.get("Cache-Control"),"no-store");
-  const target=new URL(body.dashboard_url);assert.equal(target.origin,"https://www.mmdbkk.com");assert.equal(target.pathname,"/partner/dashboard");assert.ok(target.searchParams.get("t"));
+  const target=new URL(body.dashboard_url);assert.equal(target.origin,"https://sigil-partner.lovable.app");assert.equal(target.pathname,"/");assert.ok(target.searchParams.get("t"));
   assert.equal(f.writes.length,1);assert.equal(f.writes[0].table,"Partners");assert.equal(f.writes[0].id,PARTNER_ID);assert.deepEqual(Object.keys(f.writes[0].fields),[F.hash]);
   assert.equal(JSON.stringify(f.writes).includes(target.searchParams.get("t")),false);
 });
@@ -93,10 +93,10 @@ test("legacy entry and HEAD requests stay private and route under the configured
 test("LINE browser entry initializes once, uses no-referrer, and rejects foreign dashboard redirects",async()=>{
   const response=await worker.fetch(new Request("https://mmdbkk.com/sigil/model/dashboard/partner-login"),{},{});
   const html=await response.text();const script=[...html.matchAll(/<script>([\s\S]*?)<\/script>/g)][0][1];
-  for(const target of ["https://www.mmdbkk.com/partner/dashboard?t=fixture","https://example.com/partner/dashboard?t=fixture"]){
+  for(const target of ["https://sigil-partner.lovable.app/?t=fixture","https://www.mmdbkk.com/partner/dashboard?t=fixture","https://example.com/partner/dashboard?t=fixture"]){
     const button={},state={};let initialized=0,replaced=null;
-    const context={URL,document:{getElementById:id=>id==="go"?button:state},liff:{init:async()=>{initialized++;},isLoggedIn:()=>true,getIDToken:()=>"fixture-id-token"},fetch:async(path,options)=>{assert.equal(path,"/v1/partner/line/exchange");assert.equal(options.referrerPolicy,"no-referrer");return Response.json({ok:true,dashboard_url:target});},location:{replace:url=>{replaced=url;}}};
-    vm.runInNewContext(script,context);await button.onclick();assert.equal(initialized,1);assert.equal(replaced,target.includes("example.com")?null:target);
+    const context={URL,window:{addEventListener(){}},document:{getElementById:id=>id==="go"?button:state},liff:{init:async()=>{initialized++;},isLoggedIn:()=>true,getIDToken:()=>"fixture-id-token"},fetch:async(path,options)=>{assert.equal(path,"/v1/partner/line/exchange");assert.equal(options.referrerPolicy,"no-referrer");return Response.json({ok:true,dashboard_url:target});},location:{replace:url=>{replaced=url;}}};
+    vm.runInNewContext(script,context);await new Promise(setImmediate);await button.onclick();assert.equal(initialized,1);assert.equal(replaced,target.startsWith("https://sigil-partner.lovable.app/")?target:null);
   }
 });
 

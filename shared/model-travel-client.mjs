@@ -61,7 +61,12 @@ export function mountTravelPanel(host, options) {
     clearTimeout(tickTimer);
     if (stopped || document.hidden) return;
     const state = data?.state || options.state;
-    countdown.textContent = travelClock(data?.eta, state, lang, localNow());
+    countdown.textContent = travelClock(data?.eta, state, lang, localNow()) ||
+      (role === 'model' ? ({
+        th: 'ขั้นตอนนี้ไม่แสดงเวลาถึง',
+        en: 'No ETA for this stage',
+        zh: '此阶段无预计到达时间',
+      }[lang] || '') : '');
     countdown.hidden = !countdown.textContent;
     const arrival = Date.parse(data?.eta?.arrival_at), ms = arrival - localNow();
     const active = ['en_route', 'nearby'].includes(state);

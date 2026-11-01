@@ -94,16 +94,23 @@ function harness({ members = [member()], entitlements = [], packages = [packageR
           return json({ records: found.slice(0, Number(url.searchParams.get("maxRecords") || 100)) }, 200);
         }
 
-        if (request.method === "POST") {
+        if (request.method === "POST" || (request.method === "PATCH" && request.headers.get('content-type'))) {
+          const probe=await request.clone().json();
+          if(request.method==='PATCH' && !probe.performUpsert) {
+            // Continue into ordinary update handling below.
+          } else {
           if (failCreate && table === "entitlements") return json({ error: "synthetic_write_failure" }, 503);
           const body = await request.json();
           writes.push({ table, method: "POST", body: structuredClone(body) });
           const created = (body.records || []).map((item) => {
+            const found=body.performUpsert && rows.find(row=>row.fields.payment_ref===item.fields.payment_ref);
+            if(found){found.fields={...found.fields,...structuredClone(item.fields)};return found;}
             const row = { id: `recCreated${String(counter++).padStart(8, "0")}`, fields: structuredClone(item.fields || {}) };
             rows.push(row);
             return row;
           });
           return json({ records: created }, 200);
+          }
         }
 
         if (request.method === "PATCH") {
@@ -231,7 +238,7 @@ test("Premium paid renewal buys one year plus the October bonus year (two years 
 });
 
 test("expired membership starts from canonical payment date with tier-specific bonus", async () => {
-  const h = harness({ entitlements: [entitlement({ expireAt: "2026-01-01T00:00:00.000Z" })] });
+  const h = harness({ entitlements: [entitlement({ expireAt: "2026-09-01T00:00:00.000Z" })] });
   const plan = await resolveWriteThroughPlan(h.env, {
     payment_stage: "membership", payment_ref: "PAY-EXPIRED", amount_thb: 1000, member_email: EMAIL, package_code: "standard",
   }, { paid_at: NOW });
@@ -368,7 +375,7 @@ test("existing recovery materialization remains authoritative and is not duplica
 test('expired over one year requires signup classification and rejects a discounted renewal',async()=>{
   const h=harness({entitlements:[entitlement({expireAt:'2025-01-01T00:00:00Z'})]});
   const plan=await resolveWriteThroughPlan(h.env,{payment_stage:'membership',payment_ref:'PAY-OLD',amount_thb:799,member_email:EMAIL,package_code:'standard'},{paid_at:NOW});
-  assert.equal(plan.status,'review_required');assert.equal(plan.reason,'expired_one_year_or_more_policy_review_required');assert.equal(plan.action,'signup');assert.equal(h.writes.length,0);
+  assert.equal(plan.status,'review_required');assert.equal(plan.reason,'renewal_expired_over_90_days_review_required');assert.equal(plan.action,'review_required');assert.equal(h.writes.length,0);
 });
 test('protected VIP SVIP and Blackcard never get a lower tier or promo write-through',async()=>{
   for(const tier of ['VIP','SVIP','Black Card']) {
@@ -379,12 +386,12 @@ test('protected VIP SVIP and Blackcard never get a lower tier or promo write-thr
 });
 
 test('expired term uses the reviewed proof payment date, not delayed review or August anchor',async()=>{
-  const h=harness({entitlements:[entitlement({expireAt:'2026-01-01T00:00:00Z'})]});
+  const h=harness({entitlements:[entitlement({expireAt:'2026-08-01T00:00:00Z'})]});
   const response=await reconcileReviewedMembershipEntitlement(reviewedRequest({amount:1000,paymentRef:'PAY-DATE',extra:{verified_at:'2026-10-02T00:00:00Z'}}),reviewedResponse({paid_at:'2026-08-21T09:10:00Z'}),h.env);
   const result=await response.json();assert.equal(result.membership_write_through.expire_at,'2028-02-17T09:10:00.000Z');
 });
 test('pre-August existing renewal keeps its historical one-year rule',async()=>{
-  const h=harness({entitlements:[entitlement({expireAt:'2026-01-01T00:00:00Z'})]});
+  const h=harness({entitlements:[entitlement({expireAt:'2026-07-01T00:00:00Z'})]});
   const plan=await resolveWriteThroughPlan(h.env,{payment_stage:'membership',payment_ref:'PAY-PRE-AUG',amount_thb:1000,member_email:EMAIL,package_code:'standard'},{paid_at:'2026-07-21T09:10:00Z'});
   assert.equal(plan.proposed_expire_at,'2027-07-21T09:10:00.000Z');assert.equal(plan.promotion,null);
 });
@@ -404,7 +411,7 @@ test('new Premium uses purchased two-year term, never inferred Verify extension'
 });
 test('write-through uses canonical paid date not reviewed_at and October cutoff',async()=>{
  for(const [paid,promoted] of [['2026-10-31T16:59:59.999Z',true],['2026-12-31T17:00:00Z',false]]){
- const h=harness({entitlements:[entitlement({expireAt:'2026-01-01T00:00:00Z'})]});const response=await reconcileReviewedMembershipEntitlement(reviewedRequest({amount:1000,extra:{verified_at:'2026-12-01'}}),reviewedResponse({paid_at:paid}),h.env);const d=await response.json();assert.equal(d.entitlement_materialized,true);assert.equal(!!d.membership_write_through.promotion,promoted);
+ const h=harness({entitlements:[entitlement({expireAt:new Date(Date.parse(paid)-30*86400000).toISOString()})]});const response=await reconcileReviewedMembershipEntitlement(reviewedRequest({amount:1000,extra:{verified_at:'2026-12-01'}}),reviewedResponse({paid_at:paid}),h.env);const d=await response.json();assert.equal(d.entitlement_materialized,true);assert.equal(!!d.membership_write_through.promotion,promoted);
  }
 });
 test('missing date, exact expiry anniversary, missing expiry and conflicting package terms cannot grant rights',async()=>{
@@ -425,3 +432,111 @@ for (const packages of [[],[packageRecord("standard",{is_active:false,require_ap
  const existing=entitlement({expireAt:"2028-06-28T00:00:00Z",id:"paid_old"});Object.assign(existing.fields,{entitlement_id:"pay_pay_repeat_standard",payment_ref:"PAY-REPEAT"});
  const h=harness({entitlements:[existing],packages});const p=await resolveWriteThroughPlan(h.env,{payment_ref:"PAY-REPEAT",amount_thb:1000,member_email:EMAIL,package_code:"standard"});assert.equal(p.status,"ready");assert.equal(h.writes.length,0);
 });
+
+for (const [packageCode, amount, capability] of [
+  ["standard", 1000, "private_standard"],
+  ["premium", 2500, "private_premium"],
+]) for (const active of [true, false]) test("November reviewed " + packageCode + (active ? " active" : " expired") + " renewal grants six calendar months and reports the exact term", async () => {
+  const paidAt = "2026-11-29T17:15:00.000Z";
+  const priorExpiry = active ? "2027-08-30T17:15:00.000Z" : "2026-09-01T17:15:00.000Z";
+  const h = harness({ entitlements: [entitlement({ packageCode, capability, expireAt: priorExpiry })] });
+  const body = await (await reconcileReviewedMembershipEntitlement(
+    reviewedRequest({ amount, packageCode }), reviewedResponse({ paid_at: paidAt }), h.env,
+  )).json();
+  const receipt = body.membership_write_through;
+  assert.equal(body.entitlement_materialized, true);
+  assert.equal(receipt.action, "renewal");
+  assert.equal(receipt.start_at, active ? priorExpiry : paidAt);
+  assert.equal(receipt.expire_at, active ? "2029-02-27T17:15:00.000Z" : "2028-05-29T17:15:00.000Z");
+  assert.equal(receipt.membership_term, "1_year_plus_6_months");
+  assert.equal(receipt.promotion.bonus_months, 6);
+  assert.equal(createdEntitlements(h)[0].fields.expire_at, receipt.expire_at);
+});
+
+for (const [packageCode, amount, capability] of [
+  ["standard", 1199, "private_standard"],
+  ["premium", 2999, "private_premium"],
+]) for (const expireAt of ["2026-07-01T00:00:00.000Z", "2024-01-01T00:00:00.000Z"]) test("November normal-price returning " + packageCode + " with expiry " + expireAt + " still requires explicit reviewed signup integration", async () => {
+  const h = harness({ entitlements: [entitlement({ packageCode, capability, expireAt })] });
+  const body = await (await reconcileReviewedMembershipEntitlement(
+    reviewedRequest({ amount, packageCode }), reviewedResponse({ paid_at: "2026-11-01T03:00:00.000Z" }), h.env,
+  )).json();
+  assert.equal(body.entitlement_materialized, false);
+  assert.equal(body.manual_membership_review_required, true);
+  assert.equal(body.membership_write_through.reason, "renewal_expired_over_90_days_review_required");
+  assert.equal(h.writes.length, 0);
+});
+
+for (const [packageCode, amount, capability] of [
+  ["standard", 799, "private_standard"],
+  ["premium", 1999, "private_premium"],
+]) test("November bonus does not authorize the retired " + packageCode + " renewal price", async () => {
+  const h = harness({ entitlements: [entitlement({ packageCode, capability })] });
+  const plan = await resolveWriteThroughPlan(h.env, {
+    payment_ref: "NOV-WRONG-PRICE", amount_thb: amount, member_email: EMAIL, package_code: packageCode,
+  }, { paid_at: "2026-11-01T03:00:00.000Z" });
+  assert.equal(plan.status, "review_required");
+  assert.equal(plan.reason, "renewal_price_policy_review_required");
+  assert.equal(h.writes.length, 0);
+});
+
+test("November unknown expiry, protected account and missing payment time never gain the bonus", async () => {
+  const paid = "2026-11-01T03:00:00.000Z";
+  for (const [h, paidAt, reason] of [
+    [harness({ entitlements: [entitlement({ expireAt: "" })] }), paid, "canonical_expiry_required"],
+    [harness({ members: [member({ "Membership Tier": "SVIP" })] }), paid, "protected_membership_manual_review_required"],
+    [harness({ entitlements: [entitlement()] }), "", "canonical_payment_date_required"],
+  ]) {
+    const plan = await resolveWriteThroughPlan(h.env, {
+      payment_ref: "NOV-UNKNOWN", amount_thb: 1000, member_email: EMAIL, package_code: "standard",
+    }, { paid_at: paidAt, verified_at: paid });
+    assert.equal(plan.status, "review_required");
+    assert.equal(plan.reason, reason);
+    assert.equal(h.writes.length, 0);
+  }
+});
+
+test("November genuinely new Standard and Premium purchases retain their original package terms", async () => {
+  for (const [packageCode, amount, expiry, term] of [
+    ["standard", 1199, "2027-11-01T03:00:00.000Z", "1_year"],
+    ["premium", 2999, "2028-11-01T03:00:00.000Z", "2_years"],
+  ]) {
+    const h = harness();
+    const plan = await resolveWriteThroughPlan(h.env, {
+      payment_ref: "NOV-NEW-" + packageCode, amount_thb: amount, member_email: EMAIL, package_code: packageCode,
+    }, { paid_at: "2026-11-01T03:00:00.000Z" });
+    assert.equal(plan.status, "ready");
+    assert.equal(plan.proposed_expire_at, expiry);
+    assert.equal(plan.membership_term, term);
+    assert.equal(plan.promotion?.bonus_months, undefined);
+  }
+});
+
+test("reviewed canonical October payment overrides November request timestamps and retains October terms", async () => {
+  const h = harness({ entitlements: [entitlement({ expireAt: "2026-10-01T03:00:00.000Z" })] });
+  const body = await (await reconcileReviewedMembershipEntitlement(
+    reviewedRequest({ amount: 1000, extra: { paid_at: "2026-11-01T03:00:00.000Z", verified_at: "2026-12-01T03:00:00.000Z" } }),
+    reviewedResponse({ paid_at: "2026-10-31T16:59:59.999Z" }), h.env,
+  )).json();
+  assert.equal(body.entitlement_materialized, true);
+  assert.equal(body.membership_term, "1_year_plus_180_days");
+  assert.equal(body.membership_write_through.promotion.code, "october_prepaid_standard_2026");
+  assert.equal(body.membership_write_through.start_at, "2026-10-31T16:59:59.999Z");
+});
+
+test("replaying a November six-month renewal preserves the original outcome with no additional entitlement write", async () => {
+  const h = harness({ entitlements: [entitlement()] });
+  const paid = { paid_at: "2026-11-01T03:00:00.000Z" };
+  const first = await (await reconcileReviewedMembershipEntitlement(reviewedRequest({ amount: 1000 }), reviewedResponse(paid), h.env)).json();
+  const recorded = structuredClone(createdEntitlements(h));
+  const writeCount = h.writes.length;
+  const second = await (await reconcileReviewedMembershipEntitlement(reviewedRequest({ amount: 1000 }), reviewedResponse({ paid_at: "2026-12-31T16:59:59.999Z" }), h.env)).json();
+  assert.equal(second.membership_write_through.duplicate, true);
+  assert.equal(second.membership_expire_at, first.membership_expire_at);
+  assert.equal(second.membership_term, "1_year_plus_6_months");
+  assert.equal(second.membership_expiry_rule, first.membership_expiry_rule);
+  assert.deepEqual(createdEntitlements(h), recorded);
+  assert.equal(h.writes.length, writeCount);
+});
+
+

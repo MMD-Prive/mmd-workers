@@ -18,8 +18,9 @@ test("returns only customer-safe prebookings for the verified member reference",
   const originalFetch = globalThis.fetch;
   let seenUrl = "";
   globalThis.fetch = async (url, init = {}) => {
-    seenUrl = String(url);
     assert.match(String(init.headers?.Authorization || ""), /^Bearer /);
+    if (new URL(String(url)).pathname.includes("tbl0p7UdOH9BjzmFX")) return Response.json({ records: [] });
+    seenUrl = String(url);
     return Response.json({
       records: [{
         id: "recPrivateAirtableId",
@@ -50,7 +51,7 @@ test("returns only customer-safe prebookings for the verified member reference",
   try {
     const response = await handleMmsMemberReadRequest(new Request(
       "https://mms.internal/internal/mms/member/prebookings?member_ref=member_001",
-    ), env);
+    ), { ...env, AIRTABLE_JOBS_TABLE_ID: "tbl0p7UdOH9BjzmFX" });
     assert.equal(response.status, 200);
     const payload = await response.json();
     assert.equal(payload.ok, true);
@@ -88,4 +89,75 @@ test("rejects public-host access and malformed member references", async () => {
     "https://mms.internal/internal/mms/member/prebookings?member_ref=member'bad",
   ), env);
   assert.equal(malformed.status, 400);
+});
+
+test("returns only numeric ETA for a verified member while a job is accepted and en route", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const target = new URL(String(url));
+    if (target.pathname.includes("tblnSw3MY79MwWONe")) return Response.json({ records: [{ fields: {
+      "Prebooking ID": "mmspre_1234567890abcdef12345678", "Member Ref": "member_001", "Service Date": "2026-09-04", "Status": "Confirmed",
+    } }] });
+    return Response.json({ records: [{ fields: {
+      "Prebooking ID": "mmspre_1234567890abcdef12345678", "Job Status": "Accepted", "Travel Label": "กำลังเดินทาง",
+      "ETA Label": "1 ชม. 5 นาที", "Exact Address Private": "private destination", "Therapist GPS": "private coordinate",
+    } }] });
+  };
+  try {
+    const response = await handleMmsMemberReadRequest(new Request("https://mms.internal/internal/mms/member/prebookings?member_ref=member_001"), {
+      ...env, AIRTABLE_JOBS_TABLE_ID: "tbl0p7UdOH9BjzmFX",
+    });
+    const payload = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(payload.data.requests[0].travel_status, "en_route");
+    assert.equal(payload.data.requests[0].eta_minutes, 65);
+    assert.doesNotMatch(JSON.stringify(payload), /private destination|private coordinate|Exact Address/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("keeps ETA checking distinct from no departure when the jobs read is unavailable", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const target = new URL(String(url));
+    if (target.pathname.includes("tblnSw3MY79MwWONe")) return Response.json({ records: [{ fields: {
+      "Prebooking ID": "mmspre_1234567890abcdef12345678", "Member Ref": "member_001", "Service Date": "2026-09-04", Status: "Confirmed",
+    } }] });
+    return new Response(null, { status: 503 });
+  };
+  try {
+    const response = await handleMmsMemberReadRequest(new Request("https://mms.internal/internal/mms/member/prebookings?member_ref=member_001"), {
+      ...env, AIRTABLE_JOBS_TABLE_ID: "tbl0p7UdOH9BjzmFX",
+    });
+    const payload = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(payload.data.requests[0].travel_status, "checking");
+    assert.equal("eta_minutes" in payload.data.requests[0], false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("keeps a departure with no ETA in checking state instead of publishing a fabricated arrival time", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const target = new URL(String(url));
+    if (target.pathname.includes("tblnSw3MY79MwWONe")) return Response.json({ records: [{ fields: {
+      "Prebooking ID": "mmspre_1234567890abcdef12345678", "Member Ref": "member_001", "Service Date": "2026-09-04", Status: "Confirmed",
+    } }] });
+    return Response.json({ records: [{ fields: {
+      "Prebooking ID": "mmspre_1234567890abcdef12345678", "Job Status": "Accepted", "Travel Label": "กำลังเดินทาง", "ETA Label": "",
+    } }] });
+  };
+  try {
+    const response = await handleMmsMemberReadRequest(new Request("https://mms.internal/internal/mms/member/prebookings?member_ref=member_001"), {
+      ...env, AIRTABLE_JOBS_TABLE_ID: "tbl0p7UdOH9BjzmFX",
+    });
+    const payload = await response.json();
+    assert.equal(payload.data.requests[0].travel_status, "checking");
+    assert.equal("eta_minutes" in payload.data.requests[0], false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });

@@ -1,0 +1,63 @@
+{
+  "version": "2026.10.24-lv10",
+  "published": true,
+  "publishTaskId": "0f7b06dd-a4e8-4b64-bc17-cd7cba94413e",
+  "readback": [
+    {
+      "name": "head",
+      "match": true
+    },
+    {
+      "name": "footer",
+      "match": true
+    },
+    {
+      "name": "0b037d16-40ee-ccab-0acf-b009e7afce21",
+      "match": true
+    },
+    {
+      "name": "5f36532e-b8ac-0047-ab9e-c23a92380082",
+      "match": true
+    },
+    {
+      "name": "1bb57d5b-fe32-6895-da58-ef79b610f7d6",
+      "match": true
+    },
+    {
+      "name": "dcfdec8b-fecc-a70d-9fd2-69163ddc0ad6",
+      "match": true
+    },
+    {
+      "name": "b5616362-1db0-10eb-db9b-e0446222a9f2",
+      "match": true
+    },
+    {
+      "name": "3ace71a1-01db-2ab3-2410-58b10e60329f",
+      "match": true
+    }
+  ],
+  "visual": {
+    "browser": "Connected Chrome",
+    "widths": [
+      320,
+      390,
+      768,
+      1440
+    ],
+    "horizontalOverflow": false,
+    "desktopHeroHeight": 553.328125,
+    "mobileHeroHeight": 669.703125,
+    "legacyV27Frames": 0,
+    "legacyV26Style": false,
+    "visibleConsentCount": 1,
+    "languageSwitches": [
+      "th",
+      "en",
+      "zh"
+    ],
+    "benefitsDialog": "Opened and closed with complete PN/VIP/member information",
+    "productionWallMessages": 14,
+    "submitState": "Disabled empty; enabled with valid text and checked consent; disabled after reset"
+  },
+  "productionPostRequests": "None. Form submission and linking were tested with mocks only."
+}

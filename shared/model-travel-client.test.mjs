@@ -14,6 +14,18 @@ import { handleLiffMemberShell } from '../member-pages-worker/src/liff-member-sh
 import vm from 'node:vm';
 
 const settle = async () => { for (let n=0;n<12;n++) await new Promise(resolve=>setImmediate(resolve)); };
+test('model travel panel explains inactive stages without inventing ETA or actions', async () => {
+  for (const state of ['offered', 'work_finished']) {
+    const ui = windowFor();
+    ui.w.fetch = async () => Response.json({ok:true,session_id:'sess_FIXTURE',state,revision:1,server_now:new Date().toISOString(),submissions:[],can_send:false,eta:{status:'inactive'}});
+    try {
+      ui.w.mountFixture(ui.host,{role:'model',sessionId:'sess_FIXTURE',state,locale:'th'});
+      await settle();
+      assert.equal(ui.host.querySelector('section>strong').textContent,'ขั้นตอนนี้ไม่แสดงเวลาถึง');
+      assert.equal(ui.host.querySelector('details').hidden,true);
+    } finally { ui.close(); }
+  }
+});
 const until = async predicate => { const deadline=Date.now()+4000;while(!predicate()){if(Date.now()>deadline)throw new Error('UI condition timed out');await new Promise(resolve=>setTimeout(resolve,5));} };
 function windowFor() {
   const dom = new JSDOM('<main id="host"></main>', {url:'https://mmdbkk.com/',runScripts:'outside-only',pretendToBeVisual:true});
@@ -126,8 +138,12 @@ test('generated Console and LIFF shell scripts parse; Console byte budget and or
 
 test('compact model home only reads ETA and restores compressed CSS once despite the existing script ID',async()=>{
   const ui=windowFor();let calls=0;
+  const server=Date.parse('2026-10-18T16:55:00Z');
+  // One server snapshot must define both timestamps. Separate wall-clock reads
+  // can produce 60,001ms, which correctly rounds to two minutes on a busy runner.
+  Object.defineProperty(ui.w.performance,'now',{value:()=>0});
   ui.w.eval(travelClientBundle(true)+'window.mountSummary=mountTravelPanel;');
-  ui.w.fetch=async url=>{calls++;assert.match(String(url),/^\/v1\/model\/session\/travel\?/);return Response.json({ok:true,session_id:'sess_FIXTURE',state:'en_route',server_now:new Date().toISOString(),eta:{status:'active',arrival_at:new Date(Date.now()+60000).toISOString()}});};
+  ui.w.fetch=async url=>{calls++;assert.match(String(url),/^\/v1\/model\/session\/travel\?/);return Response.json({ok:true,session_id:'sess_FIXTURE',state:'en_route',server_now:new Date(server).toISOString(),eta:{status:'active',arrival_at:new Date(server+60000).toISOString()}});};
   try{
     ui.w.mountSummary(ui.host,{role:'model',sessionId:'sess_FIXTURE',state:'confirmed',locale:'th'});await settle();assert.equal(calls,0);
     ui.w.mountSummary(ui.host,{role:'model',sessionId:'sess_FIXTURE',state:'en_route',locale:'th'});await until(()=>ui.host.textContent.includes('1 นาที'));

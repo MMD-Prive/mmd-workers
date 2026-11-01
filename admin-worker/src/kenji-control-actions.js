@@ -1,5 +1,5 @@
 import { KENJI_CLIENT_INTAKE_PATH, handleKenjiClientIntake } from "./kenji-client-intake.js";
-import { LINE_OFC_CLIENT_IMPORT_PATH, handleLineOfcClientImport } from "./line-ofc-client-import.js";
+import { LINE_OFC_CLIENT_IMPORT_PATH, handleLineOfcClientImport, readLineOfcImportReplay } from "./line-ofc-client-import.js";
 
 const BASE_ID_DEFAULT = "appsV1ILPRfIjkaYg";
 const TABLES = Object.freeze({
@@ -84,6 +84,7 @@ export async function handleKenjiControlAction(request, env, actor = {}) {
     if (duplicate) {
       const duplicateHash = clean(duplicate.fields?.payload_hash);
       if (!duplicateHash || duplicateHash !== payloadHash) return json({ ok: false, error: "idempotency_conflict" }, 409);
+      if (operation === "line_ofc_client_import") return await readLineOfcImportReplay(env, clean(duplicate.fields?.target_id));
       if (operation === "client_intake") {
         const targetId = clean(duplicate.fields?.target_id);
         if (!/^rec[\w]+$/.test(targetId)) return json({ ok: false, error: "idempotency_incomplete" }, 409);
@@ -271,6 +272,13 @@ async function readRuntimeControls(env) {
 // reimplementing the Airtable control semantics in an operator UI endpoint.
 export async function readKenjiRuntimeControls(env = {}) {
   return readRuntimeControls(env);
+}
+
+// Owner UI readback uses the same version ordering as the existing action.
+// No record IDs, reasons, actors, or credentials leave this projection.
+export async function readKenjiRuntimeControlVersions(env = {}) {
+  return Object.fromEntries(await Promise.all(KENJI_RUNTIME_SCOPES.map(async scope =>
+    [scope, await latestRuntimeScope(env, scope)])));
 }
 
 async function isRuntimeScopeEnabled(env, scope) {

@@ -39,7 +39,17 @@ export async function listUnifiedModelLineCandidates(env, url) {
   const driveItems = drive.ok
     ? drive.items.filter((item) => item.drive_folder_id && !canonicalDriveIds.has(item.drive_folder_id))
     : [];
-  const items = [...airtableItems, ...driveItems].slice(0, 30);
+  // Keep canonical rows for the folders selected by the directory's main-first
+  // policy. Do not reintroduce mirrored or Review folders through Airtable.
+  const visibleCanonical = drive.ok && drive.items.length
+    ? airtableItems.filter(item => approvedById.has(item.drive_folder_id))
+    : airtableItems;
+  const items = [...visibleCanonical, ...driveItems]
+    .filter(item => !/^(?:review|media|archive|reference|approval|approved|pending|draft|assets?)\b/i.test(clean(item.working_name)))
+    .map(item => ({ ...item, ...searchPresentation(q, item, approvedById.get(item.drive_folder_id)) }))
+    .sort((a, b) => Number(a.match_kind !== 'exact') - Number(b.match_kind !== 'exact')
+      || Number(a.working_name !== q) - Number(b.working_name !== q))
+    .slice(0, 30);
 
   return {
     ok: true,
@@ -51,6 +61,13 @@ export async function listUnifiedModelLineCandidates(env, url) {
       drive: drive.ok,
     },
     warning: !drive.ok ? "drive_directory_unavailable" : (!airtable.ok ? "airtable_models_unavailable" : ""),
+  };
+}
+
+function searchPresentation(query, item, directoryItem) {
+  return {
+    match_kind: clean(item.working_name).toLocaleLowerCase() === clean(query).toLocaleLowerCase() ? 'exact' : 'similar',
+    drive_priority: directoryItem?.drive_priority || item.drive_priority || '',
   };
 }
 
@@ -244,7 +261,13 @@ async function searchDriveDirectory(env, q, lane) {
   url.searchParams.set("lane", lane);
   const response = await driveDirectoryFetch(env, url, { method: "GET" });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok || data.ok === false) return { ok: false, status: response.status, error: clean(data.error, 120), items: [] };
+  if (!response.ok || data.ok === false) return {
+    ok: false,
+    status: response.status,
+    error: clean(data.error, 120),
+    reason_code: clean(data.reason_code, 80),
+    items: [],
+  };
   const items = Array.isArray(data.items) ? data.items.map(safeDriveCandidate).filter(Boolean) : [];
   return { ok: true, items };
 }
@@ -295,6 +318,8 @@ function safeDriveCandidate(item) {
     drive_folder_url: safeHttpsUrl(item.drive_folder_url),
     folder_path: clean(item.folder_path, 1200),
     folder_scope_key: clean(item.folder_scope_key, 300),
+    drive_priority: item.drive_priority === 'primary' ? 'primary' : item.drive_priority === 'fallback' ? 'fallback' : '',
+    match_kind: item.match_kind === 'exact' ? 'exact' : 'similar',
   };
 }
 

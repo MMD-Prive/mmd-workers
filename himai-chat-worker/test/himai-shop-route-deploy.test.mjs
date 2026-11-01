@@ -9,7 +9,7 @@ function json(value, status = 200) {
 }
 function fixture(url) {
   const path = new URL(url).pathname;
-  if (path.endsWith("/api/products")) return json({ ok: true, shop: "shop", pricing_source: "Himai Selling Price THB", products: [] });
+  if (path.endsWith("/api/products")) return json({ ok: true, shop: "shop", products: [] });
   if (path.endsWith("/api/checkout")) return json({ ok: false, error: "method_not_allowed" }, 405);
   return new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } });
 }
@@ -53,14 +53,14 @@ test("both hosts pass using GET only, without customer data or business writes",
 
 test("rejects MMD catalog under the Himai route", async () => {
   await assert.rejects(probe(async (url) => url.endsWith("/products")
-    ? json({ ok: true, shop: "mmd-shop", pricing_source: "Himai Selling Price THB", products: [] })
+    ? json({ ok: true, shop: "mmd-shop", products: [] })
     : fixture(url)), /brand_mismatch/);
 });
 
-test("rejects MMD pricing under the Himai route", async () => {
+test("rejects internal pricing metadata in the public catalog", async () => {
   await assert.rejects(probe(async (url) => url.endsWith("/products")
     ? json({ ok: true, shop: "shop", pricing_source: "MMD Shop Selling Price THB", products: [] })
-    : fixture(url)), /pricing_source_mismatch/);
+    : fixture(url)), /internal_catalog_metadata_exposed/);
 });
 
 test("rejects HTML fallback instead of a mounted checkout API", async () => {
@@ -105,7 +105,7 @@ test("allows same-path www canonicalization but rejects redirecting to MMD Shop"
 
 test("rejects an accidentally opened restricted-product checkout", async () => {
   await assert.rejects(probe(async (url) => url.endsWith("/products")
-    ? json({ ok: true, shop: "shop", pricing_source: "Himai Selling Price THB", products: [{ sku: "PPP25-TEST", checkout_eligible: true }] })
+    ? json({ ok: true, shop: "shop", products: [{ sku: "PPP25-TEST", checkout_eligible: true }] })
     : fixture(url)), /restricted_checkout_must_stay_closed/);
 });
 

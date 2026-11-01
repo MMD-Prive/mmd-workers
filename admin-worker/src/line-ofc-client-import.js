@@ -37,7 +37,7 @@ export async function handleLineOfcClientImport(request, env = {}, actor = {}, c
   // context and candidate service history stay in the private staging table above.
   // Create Job reads the reviewed snake_case staging table, so project only the
   // minimum identity evidence needed for deterministic alias lookup.
-  const identityProjection = await syncLineOfcIdentityProjection(env, {
+  const identityProjection = !input.line_user_id ? {verified_staging_record_id:null,pre_session_index_record_id:null,session_lookup_status:"review_required"} : await syncLineOfcIdentityProjection(env, {
     input,
     privateStagingRecordId: record.id,
     candidates,
@@ -76,6 +76,7 @@ export async function handleLineOfcClientImport(request, env = {}, actor = {}, c
 function normalizeInput(body = {}) {
   const input = {
     import_id: clean(body.import_id, 180),
+    client_id: clean(body.client_id, 180),
     line_user_id: clean(body.line_user_id, 180),
     email: clean(body.email, 254).toLowerCase(),
     phone: clean(body.phone, 80),
@@ -90,13 +91,23 @@ function normalizeInput(body = {}) {
     source_hash: clean(body.source_hash, 180),
     reason: clean(body.reason, 1000),
   };
-  if (!input.import_id || !input.line_user_id || !input.reason) throw new Error("invalid_request");
+  if (!input.import_id || (!input.line_user_id && !input.current_line_rename) || !input.reason) throw new Error("invalid_request");
   if (input.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email)) throw new Error("invalid_request");
   if (!input.raw_line_notes && !input.membership_application_sensitive && !input.behaviour_care_context && !input.service_history_candidate) throw new Error("invalid_request");
   return input;
 }
 
 async function collectCandidates(env, table, input) {
+  if (input.client_id) {
+    if (!/^rec[a-zA-Z0-9]+$/.test(input.client_id)) throw new Error("invalid_client_id");
+    const config = airtableConfig(env);
+    const response = await fetch(`${AIRTABLE_API}/${config.base}/${table}/${encodeURIComponent(input.client_id)}`, {headers:{Authorization:`Bearer ${config.token}`}});
+    if (!response.ok) throw new Error("client_not_found");
+    const row = await response.json();
+    if (row.id !== input.client_id) throw new Error("client_mismatch");
+    input.line_user_id = clean(row.fields?.line_user_id);
+    return [row];
+  }
   const found = new Map();
   const keys = [
     ["line_user_id", input.line_user_id],
@@ -251,7 +262,10 @@ async function createAudit(env, input) {
   const record = await airtableCreate(env, ACTIONS_TABLE, {
     action_id: actionId,
     idempotency_key: input.idempotencyKey,
-    operation: "line_ofc_client_import",
+    // Airtable's audited operation select predates the LINE OFC import path.
+    // Keep the audit row in its supported client-intake category and retain
+    // the exact operation in redacted_summary until the schema is migrated.
+    operation: "client_intake",
     target_id: input.targetId,
     actor_id: clean(input.actor?.id || "unknown"),
     actor_role: clean(input.actor?.role || "unknown"),
@@ -339,3 +353,17 @@ function safeHashRef(value) { const text = clean(value, 180); return text ? text
 function escapeFormula(value) { return String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"'); }
 function clean(value, max = 4000) { return String(value ?? "").trim().slice(0, max); }
 function json(data, status = 200) { return new Response(JSON.stringify(data), { status, headers: { "Cache-Control": "no-store, private", "Content-Type": "application/json; charset=utf-8" } }); }
+
+// Replay returns the already stored identity handoff, never re-imports evidence.
+export async function readLineOfcImportReplay(env, recordId) {
+  if (!/^rec[A-Za-z0-9]+$/.test(recordId || "")) throw new Error("idempotency_incomplete");
+  const config = airtableConfig(env);
+  const table = clean(env.AIRTABLE_LINE_OFC_IMPORT_TABLE_ID) || STAGING_TABLE_DEFAULT;
+  const response = await fetch(`${AIRTABLE_API}/${config.base}/${table}/${recordId}`, { headers: { Authorization: `Bearer ${config.token}` } });
+  if (!response.ok) throw new Error("idempotency_incomplete");
+  const record = await response.json();
+  const fields = record.fields || {};
+  const clients = fields["Canonical Client"] || [];
+  return json({ ok: true, duplicate: true, operation: "line_ofc_client_import", import_id: fields["Import ID"], staging_record_id: record.id,
+    canonical_client_id: clients.length === 1 ? clients[0] : null, status: fields["Import Status"], membership_mutation: false, entitlement_mutation: false });
+}

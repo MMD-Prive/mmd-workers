@@ -1,0 +1,90 @@
+{
+  "method": "Decoded RGBA differences outside rightmost 6%; diagnostic only, not a pixel-identity guarantee or substitute for visual review.",
+  "assets": [
+    {
+      "width": 1316,
+      "height": 1195,
+      "changed_pixels": 1412131,
+      "changed_bounds_xyxy": [
+        0,
+        0,
+        1316,
+        1195
+      ],
+      "pixel_identical_outside_right_edge": false,
+      "outside_right_edge_mean_channel_difference": 1.811,
+      "outside_right_edge_pixels_max_difference_over_32_fraction": 0.00558,
+      "sha256": "dc1ae630c2c694bde00171bcb4d9c73498ff986831931698cf568f2b1d8f3e3d",
+      "visual_choice": 1,
+      "review": "No material frame/background geometry change observed; generated texture differences are present."
+    },
+    {
+      "width": 1316,
+      "height": 1195,
+      "changed_pixels": 1347441,
+      "changed_bounds_xyxy": [
+        0,
+        0,
+        1316,
+        1195
+      ],
+      "pixel_identical_outside_right_edge": false,
+      "outside_right_edge_mean_channel_difference": 1.298,
+      "outside_right_edge_pixels_max_difference_over_32_fraction": 0.00303,
+      "sha256": "e56e268deb2a41f7a951e042949491d64c5885cd50e72cf62243ca5b6085e5da",
+      "visual_choice": 2,
+      "review": "No material frame/background geometry change observed; generated texture differences are present."
+    },
+    {
+      "width": 1316,
+      "height": 1195,
+      "changed_pixels": 1381774,
+      "changed_bounds_xyxy": [
+        0,
+        0,
+        1316,
+        1195
+      ],
+      "pixel_identical_outside_right_edge": false,
+      "outside_right_edge_mean_channel_difference": 1.79,
+      "outside_right_edge_pixels_max_difference_over_32_fraction": 0.00877,
+      "sha256": "a53eec77c6e0fd4aac375d1d62cd230ca77b30ebb9b2d9167bce1e0a7fab12f8",
+      "visual_choice": 3,
+      "review": "No material frame/background geometry change observed; generated texture differences are present."
+    },
+    {
+      "width": 1316,
+      "height": 1195,
+      "changed_pixels": 1383244,
+      "changed_bounds_xyxy": [
+        0,
+        0,
+        1316,
+        1195
+      ],
+      "pixel_identical_outside_right_edge": false,
+      "outside_right_edge_mean_channel_difference": 1.867,
+      "outside_right_edge_pixels_max_difference_over_32_fraction": 0.00955,
+      "sha256": "1a66f180af607d2f57f6444aeadab38872b04abf794d57f2daa5f178ec8a9eac",
+      "visual_choice": 4,
+      "review": "No material frame/background geometry change observed; generated texture differences are present."
+    },
+    {
+      "width": 1316,
+      "height": 1195,
+      "changed_pixels": 1312558,
+      "changed_bounds_xyxy": [
+        0,
+        0,
+        1316,
+        1195
+      ],
+      "pixel_identical_outside_right_edge": false,
+      "outside_right_edge_mean_channel_difference": 1.578,
+      "outside_right_edge_pixels_max_difference_over_32_fraction": 0.00758,
+      "sha256": "29de6b65d6d5d330f19b2f1ecc052e638c3df473ffe13e6acb18325143c97595",
+      "visual_choice": 5,
+      "review": "No material frame/background geometry change observed; generated texture differences are present."
+    }
+  ]
+}

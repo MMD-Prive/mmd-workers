@@ -106,7 +106,7 @@ test("wrangler production entrypoint layers MY MMS customer routing around the c
   const customerEntry = await readFile(new URL("../src/my-mms-customer-front-gate-entry.js", import.meta.url), "utf8");
   const frontGate = await readFile(new URL("../src/mms-line-front-gate.js", import.meta.url), "utf8");
 
-  assert.match(wrangler, /^main = "src\/my-mms-customer-front-gate-entry\.js"$/m);
+  assert.match(wrangler, /^main = "src\/guide-notification-entry\.mjs"$/m);
   assert.doesNotMatch(wrangler, /^main = "src\/front-gate-single-file-shell\.js"$/m);
   assert.match(customerEntry, /from "\.\/mms-line-front-gate\.js"/);
   assert.match(customerEntry, /my-mms-customer-app-front-gate\.js/);

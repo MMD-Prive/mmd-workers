@@ -14,21 +14,22 @@ test('ordinary version uploads never perform a direct deployment', () => {
 });
 test('confirmed migration applies with identical secrets and retained vars, then uploads the promotable version', () => {
   const { calls, result } = run([migration, { status: 0, output: 'Current Version ID: direct' }, { status: 0, output: 'Worker Version ID: promotable' }], {allowMigration:true});
-  assert.equal(calls[1][0], 'deploy'); assert.deepEqual(calls[1].slice(1), calls[0].slice(2));
+  assert.deepEqual(calls[1], ['deploy', '--keep-vars', '--env=', '--message', 'fixture', '--secrets-file', '/tmp/mms-test.env']);
   assert.ok(calls[1].includes('--keep-vars')); assert.equal(calls[1].at(-1), '/tmp/mms-test.env');
+  assert.ok(!calls[1].includes('--tag')); assert.deepEqual(calls[1].slice(3, 5), ['--message', 'fixture']);
   assert.deepEqual(calls[0], calls[2]); assert.equal(result.output, 'Worker Version ID: promotable');
   assert.equal(result.migrationApplied, true);
 });
-test('authorization and network errors cannot trigger direct deployment', () => {
+test('authorization, network, and loosely matching errors cannot trigger direct deployment even when migration opt-in is set', () => {
   for (const output of ['Authentication error [code: 10000]', 'Network error', 'migration [code: 10211]']) {
     let calls = 0;
-    assert.throws(() => uploadMmsVersion({ config, run() { calls++; return { status: 1, output }; } }), /refusing direct deploy/);
+    assert.throws(() => uploadMmsVersion({ config, allowMigration: true, run() { calls++; return { status: 1, output }; } }), /refusing direct deploy/);
     assert.equal(calls, 1);
   }
 });
-test('route mutation and wrong-worker configurations are rejected before any upload', () => {
+test('route mutation and wrong-worker configurations are rejected before any upload or migration fallback', () => {
   for (const invalid of [{ ...config, routes: [{ pattern: '*/*' }] }, { ...config, route: '*/*' }, { ...config, triggers: { crons: ['* * * * *'] } }, { ...config, name: 'other-worker' }]) {
-    assert.throws(() => run([], { config: invalid }), /route-free/);
+    assert.throws(() => run([migration], { config: invalid, allowMigration: true }), /route-free/);
   }
 });
 test('failed direct migration cannot upload or promote another version', () => {

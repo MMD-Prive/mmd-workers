@@ -138,6 +138,7 @@ async function ingestHistoricalProof(request, env, ctx, manual = false) {
   };
 
   const extraction = await extractSlip(env, { bytes, mimeType });
+  if (manual && explicit.session_id && extraction.session_id && extraction.session_id !== explicit.session_id) throw httpError(409, "slip_session_conflict");
   const candidate = {
     payment_ref: extraction.payment_ref || explicit.payment_ref,
     session_id: extraction.session_id || explicit.session_id,
@@ -150,6 +151,11 @@ async function ingestHistoricalProof(request, env, ctx, manual = false) {
   };
 
   const links = await resolveDeterministicLinks(env, candidate);
+  if (manual && explicit.session_id && (!links.session || links.ambiguous)) throw httpError(409, "slip_session_unresolved");
+  if (manual && explicit.session_id && links.payment) {
+    const payment = await airtableGet(env, paymentTable(env), links.payment);
+    if (safeText(payment?.fields?.session_id, 180) !== explicit.session_id) throw httpError(409, "slip_payment_session_conflict");
+  }
   const threshold = Math.max(0.5, Math.min(1, Number(env.HISTORICAL_SLIP_CONFIDENCE_THRESHOLD) || 0.85));
   const reconciliationComplete = Boolean(candidate.payment_ref && candidate.amount_thb != null);
   const deterministicMatch = Boolean(links.payment || links.session || links.member || links.client);

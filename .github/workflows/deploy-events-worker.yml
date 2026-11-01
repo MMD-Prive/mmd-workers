@@ -70,7 +70,9 @@ jobs:
           node --check src/compcard-daily.js
           node --check src/compcard-policy.js
           node --check src/compcard-journal.js
-          node --test compcard-policy.test.mjs compcard-journal.test.mjs compcard-daily.test.mjs
+          node --check ../scripts/hype-prepare-intake.mjs
+          node --test ../scripts/hype-prepare-intake.test.mjs
+          node --test compcard-policy.test.mjs compcard-journal.test.mjs compcard-daily.test.mjs compcard-cadence.test.mjs compcard-intake.test.mjs
           node --test model-eta-policy.test.mjs aftercare-v2.test.mjs
           node --test ../admin-worker/model-reconfirm-runtime.test.mjs ../admin-worker/model-reconfirm-guard.test.mjs ../admin-worker/model-reconfirm-freshness.test.mjs ../admin-worker/model-reconfirm-canonical-source.test.mjs ../admin-worker/model-new-job-notification.test.mjs
 
@@ -130,3 +132,4 @@ jobs:
         shell: bash
         run: |
           echo "events-worker live: ${GITHUB_SHA} / ${EVENTS_WORKER_VERSION_ID}"
+

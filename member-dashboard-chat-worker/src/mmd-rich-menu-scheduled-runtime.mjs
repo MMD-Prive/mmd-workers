@@ -11,13 +11,14 @@ const SYNC_PATH = "/v1/internal/line/rich-menu/sync";
 const THREE_LEVEL_PREPARE_PATH = "/v1/internal/line/rich-menu/three-level/prepare";
 const THREE_LEVEL_ACTIVATE_PATH = "/v1/internal/line/rich-menu/three-level/activate";
 const THREE_LEVEL_AUDIT_PATH = "/v1/internal/line/rich-menu/three-level/audit";
-const VERSION = "mmd-rm3-20261004-v4.15";
+const VERSION = "mmd-rm3-20261027-v4.16";
+const EXISTING_VERSION = "mmd-rm3-20261004-v4.15";
 const ROOT = "https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90";
 const GUEST_PRIMARY_SHA256 = "3d8ce3eea915806f46bffb7119705a7251f71b8f2a892ff94f664e66f8fda86c";
 const PUBLIC_PRIMARY_SHA256 = "2d1cfaee2865db81f3bc7cc3e3c95c13241861a8c0d5a59c7bdbc3a8e9c82957";
 const PRIVATE_PRIMARY_SHA256 = "afc7a024ab6bca40d873aca18f17c0de5be56f6bfc4c701dffd9c75c870b9620";
-const GUEST_REPAIR_NAME = `MMD Guest ${VERSION} artwork-${GUEST_PRIMARY_SHA256.slice(0, 8)}`;
-const PUBLIC_REPAIR_NAME = `MMD Public ${VERSION} artwork-${PUBLIC_PRIMARY_SHA256.slice(0, 8)}`;
+const GUEST_REPAIR_NAME = `MMD Guest ${EXISTING_VERSION} artwork-${GUEST_PRIMARY_SHA256.slice(0, 8)}`;
+const PUBLIC_REPAIR_NAME = `MMD Public ${EXISTING_VERSION} artwork-${PUBLIC_PRIMARY_SHA256.slice(0, 8)}`;
 const PRIVATE_REPAIR_NAME = `MMD Private ${VERSION} artwork-${PRIVATE_PRIMARY_SHA256.slice(0, 8)}`;
 
 function clean(v) { return String(v == null ? "" : v).trim(); }
@@ -42,7 +43,7 @@ function liffReturn(path, entry) {
 
 const MENUS = Object.freeze({
   guest: {
-    name: `MMD Guest ${VERSION}`,
+    name: `MMD Guest ${EXISTING_VERSION}`,
     frame: { left: .49, top: .16, right: .985, bottom: .75 },
     repairName: GUEST_REPAIR_NAME,
     images: [
@@ -62,7 +63,7 @@ const MENUS = Object.freeze({
     ],
   },
   public: {
-    name: `MMD Public ${VERSION}`,
+    name: `MMD Public ${EXISTING_VERSION}`,
     frame: { left: .45, top: .215, right: .99, bottom: .755 },
     repairName: PUBLIC_REPAIR_NAME,
     images: [
@@ -96,7 +97,7 @@ const MENUS = Object.freeze({
       },
     ],
     actions: [
-      postback("KENJI AI", "mmd_action=kenji_ai&audience=private&source=private_rich_menu"),
+      uri("KENJI AI", "https://www.mmdbkk.com/concierge/kenji?source=line&entry_route=rich_menu_private_kenji"),
       uri("MODEL CARDS", site("/sigil/booking?mode=search&scope=private", "rich_menu_model_cards")),
       uri("BOOKING", site("/sigil/booking?mode=booking&scope=private", "rich_menu_private_booking")),
       uri("MY MMD", liff()),
@@ -113,10 +114,10 @@ export function getMmdRichMenuDestinationMap() {
   return Object.fromEntries(Object.entries(DESTINATIONS).map(([key, actions]) => [key, actions.map(action => ({ ...action }))]));
 }
 
-// Every navigation tap enters the reply webhook; destinations remain server-owned.
+// Private Kenji opens the member web concierge directly while LINE auto-replies stay paused.
 function replyActions(key, actions) {
   return actions.map((action, index) =>
-    postback(action.label, `mmd_action=rich_menu&menu=${key}&button=${index}`));
+    key === "private" && index === 0 ? action : postback(action.label, `mmd_action=rich_menu&menu=${key}&button=${index}`));
 }
 
 export function getMmdRichMenuActionMap() {

@@ -8,7 +8,9 @@
 // - Off by default: both routes answer 404 unless LIFF_RENEWAL_CARD_ENABLED="true".
 import { addBangkokCalendarYears, applyMembershipPromotion } from "../../shared/membership-promotion-policy.mjs";
 import { readMemberAppSession, rememberMemberPaymentSnapshot } from "./member-app-api.js";
+import { getLiffGatewayStore } from "./liff-gateway-airtable.js";
 import { resolveCanonicalRenewalOffer } from "./renewal-offer.js";
+import { RENEWAL_VERIFIED_SESSION, sameRenewalIdentity } from "./renewal-session-context.js";
 
 const ROOT = "/member/api/liff/renewal";
 const OFFER_PATH = ROOT + "/offer";
@@ -30,7 +32,7 @@ function json(data, status = 200) {
 
 function sameOrigin(request) {
   const origin = clean(request.headers.get("origin"), 240);
-  return !origin || ALLOWED_ORIGINS.has(origin);
+  return request.headers.get("sec-fetch-site") !== "cross-site" && (!origin || ALLOWED_ORIGINS.has(origin));
 }
 
 export function isLiffRenewalCardPath(input) {
@@ -75,15 +77,18 @@ function expiryAfter(offer) {
 function promoLabel(promotion) {
   if (!promotion) return "";
   const years = Number(promotion.bonus_years || 0);
+  const months = Number(promotion.bonus_months || 0);
   const days = Number(promotion.bonus_days || 0);
   if (years > 0) return `โปรต่ออายุ: เพิ่ม ${years} ปี`;
+  if (months > 0) return `โปรต่ออายุ: เพิ่ม ${months} เดือน`;
   if (days > 0) return `โปรต่ออายุ: เพิ่ม ${days} วัน`;
   return "";
 }
 
 async function resolveOffer(request, env) {
-  const session = await readMemberAppSession(request, env);
+  const session = env[RENEWAL_VERIFIED_SESSION] || await readMemberAppSession(request, env);
   if (!session?.lineUserId) return { error: json({ ok: false, error: { code: "LINE_SESSION_REQUIRED" }, auth_required: true }, 401) };
+  if (session.readGraceOnly) return { error: json({ ok: false, error: { code: "LINE_SESSION_REFRESH_REQUIRED" }, auth_required: true }, 401) };
   let offer;
   try { offer = await resolveCanonicalRenewalOffer(env, sessionForOffer(session)); }
   catch { offer = { status: "review_required", reason: "renewal_offer_resolution_failed" }; }
@@ -116,6 +121,11 @@ async function handleOffer(request, env) {
     renewal_starts_at: offer.membership_start_at,
     new_expires_at: expiryAfter(offer),
     promotion_label: promoLabel(offer.promotion),
+    membership_years: offer.membership_years,
+    bonus_days: Number(offer.promotion?.bonus_days || 0),
+    bonus_months: Number(offer.promotion?.bonus_months || 0),
+    bonus_years: Number(offer.promotion?.bonus_years || 0),
+    promotion_ends_before: offer.promotion?.ends_before || null,
     price_rule: offer.price_rule,
     entitlement_granted: false,
     official_verification_required: true,
@@ -126,7 +136,7 @@ function canonicalCheckoutUrl(value) {
   try {
     const url = new URL(String(value || ""));
     const keys = [...url.searchParams.keys()];
-    if (url.protocol !== "https:" || url.hostname !== "mmdbkk.com" || url.pathname !== "/pay/checkout" || url.hash) return "";
+    if (url.protocol !== "https:" || url.hostname !== "mmdbkk.com" || url.port || url.username || url.password || url.pathname !== "/pay/checkout" || url.hash) return "";
     if (keys.length !== 1 || keys[0] !== "t" || !url.searchParams.get("t")) return "";
     return url.toString();
   } catch { return ""; }
@@ -158,7 +168,12 @@ async function createPaymentIntent(env, { sessionId, offer }) {
     error.status = 502;
     throw error;
   }
-  return { payment_ref: clean(payload.payment_ref, 220), session_id: clean(payload.session_id || sessionId, 220), customer_payment_url: redirect };
+  if (!clean(payload.payment_ref, 220) || payload.session_id !== sessionId) {
+    const error = new Error("payments_worker_session_contract_invalid");
+    error.status = 502;
+    throw error;
+  }
+  return { payment_ref: clean(payload.payment_ref, 220), session_id: sessionId, customer_payment_url: redirect };
 }
 
 async function handlePurchase(request, env) {
@@ -176,6 +191,12 @@ async function handlePurchase(request, env) {
   }
   try {
     const sessionId = await renewalSessionId(env, session.lineUserId, offer.package_code, clean(session.memberProfile?.membership_expires_at, 40));
+    const gateway = getLiffGatewayStore(env);
+    if (!gateway?.ensureRenewalPaymentSession) throw new Error("LIFF_RENEWAL_GATEWAY_UNAVAILABLE");
+    await gateway.ensureRenewalPaymentSession({ sessionId, lineUserId: session.lineUserId, packageCode: offer.package_code, amountThb: offer.amount_thb });
+    if (!sameRenewalIdentity(session, await readMemberAppSession(request, env))) {
+      return json({ ok: false, error: { code: "LIFF_RENEWAL_IDENTITY_CHANGED" }, auth_required: true }, 409);
+    }
     const payment = await createPaymentIntent(env, { sessionId, offer });
     const remembered = await rememberMemberPaymentSnapshot(request, env, {
       payment_ref: payment.payment_ref,
@@ -184,7 +205,7 @@ async function handlePurchase(request, env) {
       package_code: offer.package_code,
       amount_thb: offer.amount_thb,
       customer_payment_url: payment.customer_payment_url,
-    });
+    }, session);
     if (!remembered) {
       const failure = new Error("LIFF_RENEWAL_PAYMENT_STATE_PERSIST_FAILED");
       failure.status = 503;
@@ -216,3 +237,4 @@ export async function handleLiffRenewalCard(request, env = {}) {
 }
 
 export const LIFF_RENEWAL_CARD_INTERNALS = Object.freeze({ expiryAfter, promoLabel, canonicalCheckoutUrl, renewalSessionId });
+

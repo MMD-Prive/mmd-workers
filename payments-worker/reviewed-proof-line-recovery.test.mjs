@@ -40,7 +40,7 @@ function harness() {
       renewal_amount_thb: 2500,
       Client: [CLIENT_RECORD],
     } }],
-    "tblNImdF9PKAxhXGi": [{id:"recPriorPremium",fields:{member_id:"inn",line_user_id:LINE_ID,package_code:"premium",expire_at:"2026-01-01T00:00:00Z",payment_ref:"PAID-PRIOR"}}],
+    "tblNImdF9PKAxhXGi": [{id:"recPriorPremium",fields:{member_id:"inn",line_user_id:LINE_ID,package_code:"premium",expire_at:"2026-09-01T00:00:00Z",payment_ref:"PAID-PRIOR"}}],
     "tblg2z8dENx75yHka": [{id:"recPremiumPackage",fields:{code:"premium",duration_days:730,renew_price:2500,is_active:true}}],
   };
   const writes = [];
@@ -67,14 +67,15 @@ function harness() {
       if (paymentRef) found = found.filter((row) => row.fields.payment_ref === paymentRef);
       return Response.json({ records: found });
     }
-    if (request.method === "POST") {
+    if (request.method === "PATCH" && !recordId) {
       const body = await request.json();
-      const created = (body.records || []).map((entry, index) => ({
-        id: `recNEWENTITLEM${String(index + 1).padStart(3, "0")}`,
-        fields: structuredClone(entry.fields || {}),
-      }));
-      rows.push(...created);
-      writes.push({ method: "POST", table, created: structuredClone(created) });
+      assert.deepEqual(body.performUpsert.fieldsToMergeOn,['payment_ref']);
+      const created = (body.records || []).map((entry, index) => {
+        const found=rows.find(row=>row.fields.payment_ref===entry.fields.payment_ref);
+        if(found){Object.assign(found.fields,structuredClone(entry.fields));return found;}
+        const row={id:`recNEWENTITLEM${String(index+1).padStart(3,'0')}`,fields:structuredClone(entry.fields||{})};rows.push(row);return row;
+      });
+      writes.push({ method: "PATCH", table, upsert:true, created: structuredClone(created) });
       return Response.json({ records: created }, { status: 201 });
     }
     if (request.method === "PATCH" && recordId) {
@@ -198,8 +199,8 @@ test("email-less canonical LINE recovery materializes entitlement only after tru
   assert.equal(result.context_source, "liff_renewal_recovery");
   assert.equal(result.recovery_context, true);
   assert.equal(result.entitlement_materialized, true);
-  assert.equal(result.membership_expire_at, "2029-09-07T15:16:21.000Z");
-  assert.equal(result.membership_term, "2_years_plus_1_year");
+  assert.equal(result.membership_expire_at, "2028-09-07T15:16:21.000Z");
+  assert.equal(result.membership_term, "1_year_plus_1_year");
   assert.equal(result.membership_promotion.code, "october_prepaid_premium_2026");
   assert.equal(notifyCalls, 1);
 
@@ -251,7 +252,7 @@ test("email-less recovery does not materialize entitlement if trusted notify fai
 
 test('active recovered renewal adds catalog term and tier-specific October bonus',async()=>{
   const h=harness();h.tables['tblNImdF9PKAxhXGi'].push({id:'recExisting',fields:{member_id:'inn',line_user_id:LINE_ID,package_code:'premium',expire_at:'2027-03-15T10:00:00Z',payment_ref:'OLDER'}});
-  const response=await handleReviewedProof(request(),h.env,{},async()=>Response.json({ok:true}));const data=await response.json();assert.equal(response.status,200);assert.equal(data.membership_expire_at,'2030-03-15T10:00:00.000Z');
+  const response=await handleReviewedProof(request(),h.env,{},async()=>Response.json({ok:true}));const data=await response.json();assert.equal(response.status,200);assert.equal(data.membership_expire_at,'2029-03-15T10:00:00.000Z');
 });
 test('protected recovered member never gets a Standard or Premium entitlement',async()=>{
   for(const tier of ['VIP','SVIP','Black Card']){const h=harness();h.tables['tblgWc5VRon5o8Mhk'][0].fields['Membership Tier']=tier;const response=await handleReviewedProof(request(),h.env,{},async()=>Response.json({ok:true}));assert.equal(response.status,409);assert.equal(h.tables['tblNImdF9PKAxhXGi'].length,1);assert.equal(h.writes.length,0);}
@@ -263,8 +264,8 @@ test('recovery refuses missing payment date, unknown expiry, exact anniversary a
  }
 });
 test('recovery uses October payment cutoff and replay preserves historical expiry',async()=>{
- const h=harness();h.tables.tblfJfM4Sqag9zrLi[0].fields.paid_at='2026-12-31T17:00:00Z';
- const first=await handleReviewedProof(request(),h.env,{},async()=>Response.json({ok:true}));const a=await first.json();assert.equal(first.status,200);assert.equal(a.membership_promotion,undefined);assert.equal(a.membership_expire_at,'2028-12-31T17:00:00.000Z');
+ const h=harness();h.tables.tblfJfM4Sqag9zrLi[0].fields.paid_at='2026-12-31T17:00:00Z';h.tables.tblNImdF9PKAxhXGi[0].fields.expire_at='2026-12-01T00:00:00Z';
+ const first=await handleReviewedProof(request(),h.env,{},async()=>Response.json({ok:true}));const a=await first.json();assert.equal(first.status,200);assert.equal(a.membership_promotion,undefined);assert.equal(a.membership_expire_at,'2027-12-31T17:00:00.000Z');
  const row=h.tables.tblNImdF9PKAxhXGi.find(r=>r.fields.payment_ref===PAYMENT_REF);row.fields.expire_at='2028-06-01T00:00:00Z';
  const second=await handleReviewedProof(request(),h.env,{},async()=>Response.json({ok:true}));const b=await second.json();assert.equal(b.membership_expire_at,'2028-06-01T00:00:00Z');assert.equal(h.tables.tblNImdF9PKAxhXGi.length,2);
 });
@@ -284,7 +285,7 @@ test('recovery uses October payment cutoff and replay preserves historical expir
   assert.equal(h.tables.tblXjQFwo0A2cHseh[0].fields.renewal_flow_status,"materialized");
   assert.equal(h.tables.tblfJfM4Sqag9zrLi[0].fields.status,"verified");
   assert.deepEqual(h.tables.tblNImdF9PKAxhXGi.find(r=>r.fields.payment_ref===PAYMENT_REF),recorded);
-  assert.equal(h.writes.filter(w=>w.method==="POST").length,1);
+  assert.equal(h.writes.filter(w=>w.upsert).length,1);
  });
 
  test("historical expired replay never reactivates Member status",async()=>{
@@ -336,3 +337,61 @@ test("replay cannot activate when member-wide history recheck is incomplete",asy
  h.env.AIRTABLE_HTTP.fetch=async req=>{const url=new URL(req.url);if(req.method==="GET"&&url.pathname.endsWith("tblNImdF9PKAxhXGi")&&(url.searchParams.get("filterByFormula")||"").startsWith("OR("))return Response.json({records:h.tables.tblNImdF9PKAxhXGi,offset:"more"});return original(req);};
  const r=await handleReviewedProof(request(),h.env,{},async()=>Response.json({ok:true,payment_ref:PAYMENT_REF}));assert.equal(r.status,409);assert.equal(h.writes.length,0);
 });
+
+test("November reviewed LINE recovery grants six calendar months with a matching term label", async () => {
+  const h = harness();
+  h.tables.tblfJfM4Sqag9zrLi[0].fields.paid_at = "2026-11-01T03:00:00.000Z";
+  h.tables.tblNImdF9PKAxhXGi[0].fields.expire_at = "2027-08-30T17:15:00.000Z";
+  const response = await handleReviewedProof(request(), h.env, {}, async () => Response.json({ ok: true, payment_ref: PAYMENT_REF, payment_stage: "membership" }));
+  const result = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(result.entitlement_materialized, true);
+  assert.equal(result.membership_expire_at, "2029-02-27T17:15:00.000Z");
+  assert.equal(result.membership_term, "1_year_plus_6_months");
+  assert.equal(result.membership_promotion.bonus_months, 6);
+  const row = h.tables.tblNImdF9PKAxhXGi.find(row => row.fields.payment_ref === PAYMENT_REF);
+  assert.equal(row.fields.start_at, "2027-08-30T17:15:00.000Z");
+  assert.equal(row.fields.expire_at, result.membership_expire_at);
+});
+
+test("delayed November LINE review preserves the October canonical proof policy", async () => {
+  const h = harness();
+  const req = request();
+  const body = await req.json();
+  body.paid_at = "2026-11-01T03:00:00.000Z";
+  body.verified_at = "2026-12-01T03:00:00.000Z";
+  h.tables.tblfJfM4Sqag9zrLi[0].fields.paid_at = "2026-10-31T16:59:59.999Z";
+  h.tables.tblNImdF9PKAxhXGi[0].fields.expire_at = "2026-10-01T03:00:00.000Z";
+  const result = await (await handleReviewedProof(new Request(req.url, { method: "POST", headers: req.headers, body: JSON.stringify(body) }), h.env, {}, async () => Response.json({ ok: true, payment_ref: PAYMENT_REF, payment_stage: "membership" }))).json();
+  assert.equal(result.entitlement_materialized, true);
+  assert.equal(result.membership_term, "1_year_plus_1_year");
+  assert.equal(result.membership_promotion.code, "october_prepaid_premium_2026");
+  assert.equal(result.membership_expire_at, "2028-10-31T16:59:59.999Z");
+});
+
+test("November LINE recovery cannot apply a renewal price beyond 90 days", async () => {
+  const h = harness();
+  h.tables.tblfJfM4Sqag9zrLi[0].fields.paid_at = "2026-11-01T03:00:00.000Z";
+  h.tables.tblNImdF9PKAxhXGi[0].fields.expire_at = "2026-01-01T03:00:00.000Z";
+  const response = await handleReviewedProof(request(), h.env, {}, async () => Response.json({ ok: true, payment_ref: PAYMENT_REF, payment_stage: "membership" }));
+  assert.equal(response.status, 409);
+  assert.equal((await response.json()).error, "renewal_expired_over_90_days_review_required");
+  assert.equal(h.tables.tblNImdF9PKAxhXGi.length, 1);
+});
+
+test("November LINE recovery replay preserves the existing six-month outcome", async () => {
+  const h = harness();
+  h.tables.tblfJfM4Sqag9zrLi[0].fields.paid_at = "2026-11-01T03:00:00.000Z";
+  const notify = async () => Response.json({ ok: true, payment_ref: PAYMENT_REF, payment_stage: "membership" });
+  const first = await (await handleReviewedProof(request(), h.env, {}, notify)).json();
+  const saved = structuredClone(h.tables.tblNImdF9PKAxhXGi);
+  h.tables.tblfJfM4Sqag9zrLi[0].fields.paid_at = "2026-12-31T16:59:59.999Z";
+  const second = await (await handleReviewedProof(request(), h.env, {}, notify)).json();
+  assert.equal(second.entitlement_materialized, true);
+  assert.equal(second.membership_expire_at, first.membership_expire_at);
+  assert.equal(second.membership_term, "1_year_plus_6_months");
+  assert.equal(second.membership_expiry_rule, first.membership_expiry_rule);
+  assert.deepEqual(h.tables.tblNImdF9PKAxhXGi, saved);
+});
+
+

@@ -149,6 +149,24 @@ class AirtableLiffGatewayStore {
     return { record_id: resolvedId };
   }
 
+  async ensureRenewalPaymentSession({ sessionId, lineUserId, packageCode, amountThb }) {
+    if (!sessionId || !lineSubject(lineUserId) || !CORE_PACKAGE_CODES.has(packageCode) || !(amountThb > 0)) throw new LiffGatewayStorageError("LIFF_GATEWAY_SESSION_INVALID");
+    const table = tableName(this.env, "LIFF_RENEWAL_SESSIONS");
+    const existing = await this.list(table, { filterByFormula: `{renewal_session_id}=${formulaString(sessionId)}`, maxRecords: 2 });
+    if (existing.length > 1 || (existing.length === 1 && (existing[0].fields?.line_user_id !== lineUserId || existing[0].fields?.requested_package !== packageCode || Number(existing[0].fields?.renewal_amount_thb) !== amountThb))) throw new LiffGatewayStorageError("LIFF_RENEWAL_PAYMENT_IDENTITY_CONFLICT");
+    if (existing.length === 1) return { record_id: existing[0].id };
+    // Atomic upsert on the deterministic payment session keeps retries and
+    // concurrent tabs attached to one identity record. Never write verified_at.
+    const result = await this.write("PATCH", table, { body: {
+      performUpsert: { fieldsToMergeOn: ["renewal_session_id"] },
+      records: [{ fields: { renewal_session_id: sessionId, line_user_id: lineUserId,
+        liff_intent: "renew", source_channel: "line_liff", requested_package: packageCode,
+        renewal_amount_thb: amountThb, payment_intent_session_id: sessionId } }],
+    } });
+    if (result?.records?.length !== 1 || !result.records[0]?.id) throw new LiffGatewayStorageError("LIFF_GATEWAY_STORAGE_MALFORMED");
+    return { record_id: result.records[0].id };
+  }
+
   async resolveMembershipReview(lineUserId) {
     const subject = lineSubject(lineUserId);
     if (!subject) throw new LiffGatewayStorageError("LIFF_MEMBERSHIP_REVIEW_IDENTITY_INVALID");

@@ -1,3 +1,4 @@
+import { projectMemberWorlds } from "../../shared/member-worlds.mjs";
 const CUSTOMER_360_VERSION = "customer_360_v2";
 const HISTORY_DAYS = 365;
 const HISTORY_MAX_ITEMS = 50;
@@ -42,6 +43,7 @@ export async function buildCustomer360MemberProfile({ env = {}, memberFields = {
   const customer360 = {
     version: CUSTOMER_360_VERSION,
     member,
+    membership_worlds: packagesResult.worlds,
     points: pointsResult.customer,
     packages: packagesResult.customer,
     jobs: jobsResult.customer,
@@ -101,6 +103,7 @@ async function readPackages(env, identity, listRecords, window) {
     const membershipExpiresAt = currentPackage?.end_date || null;
     return {
       status,
+      worlds: projectMemberWorlds(packages, { status: records.length >= 100 ? "checking" : "verified", today: window.to, blocked: ["blocked", "suspended", "revoked"].includes(normalizedStatus(readField(identity.memberFields || {}, ["Membership Status", "member_status"]))) }),
       raw_records: Array.isArray(records) ? records : [],
       history,
       customer: {
@@ -123,6 +126,7 @@ async function readPackages(env, identity, listRecords, window) {
 function emptyPackageResult(status) {
   return {
     status,
+    worlds: projectMemberWorlds([], { status: "checking" }),
     raw_records: [],
     history: [],
     customer: { status, current_package: null, package_history: [], actions: [] },
@@ -568,7 +572,7 @@ function resolveMember(fields = {}, identity, packages, env = {}) {
 function customerIdentity(env, fields, lineUserId) {
   const memberId = customerSafeIdentifier(readField(fields, [configuredOptionalField(env, "AIRTABLE_MEMBERS_MEMBER_ID_FIELD"), "member_id"]));
   const email = normalizedEmail(readField(fields, [configuredField(env, "AIRTABLE_MEMBERS_EMAIL_FIELD", "Contact Email"), "email"]));
-  return { line_user_id: String(lineUserId || "").trim(), member_id: memberId, email };
+  return { line_user_id: String(lineUserId || "").trim(), member_id: memberId, email, memberFields: fields };
 }
 
 function formulaForIdentity(candidates) {
@@ -666,6 +670,9 @@ function customerSafePaymentStatus(paymentValue, verificationValue) {
 function customerTierFromPackage(code, blackCardVisible) {
   if (/svip/.test(code)) return null;
   if (/blackcard|black_card/.test(code)) return blackCardVisible ? "Black Card" : null;
+  if (/^(mmd_member|public_member|public_membership|member_690)$/.test(code)) return "MMD Member";
+  if (/^(elite|public_elite)$/.test(code)) return "Elite";
+  if (/^(red_card|redcard|public_red_card)$/.test(code)) return "Red Card";
   if (/premium/.test(code)) return "Premium";
   if (/vip/.test(code)) return "VIP";
   if (/standard|lite/.test(code)) return "Standard";
@@ -685,6 +692,9 @@ function customerTier(value, blackCardVisible) {
 
 function safePackageName(code, blackCardVisible) {
   if (/blackcard|black_card/.test(code)) return blackCardVisible ? "Black Card Membership" : "MMD Membership";
+  if (/^(mmd_member|public_member|public_membership|member_690)$/.test(code)) return "MMD Member";
+  if (/^(elite|public_elite)$/.test(code)) return "Elite Membership";
+  if (/^(red_card|redcard|public_red_card)$/.test(code)) return "Red Card Membership";
   if (/premium/.test(code)) return "Premium Membership";
   if (/vip/.test(code)) return "VIP Membership";
   if (/standard|lite/.test(code)) return "Standard Membership";

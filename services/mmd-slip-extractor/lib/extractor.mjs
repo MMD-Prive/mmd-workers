@@ -151,7 +151,49 @@ export async function extractOcr(bytes, workerFactory = createWorker) {
   const worker = await workerFactory(["tha", "eng"], 1, { langPath, cacheMethod: "none", logger: () => {} });
   try {
     const { data = {} } = await worker.recognize(bytes);
-    return normalizeOcrText(data.text, data.confidence);
+    const primary = normalizeOcrText(data.text, data.confidence);
+    if (typeof worker.setParameters !== "function") return primary;
+    if (primary.amount_thb == null) {
+      // Bank slips have separate text blocks. The default single-block mode can
+      // read the digits but misread the adjacent currency and discard the amount.
+      // Retry the entire original image with automatic page segmentation once.
+      try {
+        await worker.setParameters({ tessedit_pageseg_mode: "3" });
+        const { data: retry = {} } = await worker.recognize(bytes);
+        const alternate = normalizeOcrText(retry.text, retry.confidence);
+        if (alternate.amount_thb == null ||
+            (primary.payment_ref && alternate.payment_ref && primary.payment_ref !== alternate.payment_ref) ||
+            (primary.paid_at && alternate.paid_at && primary.paid_at !== alternate.paid_at)) return primary;
+        return { ...primary, amount_thb: alternate.amount_thb,
+          paid_at: primary.paid_at || alternate.paid_at,
+          payment_ref: primary.payment_ref || alternate.payment_ref,
+          confidence_score: Math.min(primary.confidence_score, alternate.confidence_score) };
+      } catch {
+        return primary;
+      }
+    }
+    if (primary.paid_at) return primary;
+    // A small, patterned slip may lose its footer date in full-page OCR. Retry
+    // the lower evidence area once, retaining the original reading on failure.
+    try {
+      const image = sharp(bytes, { failOn: "error", limitInputPixels: 25_000_000 });
+      const metadata = await image.metadata();
+      if (!metadata.width || !metadata.height) return primary;
+      const top = Math.floor(metadata.height * 2 / 3);
+      const footer = await image.extract({ left: 0, top, width: metadata.width, height: metadata.height - top })
+        .resize({ width: Math.min(1600, metadata.width * 3) }).grayscale().normalize().png().toBuffer();
+      await worker.setParameters({ tessedit_pageseg_mode: "6" });
+      const { data: retry = {} } = await worker.recognize(footer);
+      const alternate = normalizeOcrText(retry.text, retry.confidence);
+      // A crop can fill a missing timestamp only when its amount corroborates
+      // the full image. Conflicting fields remain unresolved for review.
+      if (alternate.amount_thb !== primary.amount_thb || !alternate.paid_at ||
+          (primary.payment_ref && alternate.payment_ref && primary.payment_ref !== alternate.payment_ref)) return primary;
+      return { ...primary, paid_at: alternate.paid_at,
+        confidence_score: Math.min(primary.confidence_score, alternate.confidence_score) };
+    } catch {
+      return primary;
+    }
   } finally {
     await worker.terminate();
   }

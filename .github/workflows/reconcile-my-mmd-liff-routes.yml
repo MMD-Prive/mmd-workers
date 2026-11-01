@@ -2,14 +2,6 @@ name: Reconcile My MMD + LIFF production routes
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - ".github/workflows/reconcile-my-mmd-liff-routes.yml"
-      - "member-dashboard-chat-worker/wrangler.toml"
-      - "member-dashboard-chat-worker/src/my-mmd-bounded-status-front-gate.js"
-      - "member-dashboard-chat-worker/src/my-mmd-lovable-app-front-gate.js"
 
 permissions:
   contents: read

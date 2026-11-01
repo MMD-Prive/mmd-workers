@@ -10,6 +10,33 @@ const SESSION = "/internal/admin/login/session";
 const NEXT = "/internal/admin/control-room";
 const DASHBOARD = "/internal/admin/dashboard";
 
+test('active entrypoint Owner LINE snapshot requires credential session and never writes', async () => {
+  const env = runtimeEnv({ ADMIN_LOGIN_CREDENTIAL: 'fixture-owner', ADMIN_SESSION_SECRET: 'fixture-session', AIRTABLE_API_KEY: 'fixture-airtable' });
+  const endpoint = 'https://mmdbkk.com/internal/ceo/kenji-control?kenji_line_unlock_state=1';
+  const denied = await worker.fetch(new Request(endpoint, { headers: { Origin: 'https://mmdbkk.com' } }), env, {});
+  assert.equal(denied.status, 403);
+  assert.equal((await denied.json()).error, 'owner_required');
+  const session = await login('fixture-owner', env);
+  const Cookie = cookiePair(session);
+  const originalFetch = globalThis.fetch;
+  let reads = 0;
+  globalThis.fetch = async (input, init = {}) => {
+    assert.equal(init.method || 'GET', 'GET');
+    assert.equal(new URL(input).hostname, 'api.airtable.com');
+    reads++;
+    const formula = new URL(input).searchParams.get('filterByFormula');
+    const scope = formula.includes('model_keyword') ? 'model_keyword_auto_reply'
+      : formula.includes('line_oa') ? 'line_oa_auto_reply' : 'all_kenji_mutations';
+    return Response.json({ records: [{ fields: { version: 3, enabled_state: scope === 'all_kenji_mutations' ? 'disabled' : 'enabled' } }] });
+  };
+  try {
+    const result = await worker.fetch(new Request(endpoint, { headers: { Cookie, Origin: 'https://mmdbkk.com' } }), env, {});
+    assert.equal(result.status, 200);
+    assert.equal((await result.json()).controls.model_keyword_auto_reply.enabled, true);
+    assert.equal(reads, 3);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
 function runtimeEnv(env = {}) {
   return {
     ALLOWED_ORIGINS: "https://mmdbkk.com,https://www.mmdbkk.com",
@@ -244,7 +271,6 @@ const SESSION_CREATOR_PAGES = [
   "/internal/admin/payments",
   "/internal/admin/work",
   "/internal/admin/jobs/all",
-  "/internal/admin/jobs/create-job",
   "/internal/admin/jobs/job-board",
 ];
 const PAGE_GATE_ENV = runtimeEnv({
@@ -279,7 +305,7 @@ async function assertPagesDenied(headers, requests) {
       if (method === "GET") {
         const target = new URL(response.headers.get("location"));
         assert.equal(target.pathname, "/internal/admin/login");
-        const next = path === "/internal/admin/payments" || path === "/internal/admin/jobs/all" || path === "/internal/admin/jobs/create-job"
+        const next = path === "/internal/admin/payments" || path === "/internal/admin/jobs/all"
           ? `${path}?page=2` : "/internal/admin/control-room";
         assert.equal(target.searchParams.get("next"), next);
         assert.equal(response.headers.get("x-mmd-admin-gate"), "credential-required");
@@ -318,6 +344,53 @@ test("Session Creator pages reject an expired signed credential", async () => {
   await withSessionCreatorUpstream((requests) => assertPagesDenied({ Cookie: `mmd_admin_gate_v1=${token}` }, requests));
 });
 
+test("Worker-owned Create Job requires an admin session and never fetches Lovable", async () => {
+  for (const [method, expected] of [["GET", 303], ["HEAD", 401]]) {
+    const response = await worker.fetch(new Request("https://mmdbkk.com/internal/admin/jobs/create-job", { method }), PAGE_GATE_ENV, {});
+    assert.equal(response.status, expected);
+  }
+  const loginResponse = await login("page_test_credential", PAGE_GATE_ENV);
+  const Cookie = cookiePair(loginResponse);
+  for (const host of ["mmdbkk.com", "www.mmdbkk.com"]) {
+    const response = await worker.fetch(new Request(`https://${host}/internal/admin/jobs/create-job?source=worker`, {
+      headers: { Cookie },
+    }), PAGE_GATE_ENV, {});
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("cache-control"), "no-store, private");
+    assert.equal(response.headers.get("x-mmd-route-owner"), "admin-worker-api-create-job");
+    const html = await response.text();
+    assert.match(html, /\/v1\/admin\/job\/create/);
+    assert.doesNotMatch(html, /lovable\.app/i);
+  }
+});
+
+test("Money Control opens the Worker task entrance first and preserves the gated legacy review flow", async () => {
+  const loginResponse = await login("page_test_credential", PAGE_GATE_ENV);
+  const Cookie = cookiePair(loginResponse);
+  await withSessionCreatorUpstream(async (requests) => {
+    const home = await worker.fetch(new Request("https://mmdbkk.com/internal/admin/payments?proof_id=proof_fixture", {
+      headers: { Cookie },
+    }), PAGE_GATE_ENV, {});
+    assert.equal(home.status, 200);
+    assert.equal(home.headers.get("x-mmd-route-owner"), "admin-worker-money-control-home");
+    assert.equal(home.headers.get("cache-control"), "no-store, private");
+    const html = await home.text();
+    assert.match(html, /proof_id/);
+    assert.match(html, /searchParams\.set\('mmd_worker_view','existing'\)/);
+    assert.equal(requests.length, 0);
+
+    const legacy = await worker.fetch(new Request("https://mmdbkk.com/internal/admin/payments?proof_id=proof_fixture&mmd_worker_view=existing", {
+      headers: { Cookie, Authorization: "Bearer private" },
+    }), PAGE_GATE_ENV, {});
+    assert.equal(legacy.status, 200);
+    assert.equal(legacy.headers.get("x-mmd-route-owner"), "admin-worker-session-creator-pro");
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].url, "https://mmd-os.lovable.app/internal/admin/payments?proof_id=proof_fixture");
+    assert.equal(requests[0].headers.has("cookie"), false);
+    assert.equal(requests[0].headers.has("authorization"), false);
+  });
+});
+
 test("Session Creator pages allow signed owner GET/HEAD with stale duplicate cookie on either production host", async () => {
   const response = await login("page_test_credential", PAGE_GATE_ENV);
   assert.equal(response.status, 303);
@@ -326,7 +399,8 @@ test("Session Creator pages allow signed owner GET/HEAD with stale duplicate coo
     for (const host of ["mmdbkk.com", "www.mmdbkk.com"]) {
       for (const path of SESSION_CREATOR_PAGES) {
         for (const method of ["GET", "HEAD"]) {
-          const response = await worker.fetch(new Request(`https://${host}${path}/?page=2`, {
+          const view = path === "/internal/admin/payments" ? "&mmd_worker_view=existing" : "";
+          const response = await worker.fetch(new Request(`https://${host}${path}/?page=2${view}`, {
             method, headers: { Cookie, Authorization: "Bearer private" },
           }), PAGE_GATE_ENV, {});
           assert.equal(response.status, 200);
@@ -405,4 +479,29 @@ test("active fetch routes completeness API and page to their owner-only handler"
     assert.equal(response.status, 405);
     assert.deepEqual(await response.json(), { ok: false, error: "method_not_allowed" });
   }
+});
+
+
+test('LINE Notes page requires signed admin session and serves owner intake', async () => {
+  const env = runtimeEnv({ ADMIN_LOGIN_CREDENTIAL: 'fixture-owner', ADMIN_SESSION_SECRET: 'fixture-session' });
+  const path = '/internal/ceo/line-notes-import';
+  for (const suffix of ['', '/', '?from=menu']) {
+    const denied = await worker.fetch(new Request(`https://mmdbkk.com${path}${suffix}`), env, {});
+    assert.equal(denied.status, 303);
+    assert.equal(new URL(denied.headers.get('location')).pathname, '/internal/admin/login');
+    assert.ok(new URL(denied.headers.get('location')).searchParams.get('next').startsWith(path));
+  }
+  const session = await worker.fetch(new Request('https://mmdbkk.com/internal/admin/login/session', {
+    method: 'POST', headers: { Origin: 'https://mmdbkk.com', 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ credential: 'fixture-owner', next: path }).toString(),
+  }), env, {});
+  assert.equal(session.status, 303);
+  const page = await worker.fetch(new Request(`https://mmdbkk.com${path}`, { headers: { Cookie: cookiePair(session) } }), env, {});
+  assert.equal(page.status, 200);
+  assert.match(page.headers.get('cache-control'), /no-store/);
+  assert.match(await page.text(), /name="raw_line_notes"/);
+  const api = await worker.fetch(new Request('https://mmdbkk.com/v1/admin/kenji/control/line-ofc/import', {
+    method: 'POST', headers: { Origin: 'https://mmdbkk.com', 'Content-Type': 'application/json' }, body: '{}',
+  }), env, {});
+  assert.equal(api.status, 401);
 });

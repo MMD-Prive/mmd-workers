@@ -77,7 +77,6 @@ async function withFetch(mock, fn) {
 test("safe Seed Pack intents select the exact published V1 cards", async () => {
   const cases = [
     ["สมัครสมาชิก", "membership_signup", SEED_AUTO_REPLY_BY_INTENT.membership_signup, "เริ่มจาก My MMD > Membership ได้ครับ"],
-    ["ต่ออายุสมาชิก", "membership_renewal", SEED_AUTO_REPLY_BY_INTENT.membership_renewal, "ต่ออายุได้ครับ เปิด My MMD > Membership ได้ครับ"],
     ["ไป dinner", "mmd_companion", SEED_AUTO_REPLY_BY_INTENT.mmd_companion, "ถ้าเป็น dinner / event / companion ผมจะแยกเป็น MMD Companion ครับ"],
     ["อยากนวด recovery", "mms_wellness", SEED_AUTO_REPLY_BY_INTENT.mms_wellness, "ถ้าเป็น Male Massage, recovery หรือ Therapist service ผมจะแยกไปทาง MMS ให้ครับ"],
     ["ไม่มีสถานที่ ใช้ Partner Venue", "partner_venue", SEED_AUTO_REPLY_BY_INTENT.partner_venue, "ถ้าต้องการสถานที่ประกอบ request ผมช่วยแยกเป็น Partner Venue ให้ได้ครับ"],

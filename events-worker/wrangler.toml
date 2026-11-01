@@ -31,6 +31,16 @@ HYPE_COMPCARD_ENABLED = "true"
 HYPE_COMPCARD_SEND_AT_ICT = "16:30"
 HYPE_PROMOTION_ENABLED = "true"
 HYPE_PROMOTION_SEND_AT_ICT = "20:00"
+# Owner requested fewer promotions and more Standard cards on 22 October.
+# Start on the next Bangkok date; today's immutable plans remain unchanged.
+HYPE_CADENCE_START_DATE = "2026-10-23"
+HYPE_PROMOTION_WEEKDAYS = "2,5" # Sunday=0; Tuesday and Friday
+HYPE_STANDARD_ENABLED = "true"
+HYPE_STANDARD_SEND_AT_ICT = "20:00"
+# Reviewed finished cards from the owner's private intake. Uses the existing
+# private HYPE state bucket; no public Drive sharing or new credential required.
+HYPE_INTAKE_ENABLED = "true"
+HYPE_INTAKE_READY_FOLDER_ID = "1CPnNgAY2sKRyh5u0nfr9WpexFV6A_HT6"
 
 # Secrets: AUTH_SERVICE_EVENTS_TO_PAYMENTS, AUTH_SERVICE_EVENTS_TO_REALTIME,
 # AUTH_SERVICE_EVENTS_TO_TELEGRAM, AUTH_SERVICE_ADMIN_TO_EVENTS
@@ -50,3 +60,4 @@ bucket_name = "mmd-hype-compcard-state"
 [[services]]
 binding = "TELEGRAM_ROUTER"
 service = "telegram-worker"
+

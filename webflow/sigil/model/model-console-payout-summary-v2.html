@@ -96,13 +96,13 @@ function render(session){
 }
 function removeExtension(){root.querySelector('[data-model-extension-request]')?.remove()}
 function extensionEnd(value){const d=new Date(String(value||''));return Number.isNaN(d.getTime())?String(value||'—'):new Intl.DateTimeFormat('th-TH',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',timeZone:'Asia/Bangkok'}).format(d)}
-async function decideExtension(action,requestId,card){
+async function decideExtension(action,requestId,sessionId,card){
  const buttons=[...card.querySelectorAll('button')];buttons.forEach(x=>x.disabled=true);
  try{
   const res=await fetch(new URL(actionEndpoint,location.origin),{
    method:'POST',credentials:'include',cache:'no-store',
    headers:{'content-type':'application/json',accept:'application/json'},
-   body:JSON.stringify({t:sessionToken,action,extension_request_id:requestId})
+   body:JSON.stringify({t:sessionToken,action,session_id:sessionId,extension_request_id:requestId})
   });
   const data=await res.json().catch(()=>null);
   if(!res.ok||!data||data.ok!==true)throw new Error(String(data&&data.error||'extension_decision_failed'));
@@ -112,15 +112,15 @@ async function decideExtension(action,requestId,card){
   buttons.forEach(x=>x.disabled=false);
  }
 }
-function renderExtension(extension){
+function renderExtension(extension,sessionId){
  removeExtension();
- if(!extension||extension.status!=='requested'||!extension.request_id)return;
+ if(typeof sessionId!=='string'||!sessionId.trim()||!extension||extension.status!=='requested'||!extension.request_id)return;
  const summary=root.querySelector('.smcv3-summary');if(!summary)return;
  const card=document.createElement('section');card.className='smcv3-extension-request';card.setAttribute('data-model-extension-request','');
  const minutes=Number(extension.requested_minutes)||0;
  card.innerHTML='<span class="smcv3-extension-request__label">CUSTOMER EXTENSION REQUEST</span><h3>ลูกค้าขอต่อเวลา '+minutes+' นาที</h3><p>'+extensionEnd(extension.original_end_at)+' → <strong>'+extensionEnd(extension.requested_end_at)+'</strong></p><span class="smcv3-extension-request__amount">คุณได้รับเพิ่ม '+moneyShort(extension.model_payout_thb)+'</span><p>กดรับเฉพาะเมื่อคุณสะดวก เวลาจะยังไม่เปลี่ยนจนกว่าลูกค้าชำระและ MMD ยืนยัน</p><div class="smcv3-extension-request__actions"><button type="button" data-ext-approve>APPROVE EXTENSION</button><button type="button" data-ext-decline>DECLINE</button></div><p></p>';
- card.querySelector('[data-ext-approve]').addEventListener('click',()=>decideExtension('approve_extension',extension.request_id,card));
- card.querySelector('[data-ext-decline]').addEventListener('click',()=>decideExtension('decline_extension',extension.request_id,card));
+ card.querySelector('[data-ext-approve]').addEventListener('click',()=>decideExtension('approve_extension',extension.request_id,sessionId,card));
+ card.querySelector('[data-ext-decline]').addEventListener('click',()=>decideExtension('decline_extension',extension.request_id,sessionId,card));
  const payout=root.querySelector('[data-model-payout-card]');
  (payout||summary).insertAdjacentElement('afterend',card);
 }
@@ -133,7 +133,7 @@ async function load(){
   if(!session){remove();removeExtension();return}
   render(session);
   renderAlert(session);
-  renderExtension(data.extension_request||(data.data&&data.data.extension_request));
+  renderExtension(data.extension_request||(data.data&&data.data.extension_request),session.session_id);
  }catch(e){remove();removeAlert();removeExtension()}
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',load,{once:true});else load();

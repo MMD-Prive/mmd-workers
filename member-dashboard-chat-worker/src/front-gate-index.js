@@ -140,7 +140,8 @@ function injectStatusReturnBridge(html, target = "/member/my-mmd") {
   const bridge = `<script nonce="${nonce}">
 (() => {
   const target = ${JSON.stringify(target)};
-  const profileEndpoint = "/member/api/liff/profile";
+  const digitalHome = Boolean(document.getElementById("customer-boot-progress"));
+  const profileEndpoint = digitalHome ? "/member/api/liff/status" : "/member/api/liff/profile";
   const telegramBindEndpoint = "/member/api/liff/telegram-bind";
   const maxAttempts = 20;
   let attempts = 0;
@@ -148,11 +149,13 @@ function injectStatusReturnBridge(html, target = "/member/my-mmd") {
   let retryTimer = 0;
 
   function setShellMessage(text) {
+    if (digitalHome) return;
     const message = document.getElementById("message");
     if (message) message.textContent = text;
   }
 
   function clearShellActions() {
+    if (digitalHome) return null;
     const actions = document.getElementById("actions");
     if (actions) actions.replaceChildren();
     return actions;
@@ -461,6 +464,10 @@ function recordBridgeTelemetry(result = {}) {
 export default {
   async fetch(request, env = {}, ctx) {
     const path = new URL(request.url).pathname.toLowerCase().replace(/\/{2,}/g, "/");
+    const entry = new URL(request.url);
+    if (path.replace(/\/+$/, "") === "/sigil/member/membership" && entry.searchParams.get("source") === "line" && entry.searchParams.get("intent") === "renew" && ["GET", "HEAD"].includes(request.method)) {
+      return new Response(null, { status: 307, headers: { location: `https://miniapp.line.me/${MEMBER_LIFF_ID}/?intent=renew&view=package`, "cache-control": "no-store" } });
+    }
     if (isKenjiMemberSurfacePath(request)) return handleKenjiMemberSurface(request, env);
     if (path.startsWith(THERAPIST_AUTH_PREFIX)) return forwardMmsTherapistAuth(request, env);
     if (isMyMmdAssetPath(path)) return proxyMyMmdPresentation(request, { asset: true });

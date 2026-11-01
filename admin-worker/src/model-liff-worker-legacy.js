@@ -336,6 +336,10 @@ export function isApprovedPublicModelMedia(fields = {}) {
   return fields.public_safe === true && ["approved", "active", "published"].includes(normalizeWord(fields.review_status));
 }
 
+export function isApprovedCoverMedia(fields = {}) {
+  return fields.public_safe === true && ["approved", "published"].includes(normalizeWord(fields.review_status));
+}
+
 export function normalizeEtaMinutes(value) {
   const number = Number(value);
   return Number.isInteger(number) && number >= 1 && number <= 240 ? number : 0;
@@ -711,8 +715,8 @@ export function isMyCardSelectableMedia(fields = {}) {
     policy.self_managed === true &&
     policy.requires_per_approval === false &&
     MY_CARD_SELECTABLE_MEDIA_TYPES.has(mediaType) &&
-    ["active", "approved", "published"].includes(status) &&
-    fields.public_safe === true &&
+    ["approved", "published"].includes(status) &&
+    isApprovedCoverMedia(fields) &&
     hasSource
   );
 }
@@ -825,15 +829,18 @@ async function sha256Hex(bytes) {
   return [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, "0")).join("");
 }
 
-async function registerPendingPublicMedia(env, input) {
+export async function registerPendingPublicMedia(env, input) {
+  // Model-selected public gallery photos are visible after a verified upload.
+  // Profile/cover photos and clips retain the Studio review flow.
+  const gallery = input.mediaType === "public_gallery";
   const mediaFields = {
     media_id: input.mediaId,
     Model: [input.modelRecordId],
     media_type: input.mediaType,
     media_visibility: "public_candidate",
     asset_role: input.assetRole,
-    review_status: "pending_review",
-    public_safe: false,
+    review_status: gallery ? "active" : "pending_review",
+    public_safe: gallery,
     private_safe: false,
     flash_safe: false,
     teaser_safe: false,
@@ -846,6 +853,7 @@ async function registerPendingPublicMedia(env, input) {
   };
   const created = await airtableCreateRecord(env, mediaTable(env), mediaFields, true);
   if (!created.ok) return { ok: false, status: created.status, error: "media_registry_write_failed" };
+  if (gallery) return { ok: true, record: created.record };
   const review = await airtableCreateRecord(env, clean(env.AIRTABLE_TABLE_MODEL_REVIEW_REQUESTS || "MMD — Model Review Requests"), {
     request_id: `model_upload_${input.mediaId}`,
     Model: [input.modelRecordId],
@@ -909,7 +917,7 @@ async function handleMediaUploadUrl(request, env) {
     upload_method: "PUT",
     required_headers: { "content-type": spec.mime },
     expires_at: new Date(expires * 1000).toISOString(),
-    review_required: true,
+    review_required: spec.mediaType !== "public_gallery",
   }, 200, request, env);
 }
 
@@ -949,7 +957,7 @@ async function handleAuthorizedMediaUpload(request, env) {
   if (existing.ok) {
     const committed = await commitModelMediaSlot(env, slotInput);
     if (!committed.ok) return json({ ok: false, error: committed.error }, committed.status || 503, request, env);
-    return json({ ok: true, media: safeMediaRecord(existing.record), duplicate: true, review_required: true }, 200, request, env);
+    return json({ ok: true, media: safeMediaRecord(existing.record), duplicate: true, review_required: spec.mediaType !== "public_gallery" }, 200, request, env);
   }
   if (existing.status !== 404) return json({ ok: false, error: existing.error }, existing.status, request, env);
   const bytes = new Uint8Array(await request.arrayBuffer());
@@ -966,7 +974,7 @@ async function handleAuthorizedMediaUpload(request, env) {
     const stored = await env.MMD_MODEL_ASSETS.put(objectKey, bytes, {
       onlyIf: { etagDoesNotMatch: "*" },
       httpMetadata: { contentType: spec.mime, cacheControl: "private, no-store" },
-      customMetadata: { media_id: payload.media_id, model_record_id: auth.payload.model_record_id, media_type: spec.mediaType, policy: "pending_public_review", sha256 },
+      customMetadata: { media_id: payload.media_id, model_record_id: auth.payload.model_record_id, media_type: spec.mediaType, policy: spec.mediaType === "public_gallery" ? "model_public_gallery" : "pending_public_review", sha256 },
     }).catch(() => null);
     if (!stored) return json({ ok: false, error: "media_storage_write_failed" }, 503, request, env);
   }
@@ -988,7 +996,7 @@ async function handleAuthorizedMediaUpload(request, env) {
   }
   const committed = await commitModelMediaSlot(env, slotInput);
   if (!committed.ok) return json({ ok: false, error: committed.error }, committed.status || 503, request, env);
-  return json({ ok: true, media: safeMediaRecord(registered.record), review_required: true }, 201, request, env);
+  return json({ ok: true, media: safeMediaRecord(registered.record), review_required: spec.mediaType !== "public_gallery" }, 201, request, env);
 }
 
 async function handleMediaUpload(request, env) {
@@ -1048,7 +1056,7 @@ async function handleMediaUpload(request, env) {
         media_id: mediaId,
         model_record_id: auth.payload.model_record_id,
         media_type: mediaType,
-        policy: "pending_public_review",
+        policy: mediaType === "public_gallery" ? "model_public_gallery" : "pending_public_review",
         sha256,
       },
     });
@@ -1079,8 +1087,8 @@ async function handleMediaUpload(request, env) {
   return json({
     ok: true,
     media: safeMediaRecord(registered.record),
-    policy: "pending_public_review",
-    review_required: true,
+    policy: mediaType === "public_gallery" ? "model_public_gallery" : "pending_public_review",
+    review_required: mediaType !== "public_gallery",
   }, 201, request, env);
 }
 
@@ -1113,7 +1121,7 @@ async function handleMediaSetMain(request, env, mediaId) {
   if (!media.ok) return json({ ok: false, error: media.error }, media.status, request, env);
   const policy = modelMediaPolicy(media.record.fields || {});
   if (!policy.self_managed) return json({ ok: false, error: "per_approval_required", policy: policy.policy }, 403, request, env);
-  if (!isApprovedPublicModelMedia(media.record.fields || {})) {
+  if (!isApprovedCoverMedia(media.record.fields || {})) {
     return json({ ok: false, error: "media_review_required", review_status: clean(media.record.fields?.review_status) || "pending_review" }, 409, request, env);
   }
   if (normalizeWord(media.record.fields?.media_type) === "intro_video") {
@@ -1260,7 +1268,6 @@ function safeMediaRecord(record) {
   const mediaId = firstText(fields, ["media_id"]);
   const policy = modelMediaPolicy(fields);
   const reviewStatus = clean(fields.review_status) || (policy.self_managed ? "active" : "pending_review");
-  const approvedPublic = isApprovedPublicModelMedia(fields);
   return {
     media_id: mediaId,
     media_type: clean(fields.media_type),
@@ -1272,11 +1279,11 @@ function safeMediaRecord(record) {
     uploaded_at: clean(fields.uploaded_at),
     preview_url: mediaId && policy.self_managed ? `${MEDIA_PATH}/${encodeURIComponent(mediaId)}/file` : "",
     can_delete: policy.self_managed,
-    can_request_main: policy.self_managed && approvedPublic && Boolean(mediaId) && normalizeWord(fields.media_type) !== "intro_video",
+    can_request_main: policy.self_managed && isApprovedCoverMedia(fields) && Boolean(mediaId) && normalizeWord(fields.media_type) !== "intro_video",
     self_managed: policy.self_managed,
     requires_per_approval: policy.requires_per_approval,
     policy: policy.policy,
-    main_action: policy.self_managed && approvedPublic
+    main_action: policy.self_managed && isApprovedCoverMedia(fields)
       ? (normalizeWord(fields.media_type) === "intro_video" ? "none" : "set_main")
       : (policy.self_managed ? "await_review" : "request_per_approval"),
   };

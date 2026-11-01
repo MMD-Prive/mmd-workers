@@ -1,5 +1,6 @@
 const CAPABILITIES = Object.freeze({
   PUBLIC_MEMBER: "public_member",
+  ELITE: "elite",
   RED_CARD: "red_card",
   GUEST_PASS: "guest_pass",
   PRIVATE_STANDARD: "private_standard",
@@ -68,7 +69,7 @@ export function resolveMemberEntitlements(records = [], options = {}) {
     ? "none"
     : highestPrivateEnvelope(privateGrace);
 
-  const hasPublicMember = effective.includes(CAPABILITIES.PUBLIC_MEMBER);
+  const hasPublicMember = effective.includes(CAPABILITIES.PUBLIC_MEMBER) || effective.includes(CAPABILITIES.ELITE);
   const hasGuestPass = effective.includes(CAPABILITIES.GUEST_PASS);
   const hasPrivate = privateActive.length > 0;
   const hasBlackCard = effective.includes(CAPABILITIES.BLACK_CARD);
@@ -188,11 +189,12 @@ export function capabilityFromFields(fields = {}) {
     if (matches(value, ["black_card", "blackcard"])) return CAPABILITIES.BLACK_CARD;
     if (matches(value, ["svip"])) return CAPABILITIES.SVIP;
     if (matches(value, ["vip"])) return CAPABILITIES.VIP;
+    if (matches(value, ["elite", "public_elite"])) return CAPABILITIES.ELITE;
     if (matches(value, ["red_card", "redcard"])) return CAPABILITIES.RED_CARD;
     if (matches(value, ["guest_pass", "guestpass", "7_day", "7_days", "7days"])) return CAPABILITIES.GUEST_PASS;
     if (matches(value, ["premium_private", "private_premium", "premium"])) return CAPABILITIES.PRIVATE_PREMIUM;
     if (matches(value, ["standard_private", "private_standard", "standard"])) return CAPABILITIES.PRIVATE_STANDARD;
-    if (matches(value, ["public_member", "public_membership", "member_690"])) return CAPABILITIES.PUBLIC_MEMBER;
+    if (matches(value, ["public_member", "public_membership", "member_690", "mmd_member"])) return CAPABILITIES.PUBLIC_MEMBER;
   }
 
   return "unknown";

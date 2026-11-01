@@ -10,6 +10,15 @@ test('membership owns native entry, privacy and its API only', () => {
   assert.equal(isMmsMembershipOriginPassthrough(req('/male-massage/member/privacy')), false);
 });
 
+test('published LINE account page opens the same-host customer workspace', async () => {
+  const html = '<section id="account" hidden><a class="btn" href="https://lin.ee/NkfXMu7">จองบริการกับทีม Male Massage</a></section>';
+  const env = { MMS_MEMBER_WORKER: { fetch: async () => new Response(html, { headers: { 'content-type': 'text/html' } }) } };
+  const page = await proxyMmsMembership(req('/male-massage/member'), env);
+  assert.match(await page.text(), /href="\/male-massage">เปิด MY MMS/);
+  const developing = await proxyMmsMembership(req('/male-massage/member?stage=developing'), env);
+  assert.equal(await developing.text(), html);
+});
+
 test('proxy preserves stage, Origin and Set-Cookie without involving MMD', async () => {
   const original = new Request('https://www.mmdbkk.com/api/mms/app/membership/line?stage=developing', { method: 'POST', headers: { origin: 'https://www.mmdbkk.com', 'content-type': 'application/json' }, body: JSON.stringify({ access_token: 'test' }) });
   const response = await proxyMmsMembership(original, { MMS_MEMBER_WORKER: { fetch: async received => {

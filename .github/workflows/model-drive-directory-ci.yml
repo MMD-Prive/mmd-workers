@@ -4,6 +4,9 @@ on:
   pull_request:
     paths:
       - "member-pages-worker/src/model-drive-directory.js"
+      - "member-pages-worker/src/model-drive-admin-media.js"
+      - "admin-worker/src/booking-model-drive.js"
+      - "admin-worker/booking-model-drive.test.mjs"
       - "member-pages-worker/src/runtime-index.js"
       - "member-pages-worker/test/model-drive-directory.test.mjs"
       - "admin-worker/src/unified-model-drive-link.js"
@@ -30,15 +33,17 @@ jobs:
       - name: Syntax
         run: |
           node --check member-pages-worker/src/model-drive-directory.js
+          node --check member-pages-worker/src/model-drive-admin-media.js
           node --check member-pages-worker/src/runtime-index.js
           node --check admin-worker/src/unified-model-drive-link.js
           node --check admin-worker/src/admin-model-line-link-worker.js
           node --check admin-worker/src/model-line-avatar-review.js
       - name: Contract tests
         run: |
-          node --experimental-global-webcrypto --test member-pages-worker/test/model-drive-directory.test.mjs
+          node --experimental-global-webcrypto --test member-pages-worker/test/model-drive-directory.test.mjs admin-worker/booking-model-drive.test.mjs
           node --experimental-global-webcrypto --test admin-worker/model-line-link-review.test.mjs
       - name: Worker dry runs
         run: |
           npx wrangler deploy --dry-run --config member-pages-worker/wrangler.toml
           npx wrangler deploy --dry-run --config admin-worker/wrangler.toml
+

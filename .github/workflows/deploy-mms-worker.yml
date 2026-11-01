@@ -198,6 +198,8 @@ jobs:
         id: upload
         working-directory: mms-worker
         shell: bash
+        env:
+          MMS_ALLOW_DURABLE_OBJECT_MIGRATION_DEPLOY: "true"
         run: |
           set -euo pipefail
           tag="gha-${GITHUB_SHA:0:12}"

@@ -33,9 +33,12 @@ function sessionRecord(overrides = {}) {
   };
 }
 
-async function setup({ session = sessionRecord(), claimsOverride = {}, lifetime = 3600, iatOffset = 0 } = {}) {
+async function setup({ session = sessionRecord(), claimsOverride = {}, lifetime = 3600, iatOffset = 0, writeFailure = false } = {}) {
   const store = new Map();
   const writes = [];
+  const logs = [];
+  const realInfo = console.info;
+  console.info = (line) => logs.push(line);
   const env = {
     PAYMENT_CONFIRMATION_SIGNING_SECRET: SECRET,
     PAY_SESSIONS_KV: { put: async (k, v) => store.set(k, v), get: async (k) => store.get(k) ?? null },
@@ -52,6 +55,7 @@ async function setup({ session = sessionRecord(), claimsOverride = {}, lifetime 
   const realFetch = globalThis.fetch;
   globalThis.fetch = async (url, options = {}) => {
     if (options.method === "PATCH") {
+      if (writeFailure) return Response.json({ error: "SECRET_SENTINEL raw bank body" }, { status: 500 });
       const fields = JSON.parse(options.body).fields;
       writes.push(fields);
       Object.assign(session.fields, fields);
@@ -59,11 +63,11 @@ async function setup({ session = sessionRecord(), claimsOverride = {}, lifetime 
     }
     return Response.json({ records: session ? [session] : [] });
   };
-  const restore = () => { globalThis.fetch = realFetch; };
+  const restore = () => { globalThis.fetch = realFetch; console.info = realInfo; };
   const req = (path, body) => new Request(`https://sigil.mmdbkk.com${path}`, { method: "POST", headers: { origin: ORIGIN, "content-type": "application/json" }, body: JSON.stringify(body) });
   const details = async (t = token) => handleConfirmationDetails(req("/v1/confirm/details", { t, expected_role: "model" }), env);
   const ack = async (extra = {}, t = token) => handleConfirmationAck(req("/v1/confirm/ack", { t, expected_role: "model", ...extra }), env);
-  return { env, token, session, writes, details, ack, restore };
+  return { env, token, session, writes, logs, details, ack, restore };
 }
 
 test("valid model confirm: details then ack succeeds and writes only the model ack + lifecycle seed", async (t) => {
@@ -185,4 +189,51 @@ test("model confirmation context carries the client display name but no payment 
   assert.equal(data.confirmation.counterpart_name, "เชน - SVIP -");
   const raw = JSON.stringify(data);
   for (const leak of ["pay_model_nsf", "40500", "13500", "17500", "deposit"]) assert.equal(raw.includes(leak), false, `context leaked ${leak}`);
+});
+
+test("ack receipt links success response to a sanitized backend log", async (t) => {
+  const s = await setup(); t.after(s.restore);
+  const response = await s.ack(); const body = await response.json();
+  assert.equal(body.receipt.stage, "complete");
+  assert.equal(body.receipt.outcome, "success");
+  assert.equal(body.receipt.model_session_state_seeded, true);
+  assert.match(body.receipt.request_id, /^[a-f0-9-]{36}$/);
+  assert.equal(body.receipt.session_id, "sess_model_nsf");
+  assert.equal(s.logs.length, 1);
+  assert.deepEqual(JSON.parse(s.logs[0]), body.receipt);
+  assert.deepEqual(Object.keys(body.receipt).sort(), ["schema","request_id","timestamp","route","stage","status","outcome","code","role","session_id","idempotent","model_session_state_seeded"].sort());
+  assert.equal(s.logs.join("").includes(s.token), false);
+  assert.doesNotMatch(s.logs.join(""), /pat_test|เชน|17500|payment_ref|headers|cookie/i);
+});
+
+test("auth rejection receipt excludes unverified session and caller fields", async (t) => {
+  const s = await setup(); t.after(s.restore);
+  const response = await s.ack({ session_id: "sess_ATTACKER", note: "SECRET_SENTINEL" }, "invalid.secret");
+  const body = await response.json();
+  assert.equal(body.receipt.stage, "authorization");
+  assert.equal(body.receipt.outcome, "rejected");
+  assert.equal(body.receipt.session_id, undefined);
+  assert.equal(body.receipt.role, undefined);
+  assert.equal(s.writes.length, 0);
+  assert.doesNotMatch(s.logs.join(""), /ATTACKER|SECRET_SENTINEL|invalid.secret/);
+});
+
+test("write failure retains error code without raw response body and never reports success", async (t) => {
+  const s = await setup({ writeFailure: true }); t.after(s.restore);
+  const response = await s.ack(); const body = await response.json();
+  assert.equal(body.ok, false);
+  assert.equal(body.receipt.stage, "write");
+  assert.equal(body.receipt.outcome, "unknown");
+  assert.equal(body.receipt.code, "airtable_request_failed");
+  assert.equal(body.receipt.model_session_state_seeded, undefined);
+  assert.equal(s.writes.length, 0);
+  assert.doesNotMatch(JSON.stringify(body) + s.logs.join(""), /SECRET_SENTINEL|bank body/);
+});
+
+test("logging failure never changes a successful acknowledgement or causes a second write", async (t) => {
+  const s=await setup(); t.after(s.restore);
+  console.info=()=>{throw new Error("log sink unavailable")};
+  const response=await s.ack(); const body=await response.json();
+  assert.equal(response.status,200); assert.equal(body.ok,true);
+  assert.equal(body.receipt.outcome,"success"); assert.equal(s.writes.length,1);
 });

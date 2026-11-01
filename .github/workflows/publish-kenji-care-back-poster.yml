@@ -1,0 +1,98 @@
+name: Verify or publish exact approved CARE BACK poster assets
+
+on:
+  pull_request:
+    paths:
+      - 'assets/promotions/care-back/2026-10/**'
+      - 'scripts/kenji-care-back-poster-assets*'
+      - '.github/workflows/publish-kenji-care-back-poster.yml'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Verify reads existing objects only; publish may create missing approved objects'
+        type: choice
+        options: [verify, publish]
+        default: verify
+        required: true
+      production_approved:
+        description: 'Owner approved public hosting of the exact original and mechanical LINE preview'
+        type: boolean
+        default: false
+        required: true
+      approval_ref:
+        description: 'Owner authorization for these two fixed public assets'
+        type: string
+        required: true
+      approved_sha:
+        description: 'Exact full current main SHA'
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: publish-kenji-care-back-poster
+  cancel-in-progress: false
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Validate original, preview and immutable publication contract
+        run: |
+          node scripts/kenji-care-back-poster-assets.mjs --check-assets
+          node --test scripts/kenji-care-back-poster-assets.test.mjs
+
+  production-approval:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha
+    uses: ./.github/workflows/admin-production-approval.yml
+    with:
+      approval_ref: ${{ inputs.approval_ref }}
+      approved_sha: ${{ inputs.approved_sha }}
+
+  publish:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha
+    needs: [contracts, production-approval]
+    environment: mmd-production-mutation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Run the explicit approved asset operation
+        env:
+          MODE: ${{ inputs.mode }}
+          GH_TOKEN: ${{ github.token }}
+          PRODUCTION_APPROVED: ${{ inputs.production_approved }}
+          APPROVAL_REF: ${{ inputs.approval_ref }}
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+          CLOUDFLARE_R2_API_TOKEN: ${{ secrets.CLOUDFLARE_R2_API_TOKEN }}
+        run: |
+          case "$MODE" in
+            verify) node scripts/kenji-care-back-poster-assets.mjs --verify-published ;;
+            publish) node scripts/kenji-care-back-poster-assets.mjs --execute-approved ;;
+            *) exit 1 ;;
+          esac
+      - name: Save sanitized exact-file receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: care-back-poster-assets-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/care-back-poster-assets-receipt.json
+          if-no-files-found: ignore
+          retention-days: 90

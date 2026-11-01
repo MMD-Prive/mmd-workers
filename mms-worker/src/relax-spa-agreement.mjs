@@ -1,3 +1,4 @@
+import { MMS_SPA_PAYMENT_POLICY, assertMmsPackagePaymentInput } from '../../shared/mms-spa-payment-policy.mjs';
 // V2 amounts are integer satang; no market rates or travel estimates are inferred.
 const ROLES = ['therapist', 'spa', 'partner', 'mms'];
 const SPLIT = ROLES.slice(1);
@@ -126,11 +127,12 @@ export function roomPlan(a) {
 
 export function agreementV3(body, actor, now) {
   if (body.schema_version !== 3) fail('ROOM_AGREEMENT_REQUIRED');
+  assertMmsPackagePaymentInput(body);
   const a = agreementV2({ ...body, schema_version: 2, status: 'draft' }, actor, now);
   Object.assign(a, { schema_version: 3, formula_version: 'room-fixed-v3', status: body.status,
     room: structuredClone(body.room ?? null), partner_amount: body.partner_amount ?? null,
     mms_mode: body.mms_mode ?? null, mms_amount: body.mms_amount ?? null,
-    payees: structuredClone(body.payees ?? null) });
+    payees: structuredClone(body.payees ?? null), payment_policy: { ...MMS_SPA_PAYMENT_POLICY } });
   delete a.basis; delete a.shares_bps;
   if (!['draft','confirmed'].includes(a.status)) fail('AGREEMENT_STATUS_REQUIRED');
   if (a.status === 'draft') return a;

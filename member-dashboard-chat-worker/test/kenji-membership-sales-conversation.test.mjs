@@ -11,17 +11,19 @@ function event(text) {
 
 const profile = { displayName: "Mek" };
 
-test("membership sales uses a natural Per voice and one budget question", () => {
+test("membership package questions use a short Per voice and a Private signup CTA", () => {
   const reply = buildKenjiLineReply(event("แพ็กเกจสมาชิกราคาเท่าไหร่"), profile);
   assert.match(reply, /คุณ Mek/);
   assert.match(reply, /Standard|Premium/);
-  assert.match(reply, /งบต่อครั้ง/);
+  assert.match(reply, /เลือก Private Membership → https:\/\/miniapp\.line\.me\//);
+  assert.match(reply, /world=private/);
+  assert.doesNotMatch(reply, /งบต่อครั้ง|Public/);
   assert.doesNotMatch(reply, /Kenji|AI|bot|ทีมงาน/i);
 });
 
 test("experience and budget discovery remain short deterministic questions", () => {
   assert.equal(inferLineIntent("สนใจสมาชิกครับ"), "membership_interest");
-  assert.match(buildKenjiLineReply(event("สนใจสมาชิกครับ"), profile), /เคยใช้บริการลักษณะนี้ที่ไหน/);
+  assert.match(buildKenjiLineReply(event("สนใจสมาชิกครับ"), profile), /เคยเป็นสมาชิก MMD มาก่อนหรือยัง/);
   assert.equal(inferLineIntent("ไม่เคยใช้บริการ"), "membership_experience");
   assert.match(buildKenjiLineReply(event("ไม่เคยใช้บริการ"), profile), /งบใช้บริการต่อครั้ง/);
   assert.equal(inferLineIntent("มีบัทเจทต่อครั้งประมาณ 5,000"), "membership_budget");

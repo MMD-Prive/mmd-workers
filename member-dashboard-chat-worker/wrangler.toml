@@ -1,5 +1,5 @@
 name = "member-dashboard-chat-worker"
-main = "src/my-mms-customer-front-gate-entry.js"
+main = "src/guide-notification-entry.mjs"
 compatibility_date = "2026-07-02"
 workers_dev = false
 
@@ -33,6 +33,11 @@ service = "mms-worker"
 [[services]]
 binding = "MMS_MEMBER_WORKER"
 service = "mms-member-worker"
+
+# Presentation only: private Worker, no customer identity or backend authority.
+[[services]]
+binding = "MMS_CUSTOMER_UI"
+service = "my-mms-customer-ui"
 
 # Downstream-only notification path for pending LINE payment evidence. Telegram
 # never becomes payment or entitlement truth; it only alerts the operator after
@@ -189,13 +194,15 @@ pattern = "www.mmdbkk.com/male-massage/member*"
 zone_name = "mmdbkk.com"
 
 # MY MMS customer workspace sourced from MMD-Prive/my-mms-therapist. Public marketing
-# pages such as /male-massage/home and /male-massage/how-to-use remain Webflow-owned.
+# pages such as /male-massage/home and /male-massage/how-to-use pass through to Webflow.
+# A trailing wildcard is required for LINE query strings and the app's assets.
+# The entrypoint handles only bounded app paths; all other paths pass through.
 [[routes]]
-pattern = "mmdbkk.com/male-massage"
+pattern = "mmdbkk.com/male-massage*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
-pattern = "www.mmdbkk.com/male-massage"
+pattern = "www.mmdbkk.com/male-massage*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
@@ -418,15 +425,12 @@ zone_name = "mmdbkk.com"
 # MMS_LINE_CHANNEL_SECRET as Cloudflare secrets only.
 # LINE_WEBHOOK_UPSTREAM_URL is retired and must remain unset.
 #
-# Production intake must stay available during ad campaigns. Keep these
-# non-secret switches in version control so deploys cannot preserve an old
-# muted/disabled runtime value by accident. An intentional emergency mute can
-# still be made by changing this config and redeploying.
+# Releases must preserve the owner-approved auto-reply setting.
+# --keep-vars does not override explicit values specified here.
 [vars]
+LINE_MEMBER_REPLY_SNAPSHOT_ENABLED = "true"
 MMS_THERAPIST_UI_SOURCE = "native"
-# Bounded LINE concierge replies are enabled. Replies remain deterministic:
-# First Contact and the external model lane stay off; protected matters fail
-# closed to Per/MMD review, and runtime stop/owner-takeover controls still apply.
+# Owner approved enabling deterministic LINE replies on 2026-10-30.
 LINE_AUTO_REPLY_ENABLED = "true"
 KENJI_LINE_RIGHTS_CHECK_MODE = "command"
 KENJI_LINE_RIGHTS_COMMAND_ENABLED = "true"
@@ -436,7 +440,8 @@ KENJI_LINE_RIGHTS_COMMAND_ENABLED = "true"
 KENJI_LINE_PRIVATE_INTEREST_ENABLED = "false"
 # Exact command "MMD Membership" -> static signup/renewal link menu. Enabled
 # 2026-10-12 by the owner (needs command mode above). Set "false" to stop.
-KENJI_LINE_MEMBERSHIP_MENU_ENABLED = "true"
+# Owner limits Kenji to entitlement checks; keep the separate navigation menu paused.
+KENJI_LINE_MEMBERSHIP_MENU_ENABLED = "false"
 LINE_KENJI_AI_ENABLED = "true"
 # The model-only restriction is disabled for the bounded deterministic concierge
 # lane. This does not enable external model calls; LINE_KENJI_MODEL_ENABLED stays

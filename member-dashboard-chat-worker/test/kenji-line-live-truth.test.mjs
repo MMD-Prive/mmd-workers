@@ -11,6 +11,26 @@ function event() {
   return { source: { type: "user", userId: LINE_USER_ID } };
 }
 
+for (const status of ["identity_unresolved", "no_entitlement", "upstream_error", "projection_invalid"]) {
+  test(`preserves trusted ${status} from HTTP 200`, async () => {
+    const result = await resolveKenjiLineLiveTruth({ event: event(), intent: "membership_status", env: {
+      MEMBER_PAGES_WORKER: { fetch: async () => Response.json({ ok: false,
+        authority: "my_mmd_entitlement_resolver_v1", status, failure_class: status }) },
+    } });
+    assert.equal(result.failure_class, status);
+    assert.equal(result.ok, false);
+  });
+}
+
+test("untrusted HTTP 200 failure cannot assert an identity result", async () => {
+  const result = await resolveKenjiLineLiveTruth({ event: event(), intent: "membership_status", env: {
+    MEMBER_PAGES_WORKER: { fetch: async () => Response.json({ ok: false,
+      authority: "other", status: "no_entitlement", failure_class: "no_entitlement" }) },
+  } });
+  assert.equal(result.status, "unavailable");
+  assert.equal(result.failure_class, undefined);
+});
+
 function truthPayload(overrides = {}) {
   return {
     ok: true,
@@ -30,6 +50,97 @@ function truthPayload(overrides = {}) {
     ...overrides,
   };
 }
+
+test("renewal answers a verified canonical offer in chat without creating payment", () => {
+  const result = buildKenjiLiveTruthDecision("membership_renewal", truthPayload({
+    membership: { level: "private_standard", label: "Standard", lifecycle: "active", expire_at: "2027-01-01" },
+    renewal: { status: "ready", package_code: "standard", amount_thb: 1000, membership_years: 1, discount_verified: true },
+  }));
+  assert.match(result.text, /Standard.*1.*1,000/);
+  assert.doesNotMatch(result.text, /https:|intent=status/);
+  assert.equal(result.handoff_reason, "renewal:payment_destination_required");
+});
+
+for (const failure of ["identity_unresolved", "upstream_error", "no_entitlement"]) {
+  test(`renewal ${failure} requests review without an app loop or price`, () => {
+    const result = buildKenjiLiveTruthDecision("membership_renewal", {ok:false, status:failure});
+    assert.equal(result.handoff_required, true);
+    assert.doesNotMatch(result.text, /https:|intent=status|1,000|2,500/);
+  });
+}
+
+test("membership read accepts success after the former 1600ms deadline and makes one call", async () => {
+  let calls = 0;
+  const env = { MEMBER_PAGES_WORKER: { async fetch() {
+    calls += 1;
+    await new Promise(resolve => setTimeout(resolve, 1700));
+    return Response.json(truthPayload());
+  } } };
+  for (let i = 0; i < 2; i += 1) {
+    const result = await resolveKenjiLineLiveTruth({ env, event: event(), intent: "membership_status" });
+    assert.equal(result.ok, true);
+  }
+  assert.equal(calls, 2);
+});
+
+test("membership read enforces total deadline even when binding ignores abort", async () => {
+  const result = await resolveKenjiLineLiveTruth({ event: event(), intent: "membership_status", env: {
+    MEMBER_PAGES_WORKER: { fetch: () => new Promise(() => {}) },
+  } });
+  assert.equal(result.failure_class, "upstream_error");
+  assert.equal(result.failure_reason, "timeout");
+});
+
+test("unclassified HTTP503 is upstream failure", async () => {
+  const result = await resolveKenjiLineLiveTruth({ event: event(), intent: "membership_status", env: {
+    MEMBER_PAGES_WORKER: { fetch: async () => new Response("unavailable", { status: 503 }) },
+  } });
+  assert.equal(result.failure_class, "upstream_error");
+});
+
+for (const [label, value] of [
+  ["null", null], ["missing", undefined], ["blank", ""], ["whitespace", " "],
+  ["false", false], ["true", true], ["numeric string", "88"],
+  ["array", []], ["numeric array", [88]], ["object", {}],
+  ["negative", -1], ["fraction", 1.5], ["NaN", NaN],
+  ["infinity", Infinity], ["unsafe integer", Number.MAX_SAFE_INTEGER + 1],
+]) {
+  test(`malformed Points ${label} cannot become a verified LINE reply`, async () => {
+    const payload = truthPayload({ points: { status: "verified", active_points: value } });
+    let calls = 0;
+    const env = { MEMBER_PAGES_WORKER: { async fetch() { calls++; return Response.json(payload); } } };
+    const truth = await resolveKenjiLineLiveTruth({ env, event: event(), intent: "points_status" });
+    assert.equal(calls, 1);
+    assert.deepEqual(truth.points, { status: "unavailable", active_points: null });
+    // The final reply boundary must also reject an unsanitized injected value.
+    for (const input of [truth, payload]) {
+      const decision = buildKenjiLiveTruthDecision("points_status", input);
+      assert.equal(decision.live_truth_verified, false);
+      assert.equal(decision.reply_source, "live_truth_unavailable");
+      assert.match(decision.text, /intent=status&view=points/);
+      assert.doesNotMatch(decision.text, /\b\d[\d,]*\s*Points\b/);
+    }
+  });
+}
+
+for (const identity_status of [undefined, "unresolved", "ambiguous", "owner_oa_linked"]) {
+  test(`Points cannot be sent for unproven identity ${identity_status}`, () => {
+    const decision = buildKenjiLiveTruthDecision("points_status", truthPayload({ identity_status }));
+    assert.equal(decision.live_truth_verified, false);
+    assert.equal(decision.reply_source, "live_truth_unavailable");
+    assert.doesNotMatch(decision.text, /\b88 Points\b/);
+  });
+}
+
+test("a verified numeric zero remains a real zero", async () => {
+  const env = { MEMBER_PAGES_WORKER: { async fetch() {
+    return Response.json(truthPayload({ points: { status: "verified", active_points: 0 } }));
+  } } };
+  const truth = await resolveKenjiLineLiveTruth({ env, event: event(), intent: "points_status" });
+  const decision = buildKenjiLiveTruthDecision("points_status", truth);
+  assert.equal(decision.live_truth_verified, true);
+  assert.match(decision.text, /มี 0 Points/);
+});
 
 test("reads bounded canonical truth through member-pages service binding", async () => {
   let captured = null;
@@ -85,6 +196,20 @@ test("known identity never gets a reverification instruction when live truth is 
   assert.match(decision.text, /เจอบัญชีที่ผูกไว้แล้ว/);
   assert.doesNotMatch(decision.text, /ยืนยันตัวตน|สมัครใหม่/);
 });
+
+for (const failure_class of ["identity_unresolved", "no_entitlement", "upstream_error", "projection_invalid"]) {
+  test(`membership failure ${failure_class} stays distinct and never asks for relinking`, async () => {
+    const env = { MEMBER_PAGES_WORKER: { async fetch() {
+      return new Response(JSON.stringify({ ok: false, status: failure_class, failure_class, authority: "my_mmd_entitlement_resolver_v1" }), { status: 503 });
+    } } };
+    const truth = await resolveKenjiLineLiveTruth({ env, event: event(), intent: "membership_status" });
+    const decision = buildKenjiLiveTruthDecision("membership_status", truth);
+    assert.equal(truth.failure_class, failure_class);
+    assert.equal(decision.truth_status, failure_class);
+    assert.equal(decision.handoff_required, false);
+    assert.doesNotMatch(decision.text, /เชื่อม|สมัครใหม่|ชำระใหม่/);
+  });
+}
 
 test("verified Points truth renders the canonical value and dedicated LIFF route", () => {
   const decision = buildKenjiLiveTruthDecision("points_status", truthPayload(), {

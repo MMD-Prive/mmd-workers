@@ -20,7 +20,8 @@ export default {
 
     if (path === SMART_MATCH_PATH) {
       if (method !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405);
-      const auth = await verifyAdminStrict(request);
+      if (typeof env.MMS_ADMIN?.fetch !== "function") return json({ ok: false, error: "admin_service_unavailable" }, 503);
+      const auth = await verifyAdminStrict(request, env.MMS_ADMIN);
       if (!auth.ok) return json({ ok: false, error: "unauthorized" }, 401);
       const body = await request.json().catch(() => null);
       if (!body) return json({ ok: false, error: "invalid_json" }, 400);
@@ -35,7 +36,7 @@ export default {
       }
 
       const route = buildCanonicalModelSearchRoute(input);
-      const source = await readAdminJson(request, route);
+      const source = await readAdminJson(request, route, env.MMS_ADMIN);
       if (!source.ok || !source.data) {
         return json({
           ok: false,
@@ -101,9 +102,10 @@ async function decorateSmartMatchingStatus(response) {
   return new Response(JSON.stringify(payload), { status: response.status, statusText: response.statusText, headers });
 }
 
-async function verifyAdminStrict(request) {
+async function verifyAdminStrict(request, service) {
   try {
     const url = new URL(request.url);
+    if (!["https://mmdbkk.com", "https://www.mmdbkk.com"].includes(url.origin)) return { ok: false };
     url.pathname = "/v1/admin/auth/me";
     url.search = "";
     const headers = new Headers({ accept: "application/json" });
@@ -111,16 +113,16 @@ async function verifyAdminStrict(request) {
       const value = request.headers.get(key);
       if (value) headers.set(key, value);
     }
-    const response = await fetch(url.toString(), { method: "GET", headers, redirect: "manual" });
+    const response = await service.fetch(new Request(url, { method: "GET", headers, redirect: "manual", signal: AbortSignal.timeout(7000) }));
     if (!response.ok) return { ok: false };
     const body = await response.json().catch(() => null);
-    return { ok: Boolean(body && body.ok === true && body.authenticated === true), actor: body || null };
+    return { ok: Boolean(body && body.ok === true && body.authenticated === true && body.worker === "admin-worker"), actor: body || null };
   } catch {
     return { ok: false };
   }
 }
 
-async function readAdminJson(request, route) {
+async function readAdminJson(request, route, service) {
   const base = new URL(request.url);
   const target = new URL(route, `${base.protocol}//${base.host}`);
   const headers = new Headers({ accept: "application/json" });
@@ -129,7 +131,7 @@ async function readAdminJson(request, route) {
     if (value) headers.set(key, value);
   }
   try {
-    const response = await fetch(target.toString(), { method: "GET", headers, redirect: "manual" });
+    const response = await service.fetch(new Request(target, { method: "GET", headers, redirect: "manual", signal: AbortSignal.timeout(9000) }));
     const text = await response.text();
     let data = null;
     try { data = text ? JSON.parse(text) : null; } catch {}

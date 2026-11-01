@@ -1,3 +1,9 @@
+export { ModelDiscoveryCoordinator } from "./model-customer-discovery-settings.js";
+import { isAdminRecoveryPage, renderAdminRecoveryPage } from "./admin-recovery-pages.js";
+import { isHypeConsoleRequest, handleHypeConsole } from "./hype-console.js";
+import { handleOwnerJobEdit, isOwnerJobEditRequest } from './owner-job-edit.js';
+export { JobEditCoordinator } from './owner-job-edit-do.js';
+import { JOB_PREFLIGHT_PATH, handleJobPreflight, guardDuplicateJob } from './create-job-preflight.js';
 import {isMyMmdOperationsRequest, handleMyMmdOperations} from './my-mmd-operations-queue.js';
 import {isMemberCompletenessRequest, handleMemberCompleteness} from "./member-completeness.js";
 import { decorateInternalSilverTheme } from "../../webflow/global/sigil-internal-theme-v1.mjs";
@@ -12,6 +18,9 @@ import { handleModelReconfirmOwnerRequest, isModelReconfirmOwnerRequest } from "
 import { drainApprovedJobLinkNotifications } from "./payment-approved-job-link-dispatch.js";
 import { reconcilePendingMembershipRecoveries } from "./membership-payment-pending-recovery.js";
 import { observeGenuineLiffAcceptance } from "./membership-genuine-liff-acceptance-observer.js";
+import { isBookingModelsRequest, handleBookingModels } from "./booking-models.js";
+import { isCompcardLibraryRequest, handleCompcardLibrary } from "./compcard-library.js";
+import { isModelMediaFlushPreviewRequest, handleModelMediaFlushPreview } from "./model-media-flush-preview.js";
 import { isPrivateMediaReviewRequest, handlePrivateMediaReview } from './private-media-review.js';
 import worker from "./job-orchestrator-owner-ops-wrapper.js";
 import { handleModelConsoleAudit, isModelConsoleAuditRequest } from "./model-console-audit.js";
@@ -52,8 +61,11 @@ import {
   isOwnerPrivateJobGrantCreateRequest,
 } from "./owner-private-job-grant-create.js";
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
+import { handleVerification } from "./mms-partner-line-verification.mjs";
+import { APP_JS, OWNER_HTML } from "./mms-partner-line-ui.mjs";
 import { applyCredentialBoundAdminGate } from "./admin-login-hero-worker-core.js";
 import { handleLineJobBriefRequest, isLineJobBriefRequest } from "./model-line-job-briefs.js";
+import { lineBriefDiagnosticRuntimeDependencies } from "./model-line-brief-diagnostic-runtime.js";
 import {
   handleKenjiConversationShadowReceiptAdmin,
   isKenjiConversationShadowReceiptAdminRequest,
@@ -90,6 +102,12 @@ import {
   isSessionCreatorAssetRequest,
   isSessionCreatorPageRequest,
 } from "./session-creator-page-proxy.js";
+import { handleMoneyControlWorkerHome } from "./money-control-worker-home.js";
+import { isHeldDocumentRequest, handleHeldDocumentRequest } from './held-document-review.js';
+import {
+  handleCreateJobWorkerPage,
+  isCreateJobWorkerPageRequest,
+} from "./create-job-worker-page.js";
 import {
   handleModelDirectFirstJobGate,
   isModelDirectFirstJobGateRequest,
@@ -247,13 +265,18 @@ const adminLoginHeroWorker = {
   },
   async fetch(request, env, ctx) {
     const runtimeEnv = modelMoneyRuntimeEnv(env);
+    if (isHeldDocumentRequest(request)) return handleHeldDocumentRequest(request, runtimeEnv, handleMoneyControlWorkerHome);
+    if (isHypeConsoleRequest(request)) return handleHypeConsole(request, runtimeEnv);
     if (isMyMmdOperationsRequest(request)) return handleMyMmdOperations(request, runtimeEnv);
     if (isMemberCompletenessRequest(request)) return handleMemberCompleteness(request, runtimeEnv);
     if (isMemberResolverDiagnosticTriggerRequest(request)) return handleMemberResolverDiagnosticTrigger(request, runtimeEnv);
-    if (isLineJobBriefRequest(request)) return handleLineJobBriefRequest(request, runtimeEnv);
+    if (isLineJobBriefRequest(request)) return handleLineJobBriefRequest(request, runtimeEnv, lineBriefDiagnosticRuntimeDependencies);
     if (isCreateJobDriveDiscoveryRequest(request)) return handleCreateJobDriveDiscovery(request, runtimeEnv);
     if (isPartnerOwnerConsoleRequest(request)) return handlePartnerOwnerConsole(request, runtimeEnv, ctx);
     if (isModelOwnerReviewQueueRequest(request)) return handleModelOwnerReviewQueue(request, runtimeEnv);
+    if (isBookingModelsRequest(request)) return handleBookingModels(request, runtimeEnv);
+    if (isCompcardLibraryRequest(request)) return handleCompcardLibrary(request, runtimeEnv);
+    if (isModelMediaFlushPreviewRequest(request)) return handleModelMediaFlushPreview(request, runtimeEnv);
     if (isPrivateMediaReviewRequest(request)) return handlePrivateMediaReview(request, runtimeEnv, ctx);
     scheduleLineOfcContactBackfill(runtimeEnv, ctx);
     if (isModelConsoleAuditRequest(request)) return handleModelConsoleAudit(request, runtimeEnv);
@@ -277,10 +300,30 @@ const adminLoginHeroWorker = {
       // Core worker remains authoritative if URL parsing fails.
     }
 
+    if (isAdminRecoveryPage(normalizedPath)) {
+      const gate = await applyCredentialBoundAdminGate(request, runtimeEnv, normalizedPath, method);
+      if (gate.response) return gate.response;
+      if (!["GET", "HEAD"].includes(method)) return new Response(null, { status: 405, headers: { allow: "GET, HEAD" } });
+      return renderAdminRecoveryPage(gate.request || request);
+    }
+
+    if (isOwnerJobEditRequest(normalizedPath)) return handleOwnerJobEdit(request, runtimeEnv);
+
     if (isModelJobPreviewRequest(normalizedPath)) {
       const gate = await applyCredentialBoundAdminGate(request, runtimeEnv, normalizedPath, method);
       if (gate.response) return gate.response;
       return handleModelJobPreview(gate.request, runtimeEnv);
+    }
+
+    if (normalizedPath === JOB_PREFLIGHT_PATH && method === 'POST') {
+      const actor = await readCredentialBoundAdminActor(request, runtimeEnv);
+      return handleJobPreflight(request, runtimeEnv, actor);
+    }
+
+    if (isCreateJobWorkerPageRequest(normalizedPath, method)) {
+      const gate = await applyCredentialBoundAdminGate(request, runtimeEnv, normalizedPath, method);
+      if (gate.response) return gate.response;
+      return handleCreateJobWorkerPage(gate.request);
     }
 
     if (isSessionCreatorAssetRequest(normalizedPath, method)) {
@@ -292,6 +335,12 @@ const adminLoginHeroWorker = {
       // fetching protected presentation pages from Session Creator.
       const gate = await applyCredentialBoundAdminGate(request, runtimeEnv, normalizedPath, method);
       if (gate.response) return gate.response;
+      if (
+        normalizedPath === "/internal/admin/payments" &&
+        new URL(gate.request.url).searchParams.get("mmd_worker_view") !== "existing"
+      ) {
+        return handleMoneyControlWorkerHome(gate.request);
+      }
       return handleSessionCreatorPageRequest(gate.request);
     }
 
@@ -398,6 +447,9 @@ const adminLoginHeroWorker = {
     }
 
     if (normalizedPath === JOB_CREATE_PATH && method === "POST") {
+      const actor = await readCredentialBoundAdminActor(request, runtimeEnv);
+      const duplicate = await guardDuplicateJob(request, runtimeEnv, actor);
+      if (duplicate) return duplicate;
       const privateWorkBlocked = await guardPrivateJobCreateWork(request.clone(), runtimeEnv);
       if (privateWorkBlocked) return privateWorkBlocked;
       const refreshed = await maybeHandleHeldIdentityLinkRefresh(request, runtimeEnv);
@@ -440,6 +492,15 @@ const adminLoginHeroWorker = {
 export default {
   ...adminLoginHeroWorker,
   async fetch(request, env, ctx) {
+    // LINE intake authenticates the LINE token itself. Owner queue/review still
+    // require the existing signed Owner session inside this exact-path handler.
+    const verification = await handleVerification(request, env, {
+      readOwner: readCredentialBoundAdminActor,
+      appJs: APP_JS,
+      ownerHtml: OWNER_HTML,
+    });
+    if (verification) return verification;
     return decorateInternalSilverTheme(request, await adminLoginHeroWorker.fetch(request, env, ctx));
   },
 };
+

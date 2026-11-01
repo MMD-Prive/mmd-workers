@@ -88,10 +88,12 @@ function installRuntimeFetchMock({
   finalActivation = null,
   expectedPaymentServiceToken = AUTH_SERVICE_ADMIN_TO_PAYMENTS,
   currentRecords = null,
+  recordsForRead = null,
 } = {}) {
   const previousFetch = globalThis.fetch;
   const calls = [];
   let session = makeSession(initialState);
+  let sessionReads = 0;
 
   globalThis.fetch = async (input, init = {}) => {
     const request = input instanceof Request ? input : new Request(String(input), init);
@@ -130,7 +132,7 @@ function installRuntimeFetchMock({
     const table = decodeURIComponent(parts[2] || parts.at(-1) || "");
 
     if (table === "sessions" && method === "GET") {
-      return jsonResponse({ records: currentRecords || [session] });
+      return jsonResponse({ records: recordsForRead ? recordsForRead(++sessionReads) : currentRecords || [session] });
     }
 
     if (table === "sessions" && method === "PATCH") {
@@ -177,12 +179,32 @@ async function postAction(t, action, options = {}) {
     new Request("https://admin-worker.test/v1/model/session/action", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ t, action, ...(options.body || {}) }),
+      body: JSON.stringify({ t, action, session_id: "session_runtime_v1a", ...(options.body || {}) }),
     }),
     options.env || BASE_ENV,
   );
   return { response, body: await response.json() };
 }
+
+test("decline alternatives persist only in reason and replay cannot write again", async () => {
+  const t = await signedModelT();
+  const mock = installRuntimeFetchMock();
+  try {
+    const body = { reason: "ติดธุระ", availability_options: ["2099-10-22T12:00"] };
+    const invalid = await postAction(t, "decline_job", { body: { availability_options: [] } });
+    assert.equal(invalid.response.status, 400);
+    assert.equal(mock.calls.filter(c => c.method === "PATCH").length, 0);
+    const first = await postAction(t, "decline_job", { body });
+    assert.equal(first.response.status, 200);
+    assert.match(mock.session.fields.decline_reason, /Proposed only/);
+    const writes = mock.calls.filter(c => c.method === "PATCH").length;
+    assert.ok(writes > 0);
+    const replay = await postAction(t, "decline_job", { body });
+    assert.ok(replay.response.status >= 400);
+    assert.equal(mock.calls.filter(c => c.method === "PATCH").length, writes);
+    assert.equal(mock.calls.filter(c => c.method === "POST").length, 0);
+  } finally { mock.restore(); }
+});
 
 test("GET /v1/model/session/current requires signed t before Airtable access", async () => {
   const mock = installRuntimeFetchMock();
@@ -741,4 +763,56 @@ test("start_work succeeds after live payment truth confirms final payment", asyn
   } finally {
     mock.restore();
   }
+});
+
+// Security regressions use signed fixture tokens and mocked stores only.
+test('legacy signed links without an exact Canonical Model fail closed for reads and actions', async () => {
+  const token = await signedModelT();
+  for (const canonical of [undefined, [], ['recOtherModel'], ['recRuntimeModel', 'recOtherModel'], ['recRuntimeModel', 'recRuntimeModel']]) {
+    const record = makeSession('confirmed');
+    if (canonical === undefined) delete record.fields['Canonical Model'];
+    else record.fields['Canonical Model'] = canonical;
+    // Matching legacy Model/name fields intentionally remain present.
+    const before = JSON.stringify(record);
+    const mock = installRuntimeFetchMock({ currentRecords: [record] });
+    try {
+      const read = await getCurrent(token);
+      const action = await postAction(token, 'start_travel');
+      assert.equal(read.response.status, 403);
+      assert.equal(action.response.status, 403);
+      assert.equal(action.body.error, 'forbidden');
+      assert.ok(mock.calls.every(call => call.method === 'GET'));
+      assert.equal(JSON.stringify(record), before);
+    } finally { mock.restore(); }
+  }
+});
+
+test('signed action requires the displayed session id without any write or notification', async () => {
+  const token = await signedModelT();
+  for (const session_id of [undefined, null, '', 5, 'another_session']) {
+    const mock = installRuntimeFetchMock({initialState:'confirmed'});
+    try {
+      const result = await postAction(token, 'start_travel', {body:{session_id}});
+      assert.equal(result.response.status, 409);
+      assert.equal(result.body.error, 'session_context_changed');
+      assert.equal(mock.session.fields.state, 'confirmed');
+      assert.ok(mock.calls.every(call => call.method === 'GET'));
+    } finally { mock.restore(); }
+  }
+});
+
+test('model-only signed token cannot act on a new current job selected during reread', async () => {
+  const token = await signedModelT({kind:'model_session',session_id:undefined,payment_ref:undefined});
+  const first = makeSession('en_route');
+  const next = makeSession('en_route');
+  next.id = 'recDifferentJob'; next.fields.session_id = 'another_session';
+  const mock = installRuntimeFetchMock({recordsForRead:count=>[count===1?first:next]});
+  try {
+    const result = await postAction(token, 'mark_arrived');
+    assert.equal(result.response.status, 409);
+    assert.equal(result.body.error, 'session_context_changed');
+    assert.ok(mock.calls.every(call => call.method === 'GET'));
+    assert.equal(first.fields.model_session_state, 'en_route');
+    assert.equal(next.fields.model_session_state, 'en_route');
+  } finally { mock.restore(); }
 });

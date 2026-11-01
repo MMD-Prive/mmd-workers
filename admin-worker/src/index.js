@@ -1,5 +1,7 @@
 import { readCanonicalCurrentSession, canonicalModelIds } from "./model-current-session.js";
+import { normalizeModelDecline } from "../../shared/model-decline-options.mjs";
 import { notifyTravelEvent } from "./model-travel-notification.js";
+import { requestMemberReplyRefresh } from "../../shared/member-reply-refresh.mjs";
 import { validateJobServicePricing, withJobServicePricingNote } from "./job-service-pricing.js";
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
 import { requestPaymentsConfirmLink } from "./payments-issuer-transport.js";
@@ -2440,18 +2442,10 @@ function modelSessionOwnsRecord(env, payload, record) {
   if (sessionValues.length && !sessionValues.some((value) => assignmentKeys.has(value))) return false;
 
   const payloadModelId = str(payload?.model_record_id || payload?.model_id);
-  if (Object.prototype.hasOwnProperty.call(fields, "Canonical Model")) {
-    const canonical = canonicalModelIds(record);
-    return Boolean(payloadModelId && canonical.length === 1 && fields["Canonical Model"].length === 1 && canonical[0] === payloadModelId);
-  }
-  const recordModelIds = modelSessionFieldValues(fields, [names.modelRecordId, "Model Record ID", "model_record_id", "model_id", "Model"]);
-  if (payloadModelId && recordModelIds.length && !recordModelIds.includes(payloadModelId)) return false;
-
-  const payloadModelName = str(payload?.model_name).toLowerCase();
-  const recordModelNames = modelSessionFieldValues(fields, [names.modelName, "Model Name", "working_name"]).map((value) => value.toLowerCase());
-  if (payloadModelName && recordModelNames.length && !recordModelNames.includes(payloadModelName)) return false;
-
-  return true;
+  const canonical = canonicalModelIds(record);
+  return Boolean(payloadModelId && Array.isArray(fields["Canonical Model"])
+    && fields["Canonical Model"].length === 1 && canonical.length === 1
+    && canonical[0] === payloadModelId);
 }
 
 async function resolveModelSessionContext(req, env, body = null) {
@@ -2988,10 +2982,20 @@ async function activateFinalPaymentAfterArrival(env, session) {
   return { ok: true, payment: data };
 }
 
+function modelSessionActionTargetsContext(body, context) {
+  const expected = body?.session_id;
+  return typeof expected === "string" && expected.length > 0
+    && expected === modelSessionResponseSession(context.tables, context.session)?.session_id;
+}
+
 async function handleModelSessionAction(req, env) {
   const body = await safeJson(req);
   const authContext = await resolveModelSessionContext(req, env, body);
   if (!authContext.ok) return modelSessionJson({ ok: false, error: authContext.error }, authContext.status);
+
+  if (!modelSessionActionTargetsContext(body, authContext)) {
+    return modelSessionJson({ ok: false, error: "session_context_changed" }, 409);
+  }
 
   const rawAction = str(body?.action).trim().toLowerCase();
   if (PUBLIC_EXTENSION_MODEL_ACTIONS.has(rawAction)) {
@@ -3006,8 +3010,18 @@ async function handleModelSessionAction(req, env) {
     return modelSessionJson({ ok: false, error: "invalid_transition" }, 409);
   }
 
+  const decline = action === "decline_job" ? normalizeModelDecline(body) : null;
+  if (decline && !decline.ok) return modelSessionJson({ ok: false, error: decline.error }, 400);
+  if (action !== "decline_job" && Object.prototype.hasOwnProperty.call(body || {}, "availability_options")) {
+    return modelSessionJson({ ok: false, error: "decline_options_invalid" }, 400);
+  }
+
   const reread = await resolveModelSessionContext(req, env, body);
   if (!reread.ok) return modelSessionJson({ ok: false, error: reread.error }, reread.status);
+
+  if (reread.session.id !== authContext.session.id || !modelSessionActionTargetsContext(body, reread)) {
+    return modelSessionJson({ ok: false, error: "session_context_changed" }, 409);
+  }
 
   const stateInfo = modelSessionStateFromRecord(reread.tables, reread.session);
   if (!stateInfo.field || !normalizeSessionState(stateInfo.state)) {
@@ -3032,9 +3046,9 @@ async function handleModelSessionAction(req, env) {
   }
 
   const patch = { [stateInfo.field]: transition.to };
-  if (action === "decline_job" && str(body?.reason)) {
+  if (action === "decline_job" && decline.reason) {
     const reasonField = str(env.AT_SESSIONS__DECLINE_REASON || "decline_reason");
-    patch[reasonField] = str(body.reason).slice(0, 500);
+    patch[reasonField] = decline.reason;
   }
 
   const updated = await airtablePatchById(env, reread.tables.sessions.table, reread.session.id, patch);
@@ -3044,10 +3058,18 @@ async function handleModelSessionAction(req, env) {
     ? await notifyTravelEvent(env, { id: updated.id, fields: { ...reread.session.fields, ...updated.fields } }, action, action)
     : null;
 
+  const memberReplyRefreshQueued = ["mark_work_finished", "confirm_separated"].includes(action)
+    ? await requestMemberReplyRefresh(env, "MEMBER_PAGES_MEMBER_WALLET", "admin-worker", {
+        line_user_id: updated.fields?.line_user_id || reread.session.fields?.line_user_id,
+        member_id: updated.fields?.member_id || reread.session.fields?.member_id,
+      }, "session_" + action)
+    : null;
+
   return modelSessionJson({
     ok: true,
     session: modelSessionResponseSession(reread.tables, { id: updated.id, fields: updated.fields }),
     ...(notification ? { notification } : {}),
+    ...(memberReplyRefreshQueued !== null ? { member_reply_refresh_queued: memberReplyRefreshQueued } : {}),
   });
 }
 
@@ -5579,6 +5601,7 @@ function sanitizeCreateSessionModel(record, profile) {
     orientation: profile.lane,
     status: !profile.statusActive ? "inactive" : profile.availableNow ? "available" : "active",
     available: profile.availableNow && !profile.explicitlyUnavailable,
+    availability_state: profile.explicitlyUnavailable ? "unavailable" : profile.availableNow ? "available" : "unknown",
     operational: { ...profile.ops },
   };
 }
@@ -6207,7 +6230,11 @@ async function createAdminJob(env, body) {
 
   const google_map_url = str(body.google_map_url || jobDetails.google_map_url || "");
   const rawNote = str(body.note || notes.operation_note || notes.handling_note || body.notes || "");
-  const note = withJobServicePricingNote(withCanonicalPublicJobNote(rawNote, publicJob), servicePricing);
+  const modelDirections = { text: str(jobDetails.brief || "").slice(0, 2000), meeting_point: str(jobDetails.meeting_point || "").slice(0, 500) };
+  const baseNote = withJobServicePricingNote(withCanonicalPublicJobNote(rawNote, publicJob), servicePricing);
+  // Stored in the internal session note; only the model confirmation endpoint extracts this marker.
+  const note = modelDirections.text || modelDirections.meeting_point
+    ? `${baseNote}\n[MMD Model Remark v1] ${JSON.stringify(modelDirections)}` : baseNote;
   const requested_payment_type = str(body.payment_type || payment.payment_type || "deposit").toLowerCase();
   if (!["deposit", "full"].includes(requested_payment_type)) {
     throw new CreateSessionAccessError("payment_type_invalid", "Payment type must be deposit or full.", 400);
@@ -6252,6 +6279,8 @@ async function createAdminJob(env, body) {
     google_map_url,
     amount_thb,
     pay_model_thb: body.pay_model_thb,
+    travel_fee_thb: body.travel_fee_thb ?? 0,
+    model_travel_fee_thb: body.model_travel_fee_thb ?? 0,
     service_amount_thb,
     original_amount_thb,
     pricing_adjustment,

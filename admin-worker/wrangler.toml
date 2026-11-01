@@ -9,6 +9,23 @@ triggers = { crons = ["*/5 * * * *"] }
 compatibility_date = "2026-01-01"
 workers_dev = true
 
+# LINE Notes evidence intake: own only this page and its existing import API.
+[[routes]]
+pattern = "mmdbkk.com/internal/ceo/line-notes-import*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/kenji/control/line-ofc/import"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/ceo/line-notes-import*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/kenji/control/line-ofc/import"
+zone_name = "mmdbkk.com"
+
 # Model LIFF auth and session runtime. Keep these exact so the public page stays
 # owned by Webflow while API traffic is owned by admin-worker.
 [[routes]]
@@ -540,6 +557,14 @@ zone_name = "mmdbkk.com"
 # Payment Review Console browser facade. These are exact/narrow API routes only;
 # /internal/admin/payments uses the authenticated Lovable presentation proxy. The canonical
 # login entrypoint applies the browser-session gate before review handling.
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/payments/held-images*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/payments/held-images*"
+zone_name = "mmdbkk.com"
+
 [[routes]]
 pattern = "mmdbkk.com/v1/admin/payments/review-queue*"
 zone_name = "mmdbkk.com"
@@ -1193,6 +1218,11 @@ bucket_name = "mmd-models"
 binding = "PRIVATE_MODEL_MEDIA"
 bucket_name = "mmd-private-model-media"
 
+# Compcard Library reads submitted Job Board images; originals remain private.
+[[r2_buckets]]
+binding = "JOB_BOARD_COMPCARDS"
+bucket_name = "mmd-public-access-evidence"
+
 [[r2_buckets]]
 binding = "PUBLIC_MODEL_UPLOADS_R2"
 bucket_name = "mmd-private-public-model-uploads"
@@ -1438,3 +1468,78 @@ zone_name = "mmdbkk.com"
 [[routes]]
 pattern = "www.mmdbkk.com/v1/admin/models/drive-select*"
 zone_name = "mmdbkk.com"
+
+# Owner edit journal: one coordinator per existing Session.
+[[durable_objects.bindings]]
+name = "JOB_EDIT_COORDINATOR"
+class_name = "JobEditCoordinator"
+
+[[migrations]]
+tag = "job-edit-v1"
+new_sqlite_classes = ["JobEditCoordinator"]
+
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/jobs/edit"
+zone_name = "mmdbkk.com"
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/jobs/edit"
+zone_name = "mmdbkk.com"
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/jobs/edit*"
+zone_name = "mmdbkk.com"
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/jobs/edit*"
+zone_name = "mmdbkk.com"
+
+
+[[durable_objects.bindings]]
+name = "MODEL_DISCOVERY_COORDINATOR"
+class_name = "ModelDiscoveryCoordinator"
+
+[[migrations]]
+tag = "model-discovery-v1"
+new_sqlite_classes = ["ModelDiscoveryCoordinator"]
+
+[[routes]]
+pattern = "mmdbkk.com/v1/model/settings/customer-visibility"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/model/settings/customer-visibility"
+zone_name = "mmdbkk.com"
+
+# Owner/admin-only Booking Model search and profile diagnostics.
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/booking-models*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/booking-models*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/booking-models*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/booking-models*"
+zone_name = "mmdbkk.com"
+
+# Owner/admin Compcard Library. Source files and proxy previews require the
+# credential-bound admin cookie on every request.
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/compcards*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/compcards*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/compcards*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/compcards*"
+zone_name = "mmdbkk.com"
+

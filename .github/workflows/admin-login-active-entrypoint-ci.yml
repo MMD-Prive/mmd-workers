@@ -5,6 +5,18 @@ on:
     paths:
       - "admin-worker/src/admin-login-hero-worker.js"
       - "admin-worker/admin-login-active-entrypoint.test.mjs"
+      - "admin-worker/src/hype-console.js"
+      - "admin-worker/src/hype-console-page.js"
+      - "admin-worker/hype-console.test.mjs"
+      - "admin-worker/hype-console-bundle.test.mjs"
+      - "admin-worker/src/admin-login-hero-worker-core.js"
+      - "admin-worker/src/kenji-owner-line-unlock.js"
+      - "admin-worker/kenji-owner-line-unlock.test.mjs"
+      - "admin-worker/src/kenji-control-actions.js"
+      - "admin-worker/kenji-control-actions.test.mjs"
+      - "immigrate-worker/src/canonical-admin-login-wrapper.ts"
+      - "immigrate-worker/src/kenji-owner-line-bridge.ts"
+      - "immigrate-worker/test/kenji-owner-line-bridge.test.mjs"
       - ".github/workflows/admin-login-active-entrypoint-ci.yml"
   push:
     branches:
@@ -12,6 +24,18 @@ on:
     paths:
       - "admin-worker/src/admin-login-hero-worker.js"
       - "admin-worker/admin-login-active-entrypoint.test.mjs"
+      - "admin-worker/src/hype-console.js"
+      - "admin-worker/src/hype-console-page.js"
+      - "admin-worker/hype-console.test.mjs"
+      - "admin-worker/hype-console-bundle.test.mjs"
+      - "admin-worker/src/admin-login-hero-worker-core.js"
+      - "admin-worker/src/kenji-owner-line-unlock.js"
+      - "admin-worker/kenji-owner-line-unlock.test.mjs"
+      - "admin-worker/src/kenji-control-actions.js"
+      - "admin-worker/kenji-control-actions.test.mjs"
+      - "immigrate-worker/src/canonical-admin-login-wrapper.ts"
+      - "immigrate-worker/src/kenji-owner-line-bridge.ts"
+      - "immigrate-worker/test/kenji-owner-line-bridge.test.mjs"
       - ".github/workflows/admin-login-active-entrypoint-ci.yml"
   workflow_dispatch:
 
@@ -33,3 +57,13 @@ jobs:
         run: node --check src/admin-login-hero-worker.js
       - name: Test active entrypoint credential contract
         run: node --test admin-login-active-entrypoint.test.mjs
+      - name: Test scoped Owner LINE control and existing audit contract
+        run: node --test kenji-owner-line-unlock.test.mjs kenji-control-actions.test.mjs
+      - name: Install ingress test bundler from lockfile
+        working-directory: .
+        run: npm ci --prefix immigrate-worker --ignore-scripts --no-audit --no-fund
+      - name: Test actual ingress to Owner control boundary
+        working-directory: .
+        run: node --test immigrate-worker/test/kenji-owner-line-bridge.test.mjs
+      - name: Test HYPE read-only contract and actual bundled browser runtime
+        run: node --test hype-console.test.mjs hype-console-bundle.test.mjs

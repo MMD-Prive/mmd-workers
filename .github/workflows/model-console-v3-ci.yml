@@ -5,6 +5,7 @@ on:
     paths:
       - "webflow/sigil/model/model-console-*"
       - "webflow/sigil/model/console-atelier/**"
+      - "webflow/sigil/model/graphics-refresh.test.mjs"
       - "scripts/build-model-console-atelier-embed.mjs"
       - "scripts/preview-model-console-atelier.mjs"
       - ".github/workflows/model-console-v3-ci.yml"
@@ -16,6 +17,7 @@ on:
     paths:
       - "webflow/sigil/model/model-console-*"
       - "webflow/sigil/model/console-atelier/**"
+      - "webflow/sigil/model/graphics-refresh.test.mjs"
       - "scripts/build-model-console-atelier-embed.mjs"
       - "scripts/preview-model-console-atelier.mjs"
       - ".github/workflows/model-console-v3-ci.yml"
@@ -44,6 +46,7 @@ jobs:
         run: |
           node --check webflow/sigil/model/model-console-v3-i18n.js
           node --check webflow/sigil/model/model-console-atelier-v3.js
+          node --check webflow/sigil/model/model-console-hero.mjs
           node --check scripts/build-model-console-atelier-embed.mjs
           node --check scripts/preview-model-console-atelier.mjs
           node scripts/build-model-console-atelier-embed.mjs "$RUNNER_TEMP/console-v3"
@@ -51,11 +54,16 @@ jobs:
       - name: Console presentation and existing safety regressions
         run: |
           node --test \
+            webflow/sigil/model/graphics-refresh.test.mjs \
             webflow/sigil/model/model-console-atelier-v3.test.mjs \
+            webflow/sigil/model/model-console-hero.test.mjs \
+            webflow/sigil/model/model-console-install-blocks.test.mjs \
+            webflow/sigil/model/model-console-decline-options.test.mjs \
             webflow/sigil/model/model-console-state-presentation.test.mjs \
             webflow/sigil/model/model-console-travel-flow.test.mjs \
             webflow/sigil/model/model-console-v3-identity-first.test.mjs \
-            webflow/sigil/model/model-console-payout-summary-v2.test.mjs
+            webflow/sigil/model/model-console-payout-summary-v2.test.mjs \
+            webflow/sigil/model/model-console-travel-receipt.test.mjs
       # The existing entry test imports a typeless .js Worker as ESM. Node 18
       # lacks the module syntax detection used by current Node 20/22 releases.
       - name: Existing Webflow entry integration (ESM-capable runtime)

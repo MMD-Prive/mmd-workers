@@ -2,6 +2,10 @@
 export const MMD_OPERATIONS_FLOW = String.raw`
 <section class="mmd-workflow" aria-labelledby="mmd-workflow-title" data-mmd-workflow="20260922">
   <div class="mmd-workflow__heading"><div><p class="k">MMD · DAILY OPERATIONS</p><h2 id="mmd-workflow-title">เริ่มจากลูกค้า แล้วทำต่อให้จบงาน</h2><p>เลือกขั้นที่ค้างอยู่ เปิดงานเดิมเพื่อตรวจรายละเอียดก่อนดำเนินการ</p></div><a class="primary" href="/internal/admin/jobs/all">ดูงานล่าสุด ↗</a></div>
+  <form class="mmd-workflow__client-search" data-mmd-client-search>
+    <label for="mmd-client-search">ค้นลูกค้า</label>
+    <div><input id="mmd-client-search" type="search" placeholder="ชื่อที่เปอร์เรียก / LINE / โทร / Email / Client ID" autocomplete="off" maxlength="160" required><button type="submit">ค้นหา</button></div>
+  </form>
   <ol class="mmd-workflow__steps">
     <li><span>01 · ลูกค้าและงาน</span><h3>หาคนให้ถูก งานให้ตรง</h3><p>ค้นชื่อ Per Rename, ชื่อ LINE หรือประวัติลูกค้า แล้วเทียบโมเดล วันที่ และงานล่าสุดก่อนเลือก</p><a href="/internal/admin/customer-data">ค้นลูกค้า / MMD Memory ↗</a><a href="/internal/admin/jobs/all">หาจากงานล่าสุด ↗</a></li>
     <li><span>02 · หลักฐาน</span><h3>รับสลิปเข้ารายการ</h3><p>ลูกค้าส่งผ่านหน้าชำระเงินของงานหรือ LINE OFC ทางใดทางหนึ่ง สลิปจาก LINE เข้า Slip Intake ก่อนตรวจว่าผูกกับลูกค้าและงานถูกต้อง</p><a href="/internal/ceo/payment-slip-inbox">เปิดกล่องสลิป / ตรวจการจับคู่ ↗</a></li>
@@ -15,6 +19,7 @@ export const MMD_OPERATIONS_FLOW = String.raw`
 export const MMD_OPERATIONS_STYLE = String.raw`<style data-mmd-workflow-style>
 #mmd-os-v1 .mmd-workflow{margin:18px 0 22px;padding:22px;border:1px solid #514126;border-radius:16px;background:linear-gradient(135deg,#19140d,#0e0d0b 65%);color:#f2ece1}
 #mmd-os-v1 .mmd-workflow__heading,#mmd-os-v1 .mmd-workflow__memory{display:flex;align-items:center;justify-content:space-between;gap:20px}
+#mmd-os-v1 .mmd-workflow__client-search{margin:18px 0 0}#mmd-os-v1 .mmd-workflow__client-search label{display:block;margin-bottom:7px;color:#dfbd78;font-size:13px;font-weight:700}#mmd-os-v1 .mmd-workflow__client-search>div{display:flex;gap:8px}#mmd-os-v1 .mmd-workflow__client-search input{min-width:0;flex:1;min-height:46px;padding:10px 12px;border:1px solid #79603b;border-radius:10px;background:#080706;color:#f2ece1;font:16px/1.4 inherit}#mmd-os-v1 .mmd-workflow__client-search button{min-height:46px;padding:0 17px;border:1px solid #79603b;border-radius:10px;background:#e8c782;color:#21170a;font-weight:800;cursor:pointer}
 #mmd-os-v1 .mmd-workflow h2{margin:7px 0;font-size:clamp(22px,3vw,30px);line-height:1.3}
 #mmd-os-v1 .mmd-workflow p{margin:7px 0;color:#c1b8aa;font-size:14px;line-height:1.7}
 #mmd-os-v1 .mmd-workflow__steps{list-style:none;padding:0;margin:22px 0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
@@ -34,3 +39,5 @@ export const MMD_OPERATIONS_STYLE = String.raw`<style data-mmd-workflow-style>
 @media(max-width:1050px){#mmd-os-v1 .mmd-workflow__steps{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:650px){#mmd-os-v1 .mmd-workflow{padding:16px}#mmd-os-v1 .mmd-workflow__steps{grid-template-columns:1fr}#mmd-os-v1 .mmd-workflow__heading,#mmd-os-v1 .mmd-workflow__memory{align-items:stretch;flex-direction:column}#mmd-os-v1 .tabs button{padding:0 9px}}
 </style>`;
+
+export const MMD_OPERATIONS_SCRIPT = String.raw`<script data-mmd-client-search-script>(function(){'use strict';var form=document.querySelector('[data-mmd-client-search]');if(!form)return;form.addEventListener('submit',function(event){event.preventDefault();var input=form.querySelector('input'),value=String(input&&input.value||'').trim();if(!value)return;location.assign('/internal/admin/customer-data?q='+encodeURIComponent(value))})})();</script>`;

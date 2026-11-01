@@ -1,6 +1,11 @@
 import { readMemberAppSession } from "./member-app-api.js";
 import { readMemberHistoryRecoveryStatus } from "./member-history-recovery.js";
-import { guardPointsDisplaySources, paymentRefsForPoints } from "./points-display-source-guard.js";
+import {
+  guardPointsDisplaySources,
+  paymentRefsForPoints,
+  sessionIdsForHistoricalPoints,
+  isHistoricalPointsRecord,
+} from "./points-display-source-guard.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const MEMBERS_TABLE = "tblgWc5VRon5o8Mhk";
@@ -44,12 +49,15 @@ export async function prepareMyMmdLifetimePointsContext(request, env = {}) {
 }
 
 // Internal callers must supply identity from the canonical resolver, never a
-// browser/query identity. Reuses the same payment-backed presentation gate.
+// browser/query identity. Historical posted awards use their existing writer
+// contract; new payment-backed awards still require verified payment truth.
 export async function readMyMmdVerifiedPointsContext(env = {}, session = {}) {
   const unavailable = { state: "checking", recoveryState: "review_required", pointsRecoveryPending: true };
   if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID || !session?.memberId || !/^U[0-9a-f]{32}$/i.test(session?.lineUserId || "")) return unavailable;
   try {
-    const recoveryStatus = await readMemberHistoryRecoveryStatus(env, session.lineUserId);
+    const recoveryStatus = await readMemberHistoryRecoveryStatus(env, session.lineUserId, {
+      readPreloadOnMiss: session.strictIdentity === true, memberId: session.memberId,
+    });
     const recoveryState = normalizeToken(recoveryStatus?.state);
     if (["checking", "in_progress", "review_required"].includes(recoveryState)) {
       return { state: "checking", recoveryState, pointsRecoveryPending: true };
@@ -60,13 +68,25 @@ export async function readMyMmdVerifiedPointsContext(env = {}, session = {}) {
 
     const member = await resolveMember(env, session.memberId);
     if (!member) return unavailable;
-    const formula = pointsFormula(member.memberId, session.strictIdentity === true ? "" : member.email);
+    const clients = await airtableList(env, env.AIRTABLE_TABLE_CLIENTS || "tblVv58TCbwh5j1fS", {
+      filterByFormula: `{line_user_id}=${formulaString(session.lineUserId)}`, maxRecords: 3,
+    });
+    if (clients.length !== 1 || clean(clients[0]?.fields?.line_user_id) !== session.lineUserId) {
+      return { ...unavailable, reason: "canonical_client_unresolved" };
+    }
+    const clientId = clean(clients[0]?.id);
+    if (!/^rec[A-Za-z0-9]+$/.test(clientId) || member.clientIds.length !== 1 || member.clientIds[0] !== clientId) {
+      return { ...unavailable, reason: "member_client_mismatch" };
+    }
+    const formula = pointsFormula(member.memberId);
     if (!formula) return unavailable;
     const records = await airtableList(env, env.AIRTABLE_TABLE_POINTS_LEDGER || POINTS_LEDGER_TABLE, {
       filterByFormula: formula,
       maxRecords: MAX_RECORDS,
     });
-    if (session.strictIdentity === true && records.some(row => clean(row?.fields?.member_id) !== member.memberId)) return unavailable;
+    if (records.some(row => typeof row?.fields?.member_id !== "string" || clean(row.fields.member_id) !== member.memberId)) {
+      return { ...unavailable, reason: "ledger_owner_mismatch" };
+    }
     const refs = paymentRefsForPoints(records);
     const payments = [];
     // Bound each formula and fail closed rather than falling back to profile
@@ -77,8 +97,18 @@ export async function readMyMmdVerifiedPointsContext(env = {}, session = {}) {
         filterByFormula: clauses.length === 1 ? clauses[0] : `OR(${clauses.join(",")})`, maxRecords: MAX_RECORDS,
       }));
     }
-    if (session.strictIdentity === true && payments.some(row => clean(row?.fields?.member_id) !== member.memberId)) return unavailable;
-    const guarded = guardPointsDisplaySources(records, payments);
+    const currentRefs = new Set(records.filter(row => !isHistoricalPointsRecord(row)).map(row => clean(row?.fields?.payment_ref)).filter(Boolean));
+    if (payments.some(row => currentRefs.has(clean(row?.fields?.["Payment Reference"]))
+      && clean(row?.fields?.member_id) && clean(row?.fields?.member_id) !== member.memberId)) return unavailable;
+    const sessionIds = sessionIdsForHistoricalPoints(records);
+    const sessions = [];
+    for (let offset = 0; offset < sessionIds.length; offset += 40) {
+      const clauses = sessionIds.slice(offset, offset + 40).map(id => `{session_id}=${formulaString(id)}`);
+      sessions.push(...await airtableList(env, env.AIRTABLE_TABLE_SESSIONS || "tblC98mKWbzmPuNzX", {
+        filterByFormula: clauses.length === 1 ? clauses[0] : `OR(${clauses.join(",")})`, maxRecords: MAX_RECORDS,
+      }));
+    }
+    const guarded = guardPointsDisplaySources(records, payments, { clientId, sessions });
     if (guarded.state !== "verified") return {
       ...unavailable, sourceReviewRequired: true, historicalPoints: guarded.historicalPoints,
     };
@@ -86,6 +116,9 @@ export async function readMyMmdVerifiedPointsContext(env = {}, session = {}) {
     // the payment/amount/session guard. Missing category is owner review.
     const spendRows = guarded.verifiedRecords.filter(row => Number(row?.fields?.points) > 0);
     const serviceSpendVerified = spendRows.every(row => {
+      // Historical Points acceptance must not certify current payment truth
+      // or newly unlock spend-based discounts/entitlements.
+      if (isHistoricalPointsRecord(row)) return false;
       const matches = payments.filter(p => p?.fields?.["Payment Reference"] === row?.fields?.payment_ref);
       return matches.length === 1 && row?.fields?.session_id && ["service", "service_payment"].includes(normalizeToken(matches[0].fields.payment_kind || matches[0].fields.payment_type));
     });
@@ -407,20 +440,16 @@ async function resolveMember(env, memberId) {
   });
   if (rows.length !== 1) return null;
   const fields = rows[0].fields || {};
-  const canonicalMemberId = clean(fields.member_id || memberId);
-  if (!canonicalMemberId) return null;
+  const canonicalMemberId = typeof fields.member_id === "string" ? clean(fields.member_id) : "";
+  if (!canonicalMemberId || canonicalMemberId !== memberId) return null;
   return {
     memberId: canonicalMemberId,
-    email: normalizeEmail(fields["Contact Email"] || fields.email),
+    clientIds: Array.isArray(fields.Clients) ? fields.Clients.map(value => clean(value?.id || value)) : [],
   };
 }
 
-function pointsFormula(memberId, email) {
-  const clauses = [];
-  if (memberId) clauses.push(`{member_id}=${formulaString(memberId)}`);
-  if (email) clauses.push(`LOWER({member_email}&"")=${formulaString(email)}`);
-  if (!clauses.length) return "";
-  return clauses.length === 1 ? clauses[0] : `OR(${clauses.join(",")})`;
+function pointsFormula(memberId) {
+  return memberId ? `{member_id}=${formulaString(memberId)}` : "";
 }
 
 async function airtableList(env, table, { filterByFormula = "", maxRecords = MAX_RECORDS } = {}) {
@@ -478,11 +507,6 @@ function parseDate(value) {
 
 function formulaString(value) {
   return `'${clean(value).replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
-}
-
-function normalizeEmail(value) {
-  const email = clean(value).toLowerCase();
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : "";
 }
 
 function normalizeToken(value) {

@@ -6,6 +6,17 @@ import { buildConsoleEmbed, assetManifest } from '../../../scripts/build-model-c
 const base = new URL('./console-atelier/', import.meta.url);
 const skin = fs.readFileSync(new URL('./model-console-atelier-v3.js', import.meta.url), 'utf8');
 const css = fs.readFileSync(new URL('./model-console-atelier-v3.css', import.meta.url), 'utf8');
+test('LINE recovery CTA overrides inherited muted text fill without changing auth or other buttons', () => {
+  const selector = '#sigil-model-console-v3[data-console-atelier] [data-model-console-line-return]';
+  const rules = [...css.matchAll(/([^{}]+)\{([^{}]+)\}/g)].filter(([, s]) => s.trim().endsWith(selector));
+  assert.equal(rules.length, 1);
+  assert.equal(rules[0][2], 'color:#17120b!important;-webkit-text-fill-color:#17120b!important');
+  const runtime = fs.readFileSync(new URL('./model-console-v3-i18n.js', import.meta.url), 'utf8');
+  assert.match(runtime, /background:#e3bd7c;color:#17120b/);
+  const luminance = hex => hex.match(/../g).map(n => parseInt(n, 16) / 255).map(n => n <= .04045 ? n / 12.92 : ((n + .055) / 1.055) ** 2.4).reduce((sum, n, i) => sum + n * [.2126, .7152, .0722][i], 0);
+  assert.ok((luminance('e3bd7c') + .05) / (luminance('17120b') + .05) >= 4.5);
+  assert.ok(buildConsoleEmbed().includes('data-model-console-line-return'));
+});
 test('legacy payout text overrides are confined to Public financial disclosures', () => {
   const rules = [...css.matchAll(/([^{}]+)\{([^{}]+)\}/g)].filter(([, selector]) => selector.includes('details :is(.smcv3-payout-only,[data-model-payout-row])'));
   assert.equal(rules.length, 2);
@@ -84,7 +95,7 @@ test('canonical model lanes map correctly and conflicting money lanes stay neutr
 
 test('error and malformed responses cannot produce an empty-session illustration', async () => {
   const runtime = fs.readFileSync(new URL('./model-console-v3-i18n.js', import.meta.url), 'utf8');
-  const code = runtime.slice(runtime.indexOf('async function load()'), runtime.indexOf('async function act(a)'));
+  const code = runtime.slice(runtime.indexOf('async function load()'), runtime.indexOf('async function act(a,proposal)'));
   for (const body of [{ ok: false, session: null }, {}, { ok: true }, { ok: true, session: {} }, { ok: true, session: [] }, { ok: true, session: null }]) {
     let renders = 0;
     const context = {
@@ -100,7 +111,7 @@ test('error and malformed responses cannot produce an empty-session illustration
 
 test('two simultaneous taps produce only one synthetic action request', async () => {
   const runtime = fs.readFileSync(new URL('./model-console-v3-i18n.js', import.meta.url), 'utf8');
-  const code = runtime.slice(runtime.indexOf('async function act(a)'), runtime.indexOf('function support(k)'));
+  const code = runtime.slice(runtime.indexOf('async function act(a,proposal)'), runtime.indexOf('function support(k)'));
   let count = 0, release;
   const pending = new Promise(resolve => { release = resolve; });
   const context = {

@@ -1,0 +1,26 @@
+{
+  "worker": "member-dashboard-chat-worker",
+  "baseline_version": "d82292ac-77fa-4eb3-a7ab-bbf4ded07c3f",
+  "baseline_module_sha256": "ac30a24f4abbe4696ce5df03c98248ee0f4d37010305f136022ab121ecdbe8d6",
+  "baseline_source_characters": 5898083,
+  "poster": {
+    "url": "https://models.mmdbkk.com/promotions/care-back/2026-10/care-back-d68fb1a288cf9f0bbd3f8cb300017c49a3939bbb8bb529be71ff5303755ca87e.png",
+    "content_sha256": "d68fb1a288cf9f0bbd3f8cb300017c49a3939bbb8bb529be71ff5303755ca87e",
+    "content_size": 2770549,
+    "content_type": "image/png",
+    "preview_url": "https://models.mmdbkk.com/promotions/care-back/2026-10/care-back-preview-19d2e063bdbf95adb6447cf6278b4813307aeda160dc4f21e5f5f33fbb46f4d6.jpg",
+    "preview_sha256": "19d2e063bdbf95adb6447cf6278b4813307aeda160dc4f21e5f5f33fbb46f4d6",
+    "preview_size": 173648,
+    "preview_content_type": "image/jpeg"
+  },
+  "functions": {
+    "sendReply": {
+      "file": "kenji-care-back-send-reply-live-20261031.txt",
+      "sha256": "a01eecc684333915417bad498dc6060851cafa542ec4e52ab0dd8bb6290ab154"
+    },
+    "careBackOctoberReply": {
+      "file": "kenji-care-back-reply-live-20261031.txt",
+      "sha256": "91e416707f459eae84fefd334ff4644268134a269bd675aed43021fc65ef635a"
+    }
+  }
+}

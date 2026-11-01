@@ -15,7 +15,7 @@ describe("member-pages-worker membership page", () => {
     assert.equal(response.status, 200);
     assert.equal(response.headers.get("x-mmd-worker"), "member-pages-worker");
     assert.equal(response.headers.get("x-mmd-page"), "member-membership");
-    assert.equal(response.headers.get("x-mmd-version"), "20260801-sigil-member-membership-v3");
+    assert.equal(response.headers.get("x-mmd-version"), "20260929-member-profile-digital-v1");
     assert.match(html, /Membership/);
     assert.match(html, /membership-hero/);
     assert.match(html, /membership-card/);
@@ -34,6 +34,8 @@ describe("member-pages-worker membership page", () => {
     assert.doesNotMatch(html, /Route rule/);
     assert.doesNotMatch(html, /name=["']token["']/i);
     assert.ok(html.includes("/pay/membership?t=abc&amp;code=x&amp;promo=y"));
+    assert.ok(html.includes("https://miniapp.line.me/2010862595-yT4DCEMc/?intent=signup&amp;view=signup&amp;promo_code=y"));
+    assert.doesNotMatch(html, /miniapp\.line\.me\/2010862595-yT4DCEMc\/\?[^\"]*(?:amount|plan|[?&]t=)/);
     assert.ok(html.includes("/blackcard/black-card?t=abc&amp;code=x&amp;promo=y"));
     assert.ok(html.includes("/member/dashboard?t=abc&amp;code=x&amp;promo=y"));
   });

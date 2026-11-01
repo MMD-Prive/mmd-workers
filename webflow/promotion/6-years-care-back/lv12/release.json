@@ -1,0 +1,27 @@
+{
+  "version": "lv12-20261024",
+  "route": "/promotion/6-years-care-back",
+  "siteId": "68f879d546d2f4e2ab186e90",
+  "pageId": "6a60e95303c39ea9ca29a789",
+  "productionPublishTaskId": "001182a1-97d4-41ff-a4c9-b79e3728f5d8",
+  "domains": [
+    "www.mmdbkk.com",
+    "mmdbkk.com",
+    "mmdprive.webflow.io"
+  ],
+  "verifiedProduction": true,
+  "changes": [
+    "Compact mobile hero and horizontal benefit cards",
+    "Sticky chapter navigation and reading percentage",
+    "Mobile actions hide when main actions are visible",
+    "Coupon preview selector and compact mobile rate details",
+    "Expandable full archive and 33-photo detail viewer",
+    "Localized loading retry, reduced-motion support and complete three-language copy"
+  ],
+  "rollback": "webflow.json rollback holds verified LV10 page code and main embed",
+  "limitations": [
+    "No actual Wish, payment, membership or coupon submission performed",
+    "Fonts and approved images are hosted externally",
+    "GitHub source is preserved in draft PRs; Webflow is already published"
+  ]
+}

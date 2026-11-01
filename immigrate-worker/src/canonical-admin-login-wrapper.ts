@@ -6,6 +6,7 @@ import {
   serveCeoRoute,
 } from "./ceo-route-worker";
 import { renderProtocolCenterPage } from "./protocol-center-owner-ui";
+import { bridgeKenjiOwnerPage, KENJI_OWNER_PAGE } from './kenji-owner-line-bridge';
 import type { Env } from "./types";
 
 const PROTOCOL_PATHS = new Set([
@@ -149,7 +150,9 @@ export default {
       }
       const gate = await requireInternalAdminGate(request, env);
       if (gate) return markCeoGateResponse(gate);
-      const response = await serveCeoRoute(request);
+      const response = path === KENJI_OWNER_PAGE
+        ? await bridgeKenjiOwnerPage(request, env, () => serveCeoRoute(request))
+        : await serveCeoRoute(request);
       return request.method === "GET" ? decorateInternalHtmlResponse(path, response) : response;
     }
 

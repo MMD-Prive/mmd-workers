@@ -9,6 +9,11 @@ on:
       approved_sha:
         type: string
         required: true
+      environment_name:
+        description: 'Protected environment for this deployment'
+        type: string
+        required: false
+        default: mmd-production-mutation
 
 permissions:
   contents: read
@@ -30,4 +35,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           APPROVAL_REF: ${{ inputs.approval_ref }}
           APPROVED_SHA: ${{ inputs.approved_sha }}
+          PRODUCTION_ENVIRONMENT_NAME: ${{ inputs.environment_name }}
         run: node scripts/admin-production-approval.mjs

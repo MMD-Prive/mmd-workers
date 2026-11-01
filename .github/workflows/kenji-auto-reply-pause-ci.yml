@@ -1,0 +1,24 @@
+name: Kenji auto-reply pause guard
+
+on:
+  pull_request:
+    paths:
+      - member-dashboard-chat-worker/wrangler.toml
+      - .github/workflows/deploy-member-dashboard-chat-worker.yml
+      - .github/workflows/kenji-auto-reply-pause-ci.yml
+      - scripts/kenji-model-off-workflow.test.mjs
+      - scripts/kenji-pause-release-scope.mjs
+      - scripts/kenji-pause-release-scope.test.mjs
+
+permissions:
+  contents: read
+
+jobs:
+  pause-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test scripts/kenji-model-off-workflow.test.mjs scripts/kenji-pause-release-scope.test.mjs

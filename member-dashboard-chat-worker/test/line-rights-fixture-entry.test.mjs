@@ -75,7 +75,7 @@ test("fixture renewal versus new signup and protected tiers remain distinct", as
   for (const scenario of ["expired", "new_signup", "vip", "svip", "black_card"]) {
     const f = await fixture(); await f.arm(scenario); await f.send(); const text = f.replies[0].messages[0].text;
     if (scenario === "expired") assert.match(text, /ต่ออายุ Standard/);
-    else { assert.doesNotMatch(text, /ต่ออายุ Standard/); if (scenario === "new_signup") assert.match(text, /สมัครใหม่/); }
+    else { assert.doesNotMatch(text, /ต่ออายุ Standard/); if (scenario === "new_signup") assert.match(text, /ตรวจเงื่อนไขสมัครจากบัญชีเดิมก่อนชำระ/); }
   }
 });
 test("ambiguous failed LINE transport does not retry or record delivery", async () => {

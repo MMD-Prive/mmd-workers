@@ -162,3 +162,13 @@ test("Public Member and Red Card are separate capabilities", () => {
   assert.equal(result.access.red_card_request_lane, true);
   assert.deepEqual(result.capability_state.active.sort(), [CAPABILITIES.PUBLIC_MEMBER, CAPABILITIES.RED_CARD].sort());
 });
+
+test('canonical public purchase codes support Elite and MMD Member without private access',()=>{
+ for(const code of ['mmd_member','elite']){
+  const result=resolveMemberEntitlements([row({package_code:code,access_status:'active',expire_at:'2027-01-01'})],{now:'2026-10-26T00:00:00Z'});
+  assert.equal(result.access.public_service_access,true);
+  assert.equal(result.access.private_visibility_envelope,'none');
+  assert.equal(result.access.new_model_reveals_allowed,false);
+  assert.equal(result.access.red_card_request_lane,false);
+ }
+});

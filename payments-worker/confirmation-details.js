@@ -3,6 +3,7 @@ import { stablePaymentRef } from "./unified-payment-proof.js";
 import { confirmationRevision } from "../shared/confirmation-revision.mjs";
 import { formulaValue, httpError } from "./lib/payment-primitives.js";
 import { readVerifiedSessionBalance, shouldResolveCustomerBalance, customerBalanceProjection } from "./verified-session-balance.js";
+import { confirmationWorkLane, customerBillingBreakdown } from "./confirmation-customer-presentation.js";
 export { formulaValue, httpError };
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
@@ -34,7 +35,14 @@ export const SESSION_FIELDS = Object.freeze({
 // job: the client's display name (models address the client by name), date, time,
 // location/brief, acknowledgement state and the model's OWN payout. Payment
 // identifiers/state and customer amounts/rates stay owner/admin-side.
-const MODEL_HIDDEN_KEYS = Object.freeze(["payment_ref", "payment_type", "payment_status"]);
+// Explicit audience allowlist: future customer billing fields must never reach
+// the model merely because another property was added to the common projection.
+const MODEL_COMMON_KEYS = Object.freeze([
+  "confirmation_revision", "confirmation_revision_required", "confirmation_change_pending",
+  "ok", "authority", "schema", "role", "session_id", "session_status",
+  "client_name", "model_name", "job_type", "model_work_lane", "neutral",
+  "job_date", "start_time", "end_time", "location_name", "google_map_url", "vip_detail", "created_at",
+]);
 
 const PAYMENT_FIELDS = Object.freeze({
   paymentRef: "fldOO6SY49iDw8VBZ",
@@ -89,6 +97,9 @@ export async function handleConfirmationDetails(request, env = {}) {
     const note = clean(fields[SESSION_FIELDS.note] || fields[SESSION_FIELDS.notes], 8000);
     const pricing = parseMarkedJson(note, "SIGIL Pricing v1");
     const vip = parseMarkedJson(note, "SIGIL VIP Detail v1");
+    const servicePricing = parseMarkedJson(note, "MMD SERVICE PRICING v1");
+    const modelRateBreakdown = parseMarkedJson(note, "MMD MODEL PAYOUT BREAKDOWN v1");
+    const modelPricing = modelRateBreakdown || servicePricing;
     const common = {
       ...await confirmationRevision(env, session, claims.session_id),
       ok: true,
@@ -102,7 +113,9 @@ export async function handleConfirmationDetails(request, env = {}) {
       payment_status: text(fields[field(env.AT_SESSIONS__PAYMENT_STATUS, SESSION_FIELDS.paymentStatus)], 120),
       client_name: text(fields[SESSION_FIELDS.clientName], 240),
       model_name: text(fields[SESSION_FIELDS.modelName], 240),
-      job_type: text(fields[SESSION_FIELDS.jobType], 240),
+      job_type: modelJobType(text(fields[SESSION_FIELDS.jobType], 240), note, modelPricing),
+      model_work_lane: confirmationWorkLane(fields, fields[SESSION_FIELDS.jobType], env),
+      neutral: claims.neutral === true,
       job_date: text(fields[SESSION_FIELDS.jobDate], 120),
       start_time: text(fields[SESSION_FIELDS.startTime], 120),
       end_time: text(fields[SESSION_FIELDS.endTime], 120),
@@ -160,11 +173,56 @@ export async function handleConfirmationDetails(request, env = {}) {
         // Payment Instructions generates the current amount QR, not an old stored QR.
         qr_url: null,
       });
+      else if (snapshotClaimsDepositReceived(pricing)) {
+        // Pricing notes are snapshots, not evidence that money was received.
+        // Reconcile a claimed deposit against the Payments ledger before
+        // showing customer-facing paid/balance amounts.
+        const summary = await readVerifiedSessionBalance(env, session);
+        if (summary.verified_deposit_thb > 0) {
+          balanceProjection = customerBalanceProjection(summary, paymentRecord, finalPaymentRef, env);
+          activePaymentRef = balanceProjection.payment_ref;
+          paymentRecord = balanceProjection.paymentRecord;
+          safePricing = {
+            ...safePricing,
+            net_price_thb: summary.total_amount_thb,
+            deposit_received_thb: summary.verified_deposit_thb,
+            balance_thb: summary.remaining_amount_thb,
+          };
+          Object.assign(display, {
+            stage: balanceProjection.payment_type,
+            amount_due_thb: balanceProjection.amount_due_thb,
+            verified: balanceProjection.verified,
+            qr_url: null,
+          });
+        } else {
+          safePricing = {
+            ...safePricing,
+            deposit_received_thb: 0,
+            balance_thb: summary.remaining_amount_thb,
+          };
+          if (paymentRecord) {
+            display.stage = "deposit";
+            display.amount_due_thb = numberOrNull(safePricing.deposit_due_thb) ?? customerAmountDue;
+            display.verified = false;
+            // Do not show a QR that may encode a stale pre-discount amount.
+            display.qr_url = null;
+          }
+        }
+      }
+      // The original signed token is intentionally opaque and reusable: details
+      // and Payment Instructions resolve its current stage from verified money.
+      // Never pass an amount or a replacement payment reference in browser query.
+      display.liff_url = ['deposit', 'full', 'final', 'balance'].includes(display.stage)
+        && display.amount_due_thb > 0 && display.accepting_payment !== false && !display.verified && !display.proof_received
+        ? `https://miniapp.line.me/2010830159-0n1O3ANK?t=${encodeURIComponent(token)}` : null;
       return withCors(request, env, json({
         ...common,
+        package_code: text(fields[field(env.AT_SESSIONS__PACKAGE_CODE, "fldp6xNSvxDh5pjR9")], 120),
         payment_ref: activePaymentRef,
         amount_thb: net,
         pricing: safePricing,
+        billing: customerBillingBreakdown(pricing, balanceProjection?.summary.total_amount_thb ?? net,
+          fields['fld703jI4zQ0CYMHh'] ?? fields.travel_fee_thb, servicePricing, common.job_type),
         payment_type: balanceProjection?.payment_type || common.payment_type,
         ...(balanceProjection ? { balance_summary: balanceProjection.summary } : {}),
         payment: display,
@@ -172,14 +230,18 @@ export async function handleConfirmationDetails(request, env = {}) {
     }
 
     const modelPayout = numberOrNull(fields[SESSION_FIELDS.payModelThb]);
-    const modelCommon = { ...common };
-    for (const key of MODEL_HIDDEN_KEYS) delete modelCommon[key];
+    const modelRemark = parseMarkedJson(note, "MMD Model Remark v1");
+    const modelCommon = Object.fromEntries(MODEL_COMMON_KEYS.map(key => [key, common[key]]));
+    modelCommon.job_type = modelJobType(common.job_type, note, modelPricing);
     const modelAcknowledgedAt = text(fields[field(env.AT_SESSIONS__MODEL_ACK_AT, SESSION_FIELDS.modelAckAt)], 200) || null;
     return withCors(request, env, json({
       ...modelCommon,
       model_acknowledged_at: modelAcknowledgedAt,
       already_confirmed: Boolean(modelAcknowledgedAt),
       model_payout_thb: modelPayout,
+      model_payout_breakdown: modelPayoutBreakdown(modelPricing, modelPayout, common.job_type),
+      model_remark: text(modelRemark?.text, 2000) || null,
+      model_meeting_point: text(modelRemark?.meeting_point, 500) || null,
       amount_scope: "model_payout",
       // Partner-issued links render without MMD branding (signed claim, not a query flag).
       neutral: claims.neutral === true,
@@ -191,6 +253,50 @@ export async function handleConfirmationDetails(request, env = {}) {
       error: clean(error?.message || "confirmation_details_failed", 200),
     }, errorStatus(error)));
   }
+}
+
+function modelJobType(jobType, note, servicePricing) {
+  const options = serviceOptions(note, servicePricing);
+  if (!options.length) return text(jobType, 240);
+  const parts = text(jobType, 240).split(/[:+,|]/).map((part) => part.trim()).filter(Boolean);
+  const existing = new Set(parts.map((part) => part.toLowerCase()));
+  for (const option of options) if (!existing.has(option)) parts.push(option);
+  return parts.join(":");
+}
+function serviceOptions(note, servicePricing) {
+  const allowed = new Set(["mk", "burn", "kiss", "live", "group"]);
+  const fromSnapshot = Array.isArray(servicePricing?.addons) ? servicePricing.addons.map((item) => String(item?.option || "").toLowerCase()) : [];
+  const optionLine = String(note || "").match(/(?:^|[|\n])\s*options\s+([a-z, _-]+)/i)?.[1] || "";
+  return [...new Set([...fromSnapshot, ...optionLine.split(/[,_\s]+/).map((item) => item.toLowerCase())])].filter((item) => allowed.has(item));
+}
+function modelPayoutBreakdown(servicePricing, modelPayout, jobType) {
+  if (!servicePricing || !Array.isArray(servicePricing.addons) || modelPayout === null) return null;
+  const base = numberOrNull(servicePricing.model_base_payout_thb);
+  const baseLine = modelPayoutLine(base, servicePricing.model_standard_base_rate_thb, servicePricing.model_base_job_adjustment_thb);
+  const additions = servicePricing.addons.map((item) => ({
+    option: String(item?.option || "").toLowerCase(),
+    ...modelPayoutLine(item?.model_payout_thb, item?.model_standard_rate_thb, item?.model_job_adjustment_thb),
+  }));
+  const total = numberOrNull(servicePricing.model_total_payout_thb);
+  const allowed = new Set(["mk", "burn", "kiss", "live", "group"]);
+  if (baseLine === null || base <= 0 || additions.some((item) => !allowed.has(item.option) || item.amount_thb === null || item.amount_thb < 0)
+    || !Number.isFinite(total) || Math.abs(base + additions.reduce((sum, item) => sum + item.amount_thb, 0) - total) > 0.01
+    || Math.abs(total - modelPayout) > 0.01) return null;
+  const parts = text(jobType, 240).split(/[:+,|]/).map((part) => part.trim()).filter(Boolean);
+  const baseLabel = parts.find((part) => ["pn", "vip"].includes(part.toLowerCase())) || parts.at(-1) || "งานหลัก";
+  return [{ label: text(baseLabel, 40).toUpperCase(), ...baseLine },
+    ...additions.filter((item) => item.amount_thb > 0).map(({ option, ...line }) => ({ label: option.toUpperCase(), ...line }))];
+}
+
+function modelPayoutLine(amountValue, standardValue, adjustmentValue) {
+  const amount_thb = numberOrNull(amountValue);
+  const standard_amount_thb = numberOrNull(standardValue);
+  const job_adjustment_thb = numberOrNull(adjustmentValue);
+  if (amount_thb === null || amount_thb < 0) return null;
+  if (standard_amount_thb === null && job_adjustment_thb === null) return { amount_thb };
+  if (standard_amount_thb === null || standard_amount_thb < 0 || job_adjustment_thb === null
+    || Math.abs(standard_amount_thb + job_adjustment_thb - amount_thb) > 0.01) return null;
+  return { amount_thb, standard_amount_thb, job_adjustment_thb };
 }
 
 function customerPricing(raw, netFallback) {
@@ -210,6 +316,33 @@ function customerPricing(raw, netFallback) {
     deposit_due_thb: numberOrNull(source.deposit_due_thb),
     deposit_received_thb: numberOrNull(source.deposit_received_thb),
     balance_thb: numberOrNull(source.balance_thb),
+  };
+}
+
+function snapshotClaimsDepositReceived(pricing) {
+  return (numberOrNull(pricing?.deposit_received_thb) || 0) > 0;
+}
+
+// Exact signed payment subject for Black Card preferences. No Session status or
+// pricing snapshot can stand in for provider/Official Verify or received proof.
+export async function readConfirmationPaymentEvidence(env, claims) {
+  const record = await findPayment(env, claims.payment_ref, claims.session_id);
+  if (!record) return { verified: false, proof_received: false, closed: false };
+  const fields = record.fields || {};
+  const closed = [fields[PAYMENT_FIELDS.paymentStatus], fields[PAYMENT_FIELDS.verificationStatus], fields[PAYMENT_FIELDS.intentStatus]]
+    .some(value => ["cancelled", "canceled", "expired", "refunded", "reversed", "void", "failed", "rejected", "chargeback", "disputed"].includes(text(value, 80).toLowerCase()));
+  if (closed) return { verified: false, proof_received: false, closed: true };
+  // Payment Status alone can be a legacy/manual summary. Official/provider
+  // verification must be present in the canonical verification field.
+  const verified = ["verified", "approved"].includes(text(fields[PAYMENT_FIELDS.verificationStatus], 80).toLowerCase());
+  if (verified) return { verified: true, proof_received: false, closed: false };
+  if (isProofReceived(fields[PAYMENT_FIELDS.intentStatus])) return { verified: false, proof_received: true, closed: false };
+  const proof = await findProofEvidence(env, claims.payment_ref);
+  const proofMatches = proof?.fields?.payment_ref === claims.payment_ref && Boolean(text(proof?.fields?.status, 80));
+  return {
+    closed,
+    verified: false,
+    proof_received: Boolean(proofMatches && isProofEvidenceRecord(proof)),
   };
 }
 
@@ -254,6 +387,7 @@ function customerPaymentDisplay({ paymentRecord, proofRecord, pricing, customerA
 }
 
 function paymentAmountDue(stage, pricing, customerAmountDue) {
+  if (stage === 'membership') return customerAmountDue ?? numberOrNull(pricing?.net_price_thb);
   if (stage === "deposit") return numberOrNull(pricing?.deposit_due_thb) ?? customerAmountDue;
   if (stage === "balance" || stage === "final") return numberOrNull(pricing?.balance_thb) ?? customerAmountDue;
   if (stage === "full") return numberOrNull(pricing?.net_price_thb) ?? customerAmountDue;
@@ -266,6 +400,7 @@ function normalizePaymentStage(value) {
   if (["balance", "remaining", "remainder", "คงเหลือ"].includes(raw)) return "balance";
   if (["final", "finalpayment"].includes(raw)) return "final";
   if (["full", "fullpayment", "payinfull"].includes(raw)) return "full";
+  if (raw === 'membership') return 'membership';
   return "";
 }
 

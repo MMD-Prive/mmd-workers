@@ -39,6 +39,8 @@
 #sigil-model-console-v3[data-console-atelier] :is(.smcv3-card,.smcv3-state){background:var(--ca-panel)!important;border-color:var(--ca-line)!important;color:var(--ca-ink)!important;box-shadow:none!important}
 #sigil-model-console-v3[data-console-atelier] :is(.smcv3-h1,.smcv3-h2,.smcv3-value,.smcv3-summary-row,.smcv3-brand-title,.ca-back,.smcv3-btn,.smcv3-dd){color:var(--ca-ink)!important;-webkit-text-fill-color:var(--ca-ink)!important}
 #sigil-model-console-v3[data-console-atelier] :is(.smcv3-kicker,.smcv3-label,.smcv3-copy,.smcv3-helper,.smcv3-dt){color:var(--ca-muted)!important;-webkit-text-fill-color:var(--ca-muted)!important}
+/* Recovery links sit inside muted copy; pin both ink channels to the gold CTA. */
+#sigil-model-console-v3[data-console-atelier] [data-model-console-line-return]{color:#17120b!important;-webkit-text-fill-color:#17120b!important}
 #sigil-model-console-v3[data-console-atelier] .smcv3-fact{display:grid!important;grid-template-columns:6rem minmax(0,1fr);align-items:start;gap:8px;padding:8px 0!important;background:transparent!important;border:0!important;box-shadow:none!important;border-radius:0!important}
 #sigil-model-console-v3[data-console-atelier] [data-primary-actions] button{background:var(--ca-brass)!important;color:#0B0E10!important;-webkit-text-fill-color:#0B0E10!important;border-color:var(--ca-brass)!important}
 #sigil-model-console-v3[data-console-atelier][data-console-lane="public"] [data-primary-actions] button{color:#fff!important;-webkit-text-fill-color:#fff!important}

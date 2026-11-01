@@ -27,6 +27,7 @@ async function fixture({ tier = "Standard", expires, paymentUrl = "https://mmdbk
   }));
   const calls = [];
   const env = {
+    LIFF_GATEWAY_STORE: { async upsertSession() {}, async recordDecision() {}, async loadScreen() {}, async resolvePackage() {}, async hasHallAudienceInventory() {}, async ensureRenewalPaymentSession() { return { record_id: "recRenewalMock0001" }; } },
     LIFF_RENEWAL_CARD_ENABLED: flag, LIFF_SESSION_SECRET: secret, LIFF_IDENTITY_KV: kv,
     PAYMENTS_WORKER: { async fetch(request) {
       const body = await request.json(); calls.push(body);
@@ -79,18 +80,18 @@ test("Premium offer is 2,500", async () => {
   assert.equal(payload.package_label, "Premium");
 });
 
-test("expired less than one year (grace included) is still offered at the base price", async () => {
+test("expired within 90 days is offered at the original price", async () => {
   const fx = await fixture({ expires: new Date(Date.now() - 5 * 86400000).toISOString() });
   const payload = await (await get(fx)).json();
   assert.equal(payload.status, "ready");
-  assert.equal(payload.price_rule, "expired_less_than_one_year_standard");
+  assert.equal(payload.price_rule, "expired_within_90_days_standard");
   assert.equal(payload.amount_thb, 1000);
 });
 
-test("expired one year or more is sent to signup, with no payment", async () => {
+test("expired beyond 90 days requires owner review without a signup assumption", async () => {
   const fx = await fixture({ expires: new Date(Date.now() - 400 * 86400000).toISOString() });
   const payload = await (await get(fx)).json();
-  assert.equal(payload.status, "signup_instead");
+  assert.equal(payload.status, "contact_owner");
   assert.equal(payload.payment_available, false);
   assert.equal((await post(fx, { package_code: "standard" })).status, 409);
   assert.equal(fx.calls.length, 0);
@@ -171,9 +172,84 @@ test("promotion label and expiry helper", () => {
   assert.equal(LIFF_RENEWAL_CARD_INTERNALS.expiryAfter({ membership_start_at: "bad", membership_years: 1 }), null);
 });
 
-test("Premium advance renewal card shows two years from the current expiry (1 purchased + 1 promo)", async () => {
-  const fx = await fixture({ tier: "Premium", expires: "2027-02-28T16:59:59.999Z" });
-  const payload = await (await get(fx)).json();
-  assert.equal(payload.amount_thb, 2500);
-  assert.equal(payload.new_expires_at.slice(0, 10), "2029-02-28");
+test("Premium November advance renewal adds six calendar months after the purchased year", async () => {
+  const NativeDate = globalThis.Date;
+  const at = NativeDate.parse("2026-11-01T12:00:00+07:00");
+  globalThis.Date = class extends NativeDate {
+    constructor(...args) { super(...(args.length ? args : [at])); }
+    static now() { return at; }
+  };
+  try {
+    const fx = await fixture({ tier: "Premium", expires: "2027-02-28T16:59:59.999Z" });
+    const payload = await (await get(fx)).json();
+    assert.equal(payload.amount_thb, 2500);
+    assert.equal(payload.new_expires_at.slice(0, 10), "2028-08-28");
+    assert.equal(payload.bonus_months, 6);
+    assert.equal(payload.bonus_years, 0);
+  } finally { globalThis.Date = NativeDate; }
+});
+
+ test("gateway persistence must succeed before any payment intent is requested", async () => {
+  const fx = await fixture({ expires: future() });
+  fx.env.LIFF_GATEWAY_STORE.ensureRenewalPaymentSession = async () => { throw new Error("storage_unavailable"); };
+  assert.equal((await post(fx, { package_code: "standard" })).status, 503);
+  assert.equal(fx.calls.length, 0);
+});
+
+test("renewal settlement link is atomically upserted before checkout, without paid fields", async () => {
+  const { getLiffGatewayStore } = await import("../src/liff-gateway-airtable.js");
+  const original = globalThis.fetch; const requests = [];
+  globalThis.fetch = async (url, init) => {
+    requests.push({ url, init });
+    if (init.method === "GET") return Response.json({ records: [] });
+    return Response.json({ records: [{ id: "recRenewalMock0001" }] });
+  };
+  try {
+    const store = getLiffGatewayStore({ AIRTABLE_API_KEY: "mock", AIRTABLE_BASE_ID: "mock" });
+    await store.ensureRenewalPaymentSession({ sessionId: "liffrenew_mock", lineUserId: UID, packageCode: "standard", amountThb: 1000 });
+    const body = JSON.parse(requests[1].init.body);
+    assert.deepEqual(body.performUpsert.fieldsToMergeOn, ["renewal_session_id"]);
+    assert.equal(body.records[0].fields.line_user_id, UID);
+    assert.equal(body.records[0].fields.renewal_amount_thb, 1000);
+    assert.equal(body.records[0].fields.liff_intent, "renew");
+    assert.equal(body.records[0].fields.verified_at, undefined);
+    assert.equal(body.records[0].fields.entitlement_granted, undefined);
+  } finally { globalThis.fetch = original; }
+});
+
+test('read-only grace session cannot quote or create a renewal payment',async()=>{
+  const fx=await fixture({expires:future()});
+  const state=JSON.parse(fx.kv.map.get(fx.key)); state.read_grace_only=true; fx.kv.map.set(fx.key,JSON.stringify(state));
+  assert.equal((await get(fx)).status,401); assert.equal((await post(fx,{package_code:'standard'})).status,401);
+  assert.equal(fx.calls.length,0);
+});
+test('identity moving during gateway work cannot create a payment for the previous member',async()=>{
+  for(const field of ['line_user_id','member_id','tier','membership_expires_at']) {
+    const fx=await fixture({expires:future()});
+    fx.env.LIFF_GATEWAY_STORE.ensureRenewalPaymentSession=async()=>{
+      const state=JSON.parse(fx.kv.map.get(fx.key));
+      if(field==='line_user_id')state.line_user_id='U'+'b'.repeat(32);
+      else if(field==='member_id')state.member_id='other';
+      else state.member_profile[field]=field==='tier'?'Premium':future()+'changed';
+      fx.kv.map.set(fx.key,JSON.stringify(state));
+    };
+    assert.equal((await post(fx,{package_code:'standard'})).status,409,field); assert.equal(fx.calls.length,0);
+  }
+});
+test('identity moving after payment creation cannot attach its signed link to another account',async()=>{
+  const fx=await fixture({expires:future()}); const original=fx.env.PAYMENTS_WORKER.fetch;
+  fx.env.PAYMENTS_WORKER.fetch=async request=>{
+    const response=await original(request); const state=JSON.parse(fx.kv.map.get(fx.key));
+    state.member_id='other'; fx.kv.map.set(fx.key,JSON.stringify(state)); return response;
+  };
+  const result=await post(fx,{package_code:'standard'}); assert.equal(result.status,503);
+  assert.equal(JSON.parse(fx.kv.map.get(fx.key)).payment_ref,undefined);
+});
+test('foreign payment session id and missing payment reference fail closed',async()=>{
+  for(const invalid of [{session_id:'foreign'}, {payment_ref:''}]) {
+    const fx=await fixture({expires:future()}); const original=fx.env.PAYMENTS_WORKER.fetch;
+    fx.env.PAYMENTS_WORKER.fetch=async request=>Response.json({...await(await original(request)).json(),...invalid});
+    assert.equal((await post(fx,{package_code:'standard'})).status,502);
+    assert.equal(JSON.parse(fx.kv.map.get(fx.key)).payment_ref,undefined);
+  }
 });

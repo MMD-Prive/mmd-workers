@@ -240,6 +240,6 @@ jobs:
         run: |
           set -euo pipefail
           grep -F 'main = "src/admin-login-hero-worker.js"' admin-worker/wrangler.toml
-          grep -F 'main = "index.review-wrapper.js"' payments-worker/wrangler.merged.toml
+          grep -F 'main = "index.session-paid-projection-wrapper.js"' payments-worker/wrangler.merged.toml
           npx --yes wrangler@4 versions upload --dry-run --keep-vars --config admin-worker/wrangler.toml
           npx --yes wrangler@4 versions upload --dry-run --keep-vars --config payments-worker/wrangler.merged.toml

@@ -27,9 +27,12 @@ async function boundedJson(response) {
 }
 export async function listMmdNowItems(env, live) {
   let offset=0;const items=[];
+  if(!env.WEBFLOW_CMS_TOKEN && typeof env.WEBFLOW_CMS_HTTP?.fetch !== 'function') throw Error('cms_not_configured');
   for(let page=0;page<10;page++){
     const endpoint=`https://api.webflow.com/v2/collections/${COLLECTION}/items${live?'/live':''}?limit=100&offset=${offset}`;
-    const request=new Request(endpoint,{headers:{Authorization:`Bearer ${env.WEBFLOW_CMS_TOKEN}`,accept:'application/json'},signal:AbortSignal.timeout(10000),redirect:'error'});
+    const requestHeaders={accept:'application/json'};
+    if(env.WEBFLOW_CMS_TOKEN) requestHeaders.Authorization='Bearer '+env.WEBFLOW_CMS_TOKEN;
+    const request=new Request(endpoint,{headers:requestHeaders,signal:AbortSignal.timeout(10000),redirect:'error'});
     const response=env.WEBFLOW_CMS_HTTP?.fetch ? await env.WEBFLOW_CMS_HTTP.fetch(request) : await fetch(request);
     const data=await boundedJson(response);if(!Array.isArray(data.items)||!Number.isInteger(data.pagination?.total))throw Error('cms_malformed');
     items.push(...data.items);offset+=data.items.length;if(offset>=data.pagination.total)return items;if(!data.items.length)break;

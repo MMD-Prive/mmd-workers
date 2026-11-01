@@ -8,7 +8,13 @@ const shim = 'data:text/javascript,' + encodeURIComponent('export class DurableO
 const loader = 'data:text/javascript,' + encodeURIComponent(`
 export async function resolve(specifier, context, nextResolve) {
   if (specifier === 'cloudflare:workers') return { url: ${JSON.stringify(shim)}, shortCircuit: true };
-  return nextResolve(specifier, context);
+  const resolved = await nextResolve(specifier, context);
+  // This source belongs to a package without type:module. Wrangler loads it as
+  // ESM; make Node 18 load the same real source without mocking its policy.
+  if (resolved.url.endsWith('/sigil-booking-worker/src/customer-discovery-policy.js')) {
+    return { ...resolved, format: 'module' };
+  }
+  return resolved;
 }`);
 test('Wrangler entrypoint dispatches Attention with real session gates and canonical readers', () => {
   const script = `

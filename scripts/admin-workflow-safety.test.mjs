@@ -27,7 +27,7 @@ function jobs(source) {
     .map(([, id, body]) => ({ id, body }));
 }
 
-function assertSafety(source) {
+function assertSafety(source, file = '') {
   if (!source.includes('name: Retire mmd-redirect-worker')) assert.doesNotMatch(source.split('\njobs:')[0], /^  (workflow_run|schedule):/m);
   assert.match(source, /production_approved:[\s\S]*?type: boolean\n        required: true\n        default: false/);
   assert.match(source, /approval_ref:[\s\S]*?type: string\n        required: true/);
@@ -46,9 +46,13 @@ function assertSafety(source) {
       assert.match(body, /uses: \.\/\.github\/workflows\/admin-production-approval.yml/);
       assert.match(body, /approval_ref: \$\{\{ inputs.approval_ref \}\}/);
       assert.match(body, /approved_sha: \$\{\{ inputs.approved_sha \}\}/);
+      if (file === 'deploy-admin-worker.yml') assert.match(body, /environment_name: mmd-admin-worker-solo-mutation/);
     } else {
       assert.match(body, /^    needs: \[production-approval(?:, [\w-]+)*\]$/m);
-      assert.match(body, /^    environment: mmd-production-mutation$/m);
+      const expectedEnvironment = file === 'deploy-admin-worker.yml'
+        ? 'mmd-admin-worker-solo-mutation'
+        : 'mmd-production-mutation';
+      assert.match(body, new RegExp(`^    environment: ${expectedEnvironment}$`, 'm'));
       assert.doesNotMatch(body, /ref: main\b/);
     }
   }
@@ -56,7 +60,7 @@ function assertSafety(source) {
 
 for (const file of files) test(`${file}: production work is independently approval-gated`, () => {
   const source = read(file);
-  assertSafety(source);
+  assertSafety(source, file);
   // Only Calendar retains a legacy branch CI trigger. No push can reach production.
   if (!['calendar-production-connection.yml', 'deploy-member-pages-worker.yml', 'sync-control-room-dashboard-ingress.yml', 'retire-mmd-redirect-worker-production.yml'].includes(file)) assert.doesNotMatch(source.split('\njobs:')[0], /^  push:/m);
 });
@@ -72,7 +76,14 @@ test('approval helper workflow has no production credentials or mutation command
   const source = read('admin-production-approval.yml');
   assert.match(source, /^  workflow_call:/m);
   assert.match(source, /ref: \$\{\{ github.sha \}\}/);
+  assert.match(source, /environment_name:[\s\S]*?default: mmd-production-mutation/);
   assert.doesNotMatch(source, /secrets\.|secrets: inherit|wrangler|curl|environment:/);
+});
+
+test('admin-worker solo environment is scoped to the admin-worker deploy workflow', () => {
+  const matches = readdirSync(directory).filter(file => /\.ya?ml$/.test(file)
+    && read(file).includes('mmd-admin-worker-solo-mutation'));
+  assert.deepEqual(matches.sort(), ['deploy-admin-worker.yml']);
 });
 
 test('automatic CI is credential-free and runs gate and current-session regressions', () => {
@@ -82,6 +93,16 @@ test('automatic CI is credential-free and runs gate and current-session regressi
   assert.match(source, /branches: \[main\]/);
   assert.match(source, /admin-production-approval.test.mjs scripts\/admin-workflow-safety.test.mjs/);
   assert.match(source, /model-current-session.test.mjs admin-worker\/model-session-runtime-v1a.test.mjs/);
+  for (const file of [
+    'src/model-line-job-briefs.js', 'src/model-line-job-briefs-diagnostic.js',
+    'model-line-job-briefs.test.mjs', 'model-line-job-briefs-diagnostic.test.mjs',
+    'src/model-line-brief-inventory.js', 'model-line-brief-inventory.test.mjs',
+    'src/model-line-brief-diagnostic-runtime.js', 'model-line-brief-diagnostic-runtime.test.mjs',
+    'src/admin-login-hero-worker.js',
+  ]) assert.ok(source.includes(`node --check admin-worker/${file}\n`), `${file}: CI syntax check required`);
+  assert.ok(source.includes('node --experimental-global-webcrypto --test admin-worker/model-line-job-briefs-diagnostic.test.mjs admin-worker/model-line-job-briefs.test.mjs\n'), 'CI must run diagnostic and existing LINE briefs regressions');
+  assert.ok(source.includes('node --experimental-global-webcrypto --test admin-worker/model-line-brief-inventory.test.mjs\n'), 'CI must run GET-only inventory provider mocks');
+  assert.ok(source.includes('node --experimental-global-webcrypto --test admin-worker/model-line-brief-diagnostic-runtime.test.mjs\n'), 'CI must run closed-gate runtime glue mocks');
   assert.doesNotMatch(source, /secrets\.|wrangler|curl |workflow_run:|environment:/);
 });
 
@@ -93,7 +114,7 @@ test('guard mutations fail regression: fan-out, missing needs/environment, and p
     source.replace('    environment: mmd-production-mutation\n', ''),
     source.replaceAll(condition, "github.event_name == 'push'"),
     source.replace('        default: false', '        default: true'),
-  ]) assert.throws(() => assertSafety(altered));
+  ]) assert.throws(() => assertSafety(altered, 'owner-payment-reissue.yml'));
 });
 
 test('workflow conditions deny automatic events and unapproved/mismatched dispatches', () => {
@@ -117,4 +138,19 @@ test('workflow conditions deny automatic events and unapproved/mismatched dispat
   assert.match(deploy, /needs: \[production-approval, validate\]/);
   assert.match(deploy, /environment: mmd-production-mutation/);
   assert.match(deploy, /ref: \$\{\{ github.sha \}\}/);
+});
+
+test('owner request dispatch is manual and cannot itself deploy', () => {
+  const source = read('request-owner-reviewed-admin-deploy.yml');
+  const header = source.split('\n' + 'jobs:')[0];
+  assert.match(header, /^  workflow_dispatch:/m);
+  assert.doesNotMatch(header, /^  (push|pull_request|workflow_run|schedule):/m);
+  assert.match(header, /actions: write/);
+  assert.match(source, /github.actor == 'mmdprive' && github.triggering_actor == 'mmdprive'/);
+  assert.match(source, /github.run_attempt == 1/);
+  assert.match(source, /inputs.approved_sha == github.sha/);
+  assert.match(source, /inputs.production_approved == true/);
+  assert.match(source, /test "\$APPROVED_SHA" = "\$GITHUB_SHA"/);
+  assert.match(source, /actions\/workflows\/deploy-admin-worker.yml\/dispatches/);
+  assert.doesNotMatch(source, /environment:|secrets\.|wrangler|CLOUDFLARE_API_TOKEN|can_admins_bypass|prevent_self_review: false/);
 });

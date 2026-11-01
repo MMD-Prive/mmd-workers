@@ -1,0 +1,166 @@
+{
+  "route": "/partner/model/recommend-model",
+  "version": "LV15",
+  "date": "2026-10-25",
+  "scope": "Local isolated Chromium preview of replacement code using actual Webflow stylesheet, hero, fonts, relevant global loaders and canonical i18n. No production submission.",
+  "responsiveWidths": [
+    320,
+    360,
+    390,
+    430,
+    768,
+    1024,
+    1440
+  ],
+  "baselineMobileHeight": 4535,
+  "finalMobileHeight": 1572,
+  "heightReductionPercent": 65.3,
+  "initialResponsiveResults": [
+    {
+      "width": 320,
+      "scrollWidth": 320,
+      "height": 1685,
+      "overflow": []
+    },
+    {
+      "width": 360,
+      "scrollWidth": 360,
+      "height": 1644,
+      "overflow": []
+    },
+    {
+      "width": 390,
+      "scrollWidth": 390,
+      "height": 1638,
+      "overflow": []
+    },
+    {
+      "width": 430,
+      "scrollWidth": 430,
+      "height": 1670,
+      "overflow": []
+    },
+    {
+      "width": 768,
+      "scrollWidth": 768,
+      "height": 1681,
+      "overflow": []
+    },
+    {
+      "width": 1024,
+      "scrollWidth": 1024,
+      "height": 1211,
+      "overflow": []
+    },
+    {
+      "width": 1440,
+      "scrollWidth": 1440,
+      "height": 1177,
+      "overflow": []
+    }
+  ],
+  "finalTypographyResults": [
+    {
+      "width": 390,
+      "scrollWidth": 390,
+      "height": 1572,
+      "primary": {
+        "x": 22,
+        "y": 531.296875,
+        "width": 178,
+        "height": 50
+      },
+      "primaryText": "ส่งข้อมูลให้ MMD",
+      "header": {
+        "x": 248,
+        "y": 17,
+        "width": 120,
+        "height": 44
+      },
+      "headerText": "MY Partner",
+      "headerColor": "rgb(234, 217, 185)",
+      "headerTextColor": "rgb(234, 217, 185)",
+      "headerTextFill": "rgb(234, 217, 185)",
+      "dockHidden": true,
+      "overflow": [],
+      "bodyFont": "Anuphan, Tahoma, \"Noto Sans Thai\", sans-serif",
+      "typography": [
+        {
+          "selector": ".rm15-button span",
+          "text": "ส่งข้อมูลให้ MMD",
+          "font": "600 15px / 21px Anuphan, Tahoma, \"Noto Sans Thai\", sans-serif",
+          "fontFamily": "Anuphan, Tahoma, \"Noto Sans Thai\", sans-serif",
+          "color": "rgb(37, 21, 11)",
+          "textFill": "rgb(37, 21, 11)",
+          "opacity": "1",
+          "visibility": "visible"
+        },
+        {
+          "selector": ".rm15-text-link span",
+          "text": "ดู 3 ขั้นตอน",
+          "font": "600 14px / 23.8px Anuphan, Tahoma, \"Noto Sans Thai\", sans-serif",
+          "fontFamily": "Anuphan, Tahoma, \"Noto Sans Thai\", sans-serif",
+          "color": "rgb(245, 226, 181)",
+          "textFill": "rgb(245, 226, 181)",
+          "opacity": "1",
+          "visibility": "visible"
+        },
+        {
+          "selector": "[data-rm15-tab] span:last-child",
+          "text": "คุยกับเพื่อน",
+          "font": "13px / 19.5px Anuphan, Tahoma, \"Noto Sans Thai\", sans-serif",
+          "fontFamily": "Anuphan, Tahoma, \"Noto Sans Thai\", sans-serif",
+          "color": "rgb(255, 224, 160)",
+          "textFill": "rgb(255, 224, 160)",
+          "opacity": "1",
+          "visibility": "visible"
+        },
+        {
+          "selector": ".rm15-eyebrow",
+          "text": "PERSONAL INTRODUCTION · BOSS PER",
+          "font": "500 10px / 15px \"General Sans\", Satoshi, Arial, sans-serif",
+          "fontFamily": "\"General Sans\", Satoshi, Arial, sans-serif",
+          "color": "rgb(245, 226, 181)",
+          "textFill": "rgb(245, 226, 181)",
+          "opacity": "1",
+          "visibility": "visible"
+        }
+      ]
+    }
+  ],
+  "finalIntegratedChecks": [
+    "Step tab click selects matching content",
+    "ArrowRight wraps; Home and End move selection and keyboard focus",
+    "All 3 native FAQ accordions open and close",
+    "Mobile dock appears only after the primary CTA passes above viewport, then hides on return",
+    "Synthetic token remains on internal Partner links only; application source=model-to-model is retained",
+    "Legacy #next opens contact step; #care opens privacy details",
+    "No-JS fallback keeps all steps, working native FAQ, and standard application link",
+    "Reduced motion renders without photo transform or running animations",
+    "Hero image failure shows fallback and leaves content/CTA usable"
+  ],
+  "finalIntegratedErrors": [],
+  "blockedOrAttemptedWrites": [],
+  "focusCheck": {
+    "focusedClass": "rm15-route-link",
+    "focusedTop": 707.828125,
+    "focusedBottom": 751.828125,
+    "dockHidden": false,
+    "dockTop": 764,
+    "dockBottom": 832,
+    "overlap": false
+  },
+  "thaiKeys": 32,
+  "thaiCovered": 32,
+  "strictI18nAudit": "pass; recognizes deployed core.v21.js",
+  "syntaxCheck": "pass",
+  "assets": "Existing approved Yuki portrait, SĪGIL mark and uploaded Anuphan/General Sans faces retained.",
+  "sourceSha256": {
+    "recommend-model.html": "f350fbbbc1d7cda2a18d847019527cf1e0d69408cbf6b8bd98ef68dfbe44400e",
+    "recommend-model.css": "aa7af301f32a00b6bf2887ed0130d919e3afaac34d51b0f3a4d39a6dfba3e18d",
+    "recommend-model.js": "f26afeff0d8e020b5f4be90baf4820835c04aa32395d3a6787620bfd873ce6ab",
+    "page-head.html": "ffb2a74d0d867d16d897dd39d59ccaf89f3b3925f887b47c7280326cd02ca7b9",
+    "page-footer.html": "feeb9608123ebc31dd3297cd39f361e9c9ccc4435116aebe2364220439939a7f",
+    "preview.html": "6b9415e2d1eb0dae0a989ce88d41ea978cecf3e4c523260c4107f5a923f37ef2"
+  }
+}

@@ -11,7 +11,7 @@ The owner confirmed these audiences and the source folder on 18 October 2026
 | Premium | Premium | Model introduction |
 | Standard | Premium and Standard | Model introduction |
 | Travel, Extreme | Preview Channel | Public model introduction |
-| Promotion | One room per day: Premium, Standard, Preview, then repeat | Approved campaign copy |
+| Promotion | One room per scheduled promotion date: Premium, Standard, Preview, then repeat | Approved campaign copy |
 
 Preview uses `TELEGRAM_PREVIEW_CHANNEL_ID`, never the linked discussion group.
 The three existing destination IDs are frozen in the approved manifest; the
@@ -24,7 +24,10 @@ All business dates and times use Asia/Bangkok (UTC+7).
 
 - Existing D-1 model reconfirm: 16:00, handled by the existing reconfirm runtime.
 - Model card: 16:30, one model each day, routed to that category's approved rooms.
-- Promotion: 20:00, one room each day. 18 October starts with Premium.
+- Until 22 October: Promotion at 20:00, one room each day. 18 October starts with Premium.
+- From 23 October 2026: Promotion at 20:00 on Tuesday and Friday only.
+  The other five evenings use a separate Standard compcard slot at 20:00,
+  routed to Premium and Standard. The normal 16:30 model slot stays daily.
 - The existing events-worker cron remains `*/15 * * * *`.
 - A slot can recover known failed sends for up to 90 minutes, within the same
   Bangkok calendar date. Old cron invocations cannot replay a previous day.
@@ -34,6 +37,46 @@ plan. `HYPE_COMPCARD_SEND_AT_ICT` and `HYPE_PROMOTION_SEND_AT_ICT` control them.
 `HYPE_COMPCARD_ENABLED=false` stops the complete new publishing runner;
 `HYPE_PROMOTION_ENABLED=false` stops only its promotion slot. Reconfirm has its
 own existing feature flags.
+
+The reduced promotion cadence starts at `HYPE_CADENCE_START_DATE=2026-10-23`.
+`HYPE_PROMOTION_WEEKDAYS=2,5` uses Sunday=0; a missing start date retains the
+historical schedule, and malformed dates/weekdays fail closed.
+`HYPE_STANDARD_ENABLED` and `HYPE_STANDARD_SEND_AT_ICT` control the additional
+Standard slot. Its 90-minute delivery window must not overlap the normal model
+slot. Disabling a promotion never substitutes another promotion or model into
+that evening. The two evening categories follow the configured calendar.
+
+Promotion rooms advance once per scheduled promotion date, so skipping the five
+Standard evenings does not skip rooms. The first new date keeps its former
+calendar destination: 23 Oct Preview, 27 Oct Premium, 30 Oct Standard, 3 Nov
+Preview, then repeat. Campaign availability and Double Moment financial terms
+remain unchanged.
+
+Standard cards use the same canonical approval checks and shared seven-day
+per-model exposure history as the 16:30 slot. A model used in either slot cannot
+be selected again within that cooldown. An empty or cooling-down Standard queue
+records `no_eligible_card` and skips the evening; it never repeats a card early
+or falls back to promotion. The initial manifest contains only three Standard
+models, so five extra posts per week require additional approved Studio material.
+Raw image intake is not an approved HYPE card until canonical identity, category,
+finished bytes and publication approval have been established.
+
+The private intake bridge is enabled by `HYPE_INTAKE_ENABLED=true` and pins
+`HYPE_INTAKE_READY_FOLDER_ID=1CPnNgAY2sKRyh5u0nfr9WpexFV6A_HT6`. The assistant
+can record completed visual QA under the owner's continuing instruction, then
+register a finished Standard card. The recurring intake process does not approve
+an unseen Studio draft or publish a raw upload. See
+[the photo intake runbook](HYPE_PHOTO_INTAKE_20261022.md) for the exact review,
+registry and asset envelopes and the preparation helper.
+
+The Events runner reads the private registry, merges validated Standard entries
+with the static inventory and checks canonical model facts again before sending.
+A selected intake version takes the next eligible turn for that model; static
+and superseded versions remain available to finish their original frozen plans.
+Intake file bytes come from the same private R2 bucket, with full SHA-256, size,
+MIME and dimensions checked before delivery. No public Drive sharing is needed.
+Missing or malformed intake holds intake cards while static cards and promotions
+continue. `readiness/latest.json` includes the intake status and bounded error code.
 
 ## Approved inventory
 
@@ -99,8 +142,8 @@ The Double Moment plain-text message is identical for Premium, Standard and
 Preview and pinned by SHA-256 in the approved manifest. It links to the existing
 MY MMD entry at `https://www.mmdbkk.com/member/login`.
 
-When CARE BACK expires, Double Moment continues through the existing daily room
-rotation with no gap; model-card rotation is independent. A scheduled promotion
+When CARE BACK expires, Double Moment remains available on scheduled promotion
+dates; model-card rotation is independent. A scheduled promotion
 can still be paused using `HYPE_PROMOTION_ENABLED=false`, or an individual card
 can be paused/revoked in the approved manifest. Do not use a far-future end date
 to simulate continuous availability.
@@ -110,7 +153,9 @@ sorted campaign ID. For the initial six rounds this yields CARE BACK / Premium
 on 18 Oct, Double Moment / Standard on 19 Oct, CARE BACK / Preview on 20 Oct,
 Double Moment / Premium on 21 Oct, CARE BACK / Standard on 22 Oct, and Double
 Moment / Preview on 23 Oct. From 1 Nov, Double Moment is selected each day while
-the same room rotation continues from the 18 Oct Premium anchor.
+the same room rotation continues from the 18 Oct Premium anchor under the
+historical schedule. From the 23 Oct cadence cutover, room advancement counts
+scheduled promotion dates as described above; advertising availability is unchanged.
 
 ## Delivery and verification
 
@@ -135,10 +180,12 @@ All keys begin with `hype-compcards/v1/`:
 | Key | Purpose |
 | --- | --- |
 | `readiness/latest.json` | Current build, manifest, source probe, eligible counts, recipient permissions and schedule; no message sends |
-| `plans/YYYY-MM-DD/model.json` or `promotion.json` | Immutable, integrity-checked daily plan |
-| `deliveries/YYYY-MM-DD/model/ROOM.json` or `promotion/ROOM.json` | Independent room lease, result and confirmed receipt |
-| `summaries/YYYY-MM-DD/model.json` or `promotion.json` | Consolidated daily result |
+| `plans/YYYY-MM-DD/model.json`, `standard.json` or `promotion.json` | Immutable, integrity-checked daily plan |
+| `deliveries/YYYY-MM-DD/SLOT/ROOM.json` | Independent room lease, result and confirmed receipt; SLOT is model, standard or promotion |
+| `summaries/YYYY-MM-DD/SLOT.json` | Consolidated daily result |
 | `history/MODEL_RECORD_ID.json` | Conservative exposure history for rotation |
+| `intake/approved.json` | Reviewed Standard versions and their immutable asset references |
+| `intake/assets/SHA256.json` | Private base64 image envelope, verified against the approved hash |
 
 R2 conditional writes prevent concurrent cron ticks from sending the same room
 twice. A confirmed `not_sent` failure can retry at most three times with a
@@ -152,6 +199,15 @@ preserved. A frozen plan can continue only when its card identity, approval,
 content/hash, destination and chat ID still match; changed or paused/revoked
 content blocks unfinished sends. Successful receipts remain idempotent, and
 `delivery_uncertain` is never retried automatically.
+
+The cadence change preserves all existing `model` and `promotion` plan keys,
+digests and receipts. New promotion plans freeze their cadence policy alongside
+the original destination; legacy plans retain their legacy calendar destination.
+An existing evening plan takes precedence over a newly configured calendar,
+so a retry never creates a second evening slot. If both evening plans already
+exist, the runner holds with `compcard_evening_plan_conflict` for inspection.
+The new `standard` slot shares `history/MODEL_RECORD_ID.json`; it does not reset
+cooldowns, create a second history namespace or retry unknown outcomes.
 
 The scheduled preflight refreshes at most every 30 minutes, additionally keyed
 by build, manifest revision and Bangkok date. Verify this private record after
@@ -181,4 +237,5 @@ both new transport suites through `test/*.test.mjs`.
 
 All test transports are mocked. Deployment uses the existing events and Telegram
 workflows; it requires no manual test post in a customer room.
+
 

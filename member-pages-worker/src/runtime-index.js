@@ -1,3 +1,6 @@
+import { DISCOVERY_VIEWER_PATH, handleDiscoveryViewer, attachDiscoverySession } from "./booking-discovery-viewer.js";
+import { isEmsAlbumRequest, handleEmsAlbums } from './member-ems-albums.js';
+import {isPersonalMainRequest, handlePersonalMain} from "./member-personal-main.js";
 import { isMemberAttentionRequest, handleMemberAttention } from "./member-attention.js";
 import { isMemberUpdatesRequest, handleMemberUpdates } from "./member-updates.js";
 import { handleMemberProfiles, isMemberProfilesRequest } from "./member-profiles.js";
@@ -16,6 +19,10 @@ import { applyMyMmdFastTrustResponse } from "./my-mmd-fast-trust-response.js";
 import { augmentMemberModelWishNotes } from "./member-model-wish-notes.js";
 import { recoverVerifiedLiffStartAsPendingIdentity } from "./liff-start-pending-identity-fallback.js";
 import { attachTraceId, createLiffResolutionTrace, createLiffShellBoundaryTrace } from "./liff-resolution-trace.js";
+import { applyMyMmdRenewalPageResponse } from "./liff-renewal-page-response.js";
+import { withLiffRenewalEligibility } from "./liff-renewal-eligibility.js";
+import { RENEWAL_VERIFIED_SESSION } from "./renewal-session-context.js";
+import { readMyMmdVerifiedPointsContext } from "./my-mmd-lifetime-points.js";
 import {
   handleMemberClientCredits,
   isMemberClientCreditsRequest,
@@ -63,6 +70,7 @@ import {
 } from "./private-preview.js";
 import { handlePrivateTeaser, isPrivateTeaserRequest } from "./private-teaser.js";
 import { handleMemberCustomerRequest, isMemberCustomerRequestPath } from "./member-customer-requests.js";
+import { handleMemberReplySnapshot, isMemberReplySnapshotPath, scheduleMemberReplySnapshots } from "./member-reply-snapshot.js";
 
 export * from "./legacy-member-pages.js";
 export { CareBackBirthdayWishCoordinator } from "./care-back-birthday-wish-durable-object.js";
@@ -102,8 +110,18 @@ export function normalizeCareBackWebViewOrigin(request) {
   return new Request(request, { headers });
 }
 
+async function fetchBaseWithRenewal(request, env, ctx) {
+  const response = await withLiffRenewalEligibility(request, env,
+    session => baseWorker.fetch(request, session ? { ...env, [RENEWAL_VERIFIED_SESSION]: session } : env, ctx),
+    { readSession: readMemberAppSession, readSpend: readMyMmdVerifiedPointsContext });
+  return applyMyMmdRenewalPageResponse(request, response);
+}
+
 const worker = {
   async fetch(request, env, ctx) {
+    if (isEmsAlbumRequest(request)) return handleEmsAlbums(request, env, { readSession: readMemberAppSession, readEntitlement: readEntitlementSnapshot });
+    if (new URL(request.url).pathname === DISCOVERY_VIEWER_PATH) return handleDiscoveryViewer(request, env);
+    if (isPersonalMainRequest(request)) return handlePersonalMain(request, env, readMemberAppSession);
     if (isMemberAttentionRequest(request)) return handleMemberAttention(request, env);
     if (isMemberUpdatesRequest(request)) return handleMemberUpdates(request, env, readMemberAppSession);
     if (isMemberProfilesRequest(request)) return handleMemberProfiles(request, env, { readSession: readMemberAppSession, readEntitlement: readEntitlementSnapshot });
@@ -143,6 +161,9 @@ const worker = {
     if (isKenjiLineMemberTruthRequest(request)) {
       return handleKenjiLineMemberTruth(request, env);
     }
+    if (isMemberReplySnapshotPath(request)) {
+      return handleMemberReplySnapshot(request, env, ctx);
+    }
     if (isKenjiMemberSessionTruthRequest(request)) {
       return handleKenjiMemberSessionTruth(request, env);
     }
@@ -169,7 +190,7 @@ const worker = {
     const runtimeEnv = withStatusFirstMemberResolver(request, channelCompatibleEnv);
     const firstRequest = request.clone();
     const bootstrapRequest = request.clone();
-    let firstResponse = await baseWorker.fetch(firstRequest, runtimeEnv, ctx);
+    let firstResponse = await fetchBaseWithRenewal(firstRequest, runtimeEnv, ctx);
     firstResponse = await applyMyMmdFastTrustResponse(request, firstResponse, env);
     firstResponse = await augmentMemberModelWishNotes(request, firstResponse, env);
     let firstPayload = await jsonPayload(firstResponse);
@@ -213,7 +234,7 @@ const worker = {
         package_code: bootstrap.package_code || "",
       });
       if (bootstrap.mapped) {
-        let retriedResponse = await baseWorker.fetch(request, runtimeEnv, ctx);
+        let retriedResponse = await fetchBaseWithRenewal(request, runtimeEnv, ctx);
         retriedResponse = await applyMyMmdFastTrustResponse(request, retriedResponse, env);
         retriedResponse = await augmentMemberModelWishNotes(request, retriedResponse, env);
         trace?.event("member_retry", retriedResponse.ok ? "complete" : "failed", "", { http_status: retriedResponse.status });
@@ -233,7 +254,19 @@ const worker = {
   },
 };
 
-export default worker;
+export default {
+  async fetch(request, env, ctx) {
+    const response = await worker.fetch(request, env, ctx);
+    return attachDiscoverySession(request, env, response);
+  },
+  async scheduled(event, env, ctx) {
+    // scheduleMemberReplySnapshots performs the daily full enumeration only
+    // inside the 04:02 Bangkok window; every other invocation is a bounded
+    // due-queue drain. This makes the 5-minute retry timestamp executable
+    // without changing the daily rebuild policy.
+    ctx.waitUntil(scheduleMemberReplySnapshots(env, new Date(event.scheduledTime || Date.now())));
+  },
+};
 
 async function jsonPayload(response) {
   if (!(response instanceof Response)) return null;

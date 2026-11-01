@@ -1,9 +1,10 @@
 import { normalizeSessionState } from './modelSessionContractV1.js';
 
 export const CANONICAL_MODEL_FIELD = 'Canonical Model';
-const RUNNING = new Set(['en_route', 'nearby', 'arrived', 'met_customer', 'final_payment_pending', 'final_payment_confirmed', 'work_started']);
+// Finished work still needs the model's explicit separation action after reload.
+const RUNNING = new Set(['en_route', 'nearby', 'arrived', 'met_customer', 'final_payment_pending', 'final_payment_confirmed', 'work_started', 'work_finished']);
 const WAITING = new Set(['offered', 'confirmed']);
-const FINISHED = new Set(['offer_declined', 'offer_expired', 'work_finished', 'separated', 'under_review', 'payout_pending', 'closed']);
+const FINISHED = new Set(['offer_declined', 'offer_expired', 'separated', 'under_review', 'payout_pending', 'closed']);
 const text = value => typeof value === 'string' ? value.trim() : '';
 const review = () => ({ ok: false, status: 409, error: 'current_session_review_required' });
 const dayInBangkok = now => {

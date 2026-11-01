@@ -66,6 +66,55 @@ test("unauthorized kill-switch role fails before Airtable", async () => {
   } finally { globalThis.fetch = originalFetch; }
 });
 
+test("owner LINE unlock writes only LINE control and audit, preserving model scope", async () => {
+  const originalFetch = globalThis.fetch;
+  const writes = [];
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(input);
+    const method = init.method || 'GET';
+    if (method === 'GET') {
+      if (url.pathname.includes('tblUzZ8ImRZOkks4c')) return airtableJson([]);
+      assert.match(url.searchParams.get('filterByFormula'), /line_oa_auto_reply/);
+      return airtableJson([{ id: 'rec-line', fields: { enabled_state: 'enabled', version: 6 } }]);
+    }
+    const body = JSON.parse(init.body);
+    writes.push({ path: url.pathname, method, body });
+    return Response.json({ id: 'rec-audit', fields: body.fields });
+  };
+  try {
+    const response = await handleKenjiControlAction(actionRequest('/v1/admin/kenji/control/runtime/kill-switch',
+      { scope: 'line_oa_auto_reply', enabled: false, expected_version: 6, reason: 'Owner approved LINE-only unlock; preserve model OFF' }), ENV, OWNER);
+    assert.equal(response.status, 200);
+    const result = await response.json();
+    assert.equal(result.scope, 'line_oa_auto_reply');
+    assert.equal(result.enabled, false);
+    assert.equal(result.version, 7);
+    assert.ok(result.audit_id);
+    assert.equal(writes.length, 3);
+    const controls = writes.filter(w => w.path.endsWith('/tblPRUGp6AxWMM5gQ'));
+    assert.equal(controls.length, 1);
+    assert.equal(controls[0].body.fields.scope, 'line_oa_auto_reply');
+    assert.equal(controls[0].body.fields.enabled_state, 'disabled');
+    assert.equal(controls[0].body.fields.version, 7);
+    assert(writes.every(w => /tblUzZ8ImRZOkks4c|tblPRUGp6AxWMM5gQ/.test(w.path)));
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test("stale LINE unlock version refuses all writes", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init = {}) => {
+    assert.equal(init.method || 'GET', 'GET');
+    return String(input).includes('tblUzZ8ImRZOkks4c') ? airtableJson([])
+      : airtableJson([{ id: 'rec-line', fields: { enabled_state: 'enabled', version: 7 } }]);
+  };
+  try {
+    const response = await handleKenjiControlAction(actionRequest('/v1/admin/kenji/control/runtime/kill-switch',
+      { scope: 'line_oa_auto_reply', enabled: false, expected_version: 6, reason: 'Owner approved' }), ENV, OWNER);
+    assert.equal(response.status, 409);
+    assert.equal((await response.json()).error, 'version_conflict');
+  } finally { globalThis.fetch = originalFetch; }
+});
+
 test("runtime status RPC requires service-bound bearer", async () => {
   const originalFetch = globalThis.fetch;
   let calls = 0;

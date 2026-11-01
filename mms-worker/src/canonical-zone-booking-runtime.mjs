@@ -63,10 +63,11 @@ async function canonicalPrebooking(env, body, canonicalZone, zoneIndex) {
   };
 
   const prebookingId = `mmspre_${(await sha256Hex(`prebooking:${validated.idempotency_key}`)).slice(0, 24)}`;
+  const jobId = await deterministicId("mmsjob", prebookingId);
   const nowIso = new Date().toISOString();
   const coordinatorKey = `${validated.service_date}:${validated.service_time}:${canonicalZone.code}`;
 
-  const matching = await canonicalMatch(env, body, canonicalZone, zoneIndex, validated);
+  const matching = await canonicalMatch(env, body, canonicalZone, zoneIndex, validated, jobId);
   const matchedIds = matching.matches.map((item) => item.therapist_id);
   const status = matchedIds.length ? "Options Ready" : "Pending Coordination";
 
@@ -121,6 +122,7 @@ async function canonicalPrebooking(env, body, canonicalZone, zoneIndex) {
   if (sync.status === "synced") {
     dispatch = await createCanonicalDispatch(env, {
       prebookingId,
+      jobId,
       prebookingRecordId: sync.record_id,
       payload: validated,
       canonicalZone,
@@ -139,7 +141,7 @@ async function canonicalPrebooking(env, body, canonicalZone, zoneIndex) {
   }, sync.status === "synced" ? 201 : 202);
 }
 
-async function canonicalMatch(env, rawBody, canonicalZone, zoneIndex, prevalidated = null) {
+async function canonicalMatch(env, rawBody, canonicalZone, zoneIndex, prevalidated = null, rotationKey = "") {
   const legacyZone = canonicalZone.legacy_zone_label || LEGACY_SURROGATE;
   let validated;
   if (prevalidated) {
@@ -164,22 +166,27 @@ async function canonicalMatch(env, rawBody, canonicalZone, zoneIndex, prevalidat
   const records = await airtableListAll(env, tableId(env, "THERAPISTS"));
   const exactRecords = records
     .filter((record) => therapistCoversCanonicalZone(record, canonicalZone.code, zoneIndex))
-    .map((record) => ({
-      ...record,
-      fields: {
-        ...(record.fields || {}),
-        // Core matching still owns gender/skills/status/manual-review policy.
-        // These compatibility values exist only in memory after an exact
-        // linked-zone filter; they are never persisted back to Airtable.
-        "Base Zone": legacyZone,
-        "Coverage Zones": [legacyZone],
-      },
-    }));
+    .map((record) => {
+      const fields = record.fields || {};
+      const isBaseZone = linkedServiceZoneCodes(fields["Base Service Zone"], zoneIndex).includes(canonicalZone.code);
+      const isCoverageZone = linkedServiceZoneCodes(fields["Coverage Service Zones"], zoneIndex).includes(canonicalZone.code);
+      return {
+        ...record,
+        fields: {
+          ...fields,
+          // Keep canonical base-vs-coverage priority in the compatibility view.
+          // These values exist only in memory and are never persisted to Airtable.
+          "Base Zone": isBaseZone ? legacyZone : "",
+          "Coverage Zones": isCoverageZone ? [legacyZone] : [],
+        },
+      };
+    });
 
   const core = matchTherapists(exactRecords, {
     recipient_gender: validated.recipient_gender,
     zone: legacyZone,
     skills: validated.skills,
+    ...(rotationKey ? { rotation_key: rotationKey } : {}),
   });
 
   return {
@@ -207,7 +214,7 @@ function therapistCoversCanonicalZone(record, requestedCode, zoneIndex) {
 }
 
 async function createCanonicalDispatch(env, context) {
-  const { prebookingId, payload, canonicalZone, matching } = context;
+  const { prebookingId, jobId, payload, canonicalZone, matching } = context;
   requireDispatchConfig(env);
 
   if (matching.requires_manual_coordination) {
@@ -225,7 +232,6 @@ async function createCanonicalDispatch(env, context) {
     .slice(0, DEFAULT_MAX_OFFERS);
   if (!candidates.length) return { state: "PENDING_COORDINATION", code: "NO_AVAILABLE_APPROVED_THERAPIST" };
 
-  const jobId = await deterministicId("mmsjob", prebookingId);
   const existing = await findAirtableRecord(env, tableId(env, "JOBS"), "Job ID", jobId);
   if (existing) {
     const offers = await airtableListByFormula(env, tableId(env, "OFFERS"), `{Job ID}=${formulaString(jobId)}`, 20);

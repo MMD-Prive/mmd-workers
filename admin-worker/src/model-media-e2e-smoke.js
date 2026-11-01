@@ -107,8 +107,8 @@ export async function handleModelMediaE2ESmoke(request, env = {}, actor = null, 
     if (clean(upload?.media?.file_name) !== fileName || clean(upload?.media?.file_type) !== "image/png") {
       throw smokeError("upload_projection", 502, "upload_projection_mismatch");
     }
-    if (upload.review_required !== true || clean(upload?.media?.review_status) !== "pending_review") {
-      throw smokeError("review_queue", 502, "pending_review_not_observed");
+    if (plan.review_required !== false || upload.review_required !== false || clean(upload?.media?.review_status) !== "active") {
+      throw smokeError("gallery_policy", 502, "active_gallery_not_observed");
     }
 
     stage = "registry";
@@ -124,6 +124,10 @@ export async function handleModelMediaE2ESmoke(request, env = {}, actor = null, 
     }
     if (clean(exact.file_name) !== fileName || clean(exact.file_type) !== "image/png") {
       throw smokeError("registry_projection", 502, "media_registry_projection_mismatch");
+    }
+
+    if (clean(exact.review_status) !== "active" || exact.self_managed !== true || exact.requires_per_approval !== false) {
+      throw smokeError("gallery_policy", 502, "active_gallery_not_observed");
     }
 
     stage = "r2_read";
@@ -177,7 +181,7 @@ export async function handleModelMediaE2ESmoke(request, env = {}, actor = null, 
         short_lived_upload_authorized: true,
         r2_write: true,
         media_record_created: true,
-        pending_review_observed: true,
+        active_gallery_observed: true,
         media_record_read_back: true,
         r2_file_opened: true,
         byte_match: true,

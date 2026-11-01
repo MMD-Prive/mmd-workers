@@ -5,6 +5,7 @@ import {
   enrichLineageWithPreSessionIndex,
   PRE_SESSION_CLIENT_INDEX_VERSION,
   resolveHistoricalSessionAlias,
+  searchPreSessionCandidates,
   toCandidateRecord,
 } from "./src/pre-session-client-index.js";
 
@@ -210,6 +211,35 @@ test("pre-session index replaces free-form fallback with a known identity candid
   }
 });
 
+test("pre-session candidates match Thai names that differ only by tone mark", () => {
+  const candidate = {
+    ...seedCandidate,
+    fields: { ...seedCandidate.fields, preferred_name: "ตัว 18 กย 69" },
+  };
+  const record = toCandidateRecord(candidate, "ตั๋ว");
+  assert.ok(record);
+  assert.equal(record.matched_on, "pre_session_preferred_name");
+  assert.equal(record.member_email, "known@example.com");
+  assert.equal(record.client_id, "");
+});
+
+test("pre-session Airtable search strips Thai tone marks from stored names", async () => {
+  const original = globalThis.fetch;
+  let requestUrl;
+  globalThis.fetch = async (input) => {
+    requestUrl = new URL(typeof input === "string" ? input : input.url);
+    return new Response(JSON.stringify({ records: [] }), { status: 200, headers: { "Content-Type": "application/json" } });
+  };
+  try {
+    await searchPreSessionCandidates(env, "ตั๋ว");
+    const formula = requestUrl?.searchParams.get("filterByFormula") || "";
+    assert.match(formula, /SUBSTITUTE\(/);
+    assert.match(formula, /ตัว/);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
 test("candidate adapter never turns seed evidence into membership or entitlement truth", () => {
   const record = toCandidateRecord(seedCandidate, "known@example.com");
   assert.ok(record);
@@ -262,7 +292,7 @@ test("canonical lineage result always wins and skips pre-session Airtable lookup
   }
 });
 
-test("pre-session source failure preserves existing public-only manual fallback", async () => {
+test("source failures report outages without fabricating a customer", async () => {
   const restore = installAirtableMock([], { status: 503 });
   try {
     const response = await enrichLineageWithPreSessionIndex(
@@ -272,9 +302,12 @@ test("pre-session source failure preserves existing public-only manual fallback"
     );
     const body = await response.json();
     assert.equal(body.manual_fallback, true);
-    assert.equal(body.records[0].manual_public_only, true);
+    assert.deepEqual(body.records, []);
+    assert.deepEqual(body.results, []);
+    assert.deepEqual(body.items, []);
     assert.equal(response.headers.get("x-mmd-pre-session-index"), "source-unavailable");
-    assert.match(body.lineage_warnings.join(" "), /pre_session_index:airtable_tblC98mKWbzmPuNzX_503/);
+    assert.match(body.degraded_sources.join(" "), /historical_session_alias:airtable_tblC98mKWbzmPuNzX_503/);
+    assert.match(body.degraded_sources.join(" "), /pre_session_index:airtable_pre_session_503/);
   } finally {
     restore();
   }

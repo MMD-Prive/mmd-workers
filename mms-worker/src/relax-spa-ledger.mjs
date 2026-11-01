@@ -1,5 +1,6 @@
 import { spaJobId, produceSpaJob } from './relax-spa-job.mjs';
 import { agreementV2, agreementV3, inclusivePlan, inclusiveActual } from './relax-spa-agreement.mjs';
+import { MMS_SPA_PAYMENT_POLICY, assertMmsPackagePaymentInput } from '../../shared/mms-spa-payment-policy.mjs';
 const PREFIX = '/internal/mms/admin/relax-spa';
 const ROLES = ['therapist', 'spa', 'partner', 'mms'];
 const OWNER = 'owner';
@@ -53,7 +54,7 @@ function visible(state, actor) {
   const referrals = state.referrals.filter(r => full || r.partner_id === actor.id);
   const ids = new Set(referrals.map(r => r.id));
   const services = state.services.filter(s => ids.has(s.referral_id));
-  return { actor: { id: actor.id, role: actor.role }, referrals,
+  return { actor: { id: actor.id, role: actor.role }, payment_policy: { ...MMS_SPA_PAYMENT_POLICY }, referrals,
     agreements: full ? state.agreements : [],
     services: services.map(s => full ? { ...s, job_creation: s.job_creation ? { job_id:s.job_creation.job_id, service_start_at:s.job_creation.service_start_at, service_evidence:s.job_creation.service_evidence, requested_at:s.job_creation.requested_at, completed_at:s.job_creation.completed_at } : undefined, payment_status: paymentStatus(s), reconciliation_summary: reconciliationSummary(s) } : { id: s.id, referral_id: s.referral_id, job_id: s.job_id,
       therapist_name: s.therapist_name, status: s.status || 'booked', agreement_title: s.agreement?.title || 'ฉบับร่าง', created_at: s.created_at,
@@ -66,6 +67,7 @@ function visible(state, actor) {
 export function applySpaCommand(state, actor, command, body, canonical = {}) {
   if (!actor?.id || !ACCESS.includes(actor.role)) fail(403, 'SPA_ACCESS_REQUIRED');
   if (actor.role !== OWNER && command !== 'referrals') fail(403, 'OWNER_REQUIRED');
+  if (['agreements', 'receipts', 'settlements'].includes(command)) assertMmsPackagePaymentInput(body);
   const key = required(body.request_key, 100);
   if (!/^[A-Za-z0-9_:.-]{8,100}$/.test(key)) fail(400, 'REQUEST_KEY_INVALID');
   const requestId = actor.id + ':' + key;
@@ -157,6 +159,10 @@ export function applySpaCommand(state, actor, command, body, canonical = {}) {
       if (state.services.some(s => s.receipts.some(r => sameEvidence(r.evidence_ref, evidence)))) fail(409, 'PAYMENT_EVIDENCE_ALREADY_USED');
       if (service.receipts.reduce((s, r) => s + r.amount, 0) + amount > service.expected_amount) fail(409, 'OVERPAYMENT_REQUIRES_REVIEW');
       result = { id: id('spapay'), amount, evidence_ref: evidence, received_by: required(body.received_by, 120), received_at: time(body.received_at), verified_by: actor.id, verified_at: now, verification_source: 'owner_manual_evidence_review' };
+      if (service.agreement.payment_policy?.version === MMS_SPA_PAYMENT_POLICY.version) {
+        result.charge_scope = 'mms_package';
+        result.collection_party = 'mms';
+      }
       service.receipts.push(result);
     } else if (command === 'refunds') {
       if (!(service.agreement?.schema_version >= 2) || service.settlement) fail(409, 'REFUND_RECONCILIATION_REQUIRED');

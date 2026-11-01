@@ -2,6 +2,9 @@ import { DurableObject } from "cloudflare:workers";
 import { matchTherapists } from "./core.mjs";
 import { requireMyMmsApprovedTherapist } from "./my-mms-access-runtime.mjs";
 import { mmsJobPricing } from "./mms-job-pricing.mjs";
+import { computeGoogleEtaMinutes, numericEtaLabel } from "./my-mms-travel-runtime.mjs";
+import { evaluateDepartureClaim } from "./my-mms-departure-claim.mjs";
+import { claimDispatchJobWinner } from "./my-mms-dispatch-claim.mjs";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const INTERNAL_HOST = "mms.internal";
@@ -22,6 +25,7 @@ const DECLINE_RE = /^\/male-massage\/therapists\/api\/app\/offers\/(mmsjob_[a-f0
 const JOB_RE = /^\/male-massage\/therapists\/api\/app\/jobs\/(mmsjob_[a-f0-9]{24})$/;
 const START_RE = /^\/male-massage\/therapists\/api\/app\/jobs\/(mmsjob_[a-f0-9]{24})\/start$/;
 const COMPLETE_RE = /^\/male-massage\/therapists\/api\/app\/jobs\/(mmsjob_[a-f0-9]{24})\/complete$/;
+const DEPART_RE = /^\/male-massage\/therapists\/api\/app\/jobs\/(mmsjob_[a-f0-9]{24})\/depart$/;
 
 export class MmsDispatchCoordinator extends DurableObject {
   constructor(ctx, env) {
@@ -115,15 +119,7 @@ export class MmsDispatchCoordinator extends DurableObject {
     }
     if (offer.status !== "OFFERED") return this._remember(requestKey, therapistId, "accept", { state: canonicalClientState(offer.status) }, now);
 
-    this.ctx.storage.sql.exec(
-      `UPDATE dispatch_jobs
-       SET state='ACCEPTED', winner_therapist_id=?, accepted_at=?, version=version+1, updated_at=?
-       WHERE job_id=? AND winner_therapist_id IS NULL`,
-      therapistId,
-      now,
-      now,
-      jobId,
-    );
+    claimDispatchJobWinner(this.ctx.storage.sql, jobId, therapistId, now);
     const after = this._job(jobId);
     if (after.winner_therapist_id !== therapistId) {
       return this._remember(requestKey, therapistId, "accept", { state: "TAKEN", winner_therapist_id: after.winner_therapist_id }, now);
@@ -187,6 +183,33 @@ export class MmsDispatchCoordinator extends DurableObject {
     return this._remember(requestKey, therapistId, action, { state: to, at: new Date(now).toISOString() }, now);
   }
 
+  claimDeparture(jobId, therapistId, requestKey, now) {
+    const job = this._job(jobId);
+    const row = this.ctx.storage.sql.exec("SELECT * FROM dispatch_requests WHERE request_key=?", requestKey).toArray()[0];
+    const decision = evaluateDepartureClaim({ job, row, therapistId, now });
+    if (!decision.claimed) return decision;
+    if (decision.action === "create") {
+      this._remember(requestKey, therapistId, "depart", { state: "CHECKING", code: "DEPARTURE_IN_PROGRESS" }, now);
+      return { claimed: true, result: null };
+    }
+    if (decision.action === "refresh") {
+      this.ctx.storage.sql.exec(
+        "UPDATE dispatch_requests SET result_json=?, created_at=? WHERE request_key=? AND therapist_id=? AND action='depart'",
+        JSON.stringify({ state: "CHECKING", code: "DEPARTURE_IN_PROGRESS" }), now, requestKey, therapistId,
+      );
+      return { claimed: true, result: null };
+    }
+    return decision;
+  }
+
+  finishDeparture(therapistId, requestKey, result, now) {
+    this.ctx.storage.sql.exec(
+      "UPDATE dispatch_requests SET result_json=?, created_at=? WHERE request_key=? AND therapist_id=? AND action='depart'",
+      JSON.stringify(result), now, requestKey, therapistId,
+    );
+    return result;
+  }
+
   cancel(jobId, requestKey, now) {
     const replay = this._replay(requestKey, "internal", "cancel");
     if (replay) return replay;
@@ -206,7 +229,7 @@ export class MmsDispatchCoordinator extends DurableObject {
         now,
       );
     }
-    return this._remember(requestKey, "internal", "cancel", { state: "CANCELLED" }, now);
+    return this._remember(requestKey, "internal", "cancel", { state: "CANCELLED", winner_therapist_id: job.winner_therapist_id }, now);
   }
 
   _job(jobId) {
@@ -244,7 +267,7 @@ export class MmsDispatchCoordinator extends DurableObject {
 
 export function isMyMmsDispatchRequest(pathname = "") {
   const path = normalizePath(pathname);
-  return path === APP_PATHS.offers || path === APP_PATHS.jobs || OFFER_RE.test(path) || ACCEPT_RE.test(path) || DECLINE_RE.test(path) || JOB_RE.test(path) || START_RE.test(path) || COMPLETE_RE.test(path) || INTERNAL_MATCH_RE.test(path) || INTERNAL_JOB_RE.test(path) || INTERNAL_CANCEL_RE.test(path);
+  return path === APP_PATHS.offers || path === APP_PATHS.jobs || OFFER_RE.test(path) || ACCEPT_RE.test(path) || DECLINE_RE.test(path) || JOB_RE.test(path) || START_RE.test(path) || COMPLETE_RE.test(path) || DEPART_RE.test(path) || INTERNAL_MATCH_RE.test(path) || INTERNAL_JOB_RE.test(path) || INTERNAL_CANCEL_RE.test(path);
 }
 
 export async function maybeHandleMyMmsDispatch(request, env = {}) {
@@ -278,6 +301,9 @@ export async function maybeHandleMyMmsDispatch(request, env = {}) {
       const body = await readJson(request);
       const requestKey = requiredRequestKey(body.request_key, `cancel:${internalCancel[1]}`);
       const result = await dispatchStub(env, internalCancel[1]).cancel(internalCancel[1], requestKey, Date.now());
+      if (result.state === "CANCELLED" && result.winner_therapist_id) {
+        await therapistScheduleStub(env, result.winner_therapist_id).release(internalCancel[1], Date.now());
+      }
       await projectJobState(env, internalCancel[1], result);
       await projectOfferStatesFromSnapshot(env, internalCancel[1]);
       return actionJson(internalCancel[1], result, request, env);
@@ -314,7 +340,26 @@ export async function maybeHandleMyMmsDispatch(request, env = {}) {
       const requestKey = requiredRequestKey(body.requestKey ?? body.request_key, `accept:${acceptMatch[1]}:${therapistId}`);
       const offer = await findOfferForTherapist(env, acceptMatch[1], therapistId);
       if (!offer) throw dispatchError(404, "OFFER_NOT_FOUND");
-      const result = await dispatchStub(env, acceptMatch[1]).accept(acceptMatch[1], therapistId, requestKey, Date.now());
+      const job = await findUniqueByField(env, tableId(env, "JOBS"), "Job ID", acceptMatch[1]);
+      if (!job) throw dispatchError(404, "JOB_NOT_FOUND");
+      const window = serviceWindow(job.fields || {});
+      const now = Date.now();
+      const schedule = therapistScheduleStub(env, therapistId);
+      const reservation = await schedule.reserve(
+        acceptMatch[1], window.start_at, window.end_at,
+        await listActiveTherapistSchedules(env, therapistId, now), now,
+      );
+      if (reservation?.state !== "RESERVED") throw scheduleReservationError(reservation?.state);
+      let result;
+      try {
+        result = await dispatchStub(env, acceptMatch[1]).accept(acceptMatch[1], therapistId, requestKey, now);
+      } catch (error) {
+        // A failed RPC may have committed. Keep the reservation until the job owner is verified.
+        throw error;
+      }
+      if (!result || (result.state !== "ACCEPTED" && result.state !== "CHECKING")) {
+        await schedule.release(acceptMatch[1], Date.now());
+      }
       await projectAcceptResult(env, acceptMatch[1], result);
       return actionJson(acceptMatch[1], result, request, env);
     }
@@ -346,7 +391,27 @@ export async function maybeHandleMyMmsDispatch(request, env = {}) {
       const requestKey = requiredRequestKey(body.requestKey ?? body.request_key, `start:${startMatch[1]}:${therapistId}`);
       const owned = await findOwnedJob(env, startMatch[1], therapistId);
       if (!owned) throw dispatchError(404, "JOB_NOT_FOUND");
-      const result = await dispatchStub(env, startMatch[1]).transition(startMatch[1], therapistId, requestKey, "start", Date.now());
+      const window = serviceWindow(owned.fields || {});
+      const now = Date.now();
+      const schedule = therapistScheduleStub(env, therapistId);
+      const reservation = await schedule.reserve(
+        startMatch[1], window.start_at, window.end_at,
+        await listActiveTherapistSchedules(env, therapistId, now, startMatch[1]), now,
+      );
+      if (reservation?.state !== "RESERVED") throw scheduleReservationError(reservation?.state);
+      const activeSchedule = await schedule.markInProgress(startMatch[1], now);
+      if (activeSchedule?.state !== "ACTIVE") throw dispatchError(409, "THERAPIST_SCHEDULE_UNAVAILABLE");
+      let result;
+      try {
+        result = await dispatchStub(env, startMatch[1]).transition(startMatch[1], therapistId, requestKey, "start", Date.now());
+      } catch (error) {
+        // An uncertain transition may have started service. Keep the blocking window.
+        throw error;
+      }
+      if (["COMPLETED", "CANCELLED"].includes(result.state)) await schedule.release(startMatch[1], Date.now());
+      else if (result.state !== "IN_PROGRESS") {
+        await schedule.restoreScheduledWindow(startMatch[1], window.start_at, window.end_at, Date.now());
+      }
       await projectJobState(env, startMatch[1], result);
       return actionJson(startMatch[1], result, request, env);
     }
@@ -359,8 +424,57 @@ export async function maybeHandleMyMmsDispatch(request, env = {}) {
       const owned = await findOwnedJob(env, completeMatch[1], therapistId);
       if (!owned) throw dispatchError(404, "JOB_NOT_FOUND");
       const result = await dispatchStub(env, completeMatch[1]).transition(completeMatch[1], therapistId, requestKey, "complete", Date.now());
+      if (result.state === "COMPLETED") await therapistScheduleStub(env, therapistId).release(completeMatch[1], Date.now());
       await projectJobState(env, completeMatch[1], result);
       return actionJson(completeMatch[1], result, request, env);
+    }
+
+    const departMatch = path.match(DEPART_RE);
+    if (departMatch) {
+      if (request.method !== "POST") return methodNotAllowed(request, env);
+      requireTrustedOrigin(request, env);
+      const body = await readJson(request);
+      const owned = await findOwnedJob(env, departMatch[1], therapistId);
+      if (!owned) throw dispatchError(404, "JOB_NOT_FOUND");
+      if (clean(selectName(owned.fields?.["Job Status"]), 40).toLowerCase() !== "accepted") throw dispatchError(409, "JOB_NOT_ACCEPTED");
+      const requestKey = `depart:${departMatch[1]}:${therapistId}`;
+      const departure = await dispatchStub(env, departMatch[1]).claimDeparture(departMatch[1], therapistId, requestKey, Date.now());
+      if (!departure.claimed) {
+        if (departure.result?.state === "EN_ROUTE") return json({ ok: true, data: departure.result }, 200, request, env);
+        if (departure.result?.code === "DEPARTURE_IN_PROGRESS") throw dispatchError(409, "DEPARTURE_IN_PROGRESS");
+        throw dispatchError(409, departure.result?.code || "DEPARTURE_UNAVAILABLE");
+      }
+      const internal = parseObject(owned.fields?.["Internal Payload JSON"]);
+      const destination = clean(owned.fields?.["Exact Address Private"] || internal.exact_address, 2000);
+      const previousMinutes = etaMinutesFromLabel(clean(owned.fields?.["ETA Label"], 80));
+      const previousUpdate = Date.parse(clean(owned.fields?.["Updated At"], 80));
+      if (clean(owned.fields?.["Travel Label"], 80) === "กำลังเดินทาง" && previousMinutes && Number.isFinite(previousUpdate) && Date.now() - previousUpdate < 5 * 60_000) {
+        const cached = { state: "EN_ROUTE", eta_minutes: previousMinutes, eta_label: numericEtaLabel(previousMinutes), updated_at: new Date(previousUpdate).toISOString() };
+        await dispatchStub(env, departMatch[1]).finishDeparture(therapistId, requestKey, cached, Date.now());
+        return json({ ok: true, data: cached }, 200, request, env);
+      }
+      const now = new Date().toISOString();
+      try {
+        await updateTravelFields(env, owned.id, { "Travel Label": "กำลังเดินทาง", "ETA Label": "", "Updated At": now });
+        const etaMinutes = await computeGoogleEtaMinutes({
+          latitude: body.latitude,
+          longitude: body.longitude,
+          destination,
+          apiKey: env.GOOGLE_ROUTES_API_KEY,
+        });
+        const etaLabel = numericEtaLabel(etaMinutes);
+        await updateTravelFields(env, owned.id, {
+          "Travel Label": "กำลังเดินทาง",
+          "ETA Label": etaLabel,
+          "Updated At": now,
+        });
+        const result = { state: "EN_ROUTE", eta_minutes: etaMinutes, eta_label: etaLabel, updated_at: now };
+        await dispatchStub(env, departMatch[1]).finishDeparture(therapistId, requestKey, result, Date.now());
+        return json({ ok: true, data: result }, 200, request, env);
+      } catch (error) {
+        await dispatchStub(env, departMatch[1]).finishDeparture(therapistId, requestKey, { state: "CHECKING", code: "DEPARTURE_RETRYABLE" }, Date.now());
+        throw error;
+      }
     }
 
     return null;
@@ -401,7 +515,7 @@ async function dispatchPrebooking(request, env, prebookingId) {
 
   const therapists = await listAllRecords(env, tableId(env, "THERAPISTS"));
   const accessById = new Map(therapists.map((record) => [clean(record.fields?.["Therapist ID"], 80), clean(selectName(record.fields?.["MY MMS Access"]), 40)]));
-  const result = matchTherapists(therapists, { recipient_gender: recipientGender, zone, skills });
+  const result = matchTherapists(therapists, { recipient_gender: recipientGender, zone, skills, rotation_key: existingJobId });
   if (result.requires_manual_coordination) throw dispatchError(409, "MANUAL_COORDINATION_REQUIRED");
   const maxOffers = boundedInt(body.max_offers, 1, 10, DEFAULT_MAX_OFFERS);
   const candidates = result.matches
@@ -562,6 +676,29 @@ async function listTherapistJobs(env, therapistId) {
     .map((record) => jobProjection(record));
 }
 
+async function listActiveTherapistSchedules(env, therapistId, now, excludeJobId = "") {
+  const formula = `AND({Accepted Therapist ID}=${formulaString(therapistId)},OR({Job Status}='Accepted',{Job Status}='In Progress'))`;
+  const records = await listAllByFormula(env, tableId(env, "JOBS"), formula);
+  return records
+    .filter((record) => ["accepted", "in progress"].includes(clean(selectName(record.fields?.["Job Status"]), 40).toLowerCase()))
+    .map((record) => {
+      const fields = record.fields || {};
+      const jobId = clean(fields["Job ID"], 80);
+      if (!jobId) throw dispatchError(503, "THERAPIST_SCHEDULE_READ_INCOMPLETE");
+      if (jobId && jobId === excludeJobId) return null;
+      const status = clean(selectName(fields["Job Status"]), 40).toLowerCase();
+      const start = Date.parse(clean(fields["Service Start At"], 80));
+      const duration = Number(fields["Duration Minutes"]);
+      if (!Number.isFinite(start) || !Number.isInteger(duration) || duration < 1 || duration > 1440) {
+        return { job_id: jobId, start_at: null, end_at: null };
+      }
+      const end = start + duration * 60_000;
+      if (status === "in progress") return { job_id: jobId, start_at: 0, end_at: Number.MAX_SAFE_INTEGER };
+      return end <= now ? null : { job_id: jobId, start_at: start, end_at: end };
+    })
+    .filter(Boolean);
+}
+
 async function readTherapistJob(env, therapistId, jobId) {
   const record = await findOwnedJob(env, jobId, therapistId);
   return record ? jobProjection(record) : null;
@@ -623,10 +760,29 @@ async function projectJobState(env, jobId, result) {
   if (!status) return;
   const now = new Date().toISOString();
   const fields = { "Job Status": status, "Updated At": now };
-  if (result.state === "IN_PROGRESS") fields["Started At"] = clean(result.at, 80) || now;
-  if (result.state === "COMPLETED") fields["Completed At"] = clean(result.at, 80) || now;
-  if (result.state === "CANCELLED") fields["Cancelled At"] = now;
+  if (result.state === "IN_PROGRESS") { fields["Started At"] = clean(result.at, 80) || now; fields["Travel Label"] = ""; fields["ETA Label"] = ""; }
+  if (result.state === "COMPLETED") { fields["Completed At"] = clean(result.at, 80) || now; fields["Travel Label"] = ""; fields["ETA Label"] = ""; }
+  if (result.state === "CANCELLED") { fields["Cancelled At"] = now; fields["Travel Label"] = ""; fields["ETA Label"] = ""; }
+  if (result.state === "IN_PROGRESS" || result.state === "COMPLETED" || result.state === "CANCELLED") {
+    const job = await findUniqueByField(env, tableId(env, "JOBS"), "Job ID", jobId);
+    if (!job) throw dispatchError(404, "RECORD_NOT_FOUND");
+    await updateTravelFields(env, job.id, fields);
+    return;
+  }
   await patchByField(env, tableId(env, "JOBS"), "Job ID", jobId, fields);
+}
+
+async function updateTravelFields(env, recordId, fields) {
+  const url = `${AIRTABLE_API}/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${encodeURIComponent(tableId(env, "JOBS"))}/${encodeURIComponent(recordId)}`;
+  return airtableFetch(url, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fields, typecast: false }) }, env);
+}
+
+function etaMinutesFromLabel(value) {
+  const text = clean(value, 80);
+  const hours = /^(\d{1,2}) ชม\.(?: (\d{1,2}) นาที)?$/.exec(text);
+  if (hours) return Number(hours[1]) * 60 + Number(hours[2] || 0);
+  const minutes = /^(\d{1,3}) นาที$/.exec(text);
+  return minutes ? Number(minutes[1]) : null;
 }
 
 async function projectOfferStatesFromSnapshot(env, jobId) {
@@ -790,6 +946,23 @@ async function listByFormula(env, table, formula, maxRecords = 100) {
   return Array.isArray(data.records) ? data.records : [];
 }
 
+async function listAllByFormula(env, table, formula) {
+  requireAirtable(env);
+  const records = [];
+  let offset = "";
+  for (let page = 0; page < 5; page += 1) {
+    const url = new URL(`${AIRTABLE_API}/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${encodeURIComponent(table)}`);
+    url.searchParams.set("pageSize", "100");
+    url.searchParams.set("filterByFormula", formula);
+    if (offset) url.searchParams.set("offset", offset);
+    const data = await airtableFetch(url, { method: "GET" }, env);
+    records.push(...(Array.isArray(data.records) ? data.records : []));
+    offset = clean(data.offset, 200);
+    if (!offset) return records;
+  }
+  throw dispatchError(503, "THERAPIST_SCHEDULE_READ_INCOMPLETE");
+}
+
 async function listAllRecords(env, table) {
   requireAirtable(env);
   const records = [];
@@ -832,6 +1005,7 @@ function requireDispatchConfig(env) {
   requireAirtable(env);
   for (const suffix of ["PREBOOKINGS", "THERAPISTS", "JOBS", "OFFERS"]) tableId(env, suffix);
   if (!env.MMS_DISPATCH_COORDINATOR?.get || !env.MMS_DISPATCH_COORDINATOR?.idFromName) throw dispatchError(503, "DISPATCH_COORDINATOR_NOT_CONFIGURED");
+  if (!env.MMS_THERAPIST_SCHEDULE_COORDINATOR?.get || !env.MMS_THERAPIST_SCHEDULE_COORDINATOR?.idFromName) throw dispatchError(503, "THERAPIST_SCHEDULE_COORDINATOR_NOT_CONFIGURED");
 }
 
 function requireAirtable(env) {
@@ -849,9 +1023,45 @@ function dispatchStub(env, jobId) {
   return env.MMS_DISPATCH_COORDINATOR.get(env.MMS_DISPATCH_COORDINATOR.idFromName(jobId));
 }
 
+function therapistScheduleStub(env, therapistId) {
+  const namespace = env.MMS_THERAPIST_SCHEDULE_COORDINATOR;
+  if (!namespace?.get || !namespace?.idFromName) throw dispatchError(503, "THERAPIST_SCHEDULE_COORDINATOR_NOT_CONFIGURED");
+  return namespace.get(namespace.idFromName(therapistId));
+}
+
+function serviceWindow(fields) {
+  const startAt = Date.parse(clean(fields?.["Service Start At"], 80));
+  const duration = Number(fields?.["Duration Minutes"]);
+  if (!Number.isFinite(startAt) || !Number.isInteger(duration) || duration < 15 || duration > 480) {
+    throw dispatchError(409, "MMS_SERVICE_WINDOW_UNAVAILABLE");
+  }
+  return { start_at: startAt, end_at: startAt + duration * 60_000 };
+}
+
+function scheduleReservationError(state) {
+  const codes = {
+    OVERLAP: "THERAPIST_SCHEDULE_CONFLICT",
+    SCHEDULE_UNKNOWN: "THERAPIST_SCHEDULE_UNCERTAIN",
+    INVALID_WINDOW: "MMS_SERVICE_WINDOW_UNAVAILABLE",
+    JOB_WINDOW_CONFLICT: "MMS_JOB_WINDOW_CONFLICT",
+  };
+  return dispatchError(409, codes[state] || "THERAPIST_SCHEDULE_UNAVAILABLE");
+}
+
 function requireInternalRequest(request, env) {
   const host = new URL(request.url).hostname.toLowerCase();
   if (host !== clean(env.MMS_INTERNAL_HOST || INTERNAL_HOST, 160).toLowerCase()) throw dispatchError(404, "NOT_FOUND");
+}
+
+function requireTrustedOrigin(request, env) {
+  const origin = clean(request.headers.get("Origin"), 300);
+  const allowed = new Set(String(env.ALLOWED_ORIGINS || "").split(",").map((item) => item.trim()).filter(Boolean));
+  if (!origin || !allowed.has(origin)) throw dispatchError(403, "ORIGIN_NOT_ALLOWED");
+}
+
+function safeJson(value) {
+  try { const parsed = JSON.parse(String(value || "{}")); return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {}; }
+  catch { return {}; }
 }
 
 function responseHeaders(request, env) {

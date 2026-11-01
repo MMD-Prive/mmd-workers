@@ -2,6 +2,7 @@ const MEMBER_PREBOOKINGS_PATH = "/internal/mms/member/prebookings";
 const INTERNAL_HOST = "mms.internal";
 const MEMBER_REF_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{2,119}$/;
 const PREBOOKING_ID_RE = /^mmspre_[a-f0-9]{24}$/;
+const AIRTABLE_API = "https://api.airtable.com/v0";
 
 export function isMmsMemberReadRequest(urlOrPath = "") {
   const path = typeof urlOrPath === "string" ? urlOrPath : urlOrPath?.pathname;
@@ -21,7 +22,8 @@ export async function handleMmsMemberReadRequest(request, env = {}) {
 
   try {
     const records = await listMemberPrebookings(env, memberRef);
-    return json({ ok: true, data: { requests: records.map(customerSafeRequest).filter(Boolean) } });
+    const travelRead = await readLiveTravelEtas(env, records);
+    return json({ ok: true, data: { requests: records.map((record) => customerSafeRequest(record, travelRead)).filter(Boolean) } });
   } catch (error) {
     console.error(JSON.stringify({ event: "mms_member_prebooking_read_failed", code: error?.code || "READ_FAILED" }));
     return json({ ok: false, error: { code: error?.code || "MMS_PREBOOKING_READ_FAILED", message: "MMS requests are temporarily unavailable." } }, Number(error?.status) || 502);
@@ -50,7 +52,42 @@ async function listMemberPrebookings(env, memberRef) {
   return Array.isArray(payload.records) ? payload.records : [];
 }
 
-function customerSafeRequest(record) {
+async function readLiveTravelEtas(env, prebookings) {
+  const ids = (Array.isArray(prebookings) ? prebookings : []).map((record) => safeId(record?.fields?.["Prebooking ID"])).filter(Boolean);
+  const jobsTable = String(env.AIRTABLE_JOBS_TABLE_ID || "").trim();
+  const token = String(env.AIRTABLE_API_TOKEN || "").trim();
+  const baseId = String(env.AIRTABLE_BASE_ID || "").trim();
+  if (!ids.length) return { byPrebooking: new Map(), checking: false };
+  if (!token || !/^app[A-Za-z0-9]{14}$/.test(baseId) || !/^tbl[A-Za-z0-9]{14}$/.test(jobsTable)) {
+    return { byPrebooking: new Map(), checking: true };
+  }
+  try {
+    const clauses = ids.slice(0, 50).map((id) => `{Prebooking ID}='${id}'`);
+    const formula = clauses.length === 1 ? clauses[0] : `OR(${clauses.join(",")})`;
+    const query = new URLSearchParams({ pageSize: "100", maxRecords: "100", filterByFormula: formula });
+    const response = await fetch(`${AIRTABLE_API}/${encodeURIComponent(baseId)}/${encodeURIComponent(jobsTable)}?${query}`, {
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+    });
+    if (!response.ok) return { byPrebooking: new Map(), checking: true };
+    const payload = await response.json().catch(() => ({}));
+    const result = new Map();
+    for (const record of Array.isArray(payload.records) ? payload.records : []) {
+      const fields = record?.fields || {};
+      const status = String(fields["Job Status"]?.name || fields["Job Status"] || "").trim().toLowerCase();
+      if (status !== "accepted") continue;
+      const id = safeId(fields["Prebooking ID"]);
+      if (!id) continue;
+      if (String(fields["Travel Label"] || "").trim() !== "กำลังเดินทาง") continue;
+      const minutes = etaMinutesFromLabel(String(fields["ETA Label"] || ""));
+      result.set(id, Number.isInteger(minutes) && minutes > 0 ? { status: "en_route", minutes } : { status: "checking" });
+    }
+    return { byPrebooking: result, checking: false };
+  } catch {
+    return { byPrebooking: new Map(), checking: true };
+  }
+}
+
+function customerSafeRequest(record, travelRead = { byPrebooking: new Map(), checking: false }) {
   const fields = record?.fields && typeof record.fields === "object" ? record.fields : {};
   const id = safeId(fields["Prebooking ID"]);
   const date = safeDate(fields["Service Date"]);
@@ -70,7 +107,18 @@ function customerSafeRequest(record) {
     skills: safeStringArray(fields["Selected Skills"], 6, 80),
     created_at: safeTimestamp(fields["Created At"]),
     updated_at: safeTimestamp(fields["Updated At"]),
+    ...(travelRead.checking ? { travel_status: "checking" } : {}),
+    ...(travelRead.byPrebooking.get(id)?.status === "checking" ? { travel_status: "checking" } : {}),
+    ...(travelRead.byPrebooking.get(id)?.status === "en_route" ? { travel_status: "en_route", eta_minutes: travelRead.byPrebooking.get(id).minutes } : {}),
   });
+}
+
+function etaMinutesFromLabel(label) {
+  const text = String(label || "").trim();
+  const hour = /^(\d{1,2}) ชม\.(?: (\d{1,2}) นาที)?$/.exec(text);
+  if (hour) return Number(hour[1]) * 60 + Number(hour[2] || 0);
+  const minute = /^(\d{1,3}) นาที$/.exec(text);
+  return minute ? Number(minute[1]) : null;
 }
 
 function safeStatus(value) {

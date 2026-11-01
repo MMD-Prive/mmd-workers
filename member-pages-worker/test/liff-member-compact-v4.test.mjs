@@ -62,15 +62,15 @@ test("authorized existing LINE members can bypass redundant ENTER without auto L
   assert.match(html,/window\.liff\.login\(\{ redirectUri: window\.location\.href \}\)/);
 });
 
-test("real progress milestones replace fabricated interval increments",async()=>{
+test("opening progress remains indeterminate until the real entry decision completes",async()=>{
   const html=await shell();
   assert.doesNotMatch(html,/const progressTimer = window\.setInterval/);
   assert.doesNotMatch(html,/loadingPercent \+ \(loadingPercent/);
-  assert.match(html,/setLoadingPercent\(55\)/);
-  assert.match(html,/setLoadingPercent\(85\)/);
-  assert.match(html,/setLoadingPercent\(100\)/);
-  assert.match(html,/id="hype-progress" max="100" value="10"/);
-  assert.match(html,/role="status" aria-label="กำลังเปิด MY MMD"/);
+  assert.doesNotMatch(html,/setLoadingPercent\(|hype-progress-number|hype-loader-img/);
+  // Current approved HYPE uses a progressbar whose percentage is set only from verified boot work.
+  assert.match(html,/<div id="hype-loader" class="hype-loader" role="status" aria-label="กำลังยืนยันตัวตน">/);
+  assert.match(html,/<div id="hype-progress" class="loading-bar" role="progressbar" aria-label="กำลังยืนยันตัวตน" aria-valuemin="0" aria-valuemax="100">/);
+  assert.match(html,/<span id="customer-boot-progress" class="customer-boot-progress" data-confirmed-percent="0">0%<\/span>/);
 });
 
 test("MMD NOW folds natively while Worker-gated mission, quick links and Kenji remain",async()=>{
@@ -84,7 +84,7 @@ test("MMD NOW folds natively while Worker-gated mission, quick links and Kenji r
   assert.match(html,/id="digital-needs-action"/);
   assert.match(html,/data-view="history"/);
   assert.match(html,/data-view="credits"/);
-  assert.match(html,/href="\/member\/kenji"/);
+  assert.match(html,/data-view="home" data-pm-dock/);
   assert.match(html,/class="digital-bangkok-trace"[^>]*aria-hidden="true"/);
 });
 
@@ -98,4 +98,11 @@ test("LIFF compact CSS has full safe area, contrast and reduced-motion without m
   assert.match(MY_MMD_LIFF_COMPACT_V4_CSS,/:focus-visible/);
   assert.match(MY_MMD_LIFF_COMPACT_V4_CSS,/digital-history-review\[hidden\]\{display:none!important\}/);
   assert.doesNotMatch(MY_MMD_LIFF_COMPACT_V4_CSS,/\.signup-mode\)\s*\{[^}]*display:none/);
+});
+
+test("LIFF shell renders Compact V4 CSS exactly once after legacy travel styles", async()=>{
+  const html = await shell();
+  const occurrences = html.split("--v4-bg:#0b0e10").length - 1;
+  assert.equal(occurrences, 1);
+  assert.ok(html.indexOf("--v4-bg:#0b0e10") > html.indexOf(".mt9{padding:14px 0"));
 });

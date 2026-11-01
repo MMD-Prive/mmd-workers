@@ -1,0 +1,39 @@
+name: Release MY MMD Renewal 2026-10-27
+
+on:
+  workflow_dispatch:
+    inputs:
+      approval_ref:
+        description: 'User production approval reference'
+        required: true
+        type: string
+      approved_source_sha:
+        description: 'Exact merged source commit approved for Renewal'
+        required: true
+        type: string
+
+concurrency:
+  group: my-mmd-renewal-production-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main' && inputs.approved_source_sha == '06260685b1633ce3884da3329af8bb05222f148b' && inputs.approval_ref != ''
+    runs-on: ubuntu-latest
+    environment: mmd-production-mutation
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check production approval and candidate sources
+        run: |
+          test '${{ inputs.approved_source_sha }}' = '06260685b1633ce3884da3329af8bb05222f148b'
+          test -f release/my-mmd-renewal-20261027/payments-worker.js
+          test -f release/my-mmd-renewal-20261027/member-pages-worker.js
+          node --check scripts/release-my-mmd-renewal.mjs
+      - name: Release scoped Worker versions and enable Renewal
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node scripts/release-my-mmd-renewal.mjs

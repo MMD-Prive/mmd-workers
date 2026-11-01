@@ -1,6 +1,9 @@
 name: Client History Reconciliation Dry Run
 
 on:
+  # Monthly aggregate-only history recheck; 02:00 UTC is 09:00 Bangkok time.
+  schedule:
+    - cron: "0 2 1 * *"
   push:
     branches: [main]
     paths:

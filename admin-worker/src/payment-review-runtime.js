@@ -1,3 +1,6 @@
+import { previewProofSessionBinding, bindProofSession, bindingNote } from "./payment-proof-session-binding.js";
+import { paymentSessionProofs } from "./payment-session-proofs.js";
+import { paymentJobSlipSummary } from "./payment-job-slip-summary.js";
 import { internalEvidenceReference, slipTransferAt, transferTimestamp } from "./slip-transfer-evidence.js";
 import { correctPaymentEvidence } from "./payment-evidence-correction.js";
 import { extractSlip } from "./historical-slip-backfill-runtime.js";
@@ -10,10 +13,11 @@ import {
   resolveOperatorPaymentContext,
 } from "./payment-review-owner-context.js";
 import { dispatchApprovedJobLinks } from "./payment-approved-job-link-dispatch.js";
-import { enrichPaymentReviewContext } from "./payment-review-display-context.js";
+import { exactRows, enrichPaymentReviewContext } from "./payment-review-display-context.js";
 import { discoveryTables, enrichDiscoveryNames, recentPaymentJobs } from "./payment-review-discovery.js";
 import { paymentConfirmationFollowthrough } from "./payment-confirmation-followthrough.js";
 import { previewCustomerChange, resolveCustomerChange } from "./customer-change-resolution.js";
+import { inspectPaymentProof } from "../../shared/payment-proof-precheck.mjs";
 
 const QUEUE_PATH = "/v1/admin/payments/review-queue";
 const REVIEW_PATH = "/v1/admin/payments/review";
@@ -100,11 +104,11 @@ async function getPaymentEvidence(request, env) {
 
 // Read-only OCR retry of the original private image. This fills a review draft;
 // it does not patch evidence, certify the reading, settle money or notify anyone.
-async function previewSlipExtraction(env, actor, body) {
+async function previewSlipExtraction(env, actor, body, loadedProof = null) {
   if (!["owner", "admin"].includes(actor.role)) throw httpError(403, "evidence_extraction_forbidden");
   const proofId = safeText(body.proof_id, 120);
   if (!proofId) throw httpError(400, "proof_id_required");
-  const proof = await loadProof(env, proofId);
+  const proof = loadedProof || await loadProof(env, proofId);
   if (!proof) throw httpError(404, "payment_proof_not_found");
   const item = safeQueueItem(proof);
   if (!item?.reviewable || item.historical_backfill) throw httpError(409, "payment_proof_not_reviewable");
@@ -136,6 +140,14 @@ async function listReviewQueue(request, env, actor) {
   if (url.searchParams.get("view") === "confirmation") {
     return json(await followthrough(env, Object.fromEntries(url.searchParams)));
   }
+  if (url.searchParams.get("view") === "job_slip_summary") {
+    const summary = await paymentJobSlipSummary(url.searchParams.get("session_id") || "", {
+      page: (table, params) => airtablePage(env, table, params),
+      sessionsTable: discoveryTables(env).sessions, paymentsTable: paymentsTable(env), proofsTable: paymentProofTable(env), env,
+    });
+    return json({ ok: true, summary });
+  }
+  if (url.searchParams.get("view") === "bind_session") return json(await previewProofSessionBinding(Object.fromEntries(url.searchParams), actor, proofBindingDependencies(env, actor)));
   const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 30, 1), 100);
   const discovery = {
     list: (table, params) => airtableList(env, table, params),
@@ -147,7 +159,8 @@ async function listReviewQueue(request, env, actor) {
     return json({ ok: true, authority: "payments-worker", source: "sessions", ordering: "created_at_desc", limit, items: [], jobs });
   }
   const proofId = safeText(url.searchParams.get("proof_id"), 120);
-  const records = await airtableList(env, paymentProofTable(env), {
+  const sessionId = url.searchParams.get("session_id") || "";
+  const records = sessionId ? await paymentSessionProofs(sessionId, { page: discovery.page, sessionsTable: discovery.tables.sessions, paymentsTable: paymentsTable(env), proofsTable: paymentProofTable(env) }) : await airtableList(env, paymentProofTable(env), {
     filterByFormula: proofId ? `AND(${reviewablePaymentProofFormula()},{proof_id}='${formulaValue(proofId)}')` : reviewablePaymentProofFormula(),
     maxRecords: Math.min(Math.max(limit * 4, limit), 100),
     sort: [{ field: "created_at", direction: "desc" }],
@@ -158,7 +171,7 @@ async function listReviewQueue(request, env, actor) {
     .filter((item) => item.reviewable)
     .filter((item) => !proofId || item.proof_id === proofId)
     .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")))
-    .slice(0, limit);
+    .slice(0, sessionId ? records.length : limit);
 
   if (url.searchParams.get("include_context") === "1") {
     items = await enrichPaymentReviewContext(items, records, {
@@ -169,8 +182,11 @@ async function listReviewQueue(request, env, actor) {
     items = await enrichDiscoveryNames(items, discovery);
   }
 
+  if (sessionId) items = items.map(item => ({ ...item, session_id: sessionId }));
   return json({
     ok: true,
+    session_id: sessionId || null,
+    scope: sessionId ? "session" : "recent",
     authority: "payments-worker",
     source: "payment_proofs",
     ordering: "created_at_desc",
@@ -211,9 +227,54 @@ async function saveEvidenceCorrection(request, env, actor, body, internalReferen
   });
 }
 
+function proofBindingDependencies(env, actor) {
+  return {
+    loadLinkedProofs: ids => exactRows((table,params) => airtableList(env,table,params), paymentProofTable(env), "RECORD_ID()", ids),
+    env, loadProof: id => loadProof(env, id), loadSession: id => findSessionBySessionId(env, id),
+    loadPayments: id => airtableList(env, paymentsTable(env), {filterByFormula: `{session_id}='${formulaValue(id)}'`, requireComplete: true}),
+    audit: entry => airtableCreate(env, accessLogTable(env), {
+      Action: "payment_proof_session_binding", Target: "payment_proof", Result: "success", Reason: "bind_session_only",
+      "Event ID": `proof_binding_${entry.key}`, "Created At (ISO)": entry.bound_at,
+      "Source Ref": `proof-binding:${entry.key}`, Actor: actor.id,
+      "After JSON": JSON.stringify(entry),
+    }),
+    patch: async (id, fields) => {
+      const response = await airtableFetch(env, new Request(`${airtableUrl(env, paymentProofTable(env))}/${encodeURIComponent(id)}`, {
+        method: "PATCH", headers: {Authorization: `Bearer ${clean(env.AIRTABLE_API_KEY)}`, "Content-Type": "application/json"},
+        body: JSON.stringify({fields, typecast: false}),
+      }));
+      if (!response.ok) throw httpError(503, "proof_binding_write_unconfirmed");
+    },
+  };
+}
+
 async function commitReview(request, env, actor) {
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== "object" || Array.isArray(body)) throw httpError(400, "invalid_review_request");
+  if (body.action === "precheck_evidence") {
+    if (!["owner", "admin"].includes(actor.role)) throw httpError(403, "evidence_extraction_forbidden");
+    const proofId = safeText(body.proof_id, 120);
+    if (!/^[A-Za-z0-9_-]{1,120}$/.test(proofId)) throw httpError(400, "proof_id_required");
+    const proof = await loadProof(env, proofId);
+    if (!proof) throw httpError(404, "payment_proof_not_found");
+    let extraction = null, extractionError = "";
+    try { extraction = await previewSlipExtraction(env, actor, body, proof); }
+    catch (error) { extractionError = safeCode(error.message); }
+    const note = parseNote(proof.fields?.note);
+    const read = extraction?.result;
+    const inspect = read ? { ...proof, fields: { ...proof.fields, note: JSON.stringify({ ...note, extraction: {
+      ...note.extraction, bank_transaction_ref: read.payment_ref || note.extraction?.bank_transaction_ref,
+      amount_thb: read.amount_thb, paid_at: read.paid_at,
+    } }) } } : proof;
+    const { canonical, ...precheck } = await inspectPaymentProof(env, inspect);
+    const expected = Number(proof.fields?.amount_thb);
+    const mismatch = read?.amount_thb > 0 && expected > 0 && Math.abs(read.amount_thb - expected) > .009;
+    return json({ ok: true, action: "precheck_evidence", proof_id: proofId, precheck,
+      extraction: read || null, extraction_error: extractionError || extraction?.extraction_error || "",
+      amount_matches_record: read?.amount_thb > 0 && expected > 0 ? !mismatch : null,
+      money_truth_changed: false, evidence_changed: false });
+  }
+  if (body.action === "bind_session") return json(await bindProofSession({...body, idempotency_key: request.headers.get("Idempotency-Key") || body.idempotency_key}, actor, proofBindingDependencies(env, actor)));
   if (body.action === "correct_evidence") return json(await saveEvidenceCorrection(request, env, actor, body));
   if (body.action === "extract_evidence") return json(await previewSlipExtraction(env, actor, body));
   if (body.action === "retry_confirmation") return json(await followthrough(env, body, { retry: true, actor }));
@@ -247,6 +308,7 @@ async function commitReview(request, env, actor) {
   const item = safeQueueItem(proof);
   if (!item || item.historical_backfill) throw httpError(409, "historical_proof_requires_historical_backfill_review");
   if (!item.reviewable) throw httpError(409, "payment_proof_not_reviewable");
+  if (decision === "approve" && bindingNote(proof.fields?.note).session_binding?.duplicate_of) throw httpError(409, "proof_already_received_duplicate_evidence");
 
   if (decision === "issue" || decision === "reject") {
     const audit = await writeAudit(env, {
@@ -718,9 +780,10 @@ function safeQueueItem(record) {
     bank_reference_optional: true,
     reference_kind: note.manual_evidence_review?.reference_kind || null,
     created_at: isoOrText(fields.created_at || fields["Created At"] || fields.createdTime || record.createdTime),
-    session_id: safeText(fields.session_id, 180),
+    session_id: safeText(fields.session_id || (linkedRecordIds(fields.session).includes(note.session_binding?.session_record_id) ? note.session_binding?.session_id : ""), 180),
+    session_binding: note.session_binding ? {bound: true, duplicate_of_proof_id: note.session_binding.duplicate_of?.proof_id || null} : null,
     member_email: normalizeEmail(fields.member_email || fields.email),
-    payment_stage: safeCode(fields.payment_stage || fields.payment_type || paymentIntelligence?.inferred_stage || ""),
+    payment_stage: safeCode(fields.payment_stage || fields.payment_type || note.session_binding?.payment_stage || paymentIntelligence?.inferred_stage || ""),
     tracking_kind: paymentTrackingKind(paymentIntelligence),
     payment_intelligence: paymentIntelligence,
     inferred_label: paymentInferenceLabel(paymentIntelligence),
@@ -737,7 +800,7 @@ function safeQueueItem(record) {
     extraction_error: extractionError,
     context_issues: contextIssues,
     review_lane: contextIssues.length ? "needs_enrichment" : "owner_review",
-    can_approve: contextIssues.length === 0,
+    can_approve: contextIssues.length === 0 && !note.session_binding?.duplicate_of,
     reviewable,
     historical_backfill: historical,
     operator_context_supported: true,

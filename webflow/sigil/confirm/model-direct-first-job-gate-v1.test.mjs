@@ -9,7 +9,7 @@ const consoleLinks = readFileSync(new URL("../model/model-console-rules-links-v1
 test("confirmation details are intercepted behind canonical direct-job gate",()=>{
   assert.match(confirm,/\/v1\/model\/direct-job-gate\/status/);
   assert.match(confirm,/url\.pathname !== DETAILS/);
-  assert.match(confirm,/return new Promise\(\(\) => \{\}\)/);
+  assert.match(confirm,/throw new Error\("job_day_rules_required"\)/);
   assert.match(confirm,/อ่านกติกาวันทำงาน/);
   assert.match(confirm,/ก่อนดูรายละเอียดงานแรก/);
 });

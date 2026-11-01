@@ -234,3 +234,31 @@ test("Paid label alone cannot promote unverified final lifecycle", async () => {
   assert.equal((await response.json()).final_payment_confirmed, false);
   assert.equal(h.sessionByName.fields.status, "arrived");
 });
+
+test('configured MMD projection uses the single per-session cache writer instead of a second legacy PATCH', async () => {
+  const h = harness(); const tasks = [];
+  h.env.SESSION_PAID_PROJECTION_COORDINATOR = {
+    idFromName(name) { assert.equal(name, 'session:sess_final_flow'); return name; },
+    get() { return { async fetch(url, init) { tasks.push(JSON.parse(init.body)); return Response.json({ status: 'updated', paid_received_sum: 3000, remaining_amount_thb: 7000 }); } }; },
+  };
+  const response = await handleFinalPaymentFlow(request(FINAL_PAYMENT_ACTIVATE_PATH), h.env);
+  assert.equal(response.status, 200); assert.equal(tasks.length, 1);
+  assert.equal(h.sessionPatches.length, 0, 'do not overwrite a serialized result with an earlier summary');
+});
+
+test('configured projector excludes MMS and retains the existing final-flow behavior for that lane', async () => {
+  const h = harness(); h.env.SESSION_PAID_PROJECTION_COORDINATOR = {
+    idFromName(name) { return name; }, get() { return { async fetch() { return Response.json({ status: 'skipped', reason: 'excluded_lane' }); } }; },
+  };
+  const response = await handleFinalPaymentFlow(request(FINAL_PAYMENT_ACTIVATE_PATH), h.env);
+  assert.equal(response.status, 200); assert.equal(h.sessionPatches.length, 1);
+  assert.deepEqual(h.sessionPatches[0], { [SESSION_IDS.received]: 3000, [SESSION_IDS.due]: 7000 });
+});
+
+test('unknown job lane cannot bypass the new coordinator through the legacy cache writer', async () => {
+  const h = harness(); h.env.SESSION_PAID_PROJECTION_COORDINATOR = {
+    idFromName(x) { return x; }, get() { return { async fetch() { return Response.json({ status: 'skipped', reason: 'unknown_job_lane' }); } }; },
+  };
+  const response = await handleFinalPaymentFlow(request(FINAL_PAYMENT_ACTIVATE_PATH), h.env);
+  assert.equal(response.status, 503); assert.equal(h.sessionPatches.length, 0);
+});

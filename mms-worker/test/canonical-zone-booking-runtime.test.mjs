@@ -95,6 +95,24 @@ function therapists() {
         Status: "Active",
       },
     },
+    {
+      id: "recTherapistCoverageZone",
+      fields: {
+        "Therapist ID": "mmsther_coverage",
+        "Display Name": "Coverage",
+        "Customer Gender Scope": "ได้ทั้งคู่",
+        "Verified Skills": ["Aroma Therapy Oil Massage"],
+        "Base Service Zone": [],
+        "Coverage Service Zones": [ZONE_A],
+        "Base Zone": "Sukhumvit",
+        "Coverage Zones": [],
+        "Availability Status": "Available",
+        "Matching Enabled": true,
+        "Manual Review Only": false,
+        "MY MMS Access": "Approved",
+        Status: "Active",
+      },
+    },
   ];
 }
 
@@ -130,7 +148,7 @@ test("canonical Zone Code uses exact linked Service Zone rather than broad legac
     const payload = await response.json();
     assert.equal(payload.ok, true);
     assert.equal(payload.data.service_zone.code, "BKK-SUKHUMVIT");
-    assert.deepEqual(payload.data.matches.map((item) => item.therapist_id), ["mmsther_exact"]);
+    assert.deepEqual(payload.data.matches.map((item) => item.therapist_id), ["mmsther_exact", "mmsther_coverage"]);
     assert.equal(payload.data.matches[0].service_zone_code, "BKK-SUKHUMVIT");
     assert.equal(Object.hasOwn(payload.data.matches[0], "base_zone"), false);
     assert.equal(Object.hasOwn(payload.data.matches[0], "coverage_zones"), false);
@@ -155,6 +173,8 @@ test("canonical prebooking and job projections persist linked Service Zone, neve
   assert.match(source, /therapistCoversCanonicalZone/);
   assert.match(source, /Base Service Zone/);
   assert.match(source, /Coverage Service Zones/);
+  assert.match(source, /rotation_key: rotationKey/);
+  assert.match(source, /isBaseZone \? legacyZone : ""/);
   assert.match(source, /MMS_DISPATCH_COORDINATOR/);
   assert.match(source, /NO_AVAILABLE_APPROVED_THERAPIST/);
   assert.match(source, /"MY MMS Access"/);

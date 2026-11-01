@@ -1,3 +1,4 @@
+import { serializeMemberWorlds } from "../../shared/member-worlds.mjs";
 import { getLiffGatewayStore, LiffGatewayStorageError } from "./liff-gateway-airtable.js";
 import { CareBackStoreError, getCareBackStore } from "./care-back-claim-store.js";
 import { assertBirthdayWishOwnership, BirthdayWishStorageError, getBirthdayWishStore } from "./care-back-birthday-wish-store.js";
@@ -824,8 +825,8 @@ export async function handleMemberProfile(request, env = {}) {
   if (!hasFoundationBindings(env)) return unavailable("LIFF_IDENTITY_FOUNDATION_NOT_CONFIGURED");
   const auth = await authenticateAndRotate(request, env);
   if (!auth.ok) return auth.response;
-  if (!auth.session.member_exists || !auth.session.member_id || !auth.session.member_profile) {
-    await refreshStaleMemberSession(env, auth.session);
+  if (!auth.session.member_exists || !auth.session.member_id || !auth.session.member_profile?.membership_worlds && !auth.session.member_profile?.customer_360?.membership_worlds) {
+    await refreshStaleMemberSession(env, auth.session, true);
   }
   if (!auth.session.member_exists || !auth.session.member_id || !auth.session.member_profile) {
     return saveRotatedError(env, auth, "MEMBER_PROFILE_NOT_FOUND", "No verified member profile is available for this LINE account.", 404);
@@ -835,7 +836,8 @@ export async function handleMemberProfile(request, env = {}) {
   } catch (error) {
     return gatewayStorageFailure(error);
   }
-  return json({ ok: true, data: safeMemberProfile(auth.session.member_profile) }, 200, {
+  const memberBinding = await keyedDigest(env, `member-binding:${auth.session.member_id}`);
+  return json({ ok: true, data: { ...safeMemberProfile(auth.session.member_profile), member_binding: memberBinding } }, 200, {
     cookies: [sessionCookie(auth.newToken, SESSION_TTL_SECONDS)],
   });
 }
@@ -915,8 +917,8 @@ export async function handleMemberDashboard(request, env = {}) {
 
   const auth = await authenticateAndRotate(request, env);
   if (!auth.ok) return dashboardError("checking", 401);
-  if (!auth.session.member_exists || !auth.session.member_id || !auth.session.member_profile) {
-    await refreshStaleMemberSession(env, auth.session);
+  if (!auth.session.member_exists || !auth.session.member_id || !auth.session.member_profile?.membership_worlds && !auth.session.member_profile?.customer_360?.membership_worlds) {
+    await refreshStaleMemberSession(env, auth.session, true);
   }
   if (!auth.session.member_exists || !auth.session.member_id || !auth.session.member_profile) {
     try {
@@ -1006,6 +1008,7 @@ function buildMemberDashboardData(profile = {}, request) {
       tier,
       membership_status: membershipStatus,
       membership_expires_at: profile.membership_expires_at || null,
+      worlds: profileWorlds(profile),
     },
     points,
     history,
@@ -1027,10 +1030,18 @@ function dashboardDisplayName(value) {
   return normalizeCustomerText(value, 120) || "สมาชิก MMD";
 }
 
+function profileWorlds(profile = {}) {
+  const worlds = serializeMemberWorlds(profile.membership_worlds || profile.customer_360?.membership_worlds);
+  if (["blocked", "suspended", "revoked"].includes(profile.membership_status)) {
+    for (const key of ["public", "sigil"]) if (worlds[key].tier) worlds[key].state = "restricted";
+  }
+  return worlds;
+}
+
 function dashboardTier(profile = {}) {
   const value = String(profile.tier || "").trim();
   if (!value || /^svip$/i.test(value)) return checkingField("member_profile");
-  if (!["Member", "Standard", "Premium", "VIP", "Black Card"].includes(value)) return checkingField("member_profile");
+  if (!["Member", "MMD Member", "Elite", "Red Card", "Standard", "Premium", "VIP", "Black Card"].includes(value)) return checkingField("member_profile");
   return verifiedField(value, "member_profile_resolver");
 }
 
@@ -1495,8 +1506,8 @@ async function resolveMemberIdentity(env, lineUserId) {
     clearTimeout(timeout);
   }
 }
-async function refreshStaleMemberSession(env, session) {
-  if (!session || session.member_exists === true && session.member_id && session.member_profile) {
+async function refreshStaleMemberSession(env, session, includeWorlds = false) {
+  if (!session || session.member_exists === true && session.member_id && session.member_profile && (!includeWorlds || session.member_profile?.membership_worlds?.schema === "member_worlds_v1" || session.member_profile?.customer_360?.membership_worlds?.schema === "member_worlds_v1")) {
     return { refreshed: false, reason: "session_already_resolved" };
   }
   const lineUserId = String(session?.line_user_id || "").trim();
@@ -1506,6 +1517,15 @@ async function refreshStaleMemberSession(env, session) {
   if (!resolved?.ok) return { refreshed: false, reason: "member_resolver_unavailable" };
   if (resolved.exists !== true || !resolved.member_id || !resolved.profile) {
     return { refreshed: false, reason: "member_not_found" };
+  }
+
+  if (session.member_exists === true && session.member_id && session.member_profile) {
+    if (session.member_id !== resolved.member_id) return { refreshed: false, reason: "member_identity_changed" };
+    // Schema migration only: never replace existing blocking, expiry or identity.
+    const worlds = resolved.profile.membership_worlds || resolved.profile.customer_360?.membership_worlds;
+    if (worlds?.schema !== "member_worlds_v1") return { refreshed: false, reason: "worlds_projection_unavailable" };
+    session.member_profile.membership_worlds = profileWorlds({ ...session.member_profile, membership_worlds: worlds });
+    return { refreshed: true, reason: "membership_worlds_projected" };
   }
 
   session.member_exists = true;
@@ -1905,7 +1925,7 @@ function fallbackScreen(key) {
     };
   }
   if (key === "renew_member_lookup") {
-    return { key, copy: "HYPE จะตรวจสอบข้อมูลสมาชิกอย่างระมัดระวังก่อนพาไปต่อครับ", actions: [] };
+    return { key, copy: "ยังยืนยันข้อมูลสมาชิกจาก LINE นี้ไม่ได้ครับ กรุณาติดต่อเปอร์ให้ตรวจการผูกบัญชีก่อนชำระเงินหรือส่งสลิป", actions: [] };
   }
   if (key === "status_result") {
     return { key, copy: "HYPE กำลังดูแลเส้นทางตรวจสอบข้อมูลสมาชิกให้อย่างปลอดภัยครับ", actions: [] };

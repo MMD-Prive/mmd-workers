@@ -18,7 +18,10 @@ const normalized = (text) =>
     .normalize("NFKC")
     .replace(/[๐-๙]/g, (x) => String(THAI_DIGITS.indexOf(x)))
     .replace(/\r/g, "")
-    .replace(/[\u200b-\u200d\ufeff]/g, "");
+    .replace(/[\u200b-\u200d\ufeff]/g, "")
+    // Thai OCR can separate every consonant/vowel. Keep numeric and line boundaries.
+    .replace(/([\u0e01-\u0e4e])[ \t]+(?=[\u0e01-\u0e4e])/g, "$1")
+    .replace(/\u0e4d\u0e32/g, "\u0e33");
 const monthNumber = (token) =>
   months.findIndex((list) =>
     list.includes(token.toLowerCase().replace(/[.\s]/g, "")),
@@ -74,7 +77,7 @@ export function readTransferTime(text) {
   ))
     add(m, isoDate(m[1], m[2], m[3]));
   for (const m of raw.matchAll(
-    /(?<!\d)(\d{1,2})\s+([A-Za-zก-๙.]+)\s+(\d{4}|\d{2})(?!\d)/g,
+    /(?<!\d)(\d{1,2})\s+([A-Za-zก-๙. \t]+?)\s+(\d{4}|\d{2})(?!\d)/g,
   )) {
     const month = monthNumber(m[2]);
     if (month) add(m, isoDate(m[1], month, m[3]));

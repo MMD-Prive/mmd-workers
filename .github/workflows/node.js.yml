@@ -29,9 +29,13 @@ jobs:
     - run: npm run test:deploy-notify
     - run: bash -n scripts/deploy-worker.sh
     - run: npm ci
+    - name: Preserve approved EMs and GWs V3 galleries
+      run: node --experimental-global-webcrypto --test member-dashboard-chat-worker/test/album-v3-release.test.mjs
     - run: npm run build --if-present
     - run: node --test scripts/member-dashboard-payment-acceptance-gate.test.mjs
     - run: node --test scripts/member-pages-deploy-workflow.test.mjs
+    - name: Check member-pages owner approval and credential-free boundary contracts (mock only)
+      run: node --experimental-global-webcrypto --test scripts/member-pages-owner-approval.test.mjs scripts/member-pages-code-only-release.test.mjs scripts/member-pages-uploaded-recovery.test.mjs scripts/member-pages-promotion-only-recovery.test.mjs scripts/member-pages-recovery-adapter.test.mjs scripts/member-pages-artifact-delta.test.mjs scripts/member-pages-renewal-artifact.test.mjs scripts/member-pages-renewal-activation.test.mjs
     - name: Check Kenji P4 canonical identity and Memory independence
       run: node --experimental-global-webcrypto --test member-dashboard-chat-worker/test/kenji-p4-canonical-identity.test.mjs member-dashboard-chat-worker/test/kenji-canonical-client-memory-v2.test.mjs member-dashboard-chat-worker/test/kenji-lv5-line-action-execution.test.mjs
     - name: Check bounded Rich Menu conversation and model-off contract

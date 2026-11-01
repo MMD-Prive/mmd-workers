@@ -152,7 +152,7 @@ describe("LIFF payments-worker binding", () => {
     assert.equal(payload.data.route_after_liff, "/member/payments");
     assert.equal(payload.data.payment_summary.payment_stage, "membership");
     assert.equal(payload.data.payment_summary.amount_thb, 2500);
-    assert.equal(payload.data.payment_summary.renewal_price_rule, "expired_less_than_one_year_premium");
+    assert.equal(payload.data.payment_summary.renewal_price_rule, "expired_within_90_days_premium");
     assert.equal(payload.data.payment_summary.verification_status, "pending");
     assert.deepEqual(payload.data.grants, { membership: false, points: false, payment_status: false, private_access: false });
 
@@ -165,7 +165,7 @@ describe("LIFF payments-worker binding", () => {
       amount: 2500,
       package_code: "premium",
       payment_method: "promptpay",
-      notes: "source=line_liff;intent=renew;requested_stage=renewal;renewal_price_rule=expired_less_than_one_year_premium;service_spend_365_thb=0",
+      notes: "source=line_liff;intent=renew;requested_stage=renewal;renewal_price_rule=expired_within_90_days_premium",
     });
 
     assert.equal(fx.gateway.upserts.length, 1);

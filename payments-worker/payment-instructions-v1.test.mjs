@@ -400,12 +400,28 @@ test("session extension payment uses the job profile", async () => {
   assert.equal(payload.instructions.bank_transfer.account_number, "2222222222");
 });
 
-test("membership, renewal and black card payments use the membership profile", async () => {
-  for (const paymentType of ["membership", "renewal", "blackcard", "black_card", "red_card", "elite", "mmd_member"]) {
+test("membership and other configured product stages use the membership profile", async () => {
+  for (const paymentType of ["membership", "renewal", "red_card", "elite", "mmd_member"]) {
     const payload = await instructionsFor({ ...details({ stage: "" }), payment_type: paymentType });
     assert.equal(payload.instruction_profile, "mmd_membership_v1", paymentType);
     assert.equal(payload.instructions.bank_transfer.account_number, "3333333333", paymentType);
     assert.doesNotMatch(JSON.stringify(payload), /1111111111|2222222222|4444444444/);
+  }
+});
+
+test("Black Card checkout stays closed until both owner policy and active package authorize sale", async () => {
+  for (const detailsPayload of [
+    { ...details({ stage: "" }), payment_type: "blackcard", package_code: "blackcard" },
+    { ...details({ stage: "full" }), payment_type: "blackcard", package_code: "blackcard" },
+  ]) {
+    const queried = [];
+    const env = envWithRows(ALL_PROFILES(), queried);
+    const response = await handlePaymentInstructions(request(), env, detailsFetcher(detailsPayload));
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.available, false);
+    assert.equal(payload.reason, "blackcard_not_activated_for_sale");
+    assert.equal(queried.length, 0, "closed policy must stop before reading any payment destinations");
   }
 });
 
@@ -482,4 +498,41 @@ test("each profile controls its own methods (bank transfer can stay off for one 
   const job = await instructionsFor(details({ stage: "final" }), rows);
   assert.equal(job.instruction_profile, "mmd_job_v1");
   assert.equal(job.instructions.bank_transfer.enabled, true);
+});
+
+test("canonical Black Card package cannot use a booking token or a browser product override", async () => {
+  for (const payload of [
+    { ...details({ stage: 'full' }), package_code: 'blackcard', payment_type: 'full' },
+    { ...details({ stage: 'blackcard' }), package_code: 'standard', payment_type: 'blackcard' },
+    { ...details({ stage: '' }), payment_type: 'blackcard' },
+  ]) {
+    const queried = [], env = envWithRows(ALL_PROFILES(), queried);
+    env.BLACKCARD_SALES_ENABLED = 'true';
+    const response = await handlePaymentInstructions(request({ t: 'signed', package_code: 'blackcard', payment_type: 'blackcard', amount: 35000 }), env, detailsFetcher(payload));
+    const d = await response.json();
+    assert.equal(d.available, false); assert.equal(d.reason, 'blackcard_subject_mismatch'); assert.equal(d.instructions, undefined);
+    assert.equal(queried.length, 0);
+  }
+});
+
+test("Black Card policy lookup failure never exposes a bank or PayPal destination", async () => {
+  const env = envWith(); env.BLACKCARD_SALES_ENABLED = 'true'; env.AIRTABLE_HTTP.fetch = async () => { throw new Error('fixture outage'); };
+  const r = await handlePaymentInstructions(request(), env, detailsFetcher({ ...details(), package_code: 'blackcard', payment_type: 'blackcard' }));
+  assert.equal(r.status, 503); assert.equal((await r.json()).error, 'blackcard_policy_unavailable');
+});
+
+test('activated policy/package fixture uses the membership profile even when the payment stage is full', async () => {
+  const queried = [], env = envWithRows(ALL_PROFILES(), queried), configured = env.AIRTABLE_HTTP.fetch.bind(env.AIRTABLE_HTTP);
+  env.BLACKCARD_SALES_ENABLED = 'true';
+  env.AIRTABLE_HTTP.fetch = async (input, init) => {
+    const u = new URL(typeof input === 'string' ? input : input.url);
+    if (u.pathname.endsWith('/tbl1SaC6KrcmsdTcc')) return Response.json({ records: [{ fields: { fldenQShc6H828u7K: 'Owner Confirmed / Activated', fldwQS9RrBw144y2u: 35000, fld3skEnauU7GbR3b: 3 } }] });
+    if (u.pathname.endsWith('/tblg2z8dENx75yHka')) return Response.json({ records: [{ fields: { fldWtPdGpHi6YSwP2: 'blackcard', fldavrXJPlMxjCY65: true, fldoEWuXFM1NEOpTq: 35000, fld5yB479gSiwUUMW: 1095, fldbyKiFwelihSsjn: 'blackcard' } }] });
+    return configured(input, init);
+  };
+  const r = await handlePaymentInstructions(request({ amount: 1, return_url: 'https://evil.example', t: 'signed' }), env, detailsFetcher({ ...details({ stage: 'full', amount_due_thb: 35000 }), package_code: 'blackcard', payment_type: 'membership' }));
+  const d = await r.json(); assert.equal(d.available, true); assert.equal(d.instruction_profile, 'mmd_membership_v1');
+  assert.equal(d.amount_due_thb, 35000); assert.equal(d.instructions.bank_transfer.account_number, '3333333333');
+  const stale = await handlePaymentInstructions(request({ amount: 35000, t: 'signed' }), env, detailsFetcher({ ...details({ stage: 'full', amount_due_thb: 25000 }), package_code: 'blackcard', payment_type: 'membership' }));
+  const unavailable = await stale.json(); assert.equal(unavailable.available, false); assert.equal(unavailable.reason, 'blackcard_amount_mismatch'); assert.equal(unavailable.instructions, undefined);
 });

@@ -270,6 +270,7 @@ test("profile adapter exposes only explicitly safe masked contact fields", async
     "/member/api/liff/profile": {
       ok: true,
       data: {
+        member_binding: "a".repeat(64),
         display_name: "คุณหนุ่ย",
         line_display_name: "Nui",
         email_masked: "n•••@example.com",
@@ -287,6 +288,7 @@ test("profile adapter exposes only explicitly safe masked contact fields", async
   const payload = await response.json();
 
   assert.equal(payload.displayName, "คุณหนุ่ย");
+  assert.equal(payload.memberRef, "a".repeat(64));
   assert.equal(payload.lineDisplayName, "Nui");
   assert.equal(payload.emailMasked, "n•••@example.com");
   assert.equal(payload.emailSafeToDisplay, true);
@@ -343,7 +345,7 @@ test("coupon adapter never promotes legacy fixed discount_percent into approvedD
         code: "ABC234",
         discount_percent: 10,
         benefit_value: 10,
-        expires_at: "2026-10-31T00:00:00.000Z",
+        expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
       },
     },
   });
@@ -431,4 +433,11 @@ test("unknown history stays checking while explicitly empty verified history is 
     assert.equal(body.state, verified ? "resolved" : "checking");
     assert.deepEqual(body.items, []);
   }
+});
+
+test('membership app API preserves both worlds and Elite without granting protected access',async()=>{
+ const worlds={schema:'member_worlds_v1',public:{state:'active',tier:'Elite',expiresAt:'2027-10-01'},sigil:{state:'expired',tier:'Premium',expiresAt:'2026-01-01'}};
+ const upstream=delegate({'/api/member/dashboard':{ok:true,data:{member:{tier:{value:'Elite',status:'verified'},membership_status:{value:'active',status:'verified'},worlds}}}});
+ const response=await handleMemberAppApi(request('/api/member/app/membership'),{},upstream),payload=await response.json();
+ assert.equal(payload.level,'elite');assert.deepEqual(payload.worlds,worlds);assert.equal(payload.access,'checking');
 });

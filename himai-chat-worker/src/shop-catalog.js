@@ -50,8 +50,6 @@ async function listProducts(env, shopKey) {
     ok: true,
     shop: shopKey,
     shop_name: shop.publicName,
-    pricing_source: shop.priceField,
-    source_table: env.SHARED_SHOP_PRODUCTS_TABLE_ID || "tblzsmNLfP6J0kQ90",
     products
   });
 }
@@ -115,10 +113,9 @@ async function loadProducts(env, shopKey) {
   params.set("pageSize", "100");
   for (const field of fields) params.append("fields[]", field);
 
-  const [result, stockByProduct, supplierNames] = await Promise.all([
+  const [result, stockByProduct] = await Promise.all([
     airtableRequest(env, `${tableId}?${params.toString()}`),
-    loadSharedStockByProduct(env),
-    loadSupplierNames(env)
+    loadSharedStockByProduct(env)
   ]);
 
   return (result.records || [])
@@ -138,7 +135,6 @@ async function loadProducts(env, shopKey) {
       const stock = stockByProduct.get(record.id) || { available: null, low: false };
       const sellingPrice = numberOrNull(recordFields[shop.priceField]);
       const supplierIds = Array.isArray(recordFields["Supplier"]) ? recordFields["Supplier"] : [];
-      const supplier = supplierIds.map((id) => supplierNames.get(id) || id);
       const sku = recordFields["SKU"] || "";
       const productName = recordFields["Product Name"] || "";
       const status = selectName(recordFields["Status"]) || "";
@@ -169,11 +165,11 @@ async function loadProducts(env, shopKey) {
         category: selectName(recordFields["Category"]) || "Selected",
         status,
         curation_label: selectName(recordFields["Curation Label"]) || "",
-        supplier,
         selling_price_thb: sellingPrice,
         price_status: sellingPrice === null || sellingPrice <= 0 ? "ask_shop" : "priced",
-        description: note,
-        curator_note: note,
+        // Product Note is operational data, never public-facing copy.
+        description: "",
+        curator_note: "",
         available: onDemand ? null : stock.available,
         low_stock: onDemand ? false : stock.low,
         stock_status: onDemand ? "on_demand" : stockTracked ? "tracked" : "untracked",
@@ -225,20 +221,6 @@ async function loadSharedStockByProduct(env) {
   }
 
   return stockByProduct;
-}
-
-async function loadSupplierNames(env) {
-  const tableId = env.SHARED_SUPPLIERS_TABLE_ID || "tbl81bnFyASeXCj9x";
-  const params = new URLSearchParams();
-  params.set("pageSize", "100");
-  params.append("fields[]", "Supplier Name");
-
-  const result = await airtableRequest(env, `${tableId}?${params.toString()}`);
-  const names = new Map();
-  for (const record of result.records || []) {
-    names.set(record.id, record.fields?.["Supplier Name"] || record.id);
-  }
-  return names;
 }
 
 function productImageUrl(sku) {

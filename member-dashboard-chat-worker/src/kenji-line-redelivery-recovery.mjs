@@ -1,4 +1,8 @@
-import { createLineSignature, extractKenjiModelLookupQuery, inferLineIntent, resolveLineCardCampaignTrigger, verifyLineSignature } from "./index.js";
+import { createLineSignature, extractKenjiModelLookupQuery, inferLineIntent, requestKenjiRuntimeStatus, resolveLineCardCampaignTrigger, verifyLineSignature } from "./index.js";
+import { ownerContextTestAllowed, ownerContextTestRequested } from "./kenji-owner-context-test.mjs";
+import { restrictedReplyCategories, approvedCategoryReply } from './kenji-reply-category-gate.mjs';
+import { approvedPublicQa } from './kenji-approved-public-qa.mjs';
+import { careBackOctoberReply } from './kenji-care-back-october.mjs';
 import {
   handleKenjiSeedLineRequest,
   isKenjiSeedLineRequest,
@@ -13,6 +17,7 @@ import {
 import { tryHandleKenjiLv5LineOperationalRequest } from "./kenji-lv5-line-operational-request.mjs";
 import { notifyKenjiLv5Hype } from "./kenji-lv5-hype-alert.mjs";
 import { tryHandleKenjiSvipPhotoRevealRequest } from "./kenji-svip-photo-reveal.mjs";
+import { hasPendingDirectUserPaymentCandidate } from "./line-group-ingress-front-gate.js";
 
 const AI_EVENTS_TABLE_FALLBACK = "tbljCYfYqfm8gBTPq";
 const MEMBERSHIP_STATUS_CANONICAL_TEXT = "สถานะสมาชิกของผม";
@@ -23,6 +28,12 @@ function text(value) {
 
 function enabled(value) {
   return ["1", "true", "yes", "on"].includes(text(value).toLowerCase());
+}
+
+function withoutOwnerContextTest(env = {}) {
+  return ownerContextTestRequested(env)
+    ? { ...env, KENJI_LINE_OWNER_CONTEXT_TEST_ENABLED: "false" }
+    : env;
 }
 
 export async function hasCardCampaignContext(env = {}, event = {}) {
@@ -221,24 +232,54 @@ export async function handleKenjiSeedLineRequestWithRedeliveryRecovery(
   legacyWorker = null,
 ) {
   if (!isKenjiSeedLineRequest(request) || String(request?.method || "GET").toUpperCase() !== "POST") {
-    return handleKenjiSeedLineRequest(kenjiSalesV2SmokeRequest(request), env, ctx, legacyWorker);
+    return handleKenjiSeedLineRequest(kenjiSalesV2SmokeRequest(request), withoutOwnerContextTest(env), ctx, legacyWorker);
   }
 
   const original = request.clone();
   const rawBody = await original.text();
   const signature = text(original.headers.get("x-line-signature"));
   if (!await verifyLineSignature(rawBody, signature, env.LINE_CHANNEL_SECRET)) {
-    return handleKenjiSeedLineRequest(request, env, ctx, legacyWorker);
+    return handleKenjiSeedLineRequest(request, withoutOwnerContextTest(env), ctx, legacyWorker);
   }
 
   let body;
   try {
     body = JSON.parse(rawBody || "{}");
   } catch (_) {
-    return handleKenjiSeedLineRequest(request, env, ctx, legacyWorker);
+    return handleKenjiSeedLineRequest(request, withoutOwnerContextTest(env), ctx, legacyWorker);
   }
 
   const events = Array.isArray(body?.events) ? body.events : [];
+  // Isolated contextual rehearsal uses intake/Seed continuity only. Apply the
+  // bypass only to one signed event that passes the current runtime and owner
+  // gates; mixed or ineligible requests retain normal wrapper orchestration.
+  if (ownerContextTestRequested(env) && events.length === 1) {
+    let ownerContextAllowed = false;
+    try {
+      const runtime = await requestKenjiRuntimeStatus(env);
+      ownerContextAllowed = await ownerContextTestAllowed(env, events[0], runtime);
+    } catch (_) {
+      ownerContextAllowed = false;
+    }
+    if (ownerContextAllowed) return handleKenjiSeedLineRequest(request, env, ctx, legacyWorker);
+  }
+  // Recovery can clear the redelivery marker before Seed performs its own
+  // per-event check. Keep owner-test mode disabled downstream unless the
+  // wrapper explicitly authorized the original singleton event above.
+  const seedEnv = withoutOwnerContextTest(env);
+  // A fresh direct-user image candidate must reach the existing evidence intake
+  // before the LV5 payment-word handler can consume the follow-up silently.
+  if (events.length === 1 && events[0]?.deliveryContext?.isRedelivery !== true && text(events[0]?.mode).toLowerCase() !== "standby") {
+    let candidate = false;
+    let lookupUnavailable = false;
+    try { candidate = await hasPendingDirectUserPaymentCandidate(env, events[0], { waitForImageMs: 5000 }); }
+    catch (_) { candidate = true; lookupUnavailable = true; }
+    if (candidate) {
+      console.log(JSON.stringify({ line_payment_route: "candidate_precedence", lookup: lookupUnavailable ? "unavailable" : "found" }));
+      if (!legacyWorker?.fetch) return json({ ok: false, error: "line_intake_unavailable" }, 503);
+      return legacyWorker.fetch(request, { ...env, LINE_AUTO_REPLY_ENABLED: "false" }, ctx);
+    }
+  }
   const redeliveryIndexes = events
     .map((event, index) => event?.deliveryContext?.isRedelivery === true ? index : -1)
     .filter((index) => index >= 0);
@@ -250,7 +291,9 @@ export async function handleKenjiSeedLineRequestWithRedeliveryRecovery(
   const hasPendingCardCampaign = !hasCardCampaignAction && events.length === 1
     ? await hasCardCampaignContext(env, events[0])
     : false;
-  if (redeliveryIndexes.length === 0 && membershipStatusIndexes.length === 0 && !hasCardCampaignAction && !hasPendingCardCampaign) {
+  const publicCategory = restrictedReplyCategories(env) && events.length === 1 &&
+    approvedCategoryReply(events[0], env, {ownerFaq:approvedPublicQa,careBackOctoberReply});
+  if (redeliveryIndexes.length === 0 && membershipStatusIndexes.length === 0 && !hasCardCampaignAction && !hasPendingCardCampaign && !publicCategory) {
     const operationalRequest = new Request(request.url, {
       method: "POST",
       headers: new Headers(request.headers),
@@ -279,7 +322,7 @@ export async function handleKenjiSeedLineRequestWithRedeliveryRecovery(
   const hasRecoverable = redeliveryIndexes.some((index) => outcomes.get(index)?.retry_allowed === true);
   const hasMembershipStatusRefinement = membershipStatusIndexes.length > 0;
   if (!hasRecoverable && !hasMembershipStatusRefinement) {
-    const response = await handleKenjiSeedLineRequest(request, env, ctx, legacyWorker);
+    const response = await handleKenjiSeedLineRequest(request, seedEnv, ctx, legacyWorker);
     const work = scheduleCanonicalCustomerMemory(ctx, env, events);
     if (typeof ctx?.waitUntil !== "function") await work;
     return response;
@@ -302,7 +345,7 @@ export async function handleKenjiSeedLineRequestWithRedeliveryRecovery(
     body: transformedBody,
   });
 
-  const response = await handleKenjiSeedLineRequest(transformedRequest, env, ctx, legacyWorker);
+  const response = await handleKenjiSeedLineRequest(transformedRequest, seedEnv, ctx, legacyWorker);
   const work = scheduleCanonicalCustomerMemory(ctx, env, transformedEvents);
   if (typeof ctx?.waitUntil !== "function") await work;
   if (!response?.headers) return response;

@@ -85,6 +85,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          node --test ../scripts/check-customer-data-page.test.mjs
           npm test
           node test/internal-admin-gate-bridge.test.mjs
 
@@ -264,64 +265,28 @@ jobs:
             fi
           done
 
-      - name: Verify Customer Data readable UI in production
+      - name: Verify Customer Data protected entry in production
         shell: bash
         run: |
           set -euo pipefail
+          # HTML is tested with an authenticated service-binding fixture locally.
+          # Anonymous production requests must never use a mock query to bypass login.
+          node --test test/admin-route-recovery.test.mjs
           headers="$(mktemp)"
           body="$(mktemp)"
           trap 'rm -f "$headers" "$body"' EXIT
-
-          verified=0
-          for attempt in 1 2 3 4 5 6 7 8; do
-            : > "$headers"
-            : > "$body"
-            if ! code="$(curl -sSL --connect-timeout 5 --max-time 10 -D "$headers" -o "$body" -w '%{http_code}' \
-              "https://mmdbkk.com/internal/admin/customer-data?mock=1&deploy=${GITHUB_SHA}&attempt=${attempt}")"; then
-              code="000"
-            fi
-
-            # Lovable directory: verify the presentation contract and native
-            # customer list copy. This proves HTML delivery, not authenticated data.
-            if [ "$code" = "200" ] \
-              && grep -Eiq '^content-type:[[:space:]]*text/html' "$headers" \
-              && grep -Eiq '^x-mmd-presentation-source:[[:space:]]*lovable' "$headers" \
-              && grep -Eiq '^x-mmd-presentation-version:[[:space:]]*internal-lovable-v1' "$headers" \
-              && grep -q 'ลูกค้าล่าสุดจากระบบหลังบ้าน' "$body" \
-              && grep -q 'เลือกรายชื่อก่อนเปิดข้อมูล' "$body" \
-              && grep -q 'อ่านข้อมูลอีกครั้ง' "$body" \
-              && ! grep -q 'customer_scope_contract_unavailable' "$body"; then
-              echo "Production Customer Data Lovable presentation verified on attempt ${attempt}; authenticated data verification remains separate"
-              verified=1
-              break
-            fi
-
-            # Retain the Worker-rendered fallback contract.
-            if [ "$code" = "200" ] \
-              && grep -Eiq '^x-mmd-customer-data-ui:[[:space:]]*readable-v3' "$headers" \
-              && grep -Eiq '^x-mmd-customer-data-authority:[[:space:]]*identity-context-staging-only' "$headers" \
-              && grep -q 'นำเข้าจาก Console Inbox' "$body" \
-              && grep -q 'คิวที่ต้องดู' "$body" \
-              && grep -q 'จับคู่แล้ว' "$body" \
-              && ! grep -q 'Run Console Inbox Backfill' "$body" \
-              && ! grep -q 'Review Queue' "$body"; then
-              echo "Production Customer Data readable UI verified on attempt ${attempt}"
-              verified=1
-              break
-            fi
-
-            echo "Customer Data readable UI not propagated yet (attempt ${attempt}, HTTP ${code}); retrying..."
-            grep -Ei '^(x-mmd-customer-data-ui|x-mmd-customer-data-authority|x-mmd-presentation-source|x-mmd-presentation-version|location|server|cf-ray):' "$headers" || true
-            sleep 2
+          for origin in https://mmdbkk.com https://www.mmdbkk.com; do
+            for suffix in '' '?mock=1'; do
+              code="$(curl -sS --connect-timeout 5 --max-time 15 -D "$headers" -o "$body" -w '%{http_code}' "$origin/internal/admin/customer-data$suffix")"
+              test "$code" = 302
+              grep -Eiq '^location:[[:space:]]*https://(www\.)?mmdbkk\.com/internal/admin/login\?next=' "$headers"
+              if grep -Eq 'class="c360"|id="results"' "$body"; then
+                echo 'Protected Customer Data content leaked to an anonymous request' >&2
+                exit 1
+              fi
+            done
           done
-
-          if [ "$verified" != "1" ]; then
-            echo "Customer Data readable UI production verification failed after bounded propagation retries" >&2
-            grep -Ei '^(x-mmd-customer-data-ui|x-mmd-customer-data-authority|x-mmd-presentation-source|x-mmd-presentation-version|location|server|cf-ray):' "$headers" || true
-            head -c 320 "$body" >&2 || true
-            echo >&2
-            exit 1
-          fi
+          echo 'Customer Data anonymous gate verified; authenticated live acceptance remains separate.'
 
       - name: Verify latest Control Room in production
         shell: bash
@@ -365,40 +330,60 @@ jobs:
       - name: Verify separated Create Job and Job Board owner surfaces
         shell: bash
         working-directory: .
+        env:
+          ADMIN_SMOKE_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}
         run: |
           set -euo pipefail
+          test -n "${ADMIN_SMOKE_CREDENTIAL:-}"
+          echo "::add-mask::$ADMIN_SMOKE_CREDENTIAL"
           for origin in https://mmdbkk.com https://www.mmdbkk.com; do
+            cookie="$(mktemp)"
             create_body="$(mktemp)"
             create_headers="$(mktemp)"
             board_body="$(mktemp)"
             board_headers="$(mktemp)"
             legacy_headers="$(mktemp)"
             board_alias_headers="$(mktemp)"
-            trap 'rm -f "$create_body" "$create_headers" "$board_body" "$board_headers" "$legacy_headers" "$board_alias_headers"' EXIT
+            trap 'rm -f "$cookie" "$create_body" "$create_headers" "$board_body" "$board_headers" "$legacy_headers" "$board_alias_headers"' EXIT
 
-            # Create Job is served by Session Creator Pro (admin-worker
-            # session-creator-page-proxy, #2213), not the Webflow split page.
+            login_code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
+              -D "$create_headers" -o "$create_body" -c "$cookie" -w '%{http_code}' \
+              -X POST \
+              -H "Origin: $origin" \
+              -H 'Content-Type: application/x-www-form-urlencoded' \
+              --data-urlencode "credential=$ADMIN_SMOKE_CREDENTIAL" \
+              --data-urlencode 'next=/internal/admin/jobs/create-job' \
+              "$origin/internal/admin/login/session")"
+            if [ "$login_code" != "303" ] || ! grep -qi '^set-cookie: mmd_admin_gate_v1=' "$create_headers"; then
+              echo "Create Job smoke login failed for $origin (HTTP $login_code)" >&2
+              exit 1
+            fi
+
+            # Create Job is the guarded worker-rendered page owned by
+            # admin-worker-api-create-job; it does not use Session Creator Pro
+            # assets. Verify the owner and page contract without submitting it.
             create_verified=0
             for attempt in 1 2 3 4 5 6 7 8; do
               : > "$create_body"
               : > "$create_headers"
-              create_code="$(curl --compressed -sSL -D "$create_headers" -o "$create_body" -w '%{http_code}' "$origin/internal/admin/jobs/create-job?mock=1&deploy=${GITHUB_SHA}&attempt=${attempt}")"
+              create_code="$(curl --compressed -sS -b "$cookie" -D "$create_headers" -o "$create_body" -w '%{http_code}' "$origin/internal/admin/jobs/create-job?mock=1&deploy=${GITHUB_SHA}&attempt=${attempt}")"
               if [ "$create_code" = "200" ] \
-                && grep -aiq '^x-mmd-route-owner: admin-worker-session-creator-pro' "$create_headers" \
-                && grep -aqF '/internal/admin/work/assets/' "$create_body" \
+                && grep -aiq '^x-mmd-route-owner: admin-worker-api-create-job' "$create_headers" \
+                && grep -aqF '<title>สร้างงาน | MMD</title>' "$create_body" \
+                && grep -aqF 'id="create"' "$create_body" \
+                && grep -aqF '/v1/admin/job/create' "$create_body" \
                 && ! grep -aq 'id="job-board-form"' "$create_body" \
                 && ! grep -aq '/v1/admin/job-board/publish' "$create_body"; then
-                echo "Session Creator Pro Create Job verified for $origin on attempt $attempt"
+                echo "Worker-rendered Create Job verified for $origin on attempt $attempt"
                 create_verified=1
                 break
               fi
-              echo "Session Creator Pro Create Job not ready for $origin (attempt $attempt, HTTP $create_code); retrying..."
+              echo "Worker-rendered Create Job not ready for $origin (attempt $attempt, HTTP $create_code); retrying..."
               sleep 2
             done
             if [ "$create_verified" != "1" ]; then
-              echo "Create Job (Session Creator Pro) production verification failed for $origin" >&2
-              head -c 700 "$create_headers" >&2 || true
-              echo "::error::Create Job verify failed at $origin: HTTP $create_code; headers=$(tr '\r\n' '  ' < "$create_headers" | head -c 600); assets=$(grep -acF '/internal/admin/work/assets/' "$create_body" || true)"
+              echo "Create Job (admin-worker-api-create-job) production verification failed for $origin" >&2
+              echo "::error::Create Job verify failed at $origin: HTTP $create_code; form=$(grep -acF 'id="create"' "$create_body" || true)"
               exit 1
             fi
 
@@ -417,8 +402,7 @@ jobs:
             done
             if [ "$board_verified" != "1" ]; then
               echo "Separate Job Board production verification failed for $origin" >&2
-              head -c 700 "$board_body" >&2 || true
-              echo "::error::Job Board verify failed at $origin: HTTP $board_code; headers=$(tr '\r\n' '  ' < "$board_headers" | head -c 600)"
+              echo "::error::Job Board verify failed at $origin: HTTP $board_code"
               exit 1
             fi
 
@@ -433,6 +417,7 @@ jobs:
               echo "::error::Legacy job-board redirect at $origin: HTTP $board_alias_code; headers=$(tr '\r\n' '  ' < "$board_alias_headers" | head -c 600)"
               exit 1
             fi
+            rm -f "$cookie" "$create_body" "$create_headers" "$board_body" "$board_headers" "$legacy_headers" "$board_alias_headers"
           done
 
       - name: Verify MMD Create Session Owner v14 in production
@@ -521,3 +506,4 @@ jobs:
             fi
             rm -f "$headers" "$core"
           done
+

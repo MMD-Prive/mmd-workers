@@ -8,6 +8,7 @@ import {
   MODEL_DRIVE_PHOTO_PATH,
   MODEL_DRIVE_CANONICAL_FILE_PATH,
   collapseDescendantsOfUniqueExactModelMatch,
+  prioritizeModelDriveCandidates,
   driveSearchToken,
   findExactModelImage,
   handleModelDriveDirectoryRequest,
@@ -16,6 +17,39 @@ import {
   resolveApprovedModelFolder,
   searchApprovedModelFolders,
 } from "../src/model-drive-directory.js";
+
+test("Drive OAuth failure logs only a safe reason code", async (t) => {
+  const originalFetch = globalThis.fetch;
+  const originalError = console.error;
+  t.after(() => { globalThis.fetch = originalFetch; console.error = originalError; });
+  const logs = [];
+  console.error = (line) => logs.push(line);
+  const env = {
+    GOOGLE_DRIVE_CLIENT_ID: "client",
+    GOOGLE_DRIVE_CLIENT_SECRET: "secret",
+    GOOGLE_DRIVE_REFRESH_TOKEN: "refresh",
+  };
+  const request = new Request(`https://${MODEL_DRIVE_DIRECTORY_HOST}${MODEL_DRIVE_SEARCH_PATH}?q=Ice%20T`);
+  for (const [status, payload, reason] of [
+    [400, { error: "invalid_grant", error_description: "private-token-detail" }, "invalid_grant"],
+    [400, { error: "unexpected-private-value", error_description: "private-token-detail" }, "oauth_rejected"],
+    [200, { access_token: "" }, "token_missing"],
+  ]) {
+    globalThis.fetch = async () => Response.json(payload, { status });
+    const response = await handleModelDriveDirectoryRequest(request, env);
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), {
+      ok: false,
+      error: "model_drive_directory_unavailable",
+      reason_code: reason,
+    });
+    const log = JSON.parse(logs.at(-1));
+    assert.equal(log.failure_class, "oauth_failed");
+    assert.equal(log.reason_code, reason);
+    assert.equal(logs.at(-1).includes("private-token-detail"), false);
+    assert.equal(logs.at(-1).includes("unexpected-private-value"), false);
+  }
+});
 
 test("model Drive directory only recognizes internal model-directory paths", () => {
   assert.equal(
@@ -222,6 +256,33 @@ test("Drive search end-to-end collapses live-shaped EMs16 Gohan root over Review
   assert.equal(items[0].folder_scope_key, `exclusive:drive:${rootId}`);
 });
 
+test("exact Ice T folder under the approved Private Models root returns one candidate", async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  const names = ["Ice T", "Top", "Straight", "Standard - VIP Models", "Standard Package", "Premium Package", "Private Models"];
+  const ids = [
+    "1GB6vK44i_05sK-Dxo9F10cEE3zACY4SO", "18N4K8eWloxiazOKS5_vatTiVp8pQEWd0",
+    "1rMuM8xi1vC8nNTjMBtbPhE3O2RCJavUU", "1aUdRHLcbhGNjfOMyVthEffu57hj2pOoZ",
+    "1Snw1gTJNzkMxHlH-Nt2g1-6mt_3GNkT8", "16DfhOo-DwJedBaTi_pvkxGEnPjWGdxxD",
+    "1IfEdWQ3hR-k1klfVJEtBgzWYRJCloRyr",
+  ];
+  const folders = new Map(ids.map((id, i) => [id, {
+    id, name: names[i], parents: [ids[i + 1] || "1RNN0aYwmvkKqACMAjRLYOJTFFFrlYycQ"],
+    mimeType: "application/vnd.google-apps.folder", trashed: false,
+  }]));
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    if (url.pathname === "/drive/v3/files") return Response.json({ files: [folders.get(ids[0])] });
+    const file = folders.get(decodeURIComponent(url.pathname.split("/").pop()));
+    return file ? Response.json(file) : Response.json({ error: "not_found" }, { status: 404 });
+  };
+  const items = await searchApprovedModelFolders("token", "Ice T", "all", {});
+  assert.deepEqual(items.map((item) => item.drive_folder_id), [ids[0]]);
+  assert.equal(items[0].folder_name, "Ice T");
+  assert.equal(items[0].lane, "private");
+  assert.equal(items[0].match_kind, "exact");
+});
+
 test("legacy Premium Package ancestry resolves Captain S as private", async (t) => {
   const originalFetch = globalThis.fetch;
   t.after(() => { globalThis.fetch = originalFetch; });
@@ -378,4 +439,40 @@ test("EMs15 resolves through Exclusive VIP/Both into an Exclusive folder_scope_k
   assert.equal(resolved?.approved_root_id, MODEL_DRIVE_EXCLUSIVE_ROOT_FOLDER_ID);
   assert.equal(resolved?.folder_scope_key, `exclusive:drive:${ems15Id}`);
   assert.equal(resolved?.folder_path, "MMD Exclusive Models / Exclusive VIP / Both / EMs15");
+});
+
+
+test("main catalogue hides mirror duplicates and Review folders; literal exact precedes near matches", () => {
+  const root = "1IfEdWQ3hR-k1klfVJEtBgzWYRJCloRyr";
+  const row = (id, name, approved_root_id = root) => ({ drive_folder_id:id, folder_name:name, approved_root_id, score:1 });
+  const items = prioritizeModelDriveCandidates("Film IT", [
+    row("near", "Film IT New"), row("case", "film it"), row("review", "Review Film IT"),
+    row("mirror", "Film IT", "1C7f3rLffbuRgD3VlqKZ_B9MbWratqFKI"), row("exact", "Film IT"),
+  ]);
+  assert.deepEqual(items.map(x => x.drive_folder_id), ["exact", "case", "near"]);
+  assert.deepEqual(items.map(x => x.match_kind), ["exact", "exact", "similar"]);
+  assert.ok(items.every(x => x.drive_priority === "primary"));
+});
+
+test("mirror is used only when the main catalogue has no model candidate", () => {
+  const rows = [{drive_folder_id:"mirror", folder_name:"Film IT", approved_root_id:"1C7f3rLffbuRgD3VlqKZ_B9MbWratqFKI", score:1}];
+  assert.equal(prioritizeModelDriveCandidates("Film IT", rows)[0].drive_priority, "fallback");
+  assert.deepEqual(prioritizeModelDriveCandidates("Film IT", [{...rows[0],folder_name:"Review Film IT"}]), []);
+});
+
+
+test('signed internal admin gallery lists nested source media and streams only current folder descendants',async t=>{
+ const saved=globalThis.fetch;t.after(()=>globalThis.fetch=saved);
+ const folder='1AdminModelFolder',photo='1AdminSourcePhoto',outside='1OutsideSourcePic',privateRoot='1IfEdWQ3hR-k1klfVJEtBgzWYRJCloRyr';
+ globalThis.fetch=async(input,init={})=>{const u=new URL(input);if(u.hostname==='oauth2.googleapis.com')return Response.json({access_token:'fixture'});const id=u.pathname.split('/').at(-1);
+  if(u.searchParams.get('alt')==='media')return new Response(new Uint8Array([255,216,255,0]),{headers:{'content-type':'image/jpeg','content-length':'4'}});
+  if(id==='files')return Response.json({files:[{id:photo,mimeType:'image/jpeg',parents:[folder],size:'4'}]});
+  return Response.json(id===photo?{id,mimeType:'image/jpeg',size:'4',parents:[folder]}:id===outside?{id,mimeType:'image/jpeg',size:'4',parents:[]}:id===folder?{id,name:'Fixture Model',mimeType:'application/vnd.google-apps.folder',parents:[privateRoot]}:{id,name:'Private Models',mimeType:'application/vnd.google-apps.folder',parents:[]});
+ };
+ const env={GOOGLE_DRIVE_CLIENT_ID:'fixture',GOOGLE_DRIVE_CLIENT_SECRET:'fixture',GOOGLE_DRIVE_REFRESH_TOKEN:'fixture'};
+ const call=(path,body)=>handleModelDriveDirectoryRequest(new Request('https://model-drive-directory.internal/__internal/model-drive/'+path,{method:'POST',body:JSON.stringify({drive_folder_id:folder,...body})}),env);
+ const list=await call('admin-media-list',{});assert.equal(list.status,200);const data=await list.json();assert.equal(data.items.length,1);assert.equal(data.items[0].audience,'private');assert.equal(data.items[0].status,'source_only');
+ const r=await call('admin-media-file',{file_id:photo});assert.equal(r.status,200);assert.equal((await r.arrayBuffer()).byteLength,4);assert.equal(r.headers.get('cache-control'),'private, no-store');
+ const denied=await call('admin-media-file',{file_id:outside});assert.equal(denied.status,404);
+ const head=await call('admin-media-file',{file_id:photo,head:true});assert.equal(head.status,200);assert.equal(head.body,null);
 });

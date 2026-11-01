@@ -307,3 +307,22 @@ test("folder tree starts collapsed on mobile and open on desktop without changin
     assert.match(result, /data-action="search-model"/);
   }
 });
+
+
+test("main Drive exact candidate precedes near names and mirrored Airtable rows cannot reappear", async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  const folder = (id, name) => ({drive_folder_id:id, folder_name:name, lane:"private", folder_path:"Private Models / " + name, folder_scope_key:"private:drive:"+id, drive_priority:"primary"});
+  globalThis.fetch = async () => Response.json({records:[
+    {id:"recMirrorFilm0001",fields:{working_name:"Film IT",drive_folder_id:"1MirrorFilmFolder123",can_work_private:true,status:"Active"}},
+    {id:"recReviewFilm0001",fields:{working_name:"Review Film IT",drive_folder_id:"1ReviewFilmFolder123",can_work_private:true,status:"Active"}},
+    {id:"recExactFilm00001",fields:{working_name:"Film IT",drive_folder_id:"1ExactFilmFolder123",can_work_private:true,status:"Active"}},
+  ]});
+  const env={AIRTABLE_API_KEY:"test",AIRTABLE_BASE_ID:"test",MODEL_DRIVE_DIRECTORY:{fetch:async()=>Response.json({ok:true,items:[folder("1NearFilmFolder123","Film IT New"),folder("1ExactFilmFolder123","Film IT")]})}};
+  const result=await listUnifiedModelLineCandidates(env,new URL("https://mmdbkk.com/v1/admin/models/activation-candidates?q=Film%20IT&lane=private"));
+  assert.deepEqual(result.items.map(x=>x.working_name),["Film IT","Film IT New"]);
+  assert.equal(result.items[0].model_record_id,"recExactFilm00001");
+  assert.equal(result.items[0].match_kind,"exact");
+  assert.equal(result.items[1].match_kind,"similar");
+  assert.ok(result.items.every(x=>x.drive_priority==="primary"));
+});

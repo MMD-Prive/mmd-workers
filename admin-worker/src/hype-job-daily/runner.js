@@ -10,6 +10,7 @@ export const SEND_AT_MINUTES = 8 * 60 + 45; // 08:45 ICT
 export const MAX_ATTEMPTS = 3;
 export const CLAIM_TIMEOUT_MS = 30 * 60 * 1000;
 const FINALIZE_WINDOW_MINUTES = 15; // 00:00-00:14 ICT: close out yesterday's unfinished run
+const SCHEDULED_RUN_MINUTES = new Set([0, 5, 10, SEND_AT_MINUTES, SEND_AT_MINUTES + 5, SEND_AT_MINUTES + 10]);
 const SEND_TIMEOUT_MS = 10000;
 
 export function isEnabled(env = {}) {
@@ -186,7 +187,12 @@ export async function retryHypeJobDailyToday(env = {}, options = {}) {
 // Entry used by admin-worker scheduled(). Isolated: never rejects.
 export async function runHypeJobDailyScheduled(env, event) {
   try {
-    return await runHypeJobDaily(env, { now: Number(event?.scheduledTime) || Date.now() });
+    const scheduledTime = Number(event?.scheduledTime);
+    const now = Number.isFinite(scheduledTime) && scheduledTime > 0 ? scheduledTime : Date.now();
+    if (Number.isFinite(scheduledTime) && scheduledTime > 0 && !SCHEDULED_RUN_MINUTES.has(ictMinutes(now))) {
+      return { status: "not_due" };
+    }
+    return await runHypeJobDaily(env, { now });
   } catch (error) {
     log("error", "hype_job_daily_failed", { stage: "scheduled", error: errorClass(error) });
     return { status: "failed", stage: "scheduled" };

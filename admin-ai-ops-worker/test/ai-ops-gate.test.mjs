@@ -10,7 +10,7 @@ test("strict gate rejects non-JSON or ambiguous auth responses", async () => {
   const original = globalThis.fetch;
   globalThis.fetch = async () => new Response("<html>login</html>", { status: 200, headers: { "content-type": "text/html" } });
   try {
-    const response = await gate.fetch(new Request(contextUrl), {}, {});
+    const response = await gate.fetch(new Request(contextUrl), { MMS_ADMIN: { fetch: globalThis.fetch } }, {});
     assert.equal(response.status, 401);
     assert.deepEqual(await response.json(), { ok: false, error: "unauthorized" });
   } finally {
@@ -22,7 +22,7 @@ test("strict gate rejects ok response without authenticated=true", async () => {
   const original = globalThis.fetch;
   globalThis.fetch = async () => new Response(JSON.stringify({ ok: true, authenticated: false }), { status: 200, headers: { "content-type": "application/json" } });
   try {
-    const response = await gate.fetch(new Request(contextUrl), {}, {});
+    const response = await gate.fetch(new Request(contextUrl), { MMS_ADMIN: { fetch: globalThis.fetch } }, {});
     assert.equal(response.status, 401);
   } finally {
     globalThis.fetch = original;
@@ -33,8 +33,8 @@ test("strict gate now covers command center and durable follow-up endpoints too"
   const original = globalThis.fetch;
   globalThis.fetch = async () => new Response(JSON.stringify({ ok: true, authenticated: false }), { status: 200, headers: { "content-type": "application/json" } });
   try {
-    const followUp = await gate.fetch(new Request(followUpUrl), {}, {});
-    const commandCenter = await gate.fetch(new Request(commandCenterUrl), {}, {});
+    const followUp = await gate.fetch(new Request(followUpUrl), { MMS_ADMIN: { fetch: globalThis.fetch } }, {});
+    const commandCenter = await gate.fetch(new Request(commandCenterUrl), { MMS_ADMIN: { fetch: globalThis.fetch } }, {});
     assert.equal(followUp.status, 401);
     assert.equal(commandCenter.status, 401);
   } finally {
@@ -43,7 +43,7 @@ test("strict gate now covers command center and durable follow-up endpoints too"
 });
 
 test("shared client remains readable without admin context data", async () => {
-  const response = await gate.fetch(new Request("https://mmdbkk.com/v1/admin/ai-ops/client.js"), {}, {});
+  const response = await gate.fetch(new Request("https://mmdbkk.com/v1/admin/ai-ops/client.js"), { MMS_ADMIN: { fetch: globalThis.fetch } }, {});
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("x-mmd-follow-up-autopilot"), "p1");
   const body = await response.text();

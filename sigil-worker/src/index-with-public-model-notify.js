@@ -1,6 +1,7 @@
 import baseWorker, { PublicModelCoordinator } from "./index.js";
 import { notifyPublicModelApplication } from "./public-model-notify.js";
 import { PUBLIC_MODEL_APPLY_PATH } from "./public-model.js";
+import { queuePrivateModelNotificationAfterResponse } from "./private-model-notify.js";
 import {
   handlePrivateModelRequest,
   isPrivateModelRequestPath,
@@ -22,7 +23,9 @@ export default {
     }
 
     if (isPrivateModelRequestPath(url.pathname)) {
-      return handlePrivateModelRequest(request, env, ctx);
+      const response = await handlePrivateModelRequest(request, env, ctx);
+      if (request.method === "POST") await queuePrivateModelNotificationAfterResponse(response, env);
+      return response;
     }
 
     if ((url.pathname === "/health" || url.pathname === "/ping") && request.method === "GET") {

@@ -146,13 +146,17 @@ try {
   assert.match(body, /READ SCOPE NEEDED/);
   assert.doesNotMatch(body, /cross_layer_person_conversion\s*[:=]\s*true/);
   assert.match(body, /data-mmd-workflow="20260922"/);
+  assert.match(body, /data-mmd-client-search/);
+  assert.match(body, /\/internal\/admin\/customer-data\?q=/);
+  assert.match(body, /event\.preventDefault\(\)/);
   assert.match(body, /MMD Memory ช่วยจำคนและประวัติ/);
   assert.match(body, /หาจากงานล่าสุด/);
   assert.match(body, /Slip Intake/);
   // Owner actions remain route handoffs, never generic customer confirmation links.
   const flow = body.match(/<section class="mmd-workflow"[\s\S]*?<\/section>/)[0];
   assert.equal((flow.match(/<li>/g) || []).length, 5);
-  assert.doesNotMatch(flow, /<form|<script|href="\/sigil\/(?:pay|confirm)/);
+  assert.match(flow, /<form class="mmd-workflow__client-search"/);
+  assert.doesNotMatch(flow, /<script|href="\/sigil\/(?:pay|confirm)/);
   for (const route of [...flow.matchAll(/href="([^"]+)"/g)].map(m => m[1])) {
     assert.ok(['/internal/admin/jobs/all', '/internal/admin/customer-data',
       '/internal/ceo/payment-slip-inbox', '/internal/admin/payments',

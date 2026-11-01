@@ -1,0 +1,32 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "my-mms-customer-ui",
+  "account_id": "b176eda1172b741fd2e58904cc9d77c5",
+  "main": "../../.release/my-mms-customer/.output/server/index.mjs",
+  "base_dir": "../../.release/my-mms-customer/.output/server",
+  "compatibility_date": "2026-10-21",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [],
+  "no_bundle": true,
+  "find_additional_modules": true,
+  "rules": [
+    {
+      "type": "ESModule",
+      "globs": [
+        "**/*.mjs",
+        "**/*.js"
+      ]
+    }
+  ],
+  "assets": {
+    "binding": "ASSETS",
+    "directory": "../../.release/my-mms-customer/.output/public"
+  },
+  "observability": {
+    "enabled": true
+  }
+}

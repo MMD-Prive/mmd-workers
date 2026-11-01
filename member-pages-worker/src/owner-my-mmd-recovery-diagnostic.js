@@ -1,4 +1,4 @@
-import { readMemberHistoryRecoveryStatus } from "./member-history-recovery.js";
+import { readMemberHistoryRecoveryStatus, runMemberHistoryRecovery } from "./member-history-recovery.js";
 
 export const OWNER_MY_MMD_RECOVERY_RPC_PATH = "/__internal/admin/my-mmd/recovery-diagnostic";
 
@@ -43,18 +43,18 @@ export function isOwnerMyMmdRecoveryDiagnosticRpc(request) {
   }
 }
 
-export async function handleOwnerMyMmdRecoveryDiagnosticRpc(request, env = {}) {
+export async function handleOwnerMyMmdRecoveryDiagnosticRpc(request, env = {}, deps = {}) {
   if (!authorized(request)) return json({ ok: false, error: "not_found" }, 404);
 
   const body = await request.json().catch(() => null);
-  if (!plain(body) || Object.keys(body).some((key) => key !== "line_user_id")) {
+  if (!plain(body) || Object.keys(body).some((key) => !["line_user_id", "refresh_reviewed"].includes(key)) || (body.refresh_reviewed !== undefined && body.refresh_reviewed !== true)) {
     return json({ ok: false, error: "invalid_request" }, 400);
   }
 
   const lineUserId = canonicalLineId(body.line_user_id);
   if (!lineUserId) return json({ ok: false, error: "invalid_request" }, 400);
 
-  const [profileResult, recovery, acceptance, activeThroughAnchor] = await Promise.all([
+  let [profileResult, recovery, acceptance, activeThroughAnchor] = await Promise.all([
     readCanonicalProfile(env, lineUserId),
     readMemberHistoryRecoveryStatus(env, lineUserId),
     readAcceptanceEvidence(env, lineUserId),
@@ -64,18 +64,22 @@ export async function handleOwnerMyMmdRecoveryDiagnosticRpc(request, env = {}) {
   if (profileResult.status === "ambiguous") {
     return json({ ok: false, state: "review_required", error: "member_identity_ambiguous" }, 409);
   }
-  if (profileResult.status !== "resolved") {
-    return json({ ok: false, state: "unavailable", error: "member_profile_unavailable" }, 503);
+  if (body.refresh_reviewed === true) {
+    recovery = await (deps.runRecovery || runMemberHistoryRecovery)({ env, lineUserId, trigger: "owner_reviewed_import", forceSourceRefresh: true });
+    if (recovery.state === "blocked") return json({ ok: false, state: "blocked", error: recovery.reason || "history_refresh_failed", recovery }, 503);
+    if (["checking", "in_progress"].includes(recovery.state)) return json({ ok: false, state: recovery.state, error: "history_refresh_in_progress", recovery }, 409);
   }
-
-  const membership = projectMembership(profileResult.snapshot);
+  const profileAvailable = profileResult.status === "resolved";
+  const membership = profileAvailable ? projectMembership(profileResult.snapshot) : null;
   const canonicalActiveThrough = firstDate(
     profileResult.profile?.membership_expires_at,
     profileResult.profile?.customer_360?.member?.membership_expires_at,
     membership?.expire_at,
   );
-  const activeThrough = canonicalActiveThrough || firstDate(activeThroughAnchor?.active_through);
-  const points = projectDiagnosticPoints(recovery, profileResult.profile);
+  // A missing Member profile must not hide LINE OFC recovery evidence. Keep
+  // membership fail-closed and never turn an absent history into zero Points.
+  const activeThrough = profileAvailable ? canonicalActiveThrough || firstDate(activeThroughAnchor?.active_through) : null;
+  const points = projectDiagnosticPoints(recovery, profileAvailable ? profileResult.profile : null);
   const recoveryState = token(recovery?.state) || "checking";
 
   return json({
@@ -86,7 +90,8 @@ export async function handleOwnerMyMmdRecoveryDiagnosticRpc(request, env = {}) {
       label: membership?.label || null,
       lifecycle: membership?.lifecycle || null,
       active_through: activeThrough || null,
-      source: RESOLVER_SCHEMA,
+      source: profileAvailable ? RESOLVER_SCHEMA : null,
+      status: profileAvailable ? "available" : "unavailable",
     },
     recovery: {
       state: recoveryState,
@@ -109,12 +114,13 @@ export async function handleOwnerMyMmdRecoveryDiagnosticRpc(request, env = {}) {
       recorded_at: safeTimestamp(acceptance?.recorded_at),
     },
     guardrails: {
-      read_only: true,
+      read_only: body.refresh_reviewed !== true,
       owner_only_upstream: true,
       raw_line_user_id_exposed: false,
       session_token_required: false,
       session_token_exposed: false,
       canonical_truth_only: true,
+      member_profile_available: profileAvailable,
     },
   });
 }
@@ -217,6 +223,9 @@ function projectDiagnosticPoints(recovery, profile) {
   const state = token(recovery?.state);
   if (["checking", "in_progress"].includes(state)) {
     return { status: "pending", value: null, source: "history_recovery" };
+  }
+  if (!profile && !["reconciled", "review_required"].includes(state)) {
+    return { status: "unavailable", value: null, source: null };
   }
 
   const recovered = nullableNonNegativeInt(recovery?.current_points_total);

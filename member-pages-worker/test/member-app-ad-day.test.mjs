@@ -102,7 +102,9 @@ async function withAirtableRecords(records, fn) {
   }
 }
 
-test("Active: canonical member gets active lifecycle, expiry, points and CARE BACK CTA", async () => {
+test("Active: canonical member gets active lifecycle, expiry, points and CARE BACK CTA", async (t) => {
+  // Exercise the ad-day CTA while its announced campaign window is open.
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-10-31T12:00:00+07:00") });
   const env = await envForSession({
     memberExists: true,
     memberProfile: { membership_expires_at: "2027-02-28" },

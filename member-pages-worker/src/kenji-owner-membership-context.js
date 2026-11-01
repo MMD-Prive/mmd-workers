@@ -4,14 +4,18 @@ const MONTHS = ["มกราคม|มค", "กุมภาพันธ์|ก
 const monthMap = new Map(MONTHS.flatMap((names, index) => names.split("|").map(name => [name, index + 1])));
 // Specific owner-confirmed display facts; no universal x2/tier-duration inference.
 const ACCOUNT_FACTS = Object.freeze({
+  // OA conversation identifiers are not verified webhook subject identities.
+  // The erroneous account-specific history/offer mapping is intentionally removed.
   U96f8216d8644acc6a7ae566cd5609842: { start_date: "2025-08-25", years: 1, source: "owner_confirmed_20261004_090613" },
   Ua379e5257fed424d57ecde5add22c0fb: { expiry_date: "2028-10-03", source: "owner_confirmed_eak94_expiry" },
 });
 export function parsePerRenameStartDate(name) {
   const value = String(name || "").normalize("NFKC").replace(/\./g, "").trim();
-  if ([...value.matchAll(/(?:^|\s)\d{1,2}\s*[ก-๙]+\s*(?:\d{4}|\d{2})(?=\s|$)/g)].length !== 1) return null;
-  const match = value.match(/(?:^|\s)(\d{1,2})\s*([ก-๙]+)\s*(\d{2}|\d{4})$/);
-  if (!match) return null;
+  const months = [...monthMap.keys()].sort((a,b)=>b.length-a.length).join("|");
+  const dates = [...value.matchAll(new RegExp(`(?<!\\d)(\\d{1,2})\\s*(${months})\\s*(\\d{4}|\\d{2})(?!\\d)`, "g"))];
+  if (dates.length !== 1) return null;
+  const match = dates[0];
+  if (value.slice(match.index + match[0].length).trim()) return null;
   const day = Number(match[1]), month = monthMap.get(match[2]);
   const rawYear = Number(match[3]);
   const year = match[3].length === 2 ? 2500 + rawYear - 543 : rawYear >= 2400 ? rawYear - 543 : rawYear;
@@ -46,20 +50,28 @@ export function projectOwnerMembershipContext({ lineUserId, clients = [], stagin
   if (rows.length !== 1) return null;
   const f = rows[0].fields, start = parsePerRenameStartDate(f["Current LINE Rename"]);
   const tierMatch = f["Current LINE Rename"].match(/(?:^|\s)(SVIP|VIP)(?=\s|$)/i);
-  const level = tierMatch ? tierMatch[1].toLowerCase() : "unknown";
+  let level = tierMatch ? tierMatch[1].toLowerCase() : "unknown";
   const fact = ACCOUNT_FACTS[lineUserId];
   let expiry = "", provenance = "", conflict = "";
-  if (fact?.expiry_date) { expiry = fact.expiry_date; provenance = fact.source; }
+  const accountEvidenceMatches = fact?.per_rename_key && f["Current LINE Rename"].normalize("NFKC").replace(/[\s.]/g, "") === fact.per_rename_key && start === fact.start_date;
+  if (accountEvidenceMatches && !tierMatch) level = fact.historical_level;
+  if (fact?.per_rename_key && !accountEvidenceMatches) conflict = "owner_confirmed_account_evidence_conflict";
+  else if (fact?.expiry_date) { expiry = fact.expiry_date; provenance = fact.source; }
   else if (fact?.years) {
     if (start === fact.start_date) { expiry = membershipExpiryFromStart(start, fact.years); provenance = fact.source; }
     else conflict = "owner_confirmed_start_conflicts_with_per_rename";
-  } else if (["vip","svip"].includes(level)) { expiry = "2028-07-31"; provenance = "owner_existing_vip_svip_expiry_20261004_090704"; }
+  } else if (level === "vip") { expiry = "2027-08-31"; provenance = "owner_vip_expiry_20261027"; }
+  else if (level === "svip") { provenance = "owner_svip_lifetime_20261027"; }
+  const nonExpiring = level === "svip" && !fact;
   const expireAt = expiry ? `${expiry}T16:59:59.999Z` : "";
   return { authority: OWNER_MEMBERSHIP_AUTHORITY, membership_known: true, canonical_sync: "pending",
-    status: expireAt ? "owner_confirmed_expiry" : "known_member_pending_sync",
-    start_date: start, expire_at: expireAt, level, lifecycle: expireAt ? (Date.parse(expireAt) < now ? "expired" : "active") : "unknown",
+    status: nonExpiring ? "owner_confirmed_lifetime" : expireAt ? "owner_confirmed_expiry" : "known_member_pending_sync",
+    non_expiring: nonExpiring,
+    start_date: start, expire_at: expireAt, level, lifecycle: nonExpiring ? "active" : expireAt ? (Date.parse(expireAt) < now ? "expired" : "active") : "unknown",
     source_record_id: rows[0].id, source_imported_at: f["Imported At"], expiry_source: provenance,
-    source_freshness: "import_timestamp_only", conflict: conflict || "", access_verified: false };
+    source_freshness: "import_timestamp_only", conflict: conflict || "", access_verified: false,
+    ...(accountEvidenceMatches && !conflict && fact.renewal && now >= Date.parse(fact.renewal.approved_at) && now < Date.parse(fact.renewal.valid_before)
+      ? { renewal_offer: { ...fact.renewal, source_record_id: rows[0].id } } : {}) };
 }
 export async function readKenjiOwnerMembershipContext(env, lineUserId) {
   if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID || !/^U[a-f0-9]{32}$/i.test(lineUserId || "")) return null;

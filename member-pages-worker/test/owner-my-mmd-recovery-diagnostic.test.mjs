@@ -159,6 +159,33 @@ test("pending recovery never reports canonical-profile zero as final points", as
   assert.equal(body.points.value, null);
 });
 
+test("LINE OFC Points remain visible when the Member profile is unavailable, without inferring membership", async () => {
+  const missingProfile = env();
+  missingProfile.MEMBER_STATUS_RESOLVER.fetch = async () => Response.json({ ok: false, error: { code: "MEMBER_NOT_FOUND" } }, { status: 404 });
+  const response = await handleOwnerMyMmdRecoveryDiagnosticRpc(internalRequest(), missingProfile);
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.membership.status, "unavailable");
+  assert.equal(body.membership.level, null);
+  assert.equal(body.membership.active_through, null);
+  assert.equal(body.points.value, 1250);
+  assert.equal(body.points.source, "history_recovery");
+  assert.equal(body.guardrails.member_profile_available, false);
+  assert.doesNotMatch(JSON.stringify(body), new RegExp(LINE_ID));
+});
+
+test("missing profile and incomplete history never report a made-up zero balance", async () => {
+  const missingBoth = env();
+  missingBoth.MEMBER_STATUS_RESOLVER.fetch = async () => Response.json({ ok: false }, { status: 503 });
+  missingBoth.LIFF_IDENTITY_KV.get = async () => null;
+  const response = await handleOwnerMyMmdRecoveryDiagnosticRpc(internalRequest(), missingBoth);
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.membership.status, "unavailable");
+  assert.equal(body.points.status, "pending");
+  assert.equal(body.points.value, null);
+});
+
 
 
 
@@ -170,4 +197,25 @@ test("active member-pages runtime wires the owner diagnostic before customer ses
   const diagnosticIndex = source.indexOf("isOwnerMyMmdRecoveryDiagnosticRpc(request)");
   const customerFlowIndex = source.indexOf("const shellBoundary = createLiffShellBoundaryTrace");
   assert.ok(diagnosticIndex >= 0 && customerFlowIndex >= 0 && diagnosticIndex < customerFlowIndex);
+});
+
+
+test('reviewed owner refresh bypasses stale preload and reads back refreshed points', async()=>{
+  let calls=0;
+  const res=await handleOwnerMyMmdRecoveryDiagnosticRpc(internalRequest({line_user_id:LINE_ID,refresh_reviewed:true}),env(),{runRecovery:async input=>{
+    calls++;assert.equal(input.lineUserId,LINE_ID);assert.equal(input.forceSourceRefresh,true);
+    return {state:'reconciled',current_points_total:1500,pending_review_count:0};
+  }});
+  const body=await res.json();assert.equal(calls,1);assert.equal(body.points.value,1500);assert.equal(body.guardrails.read_only,false);
+});
+
+test('refresh failure never returns stale points as successful', async()=>{
+  const res=await handleOwnerMyMmdRecoveryDiagnosticRpc(internalRequest({line_user_id:LINE_ID,refresh_reviewed:true}),env(),{runRecovery:async()=>({state:'blocked',reason:'AIRTABLE_UNAVAILABLE'})});
+  assert.equal(res.status,503);assert.equal((await res.json()).ok,false);
+});
+
+test('public refresh cannot reach the recovery runner',async()=>{
+  let calls=0;
+  const res=await handleOwnerMyMmdRecoveryDiagnosticRpc(internalRequest({line_user_id:LINE_ID,refresh_reviewed:true},'admin-worker','www.mmdbkk.com'),env(),{runRecovery:async()=>{calls++;}});
+  assert.equal(res.status,404);assert.equal(calls,0);
 });

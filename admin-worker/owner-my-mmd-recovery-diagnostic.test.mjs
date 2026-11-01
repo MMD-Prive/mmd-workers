@@ -203,3 +203,31 @@ test("wrangler owns only the exact/query-safe owner diagnostic routes", async ()
   }
   assert.equal(wrangler.includes('pattern = "mmdbkk.com/internal/admin/*"'), false);
 });
+
+
+test('refresh is owner-only, same-origin, and requires explicit review confirmation', async () => {
+  const owner = { id: 'per', role: 'owner', auth_method: 'credential' };
+  for (const [origin, actor, body, expected] of [
+    ['https://evil.example', owner, { client_id: CLIENT_ID, confirm_reviewed: true }, 403],
+    ['https://mmdbkk.com', { id: 'staff', role: 'admin' }, { client_id: CLIENT_ID, confirm_reviewed: true }, 403],
+    ['https://mmdbkk.com', owner, { client_id: CLIENT_ID }, 400],
+  ]) {
+    const req = new Request('https://mmdbkk.com'+OWNER_MY_MMD_RECOVERY_API_PATH, {method:'POST',headers:{origin,'content-type':'application/json'},body:JSON.stringify(body)});
+    assert.equal((await handleOwnerMyMmdRecoveryDiagnostic(req, env(), actor)).status, expected);
+  }
+});
+
+test('reviewed refresh resolves client server-side and returns the new points readback', async () => {
+  const originalFetch=globalThis.fetch;
+  globalThis.fetch=async()=>Response.json({id:CLIENT_ID,fields:{'Client Name (Display)':'fixture',line_user_id:LINE_ID}});
+  try {
+    const config=env();
+    config.MEMBER_PAGES_MEMBER_WALLET.fetch=async req=>{
+      assert.deepEqual(await req.json(),{line_user_id:LINE_ID,refresh_reviewed:true});
+      return Response.json({ok:true,recovery:{state:'reconciled'},points:{value:1300,status:'verified'},guardrails:{read_only:false}});
+    };
+    const req=new Request('https://mmdbkk.com'+OWNER_MY_MMD_RECOVERY_API_PATH,{method:'POST',headers:{origin:'https://mmdbkk.com','content-type':'application/json'},body:JSON.stringify({client_id:CLIENT_ID,confirm_reviewed:true})});
+    const res=await handleOwnerMyMmdRecoveryDiagnostic(req,config,{id:'per',role:'owner'});
+    const body=await res.json();assert.equal(body.points.value,1300);assert.equal(body.guardrails.read_only,false);assert.doesNotMatch(JSON.stringify(body),new RegExp(LINE_ID));
+  } finally {globalThis.fetch=originalFetch}
+});

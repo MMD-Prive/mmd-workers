@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { handleLineOfcClientImport, LINE_OFC_CLIENT_IMPORT_PATH } from "./src/line-ofc-client-import.js";
+import { handleLineOfcClientImport, readLineOfcImportReplay, LINE_OFC_CLIENT_IMPORT_PATH } from "./src/line-ofc-client-import.js";
 import { isKenjiControlActionRequest } from "./src/kenji-control-actions.js";
 
 const ENV = {
@@ -42,6 +42,7 @@ test("matched LINE OA import projects rename into reviewed staging and canonical
   let staged = null;
   let verified = null;
   let indexed = null;
+  let audit = null;
   globalThis.fetch = async (url, init = {}) => {
     const value = String(url);
     const method = init.method || "GET";
@@ -64,7 +65,7 @@ test("matched LINE OA import projects rename into reviewed staging and canonical
       indexed = JSON.parse(init.body).fields;
       return response({ id: "recIndex", fields: indexed });
     }
-    if (method === "POST" && table === "tblUzZ8ImRZOkks4c") return response({ id: "recAudit" });
+    if (method === "POST" && table === "tblUzZ8ImRZOkks4c") { audit = JSON.parse(init.body).fields; return response({ id: "recAudit" }); }
     throw new Error(`unexpected fetch ${method} ${value}`);
   };
   try {
@@ -94,6 +95,8 @@ test("matched LINE OA import projects rename into reviewed staging and canonical
     assert.equal(body.membership_mutation, false);
     assert.equal(body.entitlement_mutation, false);
     assert.equal(body.telegram_mutation, false);
+    assert.equal(audit.operation, "client_intake");
+    assert.equal(audit.redacted_summary, "line_ofc_import_matched_indexed");
 
     assert.deepEqual(staged["Canonical Client"], ["recClient"]);
     assert.equal(staged["Telegram Username"], "membertg");
@@ -160,4 +163,11 @@ test("unmatched verified LINE OA import becomes searchable candidate without rig
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+
+test('duplicate import returns stored canonical client without any write',async()=>{
+ const originalFetch=globalThis.fetch;let calls=0;
+ globalThis.fetch=async(url,init)=>{calls++;assert.equal(init.method||'GET','GET');assert.ok(String(url).endsWith('/recImport'));return response({id:'recImport',fields:{'Import ID':'fixture','Canonical Client':['recClient'],'Import Status':'matched'}})};
+ try{const body=await (await readLineOfcImportReplay(ENV,'recImport')).json();assert.equal(body.canonical_client_id,'recClient');assert.equal(body.duplicate,true);assert.equal(calls,1)}finally{globalThis.fetch=originalFetch}
 });

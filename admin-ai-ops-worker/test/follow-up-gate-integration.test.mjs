@@ -21,7 +21,7 @@ test("Control Room context promotes due durable watches into Needs Per and Prepa
   globalThis.fetch = async (input) => {
     const url = new URL(typeof input === "string" ? input : input.url);
     if (url.pathname === "/v1/admin/auth/me") {
-      return new Response(JSON.stringify({ ok: true, authenticated: true, actor: "per" }), { status: 200, headers: { "content-type": "application/json" } });
+      return new Response(JSON.stringify({ ok: true, authenticated: true, worker: "admin-worker", actor: "per" }), { status: 200, headers: { "content-type": "application/json" } });
     }
     if (url.pathname === "/v1/admin/dashboard") {
       return new Response(JSON.stringify({ ok: true, todos: [], boss: [], money: [], jobs: [], members: [], status: { admin: "พร้อม" } }), { status: 200, headers: { "content-type": "application/json" } });
@@ -30,6 +30,7 @@ test("Control Room context promotes due durable watches into Needs Per and Prepa
   };
 
   const env = {
+    MMS_ADMIN: { fetch: (...args) => globalThis.fetch(...args) },
     FOLLOW_UP_AUTOPILOT: fakeNamespace(async (request) => {
       const url = new URL(request.url);
       assert.equal(url.pathname, "/__internal/follow-ups/state");
@@ -75,7 +76,7 @@ test("sync derives candidates only from verified dashboard and writes reminder s
   globalThis.fetch = async (input) => {
     const url = new URL(typeof input === "string" ? input : input.url);
     if (url.pathname === "/v1/admin/auth/me") {
-      return new Response(JSON.stringify({ ok: true, authenticated: true }), { status: 200, headers: { "content-type": "application/json" } });
+      return new Response(JSON.stringify({ ok: true, authenticated: true, worker: "admin-worker" }), { status: 200, headers: { "content-type": "application/json" } });
     }
     if (url.pathname === "/v1/admin/dashboard") {
       return new Response(JSON.stringify({
@@ -91,6 +92,7 @@ test("sync derives candidates only from verified dashboard and writes reminder s
 
   let received = null;
   const env = {
+    MMS_ADMIN: { fetch: (...args) => globalThis.fetch(...args) },
     FOLLOW_UP_AUTOPILOT: fakeNamespace(async (request) => {
       const url = new URL(request.url);
       assert.equal(url.pathname, "/__internal/follow-ups/sync");

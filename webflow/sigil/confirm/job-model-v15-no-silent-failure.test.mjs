@@ -72,12 +72,15 @@ class FakeEl {
 
 function buildRoot() {
   const root = new FakeEl("section", { id: "mmd-model-confirm-v15" });
-  const names = ["data-m-pill", "data-m-status", "data-m-retry", "data-m-client", "data-m-type", "data-m-date", "data-m-time", "data-m-location", "data-m-vip-row", "data-m-vip", "data-m-map", "data-m-payout-card", "data-m-payout", "data-m-check", "data-m-confirm", "data-m-success"];
+  const names = ["data-m-pill", "data-m-status", "data-m-retry", "data-m-client", "data-m-type", "data-m-date", "data-m-time", "data-m-location", "data-m-vip-row", "data-m-vip", "data-m-map", "data-m-check", "data-m-confirm", "data-m-success"];
   const el = {};
   for (const name of names) {
     const tag = name === "data-m-check" ? "input" : name === "data-m-confirm" || name === "data-m-retry" ? "button" : "div";
     el[name] = root.appendChild(new FakeEl(tag, { [name]: "" }));
   }
+  el["data-m-payout-card"] = root.appendChild(new FakeEl("section", { "data-m-payout-card": "" }));
+  el.payoutRow = el["data-m-payout-card"].appendChild(new FakeEl("div", { "data-m-payout-row": "" }));
+  el["data-m-payout"] = el.payoutRow.appendChild(new FakeEl("strong", { "data-m-payout": "" }));
   el["data-m-success"].hidden = true;
   el["data-m-retry"].hidden = true;
   return { root, el };
@@ -119,6 +122,7 @@ function harness({ routes = {}, token = TOKEN, ua = "Mozilla/5.0 Line/14.0.0", w
     if (!next) throw new TypeError("Failed to fetch");
     if (next === "hang") return new Promise(() => {});
     if (next instanceof Error) throw next;
+    if (next.wait) await next.wait;
     return jsonResponse(next.status, next.body);
   };
   const warnings = [];
@@ -225,7 +229,7 @@ test("confirm POST failure shows a visible error next to the button with a refer
   assert.equal(h.root.dataset.mmdState, "confirm_failed");
   assert.equal(feedback(h).hidden, false);
   assert.ok(feedback(h).classList.contains("is-error"));
-  assert.match(feedback(h).textContent, /ขัดข้องชั่วคราว/);
+  assert.match(feedback(h).textContent, /ตรวจสถานะงานกับ MMD ก่อนกดยืนยันซ้ำ/);
   assert.match(diag(h).textContent, /MC-A503-airtable_request_failed/);
   assert.equal(h.el["data-m-confirm"].textContent, "ยืนยันรับงาน");
   assert.equal(h.el["data-m-confirm"].disabled, false, "model can retry the confirm");
@@ -237,7 +241,7 @@ test("confirm network failure is visible, not silent", async () => {
   h.el["data-m-check"].checked = true;
   await h.el["data-m-confirm"].click();
   await settle();
-  assert.match(feedback(h).textContent, /เชื่อมต่อไม่ได้/);
+  assert.match(feedback(h).textContent, /ตรวจสถานะงานกับ MMD ก่อนกดยืนยันซ้ำ/);
   assert.match(diag(h).textContent, /MC-A000-network_error/);
 });
 
@@ -323,6 +327,19 @@ test("gate: inside LIFF a missing session shows a manual screen, never an automa
   assert.ok(h.body.children.find((c) => c.hasAttribute("data-mmd-direct-first-job-gate")));
 });
 
+test("gate: first private job requiring rules leaves the loading state without reading details", async () => {
+  const h = harness({ withGate: true, routes: {
+    "/v1/model/direct-job-gate/status": { status: 200, body: { ok: true, applies: true, required: true, rules_url: "https://mmdbkk.com/rules/model/private/job-day" } },
+    "/v1/confirm/details": DETAILS_OK,
+  } });
+  await settle();
+  assert.equal(h.root.dataset.mmdState, "gate");
+  assert.equal(h.el["data-m-pill"].textContent, "");
+  assert.ok(h.body.children.find(c => c.hasAttribute("data-mmd-direct-first-job-gate")));
+  assert.equal(h.calls.filter(c => c.path === "/v1/confirm/details").length, 0);
+  assert.equal(h.el["data-m-confirm"].disabled, true);
+});
+
 test("gate: failed preflight is not cached, so retry can recover", async () => {
   const ok = { status: 200, body: { ok: true, applies: false, required: false } };
   const h = harness({ withGate: true, routes: { "/v1/model/direct-job-gate/status": [new TypeError("Failed to fetch"), ok], "/v1/confirm/details": DETAILS_OK } });
@@ -355,6 +372,18 @@ test("missing client name falls back to a dash instead of a blank or a fake name
   const h = harness({ routes: { "/v1/confirm/details": { status: 200, body: { ...DETAILS_OK.body, client_name: "" } } } });
   await settle();
   assert.equal(h.el["data-m-client"].textContent, "—");
+});
+
+
+test("model confirmation lists reconciled PN and MK payout parts under the total", async () => {
+  const h = harness({ routes: { "/v1/confirm/details": { status: 200, body: { ...DETAILS_OK.body,
+    job_type: "PN:mk", model_payout_thb: 11500,
+    model_payout_breakdown: [{ label: "PN", amount_thb: 10000 }, { label: "MK", amount_thb: 1500 }] } } } });
+  await settle();
+  const breakdown = h.el["data-m-payout-card"].querySelector("[data-m-payout-breakdown]");
+  assert.ok(breakdown);
+  for (const text of ["PN", "10,000 THB", "MK", "1,500 THB"]) assert.ok(breakdown.allText.includes(text), text);
+  assert.equal(h.el["data-m-type"].textContent, "PN · MK");
 });
 
 test("missing model payout shows the clear warning and keeps the rate row visible", async () => {
@@ -400,4 +429,124 @@ test("www Webflow confirmation checks the host-only session on canonical apex be
   assert.equal(gate.credentials, "include");
   assert.equal(h.root.dataset.mmdState, "ready");
   assert.equal(h.replaced.length, 0);
+});
+
+const ACK_STORE = "mmd_model_ack_receipts_v1";
+const RECEIPT_ID = "11111111-1111-4111-8111-111111111111";
+
+test("ack rejection displays backend reference and stores only bounded sanitized metadata", async () => {
+  const sessionStore = new Map([[ACK_STORE, JSON.stringify(Array.from({length:15}, () => ({schema:"mmd_model_ack_browser_receipt_v1", code:"RAW_SECRET", token:TOKEN})))]]);
+  const h = harness({ sessionStore, routes: { "/v1/confirm/details": DETAILS_OK, "/v1/confirm/ack": {
+    status:410, body:{ok:false,error:"confirmation_token_expired", token:TOKEN, receipt:{request_id:RECEIPT_ID, raw:"RAW_SECRET"}}
+  }}});
+  await settle(); h.el["data-m-check"].checked = true; await h.el["data-m-confirm"].click();
+  assert.match(feedback(h).textContent, /หมดอายุ/);
+  assert.ok(diag(h).textContent.includes(RECEIPT_ID));
+  const saved = JSON.parse(sessionStore.get(ACK_STORE));
+  assert.equal(saved.length, 10);
+  assert.equal(saved.at(-1).request_id, RECEIPT_ID);
+  assert.equal(saved.at(-1).outcome, "rejected");
+  assert.equal(saved.at(-1).code, "confirmation_token_expired");
+  assert.deepEqual(Object.keys(saved.at(-1)).sort(), ["schema","timestamp","request_id","status","code","outcome"].sort());
+  assert.doesNotMatch(sessionStore.get(ACK_STORE), /RAW_SECRET|payment_ref|"token"|pay_x|client_name/);
+  assert.equal(h.calls.filter(c=>c.path==="/v1/confirm/ack").length,1);
+});
+
+test("successful ack stores the same backend reference without exposing the response payload", async () => {
+  const h=harness({routes:{"/v1/confirm/details":DETAILS_OK,"/v1/confirm/ack":{status:200,body:{ok:true,receipt:{request_id:RECEIPT_ID},private_notes:"SECRET"}}}});
+  await settle(); h.el["data-m-check"].checked=true; await h.el["data-m-confirm"].click();
+  assert.equal(h.root.dataset.mmdState,"confirmed");
+  const saved=JSON.parse(h.sessionStore.get(ACK_STORE));
+  assert.equal(saved.length,1); assert.equal(saved[0].outcome,"success");
+  assert.equal(saved[0].request_id,RECEIPT_ID);
+  assert.doesNotMatch(h.sessionStore.get(ACK_STORE),/SECRET|private_notes/);
+});
+
+test("timeout, malformed success, and raw error retain unknown result without automatic resubmission or secret logs", async () => {
+  for(const response of ["hang",{status:200,body:{message:"RAW_SECRET"}},{status:503,body:{ok:false,error:"RAW_SECRET",receipt:{request_id:"RAW_SECRET"}}}]) {
+    const h=harness({routes:{"/v1/confirm/details":DETAILS_OK,"/v1/confirm/ack":response}});
+    await settle(); h.el["data-m-check"].checked=true;
+    await Promise.all([h.el["data-m-confirm"].click(),h.el["data-m-confirm"].click()]);
+    await settle();
+    assert.equal(h.root.dataset.mmdState,"confirm_failed");
+    assert.match(feedback(h).textContent,/ตรวจสถานะงานกับ MMD/);
+    const saved=JSON.parse(h.sessionStore.get(ACK_STORE));
+    assert.equal(saved.length,1); assert.equal(saved[0].outcome,"unknown");
+    assert.equal(h.calls.filter(c=>c.path==="/v1/confirm/ack").length,1);
+    assert.doesNotMatch(JSON.stringify(saved)+JSON.stringify(h.warnings)+diag(h).textContent,/RAW_SECRET/);
+  }
+});
+
+test("restricted receipt storage cannot turn a successful acknowledgement into failure", async () => {
+  const h=harness({ sessionStore:{ get(){throw new Error("blocked")},set(){throw new Error("blocked")} },
+    routes:{"/v1/confirm/details":DETAILS_OK,"/v1/confirm/ack":{status:200,body:{ok:true,receipt:{request_id:RECEIPT_ID}}}} });
+  await settle(); h.el["data-m-check"].checked=true; await h.el["data-m-confirm"].click();
+  assert.equal(h.root.dataset.mmdState,"confirmed");
+  assert.equal(h.calls.filter(c=>c.path==="/v1/confirm/ack").length,1);
+});
+
+test("a late success after timeout never replaces the unknown receipt or submits again", async () => {
+  let release;
+  const wait = new Promise(resolve => { release = resolve; });
+  const h = harness({routes:{"/v1/confirm/details":DETAILS_OK,"/v1/confirm/ack":{wait,status:200,body:{ok:true,receipt:{request_id:RECEIPT_ID}}}}});
+  await settle(); h.el["data-m-check"].checked=true; await h.el["data-m-confirm"].click();
+  const before = h.sessionStore.get(ACK_STORE);
+  assert.equal(JSON.parse(before)[0].outcome,"unknown");
+  release(); await settle();
+  assert.equal(h.sessionStore.get(ACK_STORE),before);
+  assert.equal(h.root.dataset.mmdState,"confirm_failed");
+  assert.equal(h.calls.filter(c=>c.path==="/v1/confirm/ack").length,1);
+});
+
+
+test("backend unknown survives 4xx responses in browser receipt and asks to check status without automatic retry", async () => {
+  const cases = [
+    { status: 401, error: "confirmation_ack_failed" },
+    { status: 409, error: "confirmation_details_changed_reload_required" },
+  ];
+  for (const item of cases) {
+    const h = harness({ routes: {
+      "/v1/confirm/details": DETAILS_OK,
+      "/v1/confirm/ack": { status: item.status, body: {
+        ok: false, error: item.error,
+        receipt: { request_id: RECEIPT_ID, stage: "write", outcome: "unknown", token: TOKEN, raw: "RAW_SECRET" }
+      } }
+    } });
+    await settle();
+    h.el["data-m-check"].checked = true;
+    await h.el["data-m-confirm"].click();
+    await settle();
+    const saved = JSON.parse(h.sessionStore.get(ACK_STORE));
+    assert.equal(saved.length, 1);
+    assert.equal(saved[0].outcome, "unknown");
+    assert.equal(saved[0].status, item.status);
+    assert.equal(saved[0].request_id, RECEIPT_ID);
+    assert.match(feedback(h).textContent, /ตรวจสถานะงานกับ MMD ก่อนกดยืนยันซ้ำ/);
+    assert.ok(diag(h).textContent.includes(RECEIPT_ID));
+    assert.equal(h.root.dataset.mmdState, "confirm_failed");
+    assert.equal(h.el["data-m-check"].checked, true);
+    assert.equal(h.calls.filter(c => c.path === "/v1/confirm/ack").length, 1);
+    assert.equal(h.calls.filter(c => c.path === "/v1/confirm/details").length, 1, "unknown must not trigger a revision reload");
+    assert.doesNotMatch(h.sessionStore.get(ACK_STORE) + JSON.stringify(h.warnings), /RAW_SECRET|"token"|"raw"/);
+  }
+});
+
+test("backend outcome allowlist never promotes an error response to success", async () => {
+  for (const outcome of ["rejected", "success", "RAW_SECRET", { value: "unknown" }, undefined]) {
+    const h = harness({ routes: {
+      "/v1/confirm/details": DETAILS_OK,
+      "/v1/confirm/ack": { status: 410, body: {
+        ok: false, error: "confirmation_token_expired", receipt: { request_id: RECEIPT_ID, outcome }
+      } }
+    } });
+    await settle();
+    h.el["data-m-check"].checked = true;
+    await h.el["data-m-confirm"].click();
+    const saved = JSON.parse(h.sessionStore.get(ACK_STORE));
+    assert.equal(saved[0].outcome, "rejected");
+    assert.match(feedback(h).textContent, /หมดอายุ/);
+    assert.equal(h.root.dataset.mmdState, "confirm_failed");
+    assert.doesNotMatch(h.sessionStore.get(ACK_STORE), /RAW_SECRET/);
+    assert.equal(h.calls.filter(c => c.path === "/v1/confirm/ack").length, 1);
+  }
 });

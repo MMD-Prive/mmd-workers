@@ -18,7 +18,7 @@ try {
     platform: "browser",
     target: "es2022",
   });
-  const { decorateCustomer360Page, enforceExactCanonicalClientScope, redactCustomerQueueResponse, resolveRequestedClientId } = await import(pathToFileURL(outfile).href);
+  const { decorateCustomer360Page, decorateCustomerDirectoryQuery, decorateMembershipAccessPage, enforceExactCanonicalClientScope, redactCustomerQueueResponse, resolveRequestedClientId } = await import(pathToFileURL(outfile).href);
 
   assert.equal(resolveRequestedClientId(new URLSearchParams("client_id=recCanonical123")), "recCanonical123");
   assert.equal(resolveRequestedClientId(new URLSearchParams("client_id=%20recCanonical123%20")), "recCanonical123");
@@ -62,6 +62,28 @@ try {
   assert.match(html, /credentials:'include'/);
   assert.doesNotMatch(html, /localStorage|sessionStorage/);
   assert.doesNotMatch(html, /Authorization|X-Confirm-Key|CONFIRM_KEY/);
+  assert.match(html, /\/internal\/admin\/jobs\/all/);
+  assert.doesNotMatch(html, /\/internal\/admin\/payments\?client_id=/);
+
+  const queriedDirectory = await decorateCustomerDirectoryQuery(new Response(
+    '<html><body><form id="search"><input id="query"></form></body></html>',
+    { headers: { "content-type": "text/html; charset=utf-8" } },
+  ));
+  const queriedDirectoryHtml = await queriedDirectory.text();
+  assert.match(queriedDirectoryHtml, /data-mmd-customer-directory-query="v1"/);
+  assert.match(queriedDirectoryHtml, /getAll\('q'\)/);
+  assert.match(queriedDirectoryHtml, /form\.requestSubmit/);
+
+  const membership = await decorateMembershipAccessPage(new Response(
+    '<html><body><form data-form><input data-query></form><div data-list></div></body></html>',
+    { headers: { "content-type": "text/html; charset=utf-8" } },
+  ));
+  const membershipHtml = await membership.text();
+  assert.equal(membership.headers.get("x-mmd-membership-client-handoff"), "canonical-client-v1");
+  assert.match(membershipHtml, /data-mmd-membership-client-handoff="v1"/);
+  assert.match(membershipHtml, /getAll\('client_id'\)/);
+  assert.match(membershipHtml, /String\(node\.getAttribute\('data-id'\)\|\|''\)\.trim\(\)===id/);
+  assert.match(membershipHtml, /form\.requestSubmit/);
 
   const scopedPage = await decorateCustomer360Page(new Response('<html><head></head><body><main class="c360"><section class="summary"></section><nav class="memory-guide"></nav><section class="work"><aside></aside><article><div data-empty></div><div data-detail hidden><section class="decision"></section></div></article></section><button data-backfill></button><button data-refresh></button><span data-state></span><div data-list></div><script>(function(){function q(s){return document.querySelector(s)}function load(){}function summary(){}load(\'review_required\');summary()})();</script></main></body></html>', {
     headers: { "content-type": "text/html; charset=utf-8" },
@@ -77,6 +99,16 @@ try {
   assert.match(scopedHtml, /getAll\('client_id'\),directClient=clientIds\.length===1/);
   assert.match(scopedHtml, /String\(clientIds\[0\]\|\|''\)\.trim\(\)/);
   assert.match(scopedHtml, /INTEL\+'\?client_id='\+encodeURIComponent\(id\)/);
+  // Points/history is an authenticated, read-only, exact-client Owner readback.
+  assert.match(scopedHtml, /data-mmd-c360-member-history/);
+  assert.match(scopedHtml, /\/v1\/admin\/my-mmd\/recovery-diagnostic/);
+  assert.match(scopedHtml, /loadMemberHistoryReadback\(id,seq\)/);
+  assert.match(scopedHtml, /txt\(data\.customer\?\.canonical_client_id\)!==id/);
+  assert.match(scopedHtml, /response\.status===403/);
+  assert.match(scopedHtml, /points\.status==='verified'/);
+  assert.match(scopedHtml, /credentials:'include',cache:'no-store'/);
+  assert.doesNotMatch(scopedHtml, /\/api\/member\/app\/history\/refresh/);
+  assert.doesNotMatch(scopedHtml, /confirm_reviewed:true/);
   const emptyScopedPage = await decorateCustomer360Page(new Response('<html><head></head><body><script>load(\'review_required\');summary()})();</script></body></html>', { headers: { 'content-type': 'text/html' } }), '');
   assert.equal(emptyScopedPage.status, 200);
   const emptyScopedHtml = await emptyScopedPage.text();

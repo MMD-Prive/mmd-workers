@@ -7,6 +7,7 @@ import {
 } from "./index.js";
 import { handleConfirmationDetails } from "./confirmation-details.js";
 import { stablePaymentRef } from "./unified-payment-proof.js";
+import { handlePaymentInstructions } from "./payment-instructions-v1.js";
 
 const F = Object.freeze({
   sessionId: "fldLTq2kZbyRv22IA",
@@ -49,6 +50,23 @@ function kvStore() {
   };
 }
 
+test('Black Card membership instructions use canonical 35,000 when amount-due snapshot is empty', async () => {
+  const session = sessionRecord({[F.amountThb]:35000,[F.customerAmountDueThb]:null,[F.note]:'MMD Black Card membership'});
+  const payment = paymentRecord({[P.amountThb]:35000,[P.paymentStage]:'membership',[P.paymentType]:'',[P.intentStatus]:'Pending Confirmation'});
+  const {env,customerToken} = await envAndTokens({session,payment,paymentType:'membership'});
+  const original = env.AIRTABLE_HTTP.fetch;
+  env.AIRTABLE_HTTP.fetch = async (request, init) => {
+    const url = new URL(typeof request === 'string' ? request : request.url);
+    if (url.pathname.includes('tblTPC2yV1P3CwbgU')) return Response.json({records:[{id:'recInstructions',fields:{'Instruction ID':'mmd_membership_v1',Status:'active',Methods:['bank_transfer'],'Account Number':'test-account','Bank Name TH':'ธนาคารทดสอบ','Account Name TH':'บัญชีทดสอบ','Effective From':'2026-01-01'}}]});
+    return original(request,init);
+  };
+  const req = new Request('https://sigil.mmdbkk.com/v1/confirm/payment-instructions',{method:'POST',headers:{origin:'https://mmdbkk.com','content-type':'application/json'},body:JSON.stringify({t:customerToken,expected_role:'customer'})});
+  const response = await handlePaymentInstructions(req,env,next=>handleConfirmationDetails(next,env));
+  const data = await response.json();
+  assert.equal(response.status,200,JSON.stringify(data));
+  assert.equal(data.available,true);assert.equal(data.amount_due_thb,35000);assert.equal(data.stage,'membership');assert.equal(data.instructions.bank_transfer.account_number,'test-account');
+});
+
 function sessionRecord(overrides = {}) {
   return {
     id: "rec_session_test",
@@ -75,6 +93,8 @@ function sessionRecord(overrides = {}) {
         "[SIGIL Pricing v1] {\"full_price_thb\":45000,\"discount_mode\":\"percent\",\"discount_percent\":5,\"discount_thb\":2250,\"net_price_thb\":42750,\"deposit_basis_thb\":45000,\"deposit_percent\":20,\"deposit_due_thb\":9000,\"deposit_received_thb\":9000,\"balance_thb\":33750}",
         "[SIGIL Pricing v1] {\"full_price_thb\":45000,\"discount_mode\":\"percent\",\"discount_percent\":10,\"discount_thb\":4500,\"net_price_thb\":40500,\"deposit_basis_thb\":45000,\"deposit_percent\":30,\"deposit_due_thb\":13500,\"deposit_received_thb\":13500,\"balance_thb\":27000}",
         "[SIGIL VIP Detail v1] {\"vip_detail\":\"vtop\"}",
+        `[MMD SERVICE PRICING v1] {"version":1,"currency":"THB","model_base_payout_thb":5000,"addons":[{"option":"mk","client_amount_thb":1000,"model_payout_thb":500}],"model_total_payout_thb":5500}`,
+        "[MMD Model Remark v1] {\"text\":\"เข้าทางประตูด้านซ้าย\",\"meeting_point\":\"รอที่ล็อบบี้ · เลขห้อง/บ้านเลขที่: 401\"}",
       ].join(" "),
       ...overrides,
     },
@@ -154,7 +174,7 @@ function post(token, role, origin = "https://www.mmdbkk.com") {
   });
 }
 
-test("customer confirmation details expose the latest inline customer pricing but not internal payout or notes", async () => {
+test("customer confirmation details reconcile deposit snapshots against verified Payments", async () => {
   const { env, customerToken } = await envAndTokens();
   const response = await handleConfirmationDetails(post(customerToken, "customer"), env);
   assert.equal(response.status, 200);
@@ -170,15 +190,21 @@ test("customer confirmation details expose the latest inline customer pricing bu
   assert.equal(data.pricing.discount_thb, 4500);
   assert.equal(data.pricing.deposit_basis_thb, 45000);
   assert.equal(data.pricing.deposit_due_thb, 13500);
-  assert.equal(data.pricing.balance_thb, 27000);
+  assert.equal(data.pricing.deposit_received_thb, 0);
+  assert.equal(data.pricing.balance_thb, 40500);
+  assert.equal(data.payment.stage, "deposit");
+  assert.equal(data.payment.amount_due_thb, 13500);
+  assert.equal(data.payment.verified, false);
   assert.equal(data.vip_detail, "vtop");
   assert.equal("model_payout_thb" in data, false);
+  assert.equal("model_remark" in data, false);
+  assert.equal("model_meeting_point" in data, false);
   assert.equal("note" in data, false);
   assert.equal("notes" in data, false);
   assert.equal(JSON.stringify(data).includes("Partner Attribution"), false);
 });
 
-test("customer payment display uses pricing authority instead of stale Payment.Amount", async () => {
+test("customer payment display suppresses a QR tied to stale Payment.Amount", async () => {
   const stalePayment = paymentRecord({
     [P.amountThb]: 42750,
     [P.paymentStage]: "deposit",
@@ -192,7 +218,7 @@ test("customer payment display uses pricing authority instead of stale Payment.A
   assert.equal(data.payment.stage, "deposit");
   assert.equal(data.payment.method, "promptpay");
   assert.equal(data.payment.amount_due_thb, 13500);
-  assert.equal(data.payment.qr_url, "https://payments.example.com/qr/deposit.png");
+  assert.equal(data.payment.qr_url, null);
   assert.equal(data.payment.proof_status_available, true);
   assert.equal(data.payment.verified, false);
   assert.equal(JSON.stringify(data.payment).includes("42750"), false);
@@ -345,12 +371,8 @@ test("payment enrichment never exposes a payment record bound to another session
   const wrongSessionPayment = paymentRecord({ [P.sessionId]: "sess_other" });
   const { env, customerToken } = await envAndTokens({ payment: wrongSessionPayment, paymentType: "full" });
   const response = await handleConfirmationDetails(post(customerToken, "customer"), env);
-  assert.equal(response.status, 200);
-  const data = await response.json();
-  assert.equal(data.payment.qr_url, null);
-  assert.equal(data.payment.method, null);
-  assert.equal(data.payment.stage, null);
-  assert.equal(data.payment.amount_due_thb, 13500);
+  assert.equal(response.status, 409);
+  assert.equal((await response.json()).error, "balance_payment_session_mismatch");
 });
 
 test("model confirmation details expose the client display name and the model's own payout, never payment data, customer amounts, pricing or payment QR", async () => {
@@ -362,13 +384,46 @@ test("model confirmation details expose the client display name and the model's 
   assert.equal(data.role, "model");
   assert.equal(data.amount_scope, "model_payout");
   assert.equal(data.model_payout_thb, 5500);
+  assert.equal(data.job_type, "private:exclusive:straight:vip:mk");
+  assert.deepEqual(data.model_payout_breakdown, [{ label: "VIP", amount_thb: 5000 }, { label: "MK", amount_thb: 500 }]);
+  assert.equal(data.model_remark, "เข้าทางประตูด้านซ้าย");
+  assert.equal(data.model_meeting_point, "รอที่ล็อบบี้ · เลขห้อง/บ้านเลขที่: 401");
+  assert.equal("note" in data, false);
   assert.equal("amount_thb" in data, false, "no generic/customer amount on the model view");
   assert.equal(data.client_name, "พี่ SVIP", "model sees the client display name");
   assert.equal("pricing" in data, false);
   assert.equal("payment" in data, false);
+  for (const key of ['billing', 'travel_fee_thb', 'discount_thb', 'client_total_amount_thb', 'cost', 'profit', 'margin', 'payment_ref', 'payment_type', 'payment_status']) {
+    assert.equal(key in data, false, `${key} is owner/customer-only`);
+  }
   assert.equal(JSON.stringify(data).includes("payments.example.com"), false);
   assert.equal(JSON.stringify(data).includes("45000"), false);
   assert.equal(JSON.stringify(data).includes("Partner Attribution"), false);
+});
+
+
+test("model payout breakdown is omitted when its pieces do not reconcile with the payout", async () => {
+  const fixture = sessionRecord({ [F.payModelThb]: 11500 });
+  fixture.fields[F.jobType] = "PN";
+  fixture.fields[F.note] = "[MMD SERVICE PRICING v1] {\"version\":1,\"currency\":\"THB\",\"model_base_payout_thb\":10000,\"addons\":[{\"option\":\"mk\",\"model_payout_thb\":1200}],\"model_total_payout_thb\":11200}";
+  const { env, modelToken } = await envAndTokens({ session: fixture });
+  const response = await handleConfirmationDetails(post(modelToken, "model"), env);
+  const data = await response.json();
+  assert.equal(data.model_payout_thb, 11500);
+  assert.equal(data.model_payout_breakdown, null);
+  assert.equal(data.job_type, "PN:mk");
+});
+
+test("PN plus MK model payout is returned as a reconciled, model-only breakdown", async () => {
+  const fixture = sessionRecord({ [F.jobType]: "PN", [F.payModelThb]: 11500,
+    [F.note]: "[MMD SERVICE PRICING v1] {\"version\":1,\"currency\":\"THB\",\"model_base_payout_thb\":10000,\"addons\":[{\"option\":\"mk\",\"client_amount_thb\":1800,\"model_payout_thb\":1500}],\"model_total_payout_thb\":11500}" });
+  const { env, modelToken } = await envAndTokens({ session: fixture });
+  const response = await handleConfirmationDetails(post(modelToken, "model"), env);
+  const data = await response.json();
+  assert.equal(data.job_type, "PN:mk");
+  assert.equal(data.model_payout_thb, 11500);
+  assert.deepEqual(data.model_payout_breakdown, [{ label: "PN", amount_thb: 10000 }, { label: "MK", amount_thb: 1500 }]);
+  for (const hidden of ["client_amount_thb", "1800", "payment_ref", "payment_status"]) assert.equal(JSON.stringify(data).includes(hidden), false);
 });
 
 test("confirmation details reject cross-role tokens and untrusted origins", async () => {
@@ -380,4 +435,32 @@ test("confirmation details reject cross-role tokens and untrusted origins", asyn
   const wrongOrigin = await handleConfirmationDetails(post(customerToken, "customer", "https://example.com"), env);
   assert.equal(wrongOrigin.status, 403);
   assert.equal((await wrongOrigin.json()).error, "origin_not_allowed");
+});
+
+test('13,000 job with verified 4,000 deposit hands off to LIFF and instructions for final 9,000 without writes', async () => {
+  const s=sessionRecord({[F.amountThb]:13000,[F.customerAmountDueThb]:4000,[F.jobType]:'private:standard:pn',
+    fldzYGziqLqTQaoaK:'private_model',
+    [F.note]:'[SIGIL Pricing v1] {"full_price_thb":13000,"discount_thb":0,"net_price_thb":13000,"deposit_due_thb":4000}\n[MMD MODEL PAYOUT BREAKDOWN v1] {"model_base_payout_thb":7000,"addons":[{"option":"mk","model_payout_thb":2000}],"model_total_payout_thb":9000}'});
+  const dep=paymentRecord({[P.amountThb]:4000,[P.paymentStage]:'deposit',[P.verificationStatus]:'verified',[P.paymentStatus]:'Paid'});
+  const {env,customerToken}=await envAndTokens({session:s,payment:dep,paymentType:'deposit'});
+  const original=env.AIRTABLE_HTTP.fetch;
+  env.AIRTABLE_TABLE_PAYMENT_INSTRUCTIONS='tbl_fixture_instructions';
+  env.AIRTABLE_HTTP.fetch=async (input,init)=>{
+    const req=new Request(input,init);
+    assert.equal(req.method,'GET','read-only presentation may not write a record');
+    const u=new URL(req.url);
+    if(u.pathname.includes('tbl_fixture_instructions'))return Response.json({records:[{id:'recInstructions',fields:{'Instruction ID':'mmd_job_v1',Status:'active',Methods:['promptpay'],'PromptPay Ref':'0899999999','QR Strategy':'dynamic_amount'}}]});
+    return original(req);
+  };
+  const r=await handleConfirmationDetails(post(customerToken,'customer'),env); assert.equal(r.status,200);
+  const d=await r.json();assert.equal(d.payment.stage,'final');assert.equal(d.payment.amount_due_thb,9000);
+  assert.equal(d.model_work_lane,'private_model');assert.equal(d.job_type,'private:standard:pn:mk');
+  const launch=new URL(d.payment.liff_url);assert.equal(launch.origin+launch.pathname,'https://miniapp.line.me/2010830159-0n1O3ANK');
+  assert.deepEqual([...launch.searchParams.keys()],['t']);assert.equal(launch.searchParams.get('t'),customerToken);
+  const ir=await handlePaymentInstructions(new Request('https://sigil.mmdbkk.com/v1/confirm/payment-instructions',{
+    method:'POST',headers:{origin:'https://www.mmdbkk.com','content-type':'application/json'},body:JSON.stringify({t:launch.searchParams.get('t')})}),env,req=>handleConfirmationDetails(req,env));
+  assert.equal(ir.status,200);const instructions=await ir.json();assert.equal(instructions.available,true);
+  assert.equal(instructions.stage,'final');assert.equal(instructions.amount_due_thb,9000);
+  assert.equal(instructions.instructions.promptpay.qr_strategy,'dynamic_amount');
+  assert.equal(d.pricing.deposit_received_thb,4000);assert.equal(d.pricing.balance_thb,9000);
 });

@@ -1,0 +1,679 @@
+<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Your Wish · MMD Privé</title><meta name="theme-color" content="#0b0e10"><link rel="preconnect" href="https://cdn.prod.website-files.com" crossorigin><style id="mmd-wish-lv10">@font-face{font-family:"LINE Seed Sans TH";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a619dd598baf067153fd1cc_LINESeedSansTH_W_Rg.woff2") format("woff2");font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:"LINE Seed Sans TH";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a619dd4dc8d84b48cc84959_LINESeedSansTH_W_Bd.woff2") format("woff2");font-weight:700;font-style:normal;font-display:swap}
+@font-face{font-family:"LINE Seed Sans TH";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a619dd5cdf166a1e9e45b98_LINESeedSansTH_W_XBd.woff2") format("woff2");font-weight:800;font-style:normal;font-display:swap}
+@font-face{font-family:"Canela";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/69c36f9dac884ed49ea6168a_Canela-Regular.woff2") format("woff2");font-weight:600;font-style:normal;font-display:swap}
+/* MMD Wish LV 10. One stylesheet owns the page layout. */
+html:has(#mmd-wish){scroll-behavior:smooth;scroll-padding-top:90px;background:#0b0e10}
+body:has(#mmd-wish){background:#0b0e10!important}
+#mmd-wish{--ink:#0b0e10;--panel:#171b1d;--raised:#232729;--paper:#f3f0e8;--muted:#bebdb8;--brass:#c9b38a;--line:#3a4040;max-width:none;margin:0;padding:16px 16px 32px;background:var(--ink);color:var(--paper);font-family:'LINE Seed Sans TH',Arial,sans-serif;font-size:15px;line-height:1.7;isolation:isolate}
+#mmd-wish *,#mmd-wish *:before,#mmd-wish *:after{box-sizing:border-box}
+#mmd-wish :is(h1,h2,h3,p,figure){margin:0}
+#mmd-wish :is(button,input,textarea){font:inherit}
+#mmd-wish :is(a,button){touch-action:manipulation}
+#mmd-wish :is(a,button,input,textarea,summary):focus-visible{outline:3px solid var(--brass);outline-offset:4px}
+#mmd-wish :is([hidden],.wish-benefits-v28,.wish-public-consent,.wish-v27-slides,.wish-v27-shade,.wish-v27-dots,.wish-v27-fx){display:none!important}
+#mmd-wish>:is(.w-embed){margin:0!important;padding:0!important}
+#mmd-wish>:is(section,details){max-width:1180px;margin-left:auto;margin-right:auto}
+/* Campaign cover */
+#mmd-wish .wish-hero{display:flex;flex-direction:column;position:relative;overflow:hidden;border:1px solid var(--line);border-radius:16px;background:var(--panel)}
+#mmd-wish .wish-v23-photo{position:relative;order:0;flex:none;width:100%;height:220px;overflow:hidden;background:#101314;isolation:isolate}
+#mmd-wish .wish-v23-layer{position:absolute;inset:0;width:100%;height:100%;max-width:none;object-fit:cover;object-position:center 44%;opacity:0;transition:opacity .85s ease;z-index:1}
+#mmd-wish .wish-v23-layer.is-active{opacity:1}
+#mmd-wish .wish-v23-shade{position:absolute;inset:0;z-index:2;background:linear-gradient(0deg,rgba(11,14,16,.7),transparent 40%);pointer-events:none}
+#mmd-wish .wish-v23-glints{display:none}
+#mmd-wish .wish-hero__content{position:relative;order:1;min-width:0;padding:22px;background:var(--panel);z-index:3}
+#mmd-wish .wish-hero__content>p:first-of-type{color:var(--brass);font-size:10px;font-weight:700;letter-spacing:.16em;margin:0 0 12px}
+#mmd-wish .wish-language{display:flex;gap:3px;position:relative;width:max-content;border:1px solid #59605b;border-radius:24px;padding:3px;margin:0 0 18px;background:var(--ink)}
+#mmd-wish .wish-language button{min-width:44px;height:36px;border:0;border-radius:20px;padding:0 12px;background:transparent;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer}
+#mmd-wish .wish-language button[aria-pressed=true]{background:var(--brass);color:var(--ink)}
+#mmd-wish [data-wish-copy=hero]{font-family:'Canela',Georgia,serif;font-size:clamp(43px,12vw,58px);font-weight:400;line-height:1.04;letter-spacing:-.045em}
+#mmd-wish [data-wish-copy=hero] br{display:initial}
+#mmd-wish [data-wish-copy=title]{font-size:24px;font-weight:700;line-height:1.4;letter-spacing:-.025em;margin-top:18px;white-space:pre-line}
+#mmd-wish [data-wish-copy=lead]{font-size:14px;line-height:1.8;margin-top:10px;color:var(--muted);max-width:45ch}
+#mmd-wish :is([data-start],[data-dashboard],.wish-phase2__cta){display:inline-flex;align-items:center;justify-content:space-between;gap:16px;width:100%;min-height:48px;padding:12px 18px;margin-top:20px;border:1px solid var(--brass);border-radius:7px;background:var(--brass);color:var(--ink);font-size:14px;font-weight:700;text-decoration:none;cursor:pointer;transition:background .2s}
+#mmd-wish :is([data-start],[data-dashboard],.wish-phase2__cta):hover{background:#e2d1af}
+#mmd-wish .wish-v23-caption{display:none}
+#mmd-wish .wish-v23-rail{position:absolute;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;left:16px;right:76px;bottom:10px;z-index:4}
+#mmd-wish .wish-v23-rail button{height:44px;min-width:44px;padding:0;border:0;background:transparent;position:relative;cursor:pointer}
+#mmd-wish .wish-v23-rail button:after{content:'';position:absolute;top:21px;left:0;right:0;height:2px;background:#7e8179}
+#mmd-wish .wish-v23-rail button.is-active:after{background:var(--paper);height:3px}
+#mmd-wish .wish-next-pause{position:absolute;right:16px;bottom:10px;z-index:4;width:44px;height:44px;border:1px solid #85877e;border-radius:50%;background:rgba(11,14,16,.8);color:var(--paper);cursor:pointer}
+#mmd-wish .wish-next-load{position:absolute;right:12px;top:12px;z-index:4;display:flex;gap:8px;align-items:center;padding:5px 10px;border-radius:20px;background:#171b1d;color:var(--paper);font-size:11px}
+#mmd-wish .wish-next-load progress{width:50px;height:4px;accent-color:var(--brass)}
+/* Writing desk */
+#mmd-wish #wish-flow{padding:0;margin-top:20px;scroll-margin-top:90px}
+#mmd-wish #wish-flow>div{display:grid;grid-template-columns:minmax(0,1fr);border:1px solid var(--line);border-radius:16px;overflow:hidden;background:var(--panel)}
+#mmd-wish #wish-flow>div>div:first-child{padding:24px 22px}
+#mmd-wish #wish-flow>div>div:first-child>p:first-child{color:var(--brass);font-size:10px;font-weight:700;letter-spacing:.15em;margin-bottom:12px}
+#mmd-wish [data-wish-copy=copy]{font-size:22px;font-weight:700;line-height:1.5;letter-spacing:-.02em}
+#mmd-wish [data-status]{font-size:13px;line-height:1.8;margin-top:14px;color:var(--muted)}
+#mmd-wish [data-wish-copy=separation]{padding-top:16px;margin-top:16px;border-top:1px solid #454b46;font-size:13px;line-height:1.8;color:var(--muted)}
+#mmd-wish .wish-flow__form-shell{margin:0;min-width:0;background:var(--paper)}
+#mmd-wish [data-wish-form]{display:block;position:relative;padding:24px 20px;background:var(--paper);color:#232729}
+#mmd-wish [aria-label='ตัวช่วยเขียน']{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:20px}
+#mmd-wish [data-prompt]{display:inline-flex;align-items:center;min-height:44px;padding:7px 11px;border:1px solid #b5b6ab;border-radius:5px;background:#faf8f1;color:#363c37;font-size:12px;text-decoration:none;cursor:pointer}
+#mmd-wish [data-prompt]:hover{border-color:#78613a;background:#e8dfcd}
+#mmd-wish [data-wish-form]>label{display:block;position:relative;margin:0;font-weight:400}
+#mmd-wish [data-wish-copy=label]{display:block;font-size:13px;font-weight:700;margin-bottom:9px}
+#mmd-wish [data-message]{display:block;resize:vertical;width:100%;min-height:164px;max-height:360px;margin:0;padding:14px 14px 32px;border:1px solid #92978b;border-radius:7px;background:#fffdf8;color:#232729;font-size:16px;line-height:1.8;box-shadow:none}
+#mmd-wish [data-message]::placeholder{color:#697063;opacity:1;-webkit-text-fill-color:#697063}
+#mmd-wish [data-message]:focus{border-color:#79613b}
+#mmd-wish [data-count]{display:block;position:absolute;right:12px;bottom:8px;color:#62695e;font-size:11px;font-variant-numeric:tabular-nums}
+#mmd-wish [data-wish-form]>label:has([data-consent]){display:flex;align-items:flex-start;gap:12px;margin-top:18px}
+#mmd-wish [data-wish-form]>label:has([data-consent])>.w-checkbox{flex:0 0 22px;min-width:22px;margin:0;padding:0}
+#mmd-wish [data-consent]{float:none;width:22px;height:22px;margin:3px 0 0;accent-color:#685335;cursor:pointer}
+#mmd-wish [data-wish-form]>label:has([data-consent])>span:empty{display:none}
+#mmd-wish [data-wish-copy=consent]{flex:1;min-width:0;font-style:normal;font-size:13px;line-height:1.75;color:#363c37}
+#mmd-wish [data-submit]{display:block;width:100%;min-height:50px;margin-top:18px;padding:12px 18px;border:1px solid #171b1d;border-radius:7px;background:#171b1d;color:var(--paper);font-size:15px;font-weight:700;cursor:pointer}
+#mmd-wish [data-submit]:disabled{border-color:#d7d9cf;background:#d7d9cf;color:#60665a;cursor:not-allowed}
+#mmd-wish [data-message]:disabled{opacity:.72}
+#mmd-wish [data-error]{margin-top:12px;color:#8e3027;font-size:13px;line-height:1.6}
+#mmd-wish [data-error]:empty{display:none}
+#mmd-wish [data-success]{position:relative;margin-top:20px;padding:26px 22px;background:var(--panel);border:1px solid var(--brass);border-radius:16px}
+#mmd-wish [data-success]>p:first-child{color:var(--brass);font-size:10px;letter-spacing:.12em}
+#mmd-wish [data-success] h2{font-size:32px;line-height:1.3;margin:12px 0}
+#mmd-wish [data-success-copy]{font-size:15px;line-height:1.8;color:var(--muted)}
+/* Eligibility, all details remain accessible. */
+#mmd-wish .wish-phase2{margin-top:24px;border-block:1px solid var(--line);padding:24px 0}
+#mmd-wish .wish-phase2__shell{display:grid;grid-template-columns:minmax(0,1fr);gap:24px}
+#mmd-wish .wish-phase2__visual{display:none;position:relative;overflow:hidden;border-radius:12px;background:var(--panel)}
+#mmd-wish .wish-phase2__visual img{width:100%;height:100%;object-fit:contain}
+#mmd-wish .wish-phase2__copy{min-width:0}
+#mmd-wish .wish-phase2__copy>p:first-child{color:var(--brass);font-size:10px;font-weight:700;letter-spacing:.15em;margin-bottom:12px}
+#mmd-wish .wish-phase2__copy h2{font-size:26px;line-height:1.4;letter-spacing:-.025em;white-space:pre-line}
+#mmd-wish .wish-phase2__lead{margin-top:12px;color:var(--muted);font-size:14px;line-height:1.8}
+#mmd-wish .wish-phase2__reward{margin-top:18px;padding:18px;border:1px solid #4d5148;border-radius:8px;background:var(--panel)}
+#mmd-wish .wish-phase2__reward :is(small,strong,span){display:block}
+#mmd-wish .wish-phase2__reward small{font-size:11px;color:var(--brass)}
+#mmd-wish .wish-phase2__reward strong{font-size:23px;line-height:1.45;margin:6px 0}
+#mmd-wish .wish-phase2__reward span{font-size:12px;color:var(--muted)}
+#mmd-wish .wish-phase2__fine{font-size:12px;line-height:1.8;color:var(--muted);margin-top:12px}
+#mmd-wish .wish-phase2__cta{background:transparent;color:var(--paper);border-color:#6c7063;margin-top:12px;justify-content:center}
+#mmd-wish .wish-phase2__cta:hover{background:var(--raised)}
+#mmd-wish #mmd-careback-benefits-v29{margin-top:16px;margin-bottom:0}
+#mmd-wish #mmd-careback-benefits-v29 [data-cb-open]{border-radius:7px;font-size:14px;min-height:48px}
+#mmd-wish .wish-v23-ribbon{display:grid;grid-template-columns:1fr;gap:16px;margin-top:24px}
+#mmd-wish .wish-v23-ribbon article{padding-left:17px;border-left:1px solid #5d635b}
+#mmd-wish .wish-v23-ribbon small{display:block;font-size:10px;letter-spacing:.12em;color:var(--brass)}
+#mmd-wish .wish-v23-ribbon strong{display:block;font-size:15px;margin:4px 0}
+#mmd-wish .wish-v23-ribbon p{color:var(--muted);font-size:13px;line-height:1.7}
+#mmd-wish .wish-v23-policy{margin-top:24px;padding:16px 18px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+#mmd-wish .wish-v23-policy summary{cursor:pointer;font-weight:700;min-height:30px;font-size:14px}
+#mmd-wish .wish-v23-policy__body{padding-top:16px;color:var(--muted);font-size:13px;line-height:1.8}
+#mmd-wish .wish-v23-policy__grid{display:grid;gap:12px;margin-top:16px}
+#mmd-wish .wish-v23-policy__grid strong{display:block;color:var(--brass);font-size:11px;letter-spacing:.1em}
+/* Only backend-approved wishes enter the wall. */
+#mmd-wish .wish-member-wall{margin-top:28px;padding:24px 0 0;border-top:1px solid var(--line)}
+#mmd-wish .wish-member-wall h2{font-size:24px;line-height:1.4}
+#mmd-wish .wish-member-wall p{font-size:13px;line-height:1.8;margin-top:8px;color:var(--muted)}
+#mmd-wish .wish-member-wall-list{display:grid;gap:10px;max-height:340px;overflow:auto;overscroll-behavior:contain;margin-top:18px;scrollbar-width:thin}
+#mmd-wish .wish-member-wall blockquote{margin:0;padding:18px;background:var(--panel);border:1px solid var(--line);border-radius:8px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:15px;line-height:1.8;color:var(--paper)}
+#mmd-wish .wish-member-wall button{min-height:44px;margin-top:14px;padding:9px 16px;border:1px solid #72776b;border-radius:6px;color:var(--paper);background:transparent;cursor:pointer}
+#mmd-wish .wish-v23-reveal{opacity:1;visibility:visible;transform:none}
+/* Memories are a short closing section, not another full-page hero. */
+body:has(#mmd-wish) .mmd-bkkv1{background:#171b1d;color:#f3f0e8;padding:30px 16px;border-top:1px solid #3a4040;font-family:'LINE Seed Sans TH',Arial,sans-serif}
+body:has(#mmd-wish) .mmd-bkkv1 *{box-sizing:border-box}
+body:has(#mmd-wish) .bkkv1-shell{max-width:1180px;margin:auto}
+body:has(#mmd-wish) .bkkv1-k{font-size:10px;letter-spacing:.15em;color:#c9b38a}
+body:has(#mmd-wish) .mmd-bkkv1 h2{margin:12px 0 0;font-size:26px;line-height:1.4;max-width:24ch;color:#f3f0e8}
+body:has(#mmd-wish) .mmd-bkkv1 p{max-width:62ch;color:#bebdb8;font-size:14px;line-height:1.8;margin:12px 0 0}
+body:has(#mmd-wish) .bkkv1-rail{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:22px}
+body:has(#mmd-wish) .mmd-bkkv1 figure{position:relative;min-width:0;aspect-ratio:1;margin:0;border-radius:8px;overflow:hidden;background:#232729}
+body:has(#mmd-wish) .mmd-bkkv1 img{width:100%;height:100%;object-fit:cover;display:block}
+body:has(#mmd-wish) .mmd-bkkv1 figcaption{position:absolute;inset:auto 0 0;padding:20px 10px 8px;background:linear-gradient(transparent,#0b0e10);color:#f3f0e8;font-size:9px;line-height:1.4}
+body:has(#mmd-wish) .bkkv1-swipe{display:none}
+@media(min-width:768px){
+ #mmd-wish{padding:28px 28px 48px}
+ #mmd-wish .wish-hero{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,.94fr);grid-template-areas:'copy photo';min-height:500px}
+ #mmd-wish .wish-v23-photo{grid-area:photo;height:100%;min-height:500px;order:initial;border-left:1px solid var(--line)}
+ #mmd-wish .wish-hero__content{grid-area:copy;order:initial;padding:38px 40px;align-self:center}
+ #mmd-wish [data-wish-copy=hero]{font-size:clamp(54px,5vw,76px);max-width:8ch}
+ #mmd-wish [data-wish-copy=hero] br{display:initial}
+ #mmd-wish [data-wish-copy=title]{font-size:28px;margin-top:22px}
+ #mmd-wish .wish-language{margin-bottom:22px}
+ #mmd-wish .wish-v23-caption{display:block;position:absolute;top:20px;left:20px;z-index:3;color:var(--paper);padding:10px 12px;border-left:1px solid var(--brass);background:rgba(11,14,16,.55);backdrop-filter:blur(8px)}
+ #mmd-wish .wish-v23-caption small{font-size:9px;letter-spacing:.14em;color:var(--brass)}
+ #mmd-wish .wish-v23-caption strong{display:block;font-family:'Canela',Georgia,serif;font-size:22px;font-weight:400;line-height:1.1;margin-top:6px}
+ #mmd-wish .wish-v23-caption p{font-size:8px;margin-top:8px}
+ #mmd-wish #wish-flow{margin-top:28px}
+ #mmd-wish #wish-flow>div{grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr)}
+ #mmd-wish #wish-flow>div>div:first-child{padding:36px;display:flex;flex-direction:column;justify-content:center}
+ #mmd-wish [data-wish-copy=copy]{font-size:28px}
+ #mmd-wish [data-wish-form]{padding:32px}
+ #mmd-wish .wish-phase2{padding:30px 0;margin-top:30px}
+ #mmd-wish .wish-phase2__shell{grid-template-columns:minmax(0,.72fr) minmax(0,1.28fr);gap:32px;align-items:center}
+ #mmd-wish .wish-phase2__visual{display:block;aspect-ratio:1;max-height:420px}
+ #mmd-wish .wish-phase2__copy h2{font-size:30px}
+ #mmd-wish .wish-v23-ribbon{grid-template-columns:repeat(3,minmax(0,1fr));gap:24px}
+ #mmd-wish .wish-v23-policy__grid{grid-template-columns:1fr 1fr}
+ #mmd-wish .wish-member-wall-list{grid-template-columns:repeat(2,minmax(0,1fr))}
+ body:has(#mmd-wish) .mmd-bkkv1{padding:40px 28px}
+ body:has(#mmd-wish) .bkkv1-shell{display:grid;grid-template-columns:1fr 1fr;gap:0 40px;align-content:center}
+ body:has(#mmd-wish) .bkkv1-rail{grid-column:2;grid-row:1/4;margin:0}
+ body:has(#mmd-wish) .mmd-bkkv1 h2{font-size:28px}
+}
+@media(max-width:359px){#mmd-wish{padding:10px}#mmd-wish .wish-hero__content{padding:18px}#mmd-wish [data-wish-copy=hero]{font-size:40px}}
+@media(prefers-reduced-motion:reduce){html:has(#mmd-wish){scroll-behavior:auto}#mmd-wish *,body:has(#mmd-wish) .mmd-bkkv1 *{transition:none!important;animation:none!important}}
+/* Explicit text colors protect against global gradient text rules. */
+#mmd-wish :is([data-wish-copy=hero],[data-wish-copy=title],[data-wish-copy=copy],.wish-phase2__copy h2,.wish-phase2__reward strong,[data-success] h2,.wish-member-wall h2,.wish-v23-ribbon strong){color:#f3f0e8!important;-webkit-text-fill-color:#f3f0e8!important;background-image:none!important}
+#mmd-wish :is([data-wish-copy=lead],[data-status],[data-wish-copy=separation],.wish-phase2__lead,.wish-phase2__fine,[data-success-copy]){color:#bebdb8!important;-webkit-text-fill-color:#bebdb8!important}
+#mmd-wish :is([data-start],[data-dashboard]){color:#0b0e10!important;-webkit-text-fill-color:#0b0e10!important}
+#mmd-wish :is([data-message],[data-wish-copy=label],[data-wish-copy=consent],[data-prompt],[data-prompt] *){color:#363c37!important;-webkit-text-fill-color:#363c37!important}
+#mmd-wish [data-submit]{color:#f3f0e8!important;-webkit-text-fill-color:#f3f0e8!important}
+#mmd-wish [data-submit]:disabled{color:#60665a!important;-webkit-text-fill-color:#60665a!important}
+#mmd-wish [data-error]{color:#8e3027!important;-webkit-text-fill-color:#8e3027!important}
+#mmd-wish [data-count]{color:#62695e!important;-webkit-text-fill-color:#62695e!important}
+</style></head><body><main id="mmd-wish" data-dashboard-url="/my-mmd/coupons" data-wish-endpoint="/member/api/care-back/public-wish" data-wish-version="2026.09.21-member-flow-v30" data-hero-desktop-images="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a929ff5e47c4cc70fc42ed7_MMD%206%20Y%20Des.webp|https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a88ca88ac06aa170c7da680_Group%20-%20Wish.webp|https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa7a7e737175f386f26a839_6%20Year%20Group.webp" data-hero-mobile-images="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a929ff5e47c4cc70fc42ed7_MMD%206%20Y%20Des.webp|https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a88ca88ac06aa170c7da680_Group%20-%20Wish.webp|https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa7a7e737175f386f26a839_6%20Year%20Group.webp" data-wish-image-count="3" data-benefits-copy="member-only-instant-coupon-v30"><div class="w-embed"><style id="mmd-careback-benefits-css-v29">
+#mmd-careback-benefits-v29{margin:18px 0 14px;width:100%;font:inherit;color:#f7f1e7;text-align:left}
+#mmd-careback-benefits-v29 *,#mmd-careback-benefits-v29 *::before,#mmd-careback-benefits-v29 *::after{box-sizing:border-box}
+#mmd-careback-benefits-v29 [hidden]{display:none!important}
+#mmd-careback-benefits-v29 [data-cb-open],#mmd-careback-benefits-v29 [data-cb-fallback]>summary{display:inline-flex;align-items:center;justify-content:center;gap:12px;min-height:48px;width:100%;padding:12px 20px;border:1px solid #756335;border-radius:999px;background:#20201c;color:#e8ca7c;font-family:inherit;font-size:15px;font-weight:700;line-height:1.5;letter-spacing:0;cursor:pointer;text-decoration:none;list-style:none;appearance:none}
+#mmd-careback-benefits-v29 [data-cb-fallback]>summary::-webkit-details-marker{display:none}
+#mmd-careback-benefits-v29 [data-cb-open]:hover{background:#2a281e;border-color:#c0a45c}
+#mmd-careback-benefits-v29 :is(button,a,summary):focus-visible{outline:2px solid #e8ca7c;outline-offset:4px}
+#mmd-careback-benefits-v29 [data-cb-dialog]{position:fixed;inset:0;margin:0;width:100%;max-width:none;height:100%;height:100dvh;max-height:none;padding:12px;background:transparent;border:0;overflow:hidden;color:#f7f1e7;font-family:inherit;overscroll-behavior:contain}
+#mmd-careback-benefits-v29 [data-cb-dialog]:not([open]){display:none!important}
+#mmd-careback-benefits-v29 [data-cb-dialog][open]{display:grid!important;place-items:end center;visibility:visible!important;opacity:1!important}
+#mmd-careback-benefits-v29 [data-cb-dialog]::backdrop{background:rgba(3,4,5,.80);backdrop-filter:blur(10px)}
+#mmd-careback-benefits-v29 [data-cb-panel]{display:flex;flex-direction:column;width:min(760px,100%);max-height:100%;max-height:calc(100dvh - 24px);min-height:0;overflow:hidden;border:1px solid #51462e;border-radius:22px;background:#101214;box-shadow:0 24px 90px rgba(0,0,0,.6);isolation:isolate}
+#mmd-careback-benefits-v29 [data-cb-header]{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px;border-bottom:1px solid #2e2f2d;background:#131517;color:#f7f1e7}
+#mmd-careback-benefits-v29 [data-cb-eyebrow]{margin:0 0 5px;color:#e8ca7c;font-size:10px;font-weight:700;line-height:1.4;letter-spacing:.15em}
+#mmd-careback-benefits-v29 h2{margin:0;color:#fff6e6;font:inherit;font-size:clamp(21px,4vw,30px);font-weight:700;line-height:1.3;letter-spacing:-.02em}
+#mmd-careback-benefits-v29 [data-cb-close]{flex:0 0 auto;display:inline-flex;gap:8px;align-items:center;justify-content:center;min-width:70px;min-height:44px;padding:8px 12px;border:1px solid #57503c;border-radius:999px;background:#22221e;color:#f7e4af;font-family:inherit;font-size:14px;font-weight:700;line-height:1.4;cursor:pointer}
+#mmd-careback-benefits-v29 [data-cb-close] [aria-hidden]{font-size:24px;line-height:1}
+#mmd-careback-benefits-v29 [data-cb-scroll]{min-height:0;overflow:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding:18px}
+#mmd-careback-benefits-v29 [data-cb-content]{font-family:inherit;color:#f7f1e7;font-size:14px;line-height:1.7;overflow-wrap:anywhere}
+#mmd-careback-benefits-v29 [data-cb-content] p{margin:0;color:#cbc5b9;font-family:inherit;font-size:14px;line-height:1.7}
+#mmd-careback-benefits-v29 [data-cb-rates]{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:16px 0 10px}
+#mmd-careback-benefits-v29 [data-cb-rate]{padding:16px;border:1px solid #5d4c2c;border-radius:16px;background:linear-gradient(145deg,#242219,#17191a)}
+#mmd-careback-benefits-v29 [data-cb-rate] small{display:block;color:#c5ba9d;font-size:12px;line-height:1.5}
+#mmd-careback-benefits-v29 [data-cb-rate] strong{display:block;margin:4px 0;color:#fff8eb;font-size:24px;line-height:1.25}
+#mmd-careback-benefits-v29 [data-cb-rate] b{display:block;color:#ebcd83;font-size:17px;line-height:1.5}
+#mmd-careback-benefits-v29 [data-cb-content] [data-cb-note]{color:#aaa397;font-size:12px}
+#mmd-careback-benefits-v29 h3{margin:22px 0 12px;color:#f6e7c3;font-family:inherit;font-size:17px;font-weight:700;line-height:1.5}
+#mmd-careback-benefits-v29 [data-cb-access]{display:grid;grid-template-columns:1fr;gap:10px}
+#mmd-careback-benefits-v29 [data-cb-access] article{padding:14px 16px;border:1px solid #363634;border-radius:14px;background:#191b1d}
+#mmd-careback-benefits-v29 [data-cb-access] strong{display:block;color:#f0d89e;font-size:13px;line-height:1.5;letter-spacing:.05em}
+#mmd-careback-benefits-v29 [data-cb-access] p{margin:5px 0;color:#ede5d8}
+#mmd-careback-benefits-v29 [data-cb-access] small{display:block;color:#bdb4a4;font-size:12px;line-height:1.6}
+#mmd-careback-benefits-v29 [data-cb-verify]{margin-top:18px;padding:18px;border:1px solid #e4cc98;border-radius:16px;background:#f2e7d0;color:#262016}
+#mmd-careback-benefits-v29 [data-cb-verify]>strong{color:#262016;font-size:15px;line-height:1.6}
+#mmd-careback-benefits-v29 [data-cb-verify] p{margin:7px 0 14px;color:#4f4635}
+#mmd-careback-benefits-v29 [data-cb-verify] a:not([data-cb-my]){color:#634913;font-weight:800;text-decoration:underline;text-underline-offset:3px}
+#mmd-careback-benefits-v29 [data-cb-my]{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:46px;padding:12px 16px;border:1px solid #27231a;border-radius:999px;background:#201d17;color:#fff3d5!important;font-family:inherit;font-size:14px;font-weight:700;line-height:1.5;text-decoration:none}
+#mmd-careback-benefits-v29 [data-cb-verify] a:focus-visible{outline-color:#563e12}
+#mmd-careback-benefits-v29 [data-cb-content] [data-cb-fine]{margin-top:12px;color:#b5ad9f;font-size:12px;line-height:1.7}
+#mmd-careback-benefits-v29 [data-cb-fallback][open]{padding:16px;border:1px solid #51462e;border-radius:18px;background:#101214}
+#mmd-careback-benefits-v29 [data-cb-fallback][open]>summary{margin-bottom:14px}
+#mmd-careback-benefits-v29 [data-cb-error]{margin:10px 0;color:#edca81;font-size:14px;line-height:1.6}
+@media(min-width:640px){#mmd-careback-benefits-v29 [data-cb-open],#mmd-careback-benefits-v29 [data-cb-fallback]>summary{width:auto}#mmd-careback-benefits-v29 [data-cb-dialog][open]{place-items:center}#mmd-careback-benefits-v29 [data-cb-dialog]{padding:28px}#mmd-careback-benefits-v29 [data-cb-panel]{max-height:calc(100dvh - 56px);border-radius:26px}#mmd-careback-benefits-v29 [data-cb-header]{padding:22px 26px}#mmd-careback-benefits-v29 [data-cb-scroll]{padding:22px 26px 26px}#mmd-careback-benefits-v29 [data-cb-access]{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(prefers-reduced-motion:no-preference){#mmd-careback-benefits-v29 [data-cb-dialog][open] [data-cb-panel]{animation:cbBenefitsRevealV29 .18s ease-out}@keyframes cbBenefitsRevealV29{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}}
+/* Isolate the modal from the existing coupon section's broad rules. */
+#mmd-wish [data-careback-benefits][data-cb-legacy="replaced-by-v29"]{display:none!important}
+#mmd-wish #mmd-careback-benefits-v29 *{-webkit-text-fill-color:currentColor!important}
+#mmd-wish #mmd-careback-benefits-v29 h2{color:#fff6e6!important;background:none!important;font-size:clamp(21px,4vw,30px)!important;line-height:1.3!important}
+#mmd-wish #mmd-careback-benefits-v29 [data-cb-eyebrow]{color:#e8ca7c!important}
+#mmd-wish #mmd-careback-benefits-v29 [data-cb-content] p{color:#cbc5b9!important}
+#mmd-wish #mmd-careback-benefits-v29 [data-cb-content] [data-cb-note]{color:#aaa397!important}
+#mmd-wish #mmd-careback-benefits-v29 [data-cb-content] [data-cb-fine]{color:#b5ad9f!important}
+#mmd-wish #mmd-careback-benefits-v29 [data-cb-rate] strong{color:#fff8eb!important}
+#mmd-wish #mmd-careback-benefits-v29 [data-cb-access] strong{color:#f0d89e!important}
+#mmd-wish #mmd-careback-benefits-v29 [data-cb-access] p{color:#ede5d8!important}
+#mmd-wish #mmd-careback-benefits-v29 [data-cb-verify]>strong{color:#262016!important}
+#mmd-wish #mmd-careback-benefits-v29 [data-cb-verify] p{color:#4f4635!important}
+#mmd-wish #mmd-careback-benefits-v29 [data-cb-verify] a:not([data-cb-my]){display:inline!important;width:auto!important;margin:0!important;padding:0!important;border:0!important;border-radius:0!important;background:none!important;color:#634913!important;text-decoration:underline!important}
+#mmd-wish #mmd-careback-benefits-v29 [data-cb-my]{display:flex!important;width:100%!important;margin:0!important;padding:12px 16px!important;border-radius:999px!important;background:#201d17!important;color:#fff3d5!important;text-decoration:none!important}
+</style>
+</div><div class="w-embed">
+</div><div class="w-embed">
+</div><section aria-labelledby="wish-hero-title"><img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a9d04d00911bf638657181b_Wish%20Final%20Hero.webp" loading="lazy" sizes="(max-width: 479px) 95vw, (max-width: 767px) 97vw, (max-width: 991px) 52vw, (max-width: 1919px) 57vw, 857px" srcset="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a9d04d00911bf638657181b_Wish%20Final%20Hero-p-500.webp 500w, https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a9d04d00911bf638657181b_Wish%20Final%20Hero-p-800.webp 800w, https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a9d04d00911bf638657181b_Wish%20Final%20Hero.webp 941w" alt=""><div></div><div><p>MMD PRIVÉ · YEAR 6</p><h1 id="wish-hero-title" data-wish-copy="hero">Your WISH<br>to MMD</h1><h2 data-wish-copy="title">อยากบอกอะไร<br>กับ MMD ครับ</h2><p data-wish-copy="lead">วันเกิดปีนี้ อยากบอกอะไรกับ MMD ครับ</p><a aria-label="เขียนคำอวยพรถึง MMD" data-start="" type="button" data-wish-label="เขียนคำอวยพรถึง MMD" href="#" class="w-button">เขียนคำอวยพรถึง MMD</a></div></section><section data-phase2-coupon="" aria-labelledby="wish-phase2-title"><div><div><img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa7bd8f27f3ee081d533b1e_MMD%206%20Years%20Care%20Back%20Mobile.webp" loading="lazy" sizes="(max-width: 1536px) 100vw, 1536px" srcset="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa7bd8f27f3ee081d533b1e_MMD%206%20Years%20Care%20Back%20Mobile-p-500.webp 500w, https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa7bd8f27f3ee081d533b1e_MMD%206%20Years%20Care%20Back%20Mobile-p-800.webp 800w, https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa7bd8f27f3ee081d533b1e_MMD%206%20Years%20Care%20Back%20Mobile-p-1080.webp 1080w, https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa7bd8f27f3ee081d533b1e_MMD%206%20Years%20Care%20Back%20Mobile.webp 1536w" alt="MMD 6 Years CARE BACK personal coupon"></div><div><p>6 YEARS CARE BACK · WISH</p><h2 id="wish-phase2-title">อวยพรได้ทุกคน · สิทธิ์สมาชิกตรวจทีหลัง</h2><p>ส่งคำอวยพรได้ทันที ไม่ต้อง Login — ระบบจะตรวจสถานะสมาชิกตอนยืนยัน LINE</p><div><small>สมาชิกเก่า · สมาชิกหมดอายุ · สมาชิกปัจจุบัน</small><strong>ข้อความขึ้น + รับคูปองทันที</strong><span>คูปองเข้า MY MMD · ใช้ได้ 1 ครั้ง · อายุ 2 เดือน</span></div><p>ส่วนลดจริงขึ้นอยู่กับสถานะสมาชิก นายแบบ และประเภทงานที่ MMD ยืนยันได้ · สมาชิกเก่า สมาชิกหมดอายุ และสมาชิกปัจจุบันรับคูปองทันที · ผู้ที่ไม่เคยเป็นสมาชิกไม่มีคูปอง</p><div data-cb-v29-part="html" class="w-embed"><div id="mmd-careback-benefits-v29" data-cb-version="29.2">
+  <button type="button" data-cb-open="" hidden="" aria-haspopup="dialog" aria-controls="mmd-careback-benefits-dialog-v29" aria-expanded="false"><span data-cb-en="View CARE BACK Benefits" data-cb-zh="查看 CARE BACK 权益">ดู CARE BACK Benefits</span><span aria-hidden="true">↗</span></button>
+  <p data-cb-error="" hidden="" role="status" aria-live="polite"></p>
+  <details data-cb-fallback="">
+    <summary data-cb-en="View CARE BACK Benefits" data-cb-zh="查看 CARE BACK 权益">ดู CARE BACK Benefits</summary>
+    <div data-cb-content="">
+      <p data-cb-lead="" data-cb-en="Your actual discount depends on your verified membership status, the model and the type of booking." data-cb-zh="实际折扣取决于已核实的会员状态、男模及服务类型。">ส่วนลดจริงขึ้นอยู่กับสถานะสมาชิก นายแบบ และประเภทของงานที่ MMD ยืนยันได้</p>
+      <div data-cb-rates="">
+        <article data-cb-rate=""><small data-cb-en="Booking type" data-cb-zh="服务类型">ประเภทของงาน</small><strong>PN</strong><b data-cb-en="Up to 5% off" data-cb-zh="最高优惠 5%">ลดสูงสุด 5%</b></article>
+        <article data-cb-rate=""><small data-cb-en="Booking type" data-cb-zh="服务类型">ประเภทของงาน</small><strong>VIP</strong><b data-cb-en="Up to 10% off" data-cb-zh="最高优惠 10%">ลดสูงสุด 10%</b></article>
+      </div>
+      <p data-cb-note="" data-cb-en="PN and VIP above are booking types, not membership statuses." data-cb-zh="上方 PN 和 VIP 指服务类型，并非会员状态。">PN และ VIP ในส่วนส่วนลดนี้คือประเภทของงาน ไม่ใช่สถานะสมาชิก</p>
+      <h3 data-cb-en="Benefits by membership status" data-cb-zh="各会员状态的权益">สิทธิ์ตามสถานะสมาชิก</h3>
+      <div data-cb-access="">
+        <article><strong>STANDARD</strong><p data-cb-en="Standard / freelance models" data-cb-zh="Standard / 自由职业男模">นายแบบกลุ่ม Standard / Freelance</p><small data-cb-en="Approximately THB 7,000–20,000" data-cb-zh="约 7,000–20,000 泰铢">ประมาณ 7,000–20,000 บาท</small></article>
+        <article><strong>PREMIUM</strong><p data-cb-en="Standard + Premium · premium, selected and well-known models" data-cb-zh="Standard + Premium · 精选优质及知名男模">Standard + Premium · นายแบบพรีเมียม นายแบบคัดสรร และนายแบบที่มีชื่อเสียง</p><small data-cb-en="Approximately THB 15,000–35,000++" data-cb-zh="约 15,000–35,000++ 泰铢">ประมาณ 15,000–35,000++ บาท</small></article>
+        <article><strong>VIP + BLACK CARD</strong><p data-cb-en="Standard + Premium + VIP + Exclusive models, subject to verified eligibility" data-cb-zh="Standard + Premium + VIP + Exclusive 男模，以已核实资格为准">นายแบบกลุ่ม Standard + Premium + VIP + Exclusive ตามสิทธิ์ที่ยืนยันแล้ว</p><small data-cb-en="Private / Exclusive access follows verified eligibility and booking type" data-cb-zh="Private / Exclusive 权限取决于已核实资格及服务类型">สิทธิ์ Private / Exclusive ขึ้นอยู่กับสถานะที่ยืนยัน นายแบบ และประเภทของงาน</small></article>
+      </div>
+      <div data-cb-verify="">
+        <strong data-cb-en="Sending a wish does not automatically activate a coupon." data-cb-zh="仅发送祝福不会自动激活优惠券。">อวยพรอย่างเดียวไม่เปิดคูปองอัตโนมัติ</strong>
+        <p><span data-cb-en="Go to " data-cb-zh="请前往 ">ต้องไปที่ </span><a href="https://mmdbkk.com/member/my-mmd">MY MMD</a><span data-cb-en=" to verify your eligibility first." data-cb-zh=" 核实资格后再领取优惠券。"> เพื่อยืนยันสิทธิ์ก่อน</span></p>
+        <a data-cb-my="" href="https://mmdbkk.com/member/my-mmd"><span data-cb-en="Open MY MMD" data-cb-zh="打开 MY MMD">เปิด MY MMD</span><span aria-hidden="true">→</span></a>
+      </div>
+      <p data-cb-fine="" data-cb-en="Single use · Valid for 2 calendar months from activation · Private-model access remains unavailable until active membership and eligibility are verified." data-cb-zh="仅限使用一次 · 自激活之日起有效期为两个日历月 · Private 男模权限须在有效会员状态及资格核实后开放。">คูปองใช้ได้ 1 ครั้ง · อายุ 2 เดือนนับจากวันที่เปิดใช้ · สิทธิ์นายแบบ Private ต้องอ้างอิงสถานะสมาชิกที่ยังใช้งานได้และผ่านการยืนยันแล้ว</p>
+    </div>
+  </details>
+  <dialog id="mmd-careback-benefits-dialog-v29" data-cb-dialog="" aria-labelledby="mmd-careback-benefits-title-v29">
+    <div data-cb-panel="">
+      <header data-cb-header="">
+        <div><p data-cb-eyebrow="">6 YEARS CARE BACK</p><h2 id="mmd-careback-benefits-title-v29" data-cb-en="CARE BACK Benefits" data-cb-zh="CARE BACK 权益">CARE BACK Benefits</h2></div>
+        <button data-cb-close="" type="button" autofocus=""><span data-cb-en="Close" data-cb-zh="关闭">ปิด</span><span aria-hidden="true">×</span></button>
+      </header>
+      <div data-cb-scroll=""></div>
+    </div>
+  </dialog>
+</div></div><details data-careback-benefits="" data-cb-legacy="replaced-by-v29" class="wish-benefits-v28"><summary class="wish-benefits-v28__trigger"><span>ดู CARE BACK Benefits</span><span>ปิด ×</span></summary><div role="dialog" aria-labelledby="wish-benefits-v28-title" aria-modal="true"><div><p>6 YEARS CARE BACK · BENEFITS</p><h3 id="wish-benefits-v28-title">คูปองของคุณใช้ได้เท่าไหร่?</h3><p>ส่วนลดจริงขึ้นอยู่กับ <strong>สถานะสมาชิก นายแบบ และประเภทของงาน</strong> ที่ระบบ MMD ยืนยันได้</p><div><article><small class="wish-benefits-v28__overline">ประเภทของงาน</small><strong>PN</strong><b class="wish-benefits-v28__rate-value">ลดสูงสุด 5%</b></article><article><small class="wish-benefits-v28__overline">ประเภทของงาน</small><strong>VIP</strong><b class="wish-benefits-v28__rate-value">ลดสูงสุด 10%</b></article></div><p>PN และ VIP ในส่วนส่วนลดนี้คือ <strong>ประเภทของงาน</strong> ไม่ใช่สถานะสมาชิก</p><div><article><small class="wish-benefits-v28__overline">สถานะ</small><strong>STANDARD</strong><span>นายแบบกลุ่ม Standard / Freelance</span><em>ประมาณ 7,000–20,000 บาท</em></article><article><small class="wish-benefits-v28__overline">สถานะ</small><strong>PREMIUM</strong><span>Standard + Premium · นายแบบ Premium / Selected / Famous</span><em>ประมาณ 15,000–35,000++ บาท</em></article><article><small class="wish-benefits-v28__overline">สถานะ</small><strong>VIP</strong><span>Standard + Premium + VIP · Private VIP access</span><em>ขึ้นอยู่กับนายแบบและประเภทของงาน</em></article><article><small class="wish-benefits-v28__overline">สถานะ</small><strong>BLACK CARD</strong><span>Standard + Premium + VIP + Exclusive</span><em>Private / Exclusive access ตามสิทธิ์ที่ยืนยันแล้ว</em></article></div><div><strong>สมาชิกที่ยืนยันแล้ว รับคูปองทันที</strong><p>ต้องไปที่ <a href="https://mmdbkk.com/member/my-mmd">MY MMD</a> เพื่อยืนยันสิทธิ์ก่อน หลังระบบยืนยันแล้วจึงเปิดคูปองส่วนตัวให้ตามสิทธิ์จริง</p><a href="https://mmdbkk.com/member/my-mmd">เปิด MY MMD →</a><small class="wish-benefits-v28__url">mmdbkk.com/member/my-mmd</small></div><p>คูปองใช้ได้ 1 ครั้ง · อายุ 2 เดือนนับจากวันที่เปิดใช้ · สมาชิกที่หมดอายุหรือยังไม่ยืนยันสถานะ จะยังไม่เปิดสิทธิ์นายแบบ Private จนกว่าสถานะจะได้รับการยืนยัน</p></div></div></details><a href="https://mmdbkk.com/member/my-mmd">เริ่มเขียนคำอวยพร <span aria-hidden="true">→</span></a></div></div></section><section id="wish-flow" aria-label="Public birthday wish form"><div><div><p>BIRTHDAY WISH</p><p data-wish-copy="copy">ทุกคนเขียนคำอวยพรได้เลยครับ ไม่ต้อง Login ก่อนส่ง</p><p data-status="" data-wish-copy="status">ระบบจะเผยแพร่เมื่อยืนยันว่าเคยเป็นสมาชิก MMD</p><p data-wish-copy="separation">เคยเป็นสมาชิก = ข้อความขึ้น + คูปองทันที · ไม่เคยเป็นสมาชิก = เก็บข้อความแบบส่วนตัว</p></div><div class="w-form"><form method="get" data-wish-form="" name="" data-name="Html Form" novalidate="" data-wf-page-id="6a70f07763a06d2aaab02d53" data-wf-element-id="6373d4a0-c194-bec5-03c0-1be7e5fe5170" data-turnstile-sitekey="0x4AAAAAAAQTptj2So4dx43e"><div aria-label="ตัวช่วยเขียน"><a type="button" data-prompt="ยินดีกับ MMD ปีที่ 6 นะครับ ขอให้ปีนี้มีเรื่องดี ๆ เข้ามาเยอะขึ้น" href="#" class="w-button"><span data-wish-copy="prompt1">อวยพร MMD</span></a><a type="button" data-prompt="สิ่งที่ผมจำได้จาก MMD คือ" href="#" class="w-button"><span data-wish-copy="prompt2">ความทรงจำ</span></a><a type="button" data-prompt="ปีต่อไป ผมอยากเห็น MMD" href="#" class="w-button"><span data-wish-copy="prompt3">สิ่งที่อยากเห็น</span></a></div><label for=""><span data-wish-copy="label">ข้อความถึง MMD</span><textarea class="w-input" data-message="" autocomplete="off" maxlength="280" name="field" data-name="Field" data-wish-placeholder="" aria-label="ข้อความถึง MMD" placeholder="เขียนคำอวยพรถึง MMD ได้เลยครับ…" rows="7" id="field"></textarea><small data-count="">0 / 280</small></label><label for=""><label class="w-checkbox"><input type="checkbox" id="checkbox" name="checkbox" data-name="Checkbox" data-consent="" class="w-checkbox-input"></label><span></span><em data-wish-copy="consent">ยืนยันส่งข้อความนี้ และยินยอมให้แสดงแบบไม่ระบุชื่อ หากระบบยืนยันว่าเคยเป็นสมาชิก MMD</em></label><input type="submit" data-wait="กำลังส่ง Wish…" data-submit="" class="w-button" value="ส่งคำอวยพร" disabled=""><p data-error="" aria-live="polite" role="alert"></p></form></div></div></section><section data-success="" hidden=""><p>WISH COMPLETED</p><h2 data-wish-copy="successTitle">ได้รับแล้วครับ<br>ขอบคุณนะครับ</h2><p data-success-copy="" data-wish-copy="success">MMD ได้รับคำอวยพรของคุณแล้วครับ จบตรงนี้ได้เลย หรือยืนยัน LINE ต่อเพื่อรับคูปองส่วนลดส่วนตัวครับ</p><a aria-label="ยืนยัน LINE เพื่อรับคูปองส่วนลด" href="/member/my-mmd" data-dashboard="" data-wish-label="ยืนยัน LINE เพื่อรับคูปองส่วนลด">ยืนยัน LINE เพื่อรับคูปองส่วนลด</a></section><div class="w-embed">
+</div><div class="w-embed"><!-- Legacy V25 slideshow retired. Wish Next LV owns hero frames and motion. --></div><div class="w-embed"><script id="mmd-careback-benefits-runtime-v29">
+(function(){
+  'use strict';
+  function boot(){
+    var page=document.getElementById('mmd-wish');
+    var root=page&&page.querySelector('#mmd-careback-benefits-v29');
+    if(!root||root.dataset.cbReady==='1')return;
+    var open=root.querySelector('[data-cb-open]'),dialog=root.querySelector('[data-cb-dialog]'),close=root.querySelector('[data-cb-close]'),fallback=root.querySelector('[data-cb-fallback]'),content=root.querySelector('[data-cb-content]'),scroll=root.querySelector('[data-cb-scroll]'),error=root.querySelector('[data-cb-error]');
+    if(!open||!dialog||!close||!fallback||!content||!scroll)return;
+    root.dataset.cbReady='1';
+    var nodes=Array.prototype.slice.call(root.querySelectorAll('[data-cb-en]'));
+    var th=nodes.map(function(node){return node.textContent;});
+    function translate(){var l=String(page.lang||'th').toLowerCase();var key=l.indexOf('en')===0?'en':l.indexOf('zh')===0?'zh':'th';root.lang=key==='zh'?'zh-CN':key;nodes.forEach(function(node,i){node.textContent=key==='th'?th[i]:(node.getAttribute('data-cb-'+key)||th[i]);});}
+    translate();
+    new MutationObserver(translate).observe(page,{attributes:true,attributeFilter:['lang']});
+    if(typeof dialog.showModal!=='function'||typeof dialog.close!=='function')return;
+    scroll.appendChild(content);
+    fallback.hidden=true;
+    open.hidden=false;
+    function reset(){open.setAttribute('aria-expanded','false');if(open.isConnected)open.focus({preventScroll:true});}
+    function dismiss(){if(dialog.open)dialog.close();}
+    open.addEventListener('click',function(e){e.preventDefault();if(dialog.open)return;try{error.hidden=true;dialog.showModal();open.setAttribute('aria-expanded','true');scroll.scrollTop=0;close.focus({preventScroll:true});}catch(_){if(dialog.open)dialog.close();fallback.appendChild(content);fallback.hidden=false;fallback.open=true;open.hidden=true;error.textContent=root.lang.indexOf('en')===0?'Benefits are available below.':root.lang.indexOf('zh')===0?'请在下方查看权益。':'อ่านสิทธิ์ CARE BACK ด้านล่างได้ครับ';error.hidden=false;}});
+    close.addEventListener('click',dismiss);
+    dialog.addEventListener('close',reset);
+    dialog.addEventListener('cancel',function(e){e.preventDefault();dismiss();});
+    var downOnBackdrop=false;
+    dialog.addEventListener('pointerdown',function(e){downOnBackdrop=e.target===dialog;});
+    dialog.addEventListener('click',function(e){if(e.target===dialog&&downOnBackdrop)dismiss();downOnBackdrop=false;});
+    dialog.addEventListener('wheel',function(e){if(e.target===dialog)e.preventDefault();},{passive:false});
+    dialog.addEventListener('touchmove',function(e){if(e.target===dialog)e.preventDefault();},{passive:false});
+    dialog.addEventListener('keydown',function(e){if(e.key!=='Tab')return;var items=Array.prototype.slice.call(dialog.querySelectorAll('button:not([disabled]),a[href],input:not([disabled]),[tabindex="0"]')).filter(function(node){return node.getClientRects().length>0;});if(!items.length){e.preventDefault();return;}var first=items[0],last=items[items.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}});
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
+})();
+</script>
+</div></main><section class="mmd-bkkv1" data-mmd-bkk-visual="1" data-tone="dark" data-head-th="บางความทรงจำอยู่ตามถนน มากกว่าอยู่ในรูป" data-head-en="Some memories live in the city." data-head-zh="有些回忆，更像留在城市里，而不是照片里。" data-copy-th="ถ้ามีคืนหนึ่ง ถนนเส้นหนึ่ง หรือช่วงเวลาหนึ่งกับ MMD ที่ยังจำได้ เขียนถึงกันไว้สั้น ๆ ก็พอครับ" data-copy-en="If there is a night, a street, or one moment with MMD you still remember, a few words are enough." data-copy-zh="如果有某个夜晚、某条街，或与 MMD 有关的一段时刻还留在记忆里，写几句话就够了。"><div class="bkkv1-shell"><div class="bkkv1-k">WISH · BANGKOK MEMORY</div><h2 data-bkk-head>บางความทรงจำอยู่ตามถนน มากกว่าอยู่ในรูป</h2><p data-bkk-copy>ถ้ามีคืนหนึ่ง ถนนเส้นหนึ่ง หรือช่วงเวลาหนึ่งกับ MMD ที่ยังจำได้ เขียนถึงกันไว้สั้น ๆ ก็พอครับ</p><div class="bkkv1-rail"><figure><img loading="lazy" src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa33e676ac76e499892b507_Bangkok%20TMIB%20Card%20E.webp" alt="Bangkok anniversary memory"><figcaption>Wish · Bangkok</figcaption></figure><figure><img loading="lazy" src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa33e66fceb7012872fc357_Bangkok%20TMIB%20Card%20F.webp" alt="Bangkok memory card"><figcaption>Still Remember</figcaption></figure><figure><img loading="lazy" src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa33e91860bb33e48430d67_02_Yaowarat_night.webp" alt="Yaowarat night memory"><figcaption>Yaowarat · Night</figcaption></figure></div><div class="bkkv1-swipe">SWIPE THROUGH MEMORY →</div></div></section><script id="mmd-wish-lv10-layout">(function () {
+  'use strict';
+  var root = document.getElementById('mmd-wish');
+  if (!root) return;
+  // The globally attached historical hero registers a DOMContentLoaded callback.
+  // Reserve its documented one-time flag before that callback can add a second slideshow.
+  root.dataset.heroV27 = '1';
+  root.dataset.wishLayout = 'lv10';
+  var oldCouponStyle=document.getElementById('cb-v26');if(oldCouponStyle)oldCouponStyle.remove();
+  function retireCouponStyle(){var e=document.getElementById('cb-v26');if(e)e.remove();}
+  retireCouponStyle();new MutationObserver(retireCouponStyle).observe(document.head,{childList:true});
+  root.querySelectorAll('.wish-v27-slides,.wish-v27-dots,.wish-v27-fx,.wish-v27-shade').forEach(function (e) { e.remove(); });
+  var phase = root.querySelector('[data-phase2-coupon]');
+  if (phase) {
+    phase.classList.add('wish-phase2');
+    var shell = phase.firstElementChild;
+    shell.classList.add('wish-phase2__shell');
+    var visual = shell.children[0], copy = shell.children[1];
+    visual.classList.add('wish-phase2__visual'); copy.classList.add('wish-phase2__copy');
+    var ps = copy.querySelectorAll(':scope > p');
+    if (ps[1]) ps[1].classList.add('wish-phase2__lead');
+    if (ps[2]) ps[2].classList.add('wish-phase2__fine');
+    var reward = Array.from(copy.children).find(function(e) { return e.tagName === 'DIV' && !e.classList.contains('w-embed'); });
+    if (reward) reward.classList.add('wish-phase2__reward');
+    var cta = copy.querySelector(':scope > a');
+    if (cta) cta.classList.add('wish-phase2__cta');
+  }
+  var form = root.querySelector('[data-wish-form]'), message = root.querySelector('[data-message]');
+  if (form) form.setAttribute('aria-label','Birthday wish');
+  if (message) { message.rows = 4; message.parentElement.setAttribute('for', message.id); }
+  var start = root.querySelector('[data-start]');
+  if (start) start.href = '#wish-flow';
+  var nativeHero = root.querySelector('section[aria-labelledby="wish-hero-title"] > img');
+  if (nativeHero) {nativeHero.loading='eager';nativeHero.setAttribute('fetchpriority','high');nativeHero.removeAttribute('srcset');nativeHero.removeAttribute('sizes');}
+})();
+</script>
+<script id="mmd-wish-atelier-runtime-v23">(function(){'use strict';var r=document.getElementById('mmd-wish');if(!r||r.dataset.atelierV23==='1')return;r.dataset.atelierV23='1';var E='/member/api/care-back/public-wish',LE='/member/api/care-back/link-wish',L='/my-mmd/coupons',TK='mmd-care-back-wish-link-token',LK='mmd-care-back-language',q=function(s){return r.querySelector(s)},all=function(s){return Array.prototype.slice.call(r.querySelectorAll(s))};r.setAttribute('data-wish-endpoint',E);r.setAttribute('data-dashboard-url',L);r.setAttribute('data-wish-version','2026.10.24-lv10');var hero=r.querySelector('section[aria-labelledby="wish-hero-title"]'),h1=q('[data-wish-copy="hero"]'),content=h1&&h1.parentElement,flow=q('#wish-flow'),card=flow&&flow.firstElementChild,intro=card&&card.children[0],formWrap=card&&card.children[1],form=q('[data-wish-form]'),m=q('[data-message]'),c=q('[data-consent]'),b=q('[data-submit]'),st=q('[data-status]'),er=q('[data-error]'),ct=q('[data-count]'),ok=q('[data-success]'),okCopy=q('[data-success-copy]'),dash=q('[data-dashboard]'),busy=false,sent=false,lastPayload='',lastRequestId='',limit=Math.min(280,Number(m&&m.maxLength)>0?Number(m.maxLength):280);if(hero)hero.classList.add('wish-hero');if(content)content.classList.add('wish-hero__content');if(formWrap)formWrap.classList.add('wish-flow__form-shell');if(ok){ok.hidden=true;ok.classList.add('wish-v23-reveal');}if(m){m.maxLength=limit;m.setAttribute('aria-describedby','wish-next-count wish-next-error');}if(ct)ct.id='wish-next-count';if(er)er.id='wish-next-error';if(c){var inner=c.parentElement,outer=inner&&inner.parentElement;if(inner&&outer&&inner.tagName==='LABEL'&&outer.tagName==='LABEL'){var span=document.createElement('span');span.className=inner.className;while(inner.firstChild)span.appendChild(inner.firstChild);inner.replaceWith(span);}if(outer)outer.setAttribute('for',c.id);}if(dash)dash.href=L;
+var C={th:{hero:'Your WISH<br>to MMD',title:'6 ปีแล้ว<br>อยากฝากอะไรไว้กับเราครับ',lead:'คำอวยพร ความทรงจำ หรือสิ่งที่อยากเห็นต่อจากนี้ — เขียนได้เหมือนที่อยากพูดกับ MMD จริง ๆ ครับ',start:'เขียนคำอวยพรถึง MMD',copy:'ไม่ต้องคิดให้เป็นทางการครับ เขียนเหมือนที่อยากพูดกับ MMD ได้เลย',status:'Wish ส่งได้ทันที · ไม่ต้อง Login หรือยืนยัน LINE ก่อน',separation:'Wish เป็นส่วนสาธารณะของแคมเปญ ส่วนคูปอง สมาชิก และ Points จะตรวจแยกตามสิทธิ์จริง',label:'ข้อความถึง MMD',placeholder:'เขียนถึง MMD ตรงนี้ได้เลยครับ…',consent:'ผมยืนยันว่าต้องการส่งข้อความนี้ให้ MMD',submit:'ส่งคำอวยพร',successTitle:'ได้รับแล้วครับ<br>ขอบคุณจริง ๆ',success:'MMD ได้รับ Wish ของคุณแล้วครับ กรุณายืนยัน LINE ต่อเพื่อเคลมคูปองส่วนตัวได้ทันทีครับ',dashboard:'ดูคูปองของฉัน',prompt1:'อวยพร MMD',prompt2:'ความทรงจำ',prompt3:'สิ่งที่อยากเห็น',p1:'ยินดีกับ MMD ปีที่ 6 นะครับ ขอให้ปีนี้มีเรื่องดี ๆ เข้ามาเยอะขึ้น',p2:'สิ่งที่ผมจำได้จาก MMD คือ ',p3:'ปีต่อไป ผมอยากเห็น MMD ',pending:'กำลังส่ง Wish ของคุณครับ',fail:'ตอนนี้ยังส่งไม่ได้ครับ ลองใหม่อีกครั้งในอีกสักครู่',invalid:'ข้อความนี้ยังส่งไม่ได้ครับ ลองปรับข้อความอีกครั้ง',r1a:'01 · WRITE',r1b:'เขียนอะไรก็ได้',r1c:'คำอวยพร ความทรงจำ หรือสิ่งที่อยากเห็นจาก MMD',r2a:'02 · SEND',r2b:'ไม่ต้อง Login',r2c:'Wish จบได้ในหน้านี้ โดยไม่ต้องยืนยันตัวตนก่อน',r3a:'03 · CLAIM',r3b:'ยืนยัน LINE ต่อ',r3c:'ส่ง Wish แล้วกรุณายืนยัน LINE เพื่อเคลมคูปองส่วนตัวทันที',policyTitle:'CARE BACK ต่างจาก Wish ยังไง?',policyIntro:'Wish อย่างเดียวไม่เพิ่มวันสมาชิกหรือ Points ครับ สิทธิ์จะเกิดหลังระบบตรวจข้อมูลที่เกี่ยวข้อง และ active-through ใน My MMD เป็นตัวอ้างอิงสุดท้าย',standard:'อายุพื้นฐาน 1 ปี · หากเข้าเงื่อนไข Private signup/renewal ตั้งแต่ ส.ค. 2026 เพิ่ม 180 วัน',premium:'อายุพื้นฐาน 2 ปี · หากเข้าเงื่อนไข Private signup/renewal ตั้งแต่ ส.ค. 2026 เพิ่ม 1 ปีเต็ม',caption:'THREE FRAMES FROM YEAR SIX'},en:{hero:'Your WISH<br>to MMD',title:'Six years in.<br>Leave something with us.',lead:'A wish, a memory, or what you hope to see next — write it exactly the way you mean it.',start:'Write a wish to MMD',copy:'No formal wording needed. Write it the way you would actually say it to MMD.',status:'Send your Wish now · No login or LINE verification required first.',separation:'Wish is the public campaign layer. Coupons, membership time and Points are evaluated separately from verified eligibility.',label:'Your message to MMD',placeholder:'Write your note to MMD here…',consent:'I confirm that I want to send this message to MMD',submit:'Send my wish',successTitle:'Received.<br>Thank you.',success:'MMD has received your Wish. Verify LINE now to claim your personal discount coupon immediately.',dashboard:'View my coupons',prompt1:'Wish MMD',prompt2:'A memory',prompt3:'What comes next',p1:'Congratulations on MMD’s sixth year. I hope this year brings even more good things.',p2:'What I remember about MMD is ',p3:'In the year ahead, I would like to see MMD ',pending:'Sending your Wish…',fail:'Your Wish cannot be sent right now. Please try again shortly.',invalid:'Please revise your message and try again.',r1a:'01 · WRITE',r1b:'Say anything',r1c:'A wish, a memory, or what you hope MMD becomes next.',r2a:'02 · SEND',r2b:'No login gate',r2c:'Your Wish can be completed here without identity verification first.',r3a:'03 · CLAIM',r3b:'Verify LINE next',r3c:'Verify LINE after sending to claim your personal coupon immediately.',policyTitle:'How is CARE BACK different from a Wish?',policyIntro:'A Wish by itself does not add membership time or Points. Benefits are applied only after relevant records are verified, and My MMD active-through is authoritative.',standard:'1-year base term · qualifying Private signup/renewal from Aug 2026 adds 180 days',premium:'2-year base term · qualifying Private signup/renewal from Aug 2026 adds 1 full year',caption:'THREE FRAMES FROM YEAR SIX'},zh:{hero:'Your WISH<br>to MMD',title:'六年了。<br>留一句话给我们。',lead:'一句祝福、一段回忆，或你希望下一年看到的 MMD，都可以直接写下来。',start:'写下给 MMD 的祝福',copy:'不用正式措辞。请像平时想对 MMD 说话一样写下来。',status:'现在即可发送 Wish · 无需先登录或验证 LINE',separation:'Wish 属于公开活动层；优惠券、会员期限与 Points 会根据已核实资格分别判断。',label:'给 MMD 的留言',placeholder:'在这里写给 MMD…',consent:'我确认要把这段留言发送给 MMD',submit:'发送祝福',successTitle:'已经收到。<br>谢谢你。',success:'MMD 已收到您的 Wish。请立即验证 LINE 领取个人优惠券。',dashboard:'查看我的优惠券',prompt1:'祝福 MMD',prompt2:'一段回忆',prompt3:'希望看到的',p1:'恭喜 MMD 迎来第六年。愿这一年有更多美好的事情发生。',p2:'我记得 MMD 的是 ',p3:'接下来的一年，我希望看到 MMD ',pending:'正在发送您的 Wish',fail:'暂时无法发送，请稍后再试。',invalid:'请修改留言后重试。',r1a:'01 · WRITE',r1b:'想写什么都可以',r1c:'祝福、回忆，或你希望下一年看到的 MMD。',r2a:'02 · SEND',r2b:'无需登录',r2c:'发送 Wish 前不需要身份验证。',r3a:'03 · CLAIM',r3b:'继续验证 LINE',r3c:'发送后验证 LINE，立即领取个人优惠券。',policyTitle:'CARE BACK 和 Wish 有什么不同？',policyIntro:'单独提交 Wish 不会增加会员期限或 Points。权益只会在相关资料核实后生效，My MMD 的 active-through 为最终依据。',standard:'基础期限 1 年 · 2026年8月起符合 Private signup/renewal 条件增加 180 天',premium:'基础期限 2 年 · 2026年8月起符合 Private signup/renewal 条件增加 1 年',caption:'THREE FRAMES FROM YEAR SIX'}};
+function lang(){var x=String(r.lang||'th').toLowerCase();return x.indexOf('zh')===0?'zh':x.indexOf('en')===0?'en':'th'}function Z(){return C[lang()]}function html(k,v){all('[data-wish-copy="'+k+'"]').forEach(function(e){e.innerHTML=v})}
+function build(){if(content&&!content.querySelector('.wish-language')){var lg=document.createElement('div');lg.className='wish-language';lg.setAttribute('role','group');lg.setAttribute('aria-label','Choose language');lg.innerHTML='<button type="button" data-wish-lang="th">ไทย</button><button type="button" data-wish-lang="en">EN</button><button type="button" data-wish-lang="zh">中文</button>';content.prepend(lg)}if(hero){var direct=Array.prototype.slice.call(hero.children),base=direct.find(function(x){return x.tagName==='IMG'}),shade=direct.find(function(x){return x!==base&&x!==content&&x.tagName==='DIV'});if(base&&!hero.querySelector('.wish-v23-photo')){var ph=document.createElement('div');ph.className='wish-v23-photo';hero.insertBefore(ph,hero.firstChild);ph.appendChild(base);if(shade)ph.appendChild(shade);base.className='wish-v23-layer is-active';base.alt='';base.setAttribute('aria-hidden','true');if(shade)shade.classList.add('wish-v23-shade');var clone=base.cloneNode(false);clone.className='wish-v23-layer';clone.removeAttribute('id');clone.removeAttribute('srcset');clone.removeAttribute('sizes');ph.insertBefore(clone,shade||null);var gl=document.createElement('div');gl.className='wish-v23-glints';gl.setAttribute('aria-hidden','true');for(var i=0;i<6;i++)gl.appendChild(document.createElement('i'));ph.appendChild(gl);var cap=document.createElement('div');cap.className='wish-v23-caption';cap.innerHTML='<small>ANNIVERSARY ARCHIVE</small><strong>SIX YEARS.<br>STILL US.</strong><p data-v23-caption></p>';ph.appendChild(cap);var rail=document.createElement('div');rail.className='wish-v23-rail';rail.setAttribute('role','group');rail.setAttribute('aria-label','Anniversary images');rail.innerHTML='<button type="button" data-wish-slide="0" aria-label="Image 1"></button><button type="button" data-wish-slide="1" aria-label="Image 2"></button><button type="button" data-wish-slide="2" aria-label="Image 3"></button>';ph.appendChild(rail)}}if(flow&&!r.querySelector('.wish-v23-ribbon')){var rb=document.createElement('section');rb.className='wish-v23-ribbon wish-v23-reveal';rb.setAttribute('aria-label','Wish journey');rb.innerHTML='<article><small data-step="01" data-v23="r1a"></small><strong data-v23="r1b"></strong><p data-v23="r1c"></p></article><article><small data-step="02" data-v23="r2a"></small><strong data-v23="r2b"></strong><p data-v23="r2c"></p></article><article><small data-step="03" data-v23="r3a"></small><strong data-v23="r3b"></strong><p data-v23="r3c"></p></article>';flow.parentNode.insertBefore(rb,flow);if(card)card.classList.add('wish-v23-reveal')}if(flow&&!r.querySelector('.wish-v23-policy')){var pd=document.createElement('details');pd.className='wish-v23-policy wish-v23-reveal';pd.innerHTML='<summary data-v23="policyTitle"></summary><div class="wish-v23-policy__body"><p data-v23="policyIntro"></p><div class="wish-v23-policy__grid"><article><strong>STANDARD</strong><span data-v23="standard"></span></article><article><strong>PREMIUM</strong><span data-v23="premium"></span></article></div></div>';flow.parentNode.insertBefore(pd,flow.nextSibling)}}build();
+function apply(){var x=Z();['hero','title','lead','start','copy','status','separation','label','consent','successTitle','success','dashboard','prompt1','prompt2','prompt3'].forEach(function(k){if(x[k])html(k,x[k])});all('[data-v23]').forEach(function(e){var v=x[e.getAttribute('data-v23')];if(v)e.textContent=v});var cap=q('[data-v23-caption]');if(cap)cap.textContent=x.caption;if(intro&&intro.firstElementChild)intro.firstElementChild.textContent=lang()==='th'?'BIRTHDAY WISH · PUBLIC NOTE':'BIRTHDAY WISH · PUBLIC NOTE';if(m)m.placeholder=x.placeholder;if(b){b.value=busy?x.pending:x.submit;b.setAttribute('value',b.value);b.setAttribute('aria-label',b.value)}if(dash){dash.href=L;dash.setAttribute('aria-label',x.dashboard)}all('[data-prompt]').forEach(function(e,i){var k='p'+(i+1);if(x[k])e.dataset.prompt=x[k]});all('[data-wish-lang]').forEach(function(e){e.setAttribute('aria-pressed',e.dataset.wishLang===lang()?'true':'false')});if(st&&!busy&&!sent)st.textContent=x.status}
+function setLang(v){if(!C[v])v='th';r.lang=v==='zh'?'zh-CN':v;try{localStorage.setItem(LK,v)}catch(e){}apply()}all('[data-wish-lang]').forEach(function(e){e.addEventListener('click',function(){setLang(e.dataset.wishLang)})});
+function parse(v){return String(v||'').split('|').map(function(x){return x.trim()}).filter(Boolean).filter(function(x,i,a){return a.indexOf(x)===i}).slice(0,3)}
+var mq=window.matchMedia('(max-width:699px)'),reduce=window.matchMedia('(prefers-reduced-motion:reduce)'),desk=parse(r.getAttribute('data-hero-desktop-images')),mob=parse(r.getAttribute('data-hero-mobile-images')),layers=all('.wish-v23-layer'),active=0,slide=0,timer=0,sequence=0,loadGeneration=0,paused=reduce.matches,manual=false;
+var heroCopy={th:{pause:'พักภาพ',play:'เล่นภาพ',loading:'กำลังโหลดภาพ',failed:'ภาพบางส่วนยังโหลดไม่ได้'},en:{pause:'Pause images',play:'Play images',loading:'Loading images',failed:'Some images could not load'},zh:{pause:'暂停图片',play:'播放图片',loading:'正在加载图片',failed:'部分图片未能加载'}};
+var photo=q('.wish-v23-photo'),pause=document.createElement('button'),load=document.createElement('div');pause.type='button';pause.className='wish-next-pause';load.className='wish-next-load';load.innerHTML='<span></span><progress max="100" value="0" aria-label="Image loading"></progress><b>0%</b>';if(photo){photo.append(pause,load);}
+function list(){return mq.matches&&mob.length?mob:desk}
+function controls(){var x=heroCopy[lang()];pause.textContent=paused?'▶':'Ⅱ';pause.setAttribute('aria-label',paused?x.play:x.pause);pause.setAttribute('aria-pressed',String(paused));r.dataset.heroPaused=String(paused);all('[data-wish-slide]').forEach(function(e,i){e.classList.toggle('is-active',i===slide);e.setAttribute('aria-pressed',String(i===slide));});}
+function spin(){clearInterval(timer);if(paused||document.hidden)return;timer=setInterval(function(){if(!document.hidden)go(slide+1)},6500);}
+function go(n){var ls=list();if(layers.length<2||ls.length<2)return;n=(n+ls.length)%ls.length;if(n===slide)return;var ticket=++sequence,incoming=layers[1-active],outgoing=layers[active],probe=new Image();probe.onload=function(){if(ticket!==sequence)return;incoming.src=ls[n];requestAnimationFrame(function(){if(ticket!==sequence)return;incoming.classList.add('is-active');outgoing.classList.remove('is-active');active=1-active;slide=n;controls();});};probe.onerror=function(){if(ticket===sequence){load.hidden=false;load.querySelector('span').textContent=heroCopy[lang()].failed;}};probe.src=ls[n];}
+function prime(){sequence++;var ls=list();if(!layers.length||!ls.length)return;layers[active].src=ls[0];layers[active].classList.add('is-active');if(layers[1-active])layers[1-active].classList.remove('is-active');slide=0;controls();spin();var completed=0,failed=0,gen=++loadGeneration;load.hidden=false;load.querySelector('span').textContent=heroCopy[lang()].loading;load.querySelector('progress').value=0;load.querySelector('b').textContent='0%';ls.forEach(function(src){var im=new Image();function settled(ok){if(gen!==loadGeneration)return;completed++;if(!ok)failed++;var v=Math.round(completed/ls.length*100);load.querySelector('progress').value=v;load.querySelector('b').textContent=v+'%';if(completed===ls.length){if(failed)load.querySelector('span').textContent=heroCopy[lang()].failed;else setTimeout(function(){if(gen===loadGeneration)load.hidden=true},500);}}im.onload=function(){settled(true)};im.onerror=function(){settled(false)};im.src=src;});}
+pause.addEventListener('click',function(){paused=!paused;manual=true;controls();spin();});all('[data-wish-slide]').forEach(function(e){e.addEventListener('click',function(){go(Number(e.dataset.wishSlide));spin();});});
+if(mq.addEventListener)mq.addEventListener('change',prime);if(reduce.addEventListener)reduce.addEventListener('change',function(){manual=false;paused=reduce.matches;controls();spin();});document.addEventListener('visibilitychange',spin);all('[data-wish-lang]').forEach(function(e){e.addEventListener('click',controls);});prime();
+
+function clean(v){return String(v||'').trim()}function valid(v){var x=clean(v);return !!x&&x.length<=limit&&x.indexOf('<')<0&&x.indexOf('>')<0}function goodToken(v){return /^pw_[A-Za-z0-9_-]{40,100}$/.test(String(v||''))}function remember(v){if(!goodToken(v))return;try{localStorage.setItem(TK,String(v))}catch(e){}}function stored(){try{var v=localStorage.getItem(TK)||'';return goodToken(v)?v:''}catch(e){return''}}function forget(){try{localStorage.removeItem(TK)}catch(e){}}function lineUrl(){return sent?L:'#wish-flow'}function syncDash(){if(dash)dash.href=lineUrl()}async function link(){var t=stored();if(!t)return;try{var z=await fetch(LE,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({wish_link_token:t})}),d=null;try{d=await z.json()}catch(e){}if(z.ok&&d&&d.ok===true&&d.linked===true){forget();syncDash();document.dispatchEvent(new CustomEvent('mmd:care-back:wish-linked',{detail:{eligible:d.benefits&&typeof d.benefits.member_eligible==='boolean'?d.benefits.member_eligible:undefined,publication:String(d.publication&&d.publication.state||''),couponState:String(d.coupon&&d.coupon.state||'')}}))}}catch(e){}}function rid(){var u='';try{u=crypto.randomUUID()}catch(e){}return('wish-'+(u||Date.now().toString(36)+'-'+Math.random().toString(36).slice(2))).replace(/[^A-Za-z0-9._~-]/g,'-').slice(0,128)}function fail(v){if(er)er.textContent=v||''}function status(v,s){if(st){st.textContent=v||'';st.dataset.state=s||''}}function sync(){if(m)m.disabled=busy||sent;if(c)c.disabled=busy||sent;if(ct&&m)ct.textContent=m.value.length+' / '+limit;if(b){b.disabled=!m||!c||!valid(m.value)||!c.checked||!publicConsent()||busy||sent;b.setAttribute('aria-busy',busy?'true':'false');b.value=busy?Z().pending:Z().submit;b.setAttribute('value',b.value)}syncDash()}function safeMessage(d){var v=String(d&&d.final_display&&d.final_display.message||'').trim();return v&&v.length<=300&&v.indexOf('<')<0&&v.indexOf('>')<0?v:''}function publicConsent(){var p=q('[data-public-consent]');return !!p&&p.checked}function requestFor(body){var key=JSON.stringify(body);if(key!==lastPayload){lastPayload=key;lastRequestId=rid()}return Object.assign({},body,{request_id:lastRequestId})}async function send(){if(!m||!c||!b||busy||sent)return;var x=Z();if(!valid(m.value)||!c.checked||!publicConsent()){fail(x.invalid);return}busy=true;fail('');sync();status(x.pending,'pending');var requestController=new AbortController();var requestTimer=setTimeout(function(){requestController.abort()},15000);try{var res=await fetch(E,{method:'POST',credentials:'same-origin',signal:requestController.signal,headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify(requestFor({wish_text:clean(m.value),language:lang(),public_display_consent:publicConsent()}))}),d=null;try{d=await res.json()}catch(e){}if(!res.ok||!d||d.ok!==true||d.state!=='completed'){fail(x.fail);status(x.fail,'error');return}if(goodToken(d.wish_link_token)){remember(d.wish_link_token);syncDash();void link()}sent=true;r.dataset.wishSaved='true';m.disabled=true;c.disabled=true;b.disabled=true;var pc=q('[data-public-consent]');if(pc)pc.disabled=true;var msg=safeMessage(d)||x.success;status(msg,'success');if(okCopy)okCopy.textContent=msg;if(ok){ok.hidden=false;requestAnimationFrame(function(){ok.classList.add('is-visible')})}document.dispatchEvent(new CustomEvent('mmd:care-back:wish-completed',{detail:{state:'completed',wishCompleted:true,displayMessage:safeMessage(d),couponClaimRequired:true,next:lineUrl()}}));if(ok)ok.scrollIntoView({behavior:reduce.matches?'auto':'smooth',block:'center'})}catch(e){fail(x.fail);status(x.fail,'error')}finally{clearTimeout(requestTimer);busy=false;sync()}}
+r.addEventListener('click',function(ev){var a=ev.target.closest('a');if(!a||!r.contains(a))return;if(a.matches('[data-dashboard],.wish-coupon-link,.wish-phase2__cta')){if(!sent){ev.preventDefault();ev.stopImmediatePropagation();if(flow)flow.scrollIntoView({behavior:reduce.matches?'auto':'smooth',block:'center'});if(m)m.focus({preventScroll:true})}else a.href=L}},true);all('[data-start]').forEach(function(e){e.addEventListener('click',function(ev){ev.preventDefault();if(sent){if(ok)ok.scrollIntoView({behavior:reduce.matches?'auto':'smooth',block:'center'});return}if(flow)flow.scrollIntoView({behavior:reduce.matches?'auto':'smooth',block:'center'});setTimeout(function(){if(m)m.focus()},reduce.matches?0:500)})});if(form)form.addEventListener('submit',function(ev){ev.preventDefault();ev.stopImmediatePropagation();void send()},true);if(b)b.addEventListener('click',function(ev){if(!form){ev.preventDefault();void send()}});if(m)m.addEventListener('input',function(){fail('');sync()});r.addEventListener('change',function(ev){if(ev.target&&ev.target.matches('[data-public-consent]')){fail('');sync()}});if(c)c.addEventListener('change',function(){fail('');sync()});all('[data-prompt]').forEach(function(e){e.addEventListener('click',function(ev){ev.preventDefault();if(sent||busy||!m)return;var phrase=String(e.dataset.prompt||'');if(!clean(m.value))m.value=phrase.slice(0,limit);m.focus();fail('');sync()})});if('IntersectionObserver'in window&&!reduce.matches){var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('is-visible');io.unobserve(e.target)}})},{threshold:.1});all('.wish-v23-reveal').forEach(function(e){if(!e.hidden)io.observe(e)})}else all('.wish-v23-reveal').forEach(function(e){e.classList.add('is-visible')});if(b)new MutationObserver(function(){var disabled=!m||!c||!valid(m.value)||!c.checked||!publicConsent()||busy||sent;if(b.disabled!==disabled)b.disabled=disabled;}).observe(b,{attributes:true,attributeFilter:['disabled']});var initial='th';try{initial=localStorage.getItem(LK)||'th'}catch(e){}setLang(initial);sync();void link()})();</script>
+<script id="mmd-wish-member-wall-v30">
+(function () {
+  'use strict';
+  function boot() {
+    var root = document.getElementById('mmd-wish');
+    if (!root || root.dataset.memberWallReady === '1') return;
+    root.dataset.memberWallReady = '1';
+    var flow = root.querySelector('#wish-flow');
+    var wall = document.createElement('section');
+    wall.className = 'wish-member-wall';
+    wall.setAttribute('aria-labelledby', 'wish-member-wall-title');
+    var heading = document.createElement('h2');
+    heading.id = 'wish-member-wall-title';
+    var note = document.createElement('p');
+    var status = document.createElement('p');
+    status.setAttribute('role', 'status');
+    var list = document.createElement('div');
+    list.className = 'wish-member-wall-list';
+    var retry = document.createElement('button');
+    retry.type = 'button';
+    retry.hidden = true;
+    wall.append(heading, note, status, list, retry);
+    if (flow && flow.parentNode) flow.insertAdjacentElement('afterend', wall);
+    else root.append(wall);
+    var modelWall = document.createElement('section');
+    modelWall.className = 'wish-member-wall wish-model-wall';
+    modelWall.setAttribute('aria-labelledby', 'wish-model-wall-title');
+    var modelHeading = document.createElement('h2');
+    modelHeading.id = 'wish-model-wall-title';
+    var modelNote = document.createElement('p');
+    var modelList = document.createElement('div');
+    modelList.className = 'wish-member-wall-list';
+    modelWall.append(modelHeading, modelNote, modelList);
+    wall.insertAdjacentElement('afterend', modelWall);
+    var success = root.querySelector('[data-success]');
+    var coupon = document.createElement('a');
+    coupon.className = 'wish-coupon-link';
+    coupon.href = '/my-mmd/coupons';
+    // Reuse the existing success CTA; do not duplicate the destination.
+    if (success && !root.querySelector('[data-dashboard]')) success.append(coupon);
+    var copy = {
+      th: { title: 'คำอวยพรจากสมาชิก MMD', note: 'รวมสมาชิกเก่า สมาชิกหมดอายุ และสมาชิกปัจจุบัน · แสดงแบบไม่ระบุชื่อหลังยืนยัน LINE', loading: 'กำลังอ่านคำอวยพร…', empty: 'คำอวยพรจากสมาชิกที่ยืนยัน LINE แล้วจะแสดงตรงนี้ครับ', error: 'ตอนนี้ยังโหลดคำอวยพรไม่ได้ครับ', retry: 'ลองอีกครั้ง', back: 'กลับไปที่ MY MMD', coupon: 'เปิดคูปองของฉัน' },
+      en: { title: 'Wishes from MMD members', note: 'Past, expired and current members · shown anonymously after LINE verification.', loading: 'Loading wishes…', empty: 'Wishes from LINE-verified members will appear here.', error: 'Wishes could not be loaded right now.', retry: 'Try again', back: 'Back to MY MMD', coupon: 'Open my coupons' },
+      zh: { title: '来自 MMD 会员的祝福', note: '包括旧会员、已到期会员和当前会员；验证 LINE 后匿名显示。', loading: '正在加载祝福…', empty: '完成 LINE 验证的会员祝福将显示在这里。', error: '暂时无法加载祝福。', retry: '重试', back: '返回 MY MMD', coupon: '打开我的优惠券' }
+    };
+    var state = 'loading', loading = false, refreshPending = false;
+    function translate() {
+      var lang = String(root.lang || 'th').toLowerCase();
+      var c = copy[lang.indexOf('en') === 0 ? 'en' : lang.indexOf('zh') === 0 ? 'zh' : 'th'];
+      var sendLabel = root.querySelector('[data-wish-copy="consent"]');
+      if (sendLabel) sendLabel.textContent = lang.indexOf('en') === 0
+        ? 'Send this message and display it anonymously if MMD verifies that I am or was a member.'
+        : lang.indexOf('zh') === 0
+          ? '发送此留言；若 MMD 核实我现在或过去是会员，可匿名公开显示。'
+          : 'ยืนยันส่งข้อความนี้ และยินยอมให้แสดงแบบไม่ระบุชื่อ หากระบบยืนยันว่าเคยเป็นสมาชิก MMD';
+      heading.textContent = c.title;
+      note.textContent = c.note;
+      modelHeading.textContent = lang.indexOf('en') === 0 ? 'Wishes from MMD Models' : lang.indexOf('zh') === 0 ? '来自 MMD 模特的祝福' : 'คำอวยพรจาก Model ของ MMD';
+      modelNote.textContent = lang.indexOf('en') === 0 ? 'Post-job wishes approved by MMD.' : lang.indexOf('zh') === 0 ? '仅显示经 MMD 审核通过的工作后祝福。' : 'แสดงเฉพาะคำอวยพรหลังจบงานที่ MMD อนุมัติแล้ว';
+      var step = root.querySelector('[data-v23="r3a"]');
+      var stepTitle = root.querySelector('[data-v23="r3b"]');
+      var stepCopy = root.querySelector('[data-v23="r3c"]');
+      if (step && stepTitle && stepCopy) {
+        step.textContent = lang.indexOf('en') === 0 ? '03 · CLAIM' : lang.indexOf('zh') === 0 ? '03 · 领取' : '03 · เคลม';
+        stepTitle.textContent = lang.indexOf('en') === 0 ? 'One LINE check' : lang.indexOf('zh') === 0 ? '验证一次 LINE' : 'ยืนยัน LINE ครั้งเดียว';
+        stepCopy.textContent = lang.indexOf('en') === 0 ? 'Past, expired and current members are published and receive the coupon immediately.' : lang.indexOf('zh') === 0 ? '旧会员、已到期会员和当前会员都会显示祝福，并立即获得优惠券。' : 'สมาชิกเก่า หมดอายุ และปัจจุบัน ข้อความขึ้นและรับคูปองทันทีครับ';
+      }
+      retry.textContent = c.retry;
+      status.textContent = c[state] || '';
+      status.hidden = state === 'ready';
+      coupon.textContent = c.coupon;
+      root.dataset.dashboardUrl = '/my-mmd/coupons';
+      var dash = root.querySelector('[data-dashboard]');
+      if (dash) { dash.href = root.dataset.wishSaved === 'true' ? '/my-mmd/coupons' : '#wish-flow'; dash.textContent = c.coupon; dash.setAttribute('aria-label', c.coupon); }
+    }
+    async function refresh() {
+      if (loading) { refreshPending = true; return; }
+      loading = true;
+      state = 'loading'; retry.hidden = true; translate();
+      var controller = new AbortController();
+      var timer = setTimeout(function () { controller.abort(); }, 12000);
+      try {
+        var response = await fetch('/member/api/care-back/public-wish', { method: 'GET', credentials: 'omit', cache: 'no-store', headers: { Accept: 'application/json' }, signal: controller.signal });
+        var payload = await response.json();
+        if (!response.ok || !payload || payload.ok !== true || !Array.isArray(payload.wishes)) throw new Error('unavailable');
+        list.replaceChildren();
+        payload.wishes.slice(0, 24).forEach(function (wish) {
+          if (!wish || typeof wish.text !== 'string' || !wish.text.trim()) return;
+          var quote = document.createElement('blockquote');
+          quote.textContent = wish.text.slice(0, 600);
+          list.append(quote);
+        });
+        modelList.replaceChildren();
+        (Array.isArray(payload.model_wishes) ? payload.model_wishes : []).slice(0, 24).forEach(function (wish) {
+          if (!wish || typeof wish.text !== 'string' || !wish.text.trim()) return;
+          var quote = document.createElement('blockquote');
+          quote.textContent = wish.text.slice(0, 280);
+          modelList.append(quote);
+        });
+        modelWall.hidden = !modelList.children.length;
+        state = list.children.length ? 'ready' : 'empty';
+      } catch (_) { list.replaceChildren(); modelList.replaceChildren(); modelWall.hidden = true; state = 'error'; retry.hidden = false; }
+      finally { clearTimeout(timer); loading = false; translate(); if (refreshPending) { refreshPending = false; void refresh(); } }
+    }
+    retry.addEventListener('click', refresh);
+    document.addEventListener('mmd:care-back:wish-linked', refresh);
+    // Read the approved server projection; never add the textarea or local draft.
+    document.addEventListener('mmd:care-back:wish-completed', refresh);
+    new MutationObserver(function () { setTimeout(translate, 30); }).observe(root, { attributes: true, attributeFilter: ['lang'] });
+    translate();
+    setTimeout(translate, 50);
+    void refresh();
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
+  else boot();
+})();
+</script>
+<script id="mmd-wish-member-flow-v30">
+(function () {
+  "use strict";
+
+  var COUPON_URL = "/my-mmd/coupons";
+
+  function boot() {
+    var root = document.getElementById("mmd-wish");
+    if (!root || root.dataset.memberFlowV30 === "1") return;
+    root.dataset.memberFlowV30 = "1";
+
+    function enforceRoot() {
+      if (root.getAttribute("data-wish-version") !== "2026.10.24-lv10") {
+        root.setAttribute("data-wish-version", "2026.10.24-lv10");
+      }
+      if (root.getAttribute("data-dashboard-url") !== COUPON_URL) {
+        root.setAttribute("data-dashboard-url", COUPON_URL);
+      }
+    }
+    enforceRoot();
+
+    var linkedOutcome = null; var serverDisplayMessage = "";
+    var copy = {"th":{"title":"6 ปีแล้วครับ\nฝากข้อความถึงกัน","lead":"คำอวยพร ความทรงจำ หรือสิ่งที่อยากบอก เขียนได้เลยครับ ไม่ต้องล็อกอินก่อนส่ง","start":"เขียนคำอวยพรถึง MMD","status":"ส่งได้ทุกคน · เผยแพร่หลังยืนยันสิทธิ์สมาชิก","separation":"สมาชิกที่ยืนยันสิทธิ์แล้ว แสดงข้อความแบบไม่ระบุชื่อและรับคูปองได้ ส่วนผู้ที่ไม่เคยเป็นสมาชิกจะเก็บข้อความไว้แบบส่วนตัวครับ","consent":"ยืนยันส่งข้อความนี้ และยินยอมให้แสดงแบบไม่ระบุชื่อ เมื่อยืนยันได้ว่าเคยเป็นสมาชิก MMD","success":"คำอวยพรถูกบันทึกแล้วครับ หากเคยเป็นสมาชิก เปิด MY MMD เพื่อยืนยัน LINE — ข้อความจะขึ้นและคูปองจะเข้า Wallet ทันที","dashboard":"เปิด MY MMD · รับคูปอง","phaseTitle":"คำขอบคุณ\nที่ส่งกลับถึงคุณ","phaseLead":"ส่งคำอวยพรได้ทุกคนครับ สมาชิกเก่า สมาชิกหมดอายุ และสมาชิกปัจจุบัน ยืนยัน LINE ต่อเพื่อรับสิทธิ์ได้เลย","phaseSmall":"สมาชิกเก่า · สมาชิกหมดอายุ · สมาชิกปัจจุบัน","phaseReward":"ข้อความขึ้น + รับคูปองทันที","phaseValid":"คูปองเข้า MY MMD · ใช้ได้ 1 ครั้ง · อายุ 2 เดือน","phaseFine":"ส่วนลดจริงขึ้นอยู่กับสถานะสมาชิก นายแบบ และประเภทงานที่ MMD ยืนยันได้ · สมาชิกเก่า สมาชิกหมดอายุ และสมาชิกปัจจุบันรับคูปองทันที · ผู้ที่ไม่เคยเป็นสมาชิกไม่มีคูปอง","verifiedTitle":"สมาชิกที่ยืนยันแล้ว รับคูปองทันที","verifiedBody":"สมาชิกเก่า สมาชิกหมดอายุ และสมาชิกปัจจุบันรับคูปองได้ทันทีใน MY MMD · ผู้ที่ไม่เคยเป็นสมาชิกจะไม่มีคูปอง","phaseCta":"กลับไปเขียนคำอวยพร"},"en":{"title":"Six years together.\nLeave a little note.","lead":"A wish, a memory, or something you want to say. Write it here — no login needed before sending.","start":"Write a wish to MMD","status":"Open to everyone · Published after membership is verified.","separation":"Verified eligible members can publish anonymously and receive a coupon. Non-member wishes stay private.","consent":"Send this message and display it anonymously if MMD verifies that I am or was a member.","success":"Your wish is saved. If you have ever been a member, open My MMD and verify LINE — your wish will appear and the coupon will enter your wallet immediately.","dashboard":"Open My MMD · Get coupon","phaseTitle":"A little thank-you,\nfrom MMD to you.","phaseLead":"Anyone can send a wish. Past, expired and current members can verify LINE afterward to receive eligible benefits.","phaseSmall":"PAST · EXPIRED · CURRENT MEMBERS","phaseReward":"Wish published + coupon immediately","phaseValid":"Delivered to My MMD · single use · valid 2 months","phaseFine":"The final rate follows verified membership, Model and job type. Past, expired and current members receive the coupon immediately; non-members do not.","verifiedTitle":"Verified members receive the coupon immediately","verifiedBody":"Past, expired and current members receive it immediately in My MMD. Non-members do not receive a coupon.","phaseCta":"Back to writing my wish"},"zh":{"title":"一起走过六年。\n留一句话给我们。","lead":"祝福、回忆，或想说的话，都可以写在这里。发送前无需登录。","start":"写下给 MMD 的祝福","status":"人人都可发送 · 核实会员资格后公开展示。","separation":"符合资格且已验证的会员可匿名展示祝福并领取优惠券。非会员的留言将私密保存。","consent":"发送此留言；若 MMD 核实我现在或过去是会员，可匿名公开显示。","success":"祝福已保存。如果您曾是会员，请打开 My MMD 验证 LINE；祝福会显示，优惠券也会立即进入 Wallet。","dashboard":"打开 My MMD · 领取优惠券","phaseTitle":"一份来自 MMD\n的小小谢意。","phaseLead":"人人都可以送上祝福。旧会员、已到期会员和当前会员可在发送后验证 LINE，领取符合资格的权益。","phaseSmall":"旧会员 · 已到期会员 · 当前会员","phaseReward":"祝福显示 + 立即获得优惠券","phaseValid":"进入 My MMD · 限用一次 · 有效期 2 个月","phaseFine":"实际折扣以已核实的会员状态、模特和工作类型为准。旧会员、已到期会员和当前会员立即获得优惠券；非会员不会获得。","verifiedTitle":"会员验证后立即获得优惠券","verifiedBody":"旧会员、已到期会员和当前会员可立即在 My MMD 获得优惠券；非会员不会获得优惠券。","phaseCta":"返回填写祝福"}};
+
+    function language() {
+      var value = String(root.lang || document.documentElement.lang || "th").toLowerCase();
+      return value.indexOf("zh") === 0 ? "zh" : value.indexOf("en") === 0 ? "en" : "th";
+    }
+
+    function text(selector, value) {
+      var element = root.querySelector(selector);
+      if (element) element.textContent = value;
+    }
+
+    function setHref(element, value) {
+      if (element && element.getAttribute("href") !== value) element.setAttribute("href", value);
+    }
+
+    function rewriteCouponLinks() {
+      Array.prototype.slice.call(root.querySelectorAll('a[data-dashboard],a[data-cb-my],a[href*="/member/my-mmd"],a[href="/my-mmd/"],a[href="/my-mmd"]')).forEach(function (anchor) {
+        if (!anchor.classList.contains("wish-phase2__cta")) setHref(anchor, COUPON_URL);
+      });
+    }
+
+    function patchLegacyBenefits(current) {
+      var phase = root.querySelector("[data-phase2-coupon]");
+      if (phase) {
+        var fine = phase.querySelector(".wish-phase2__fine");
+        if (!fine) {
+          fine = Array.prototype.slice.call(phase.querySelectorAll("p")).find(function (paragraph) {
+            return /ส่วนลดจริง|Actual discount|实际折扣/.test(paragraph.textContent || "");
+          });
+        }
+        if (fine) fine.textContent = current.phaseFine;
+      }
+
+      Array.prototype.slice.call(root.querySelectorAll("[data-cb-verify],.wish-benefits-v28>div")).forEach(function (panel) {
+        var title = panel.querySelector("strong");
+        var body = panel.querySelector("p");
+        if (title) title.textContent = current.verifiedTitle;
+        if (body) body.textContent = current.verifiedBody;
+      });
+      var benefitsUrl = root.querySelector(".wish-benefits-v28__url");
+      if (benefitsUrl) benefitsUrl.textContent = "mmdbkk.com/my-mmd/coupons";
+    }
+
+    function apply() {
+      enforceRoot();
+      var current = copy[language()];
+      text('[data-wish-copy="title"]', current.title);
+      text('[data-wish-copy="lead"]', current.lead);
+      text('[data-wish-copy="start"]', current.start);
+      var status = root.querySelector("[data-status]");
+      if (status && !status.dataset.state) status.textContent = current.status;
+      text('[data-wish-copy="separation"]', current.separation);
+      text('[data-wish-copy="consent"]', current.consent);
+      text("[data-success-copy]", outcomeMessage(current));if(status && status.dataset.state==="success")status.textContent=outcomeMessage(current);
+
+      var dashboard = root.querySelector("[data-dashboard]");
+      if (dashboard) {
+        setHref(dashboard, COUPON_URL);
+        dashboard.setAttribute("aria-label", current.dashboard);
+        var dashboardLabel = dashboard.querySelector("span");
+        if (dashboardLabel) dashboardLabel.textContent = current.dashboard;
+        else dashboard.textContent = current.dashboard;
+      }
+
+      var phase = root.querySelector("[data-phase2-coupon]");
+      if (phase) {
+        text("[data-phase2-coupon] h2", current.phaseTitle);
+        text("[data-phase2-coupon] .wish-phase2__lead", current.phaseLead);
+        text("[data-phase2-coupon] .wish-phase2__reward small", current.phaseSmall);
+        text("[data-phase2-coupon] .wish-phase2__reward strong", current.phaseReward);
+        text("[data-phase2-coupon] .wish-phase2__reward span", current.phaseValid);
+        text("[data-phase2-coupon] .wish-phase2__fine", current.phaseFine);
+        var phaseCta = phase.querySelector(".wish-phase2__cta");
+        if (phaseCta) {
+          phaseCta.href = "#wish-flow";
+          phaseCta.setAttribute("aria-label", current.phaseCta);
+          var first = phaseCta.firstChild;
+          if (first && first.nodeType === 3) first.nodeValue = current.phaseCta + " ";
+          else phaseCta.textContent = current.phaseCta;
+        }
+      }
+      patchLegacyBenefits(current);
+      rewriteCouponLinks();
+    }
+
+    Array.prototype.slice.call(root.querySelectorAll(".wish-public-consent")).forEach(function (element) {
+      element.remove();
+    });
+
+    // Compatibility bridge for the older Webflow form runtime. The only
+    // visible choice remains the native consent checkbox.
+    var nativeConsent = root.querySelector("[data-consent]");
+    var consentBridge = root.querySelector("[data-public-consent]");
+    if (nativeConsent && !consentBridge) {
+      consentBridge = document.createElement("input");
+      consentBridge.type = "checkbox";
+      consentBridge.hidden = true;
+      consentBridge.tabIndex = -1;
+      consentBridge.setAttribute("aria-hidden", "true");
+      consentBridge.setAttribute("data-public-consent", "");
+      root.appendChild(consentBridge);
+    }
+    function syncConsent(notify) {
+      if (!nativeConsent || !consentBridge) return;
+      consentBridge.checked = nativeConsent.checked === true;
+      if (notify) consentBridge.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    if (nativeConsent && consentBridge) {
+      nativeConsent.addEventListener("change", function () { syncConsent(true); }, true);
+      syncConsent(false);
+      setTimeout(function () {
+        nativeConsent.dispatchEvent(new Event("change", { bubbles: true }));
+      }, 0);
+    }
+
+    Array.prototype.slice.call(root.querySelectorAll(".wish-v23-ribbon,.wish-v23-policy")).forEach(function (element) {
+      element.hidden = false;
+    });
+
+    function outcomeMessage(current) {
+      if (!linkedOutcome) return serverDisplayMessage || current.success;
+      if (linkedOutcome.eligible === true) return language() === 'th' ? 'MMD ได้รับคำอวยพรและยืนยันบัญชีสมาชิกแล้วครับ ดูสถานะคูปองของคุณต่อได้เลย' : language() === 'zh' ? 'MMD 已收到祝福并核实会员账户，请继续查看优惠券状态。' : 'MMD received your wish and verified your member account. Continue to view your coupon status.';
+      return language() === 'th' ? 'บันทึกคำอวยพรแบบส่วนตัวแล้วครับ ครั้งนี้ยังไม่ได้รับการยืนยันสิทธิ์เผยแพร่หรือรับคูปอง'
+        : language() === 'zh' ? '祝福已私密保存。目前尚未确认公开展示或领取优惠券的资格。'
+        : 'Your wish is saved privately. Eligibility for publication or a coupon has not been confirmed.';
+    }
+    document.addEventListener("mmd:care-back:wish-linked", function (event) {
+      var detail = event && event.detail || {};
+      if (typeof detail.eligible !== 'boolean') return;
+      linkedOutcome = { eligible: detail.eligible };
+      var message = outcomeMessage(copy[language()]);
+      text('[data-success-copy]', message);
+      var status = root.querySelector('[data-status]');
+      if (status) {status.textContent=message;status.dataset.state='success';}
+    });
+
+    document.addEventListener("mmd:care-back:wish-completed", function (event) { serverDisplayMessage=String(event.detail && event.detail.displayMessage || "");
+      setTimeout(apply, 0);
+      setTimeout(apply, 120);
+    });
+
+    var applyTimer;
+    new MutationObserver(function () {
+      clearTimeout(applyTimer);
+      applyTimer = setTimeout(apply, 40);
+    }).observe(root, {
+      attributes: true,
+      subtree: true,
+      attributeFilter: ["lang", "href", "data-dashboard-url", "data-wish-version"]
+    });
+    var flowSection=root.querySelector("#wish-flow"),successSection=root.querySelector("[data-success]");if(flowSection && successSection)flowSection.insertAdjacentElement("afterend",successSection);
+    apply();
+    setTimeout(apply, 120);
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot, { once: true });
+  else boot();
+})();
+</script>
+<script id="mmd-wish-lv10-finish">(function () {
+  'use strict';
+  function finish() {
+    var r=document.getElementById('mmd-wish');if(!r)return;
+    var hero=r.querySelector('.wish-hero'),flow=r.querySelector('#wish-flow'),success=r.querySelector('[data-success]'),phase=r.querySelector('[data-phase2-coupon]'),journey=r.querySelector('.wish-v23-ribbon');
+    if(hero&&flow)hero.insertAdjacentElement('afterend',flow);
+    if(flow&&success)flow.insertAdjacentElement('afterend',success);
+    if(success&&phase)success.insertAdjacentElement('afterend',phase);
+    if(phase&&journey)phase.insertAdjacentElement('afterend',journey);
+    if(journey)journey.hidden=false;
+    var policy=r.querySelector('.wish-v23-policy');if(policy){policy.hidden=false;if(journey)journey.insertAdjacentElement('afterend',policy);}
+    var memory=document.querySelector('[data-mmd-bkk-visual]');
+    function language(){
+      var lang=(r.lang||'th').slice(0,2),key=lang==='zh'?'Zh':lang==='en'?'En':'Th';
+      if(memory){memory.lang=lang;memory.querySelector('[data-bkk-head]').textContent=memory.dataset['head'+key];memory.querySelector('[data-bkk-copy]').textContent=memory.dataset['copy'+key];}
+      var m=r.querySelector('[data-message]'),label=r.querySelector('[data-wish-copy="label"]');if(m&&label)m.setAttribute('aria-label',label.textContent);
+      var progress=r.querySelector('.wish-next-load progress');if(progress)progress.setAttribute('aria-label',lang==='th'?'ความคืบหน้าการโหลดภาพ':lang==='zh'?'图片加载进度':'Image loading progress');
+    }
+    language();new MutationObserver(language).observe(r,{attributes:true,attributeFilter:['lang']});
+    // A writing action always opens the form, including after a translated label changes.
+    var phaseCta=r.querySelector('.wish-phase2__cta');if(phaseCta)phaseCta.addEventListener('click',function(e){e.preventDefault();if(flow)flow.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion:reduce)').matches?'auto':'smooth',block:'start'});var field=r.querySelector('[data-message]');if(field&&!field.disabled)field.focus({preventScroll:true});});
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',finish,{once:true});else finish();
+})();
+</script></body></html>

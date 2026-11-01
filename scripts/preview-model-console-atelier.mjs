@@ -1,7 +1,7 @@
 // Local-only fixture preview. Never imports production credentials or writes records.
 import fs from 'node:fs';
 import http from 'node:http';
-import { buildConsoleEmbed } from './build-model-console-atelier-embed.mjs';
+import { buildConsoleEmbed, buildConsoleDeclineEmbed } from './build-model-console-atelier-embed.mjs';
 const input = process.argv[2];
 if (!input) throw new Error('Supply a locally captured, unauthenticated Console shell');
 const live = fs.readFileSync(input, 'utf8');
@@ -12,7 +12,7 @@ const markup = live.slice(start, end);
 const styles = [...live.matchAll(/<style\b[^>]*>[\s\S]*?<\/style>/gi)].map(m => m[0]).join('\n');
 const links = [...live.matchAll(/<link\b[^>]*rel="stylesheet"[^>]*>/gi)].map(m => m[0]).join('\n');
 const runtime = fs.readFileSync(new URL('../webflow/sigil/model/model-console-v3-i18n.js', import.meta.url), 'utf8');
-const next = { confirmed: ['start_travel'], en_route: ['mark_arrived'], nearby: ['mark_arrived'], arrived: ['mark_met_customer'], final_payment_confirmed: ['start_work'], work_started: ['mark_work_finished'], work_finished: ['confirm_separated'] };
+const next = { offered: ['accept_job', 'decline_job'], confirmed: ['start_travel'], en_route: ['mark_arrived'], nearby: ['mark_arrived'], arrived: ['mark_met_customer'], final_payment_confirmed: ['start_work'], work_started: ['mark_work_finished'], work_finished: ['confirm_separated'] };
 http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1:4187');
   const context = new URL(req.headers.referer || url);
@@ -37,7 +37,7 @@ http.createServer(async (req, res) => {
     } })); return;
   }
   if (url.pathname.startsWith('/v1/')) { res.writeHead(405); res.end('No production writes; preview only'); return; }
-  const bundle = url.searchParams.has('before') ? '<script>' + runtime + '</script>' : buildConsoleEmbed();
+  const bundle = url.searchParams.has('before') ? '<script>' + runtime + '</script>' : buildConsoleDeclineEmbed() + buildConsoleEmbed();
   res.setHeader('content-type', 'text/html; charset=utf-8');
   res.end('<!doctype html><html lang="th"><head><meta name="viewport" content="width=device-width, initial-scale=1">' + links + styles + '</head><body>' + markup + bundle + '</body></html>');
 }).listen(4187, '127.0.0.1', () => console.log('Local fixture preview http://127.0.0.1:4187/'));

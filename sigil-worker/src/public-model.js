@@ -1,4 +1,5 @@
 import { cleanModelJobBoardJobId, MODEL_JOB_BOARD_URL } from "../../shared/model-job-board-links.mjs";
+import { enqueuePrivateModelNotification, runPrivateModelNotificationAlarm, PRIVATE_NOTIFICATION_PATH } from "./private-model-notify.js";
 
 export const PUBLIC_MODEL_APPLY_PATH = "/v1/public-model/apply";
 export const PUBLIC_MODEL_UPLOAD_URL_PATH = "/v1/public-model/upload-url";
@@ -206,6 +207,10 @@ export class PublicModelCoordinator {
     if (url.pathname === "/health") return Response.json({ ok: true });
     if (!body || typeof body !== "object" || Array.isArray(body)) return Response.json({ ok: false, error: "invalid_request" }, { status: 400 });
 
+    if (url.pathname === PRIVATE_NOTIFICATION_PATH) {
+      return enqueuePrivateModelNotification(this.state.storage, body.application_id);
+    }
+
     if (url.pathname === "/rate-limit") {
       const limit = Number(body.limit);
       const windowSeconds = Number(body.window_seconds);
@@ -337,6 +342,7 @@ export class PublicModelCoordinator {
   }
 
   async alarm() {
+    if (await runPrivateModelNotificationAlarm(this.state.storage, this.env)) return;
     await this.state.storage.deleteAll();
   }
 }

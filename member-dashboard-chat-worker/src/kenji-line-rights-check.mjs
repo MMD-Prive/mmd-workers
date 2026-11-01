@@ -14,6 +14,8 @@ export function isRightsCommand(message = "") {
   // LINE text can carry invisible paste separators (observed U+200B after
   // เช็กสิทธิ์). Normalize only for command matching; preserve intake text.
   const value = clean(message).normalize("NFKC").replace(/[\u200B\uFEFF]/g, "").trim();
+  // Owner-approved complete sentence copied into LINE; keep the alias exact.
+  if (/^อยากทราบสถานะสมาชิกตอนนี้ พิมพ์ (?:เช็ก|เช็ค)สิทธิ์(?:[ \t]*[.!?])?$/.test(value)) return true;
   return /^(?:ขอ)?(?:เช็ก|เช็ค)\s*สิท(?:ธิ์|ธ์)(?:สมาชิก)?(?:ของ(?:ผม|ฉัน|หนู))?(?:หน่อย|ให้หน่อย)?(?:ครับ|ค่ะ|คะ|นะ)?[.!?]*$/.test(value);
 }
 
@@ -88,18 +90,24 @@ export function renderLineRightsCheck(truth = {}) {
   } else lines.push("คูปอง CARE BACK ยังรอเปอร์ตรวจครับ");
   const promotion = truth.promotion || {};
   const currentPackage = { private_standard: "standard", private_premium: "premium" }[m.level];
-  if (verified && !truth.membership?.member_blocked && ["active", "expiring_soon", "grace", "expired"].includes(m.lifecycle) && promotion.authority === "owner_approved_october_renewal_2026_v1" && promotion.status === "conditional_eligible" && promotion.package_code === currentPackage && promotion.requires_verified_payment === true && Date.parse(promotion.ends_before) > Date.now()) {
+  const novemberStart = Date.parse("2026-11-01T00:00:00+07:00");
+  const octoberAuthority = promotion.authority === "owner_approved_october_renewal_2026_v1" && Date.now() < novemberStart;
+  const novemberAuthority = promotion.authority === "owner_approved_november_returning_2026_v1" && Date.now() >= novemberStart;
+  if (verified && !truth.membership?.member_blocked && ["active", "expiring_soon", "grace", "expired"].includes(m.lifecycle) && (octoberAuthority || novemberAuthority) && promotion.status === "conditional_eligible" && promotion.package_code === currentPackage && promotion.requires_verified_payment === true && Date.parse(promotion.ends_before) > Date.now()) {
     const promotionDays = Number(promotion.promotion_days || 0), promotionYears = Number(promotion.promotion_years || 0);
-    const premiumShape = promotion.package_code === "premium" && promotion.total_years === 2 && promotion.base_years === 1 && promotionYears === 1 && promotionDays === 0;
-    const standardShape = promotion.package_code === "standard" && promotion.total_years === 1 && promotion.base_years === 1 && promotionYears === 0 && promotionDays === 180;
-    if (premiumShape || standardShape) {
-      const terms = premiumShape ? "Premium: รวม 2 ปี (สิทธิ์หลัก 1 ปี + โปร 1 ปี)" : "Standard: สิทธิ์หลัก 1 ปี + โปรแถม 180 วัน";
+    const promotionMonths = Number(promotion.promotion_months || 0);
+    const premiumShape = octoberAuthority && promotion.package_code === "premium" && promotion.total_years === 2 && promotion.base_years === 1 && promotionYears === 1 && promotionMonths === 0 && promotionDays === 0;
+    const standardShape = octoberAuthority && promotion.package_code === "standard" && promotion.total_years === 1 && promotion.base_years === 1 && promotionYears === 0 && promotionMonths === 0 && promotionDays === 180;
+    const novemberShape = novemberAuthority && promotion.total_years === 1 && promotion.base_years === 1 && promotionYears === 0 && promotionDays === 0 && promotionMonths === 6;
+    if (premiumShape || standardShape || novemberShape) {
+      const terms = novemberShape ? `${promotion.package_code === "premium" ? "Premium" : "Standard"}: สิทธิ์หลัก 1 ปี + CARE BACK เพิ่ม 6 เดือน` : premiumShape ? "Premium: รวม 2 ปี (สิทธิ์หลัก 1 ปี + โปร 1 ปี)" : "Standard: สิทธิ์หลัก 1 ปี + โปรแถม 180 วัน";
       const start = promotion.starts_from === "existing_expiry" ? "นับต่อจากวันหมดอายุเดิม" : "นับจากวันต่ออายุที่ตรวจชำระแล้ว";
-      lines.push(`โปรต่ออายุ ${terms} · ${start} เมื่อชำระตามเงื่อนไขก่อน ${date(promotion.ends_before)} และผ่านการตรวจชำระครับ ยังไม่เพิ่มสิทธิ์จากการเช็กนี้`);
+      const deadline = novemberShape ? `ภายใน ${date(new Date(Date.parse(promotion.ends_before) - 1).toISOString())}` : `ก่อน ${date(promotion.ends_before)}`;
+      lines.push(`โปรต่ออายุ ${terms} · ${start} เมื่อชำระตามเงื่อนไข${deadline} และผ่านการตรวจชำระครับ ยังไม่เพิ่มสิทธิ์จากการเช็กนี้`);
       if (promotion.checkout_status !== "ready") lines.push("ให้เปอร์ตรวจยอดและรายการชำระให้ตรงโปรนี้ก่อนโอนครับ");
     }
     else lines.push("โปรต่ออายุยังรอเปอร์ตรวจเงื่อนไขครับ");
-  } else if (verified && promotion.authority === "owner_approved_october_renewal_2026_v1" && promotion.status === "not_applicable") {
+  } else if (verified && (octoberAuthority || novemberAuthority) && promotion.status === "not_applicable") {
     lines.push("โปรต่ออายุ Standard/Premium รอบนี้ไม่เข้าเงื่อนไขบัญชีนี้ครับ สิทธิ์เดิมคงเดิม");
   } else lines.push("โปรที่ใช้ได้กับบัญชีนี้ยังรอเปอร์ตรวจครับ");
   const points = truth.points;
@@ -114,7 +122,7 @@ export function renderLineRightsCheck(truth = {}) {
     lines.push("แจ้งเปอร์ว่าต้องการต่ออายุในแชตนี้ เพื่อผูกรายการชำระกับสมาชิกและยืนยันยอดก่อนโอนครับ หลังโอนแนบสลิปในรายการเดิม รอเปอร์ตรวจ ก่อนอัปเดตสิทธิ์และแต้ม");
   } else {
     missing.push(protectedTier ? "protected_tier_owner_review" : clean(quote.reason) || "canonical_renewal_quote");
-    lines.push(quote.classification === "new_signup" ? "หมดอายุเกินหนึ่งปี ต้องตรวจเป็นการสมัครใหม่ครับ" : "ราคาและเงื่อนไขต่ออายุยังรอเปอร์ตรวจครับ");
+    lines.push(quote.classification === "new_signup" ? "รายการนี้ต้องตรวจเงื่อนไขสมัครจากบัญชีเดิมก่อนชำระครับ" : "ราคาและเงื่อนไขต่ออายุยังรอเปอร์ตรวจครับ");
   }
   return { text: lines.join("\n"), missing, intent: "membership_status", reply_source: "line_rights_check_v1", truth_authority: AUTHORITY,
     truth_status: missing.length ? "partial" : "verified", handoff_required: missing.length > 0,
@@ -130,6 +138,7 @@ async function readTruth(env, userId, intent = "rights_check") {
   return response.ok ? response.json() : {};
 }
 async function deliver(env, event, answer) {
+  if (env.KENJI_LINE_REPLY_CATEGORY_MODE === 'approved_qa_promo') return false;
   if (!env.LINE_CHANNEL_ACCESS_TOKEN) return false;
   const response = await fetch("https://api.line.me/v2/bot/message/reply", { method: "POST", headers: { authorization: `Bearer ${env.LINE_CHANNEL_ACCESS_TOKEN}`, "content-type": "application/json" },
     body: JSON.stringify({ replyToken: event.replyToken, messages: [{ type: "text", text: answer.slice(0, 1600) }] }), signal: AbortSignal.timeout(3000) });
@@ -192,3 +201,4 @@ export async function handleLineRightsCheck({ env = {}, event = {}, runtime = {}
     return { ok: true, rights_check: true, replied, case_saved: caseSaved, review_required: decision.missing.length > 0, reason: replied ? "" : "delivery_failed_no_retry" };
   } catch { return silent("rights_check_failed_closed"); }
 }
+

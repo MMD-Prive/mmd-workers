@@ -13,6 +13,32 @@ const LINE_USER_ID = "U1234567890abcdef1234567890abcdef";
 const TEST_KEY = "x".repeat(40);
 const SYNTHETIC_LINE_USER_ID = `U${"0".repeat(32)}`;
 
+for (const [label, value] of [
+  ["null", null], ["missing", undefined], ["blank", ""],
+  ["whitespace", " "], ["false", false], ["true", true],
+  ["numeric string", "88"], ["array", []], ["numeric array", [88]],
+  ["object", {}], ["negative", -1], ["fraction", 1.5],
+  ["NaN", NaN], ["infinity", Infinity], ["unsafe integer", Number.MAX_SAFE_INTEGER + 1],
+]) {
+  test(`Points projection rejects ${label} without inventing a balance`, () => {
+    const result = projectKenjiLineMemberTruth({
+      profile: { customer_360: { points: { status: "verified", active_points: value } } },
+      snapshot: verifiedSnapshot(),
+    });
+    assert.deepEqual(result.points, { status: "unavailable", active_points: null });
+  });
+}
+
+for (const value of [0, 88, Number.MAX_SAFE_INTEGER]) {
+  test(`Points projection preserves proven numeric balance ${value}`, () => {
+    const result = projectKenjiLineMemberTruth({
+      profile: { customer_360: { points: { status: "verified", active_points: value } } },
+      snapshot: verifiedSnapshot(),
+    });
+    assert.deepEqual(result.points, { status: "verified", active_points: value });
+  });
+}
+
 function request(headers = {}, body = { line_user_id: LINE_USER_ID }) {
   return new Request("https://member-pages-worker.internal/__internal/kenji/member-truth", {
     method: "POST",
@@ -119,6 +145,68 @@ function healthEnv(responseFactory = null) {
   };
 }
 
+for (const mode of ["verified", "historical", "historical_foreign", "unavailable", "foreign_ledger", "foreign_payment", "unverified_payment", "pending_recovery"]) {
+  test(`explicit Points uses LIFF ledger reader: ${mode}, never stale profile balance`, async () => {
+    const reads = [];
+    const env = {
+      ...envWith(),
+      AIRTABLE_API_KEY: "fixture-only", AIRTABLE_BASE_ID: "fixture-base",
+      LIFF_IDENTITY_KV: {
+        async get() { return { state: mode === "pending_recovery" ? "review_required" : "reconciled" }; },
+        async put() { assert.fail("no KV writes allowed"); },
+      },
+      AIRTABLE_HTTP: { async fetch(req) {
+        assert.equal(req.method, "GET");
+        const url = new URL(req.url);
+        reads.push(url);
+        if (mode === "unavailable") return Response.json({ error: "fixture" }, { status: 503 });
+        const table = url.pathname.split("/").at(-1);
+        if (table === "tblVv58TCbwh5j1fS") return Response.json({records:[{
+          id:"recFixtureClient",fields:{line_user_id:LINE_USER_ID},
+        }]});
+        if (table === "tblgWc5VRon5o8Mhk") {
+          assert.equal(url.searchParams.get("filterByFormula"), "{member_id}='member-test'");
+          return Response.json({ records: [{ fields: { member_id: "member-test", Clients: ["recFixtureClient"], email: "private@example.test" } }] });
+        }
+        if (table === "tbl5dfnwjUFMLbnWL") {
+          assert.equal(url.searchParams.get("filterByFormula"), "{member_id}='member-test'");
+          return Response.json({ records: [{ id: "fixture-ledger", fields: {
+            member_id: ["foreign_ledger","historical_foreign"].includes(mode) ? "other-member" : "member-test",
+            transaction_status: "posted", points: 42, eligible_amount_thb: 4200,
+            payment_ref: "fixture-payment", session_id: "fixture-session", posted_at: new Date().toISOString(),
+            ...(mode.startsWith("historical") ? {
+              source:"line_ofc_history",created_by:"member_history_recovery_v2_note_first",
+              rate_policy:"historical_lifetime_total_100_thb_1_point_v2",
+              idempotency_key:"historical_note_total_v2:recFixtureClient",
+              expires_at:"2030-01-01T00:00:00.000Z",
+            } : {}),
+          } }] });
+        }
+        assert.equal(mode.startsWith("historical"),false,"historical awards must not request payment evidence");
+        assert.equal(table, "tblWGGJJOx5eBvBZJ");
+        return Response.json({ records: [{ fields: {
+          member_id: mode === "foreign_payment" ? "other-member" : "member-test",
+          Client: ["recFixtureClient"],
+          "Payment Reference": "fixture-payment", "Payment Status": "paid",
+          "Verification Status": mode === "unverified_payment" ? "pending" : "verified",
+          Amount: 4200, session_id: "fixture-session",
+        } }] });
+      } },
+    };
+    const response = await handleKenjiLineMemberTruth(request({}, { line_user_id: LINE_USER_ID, intent: "points_status" }), env);
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    const accepted=["verified","historical"].includes(mode);
+    assert.equal(payload.points.status, accepted ? "verified" : "unavailable");
+    assert.equal(payload.points.active_points, accepted ? 42 : null);
+    assert.notEqual(payload.points.active_points, 88);
+    if (mode === "pending_recovery") assert.equal(reads.length, 0);
+    for (const secret of [LINE_USER_ID, "private@example.test", "fixture-ledger", "fixture-payment", "fixture-session"]) {
+      assert.equal(JSON.stringify(payload).includes(secret), false);
+    }
+  });
+}
+
 test("returns a bounded verified SVIP truth projection without raw LINE identity", async () => {
   const response = await handleKenjiLineMemberTruth(request(), envWith());
   assert.equal(response.status, 200);
@@ -166,7 +254,7 @@ test("returns a bounded verified SVIP truth projection without raw LINE identity
   assert.equal(serialized.includes(TEST_KEY), false);
 });
 
-test("membership_status uses lightweight canonical entitlement resolver without full Customer360 profile", async () => {
+test("membership_status uses the canonical LIFF profile resolver before entitlement fallback", async () => {
   let airtableCalls = 0;
   let fullProfileCalls = 0;
   const env = {
@@ -196,7 +284,15 @@ test("membership_status uses lightweight canonical entitlement resolver without 
     MEMBER_STATUS_RESOLVER: {
       async fetch() {
         fullProfileCalls += 1;
-        throw new Error("full_profile_must_not_run");
+        return Response.json({
+          ok: true,
+          data: {
+            member_exists: true,
+            member_id: "member-test",
+            profile: { display_name: "Joeka" },
+            entitlement_snapshot: verifiedSnapshot(),
+          },
+        });
       },
     },
     MEMBER_STATUS_RESOLVER_SECRET: TEST_KEY,
@@ -211,7 +307,7 @@ test("membership_status uses lightweight canonical entitlement resolver without 
   assert.equal(payload.ok, true);
   assert.equal(payload.authority, "my_mmd_entitlement_resolver_v1");
   assert.equal(payload.identity_status, "resolved");
-  assert.equal(payload.display_name, "");
+  assert.equal(payload.display_name, "Joeka");
   assert.equal(payload.membership.level, "svip");
   assert.equal(payload.membership.label, "SVIP");
   assert.equal(payload.membership.lifecycle, "active");
@@ -221,8 +317,8 @@ test("membership_status uses lightweight canonical entitlement resolver without 
   assert.equal(payload.resolver_snapshot.fail_closed, true);
   assert.deepEqual(payload.resolver_snapshot.capability_state.active, ["svip"]);
   assert.deepEqual(payload.points, { status: "unavailable", active_points: null });
-  assert.equal(airtableCalls, 1);
-  assert.equal(fullProfileCalls, 0);
+  assert.equal(airtableCalls, 0);
+  assert.equal(fullProfileCalls, 1);
   assert.equal(JSON.stringify(payload).includes(LINE_USER_ID), false);
 });
 
@@ -313,7 +409,33 @@ test("fails closed when canonical entitlement snapshot is not verified", async (
   assert.equal(response.status, 503);
   const payload = await response.json();
   assert.equal(payload.ok, false);
-  assert.equal(payload.status, "unavailable");
+  assert.equal(payload.status, "projection_invalid");
+});
+
+test("membership_status preserves unresolved identity and does not manufacture membership", async () => {
+  const response = await handleKenjiLineMemberTruth(request(), {
+    MEMBER_STATUS_RESOLVER_SECRET: TEST_KEY,
+    MEMBER_STATUS_RESOLVER: { async fetch() { return Response.json({ ok: true, data: { member_exists: false } }); } },
+    AIRTABLE_API_KEY: "test-airtable-token",
+    AIRTABLE_BASE_ID: "appsV1ILPRfIjkaYg",
+    AIRTABLE_HTTP: { async fetch() { return Response.json({ records: [] }); } },
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    ok: false,
+    status: "identity_unresolved",
+    failure_class: "identity_unresolved",
+    authority: "my_mmd_entitlement_resolver_v1",
+  });
+});
+
+test("membership_status distinguishes resolver upstream failure", async () => {
+  const response = await handleKenjiLineMemberTruth(request(), {
+    MEMBER_STATUS_RESOLVER_SECRET: TEST_KEY,
+    MEMBER_STATUS_RESOLVER: { async fetch() { return new Response("failure", { status: 503 }); } },
+  });
+  assert.equal(response.status, 503);
+  assert.equal((await response.json()).failure_class, "upstream_error");
 });
 
 test("projection does not turn blocked membership into an active grant", () => {

@@ -4,8 +4,34 @@ import { parsePerRenameStartDate, membershipExpiryFromStart, projectOwnerMembers
 import { handleKenjiLineMemberTruth } from "../src/kenji-line-member-truth.js";
 import { renderLineRightsCheck } from "../../member-dashboard-chat-worker/src/kenji-line-rights-check.mjs";
 import { renderPrivateInterest } from "../../member-dashboard-chat-worker/src/kenji-private-interest.mjs";
+import { buildKenjiLiveTruthDecision } from "../../member-dashboard-chat-worker/src/kenji-line-live-truth.mjs";
 const uid = "U96f8216d8644acc6a7ae566cd5609842";
 const now = Date.parse("2026-10-04T09:10:00Z");
+for (const [name,date] of [["เล็ก14มค65","2022-01-14"],["เล็ก 14 มค 65","2022-01-14"],["เล็ก14ม.ค.2565","2022-01-14"],["เล็ก14มกราคม2022","2022-01-14"]]) test(`compact Thai date ${name}`,()=>assert.equal(parsePerRenameStartDate(name),date));
+for (const name of ["เล็ก114มค65","เล็ก31กพ65","เล็ก14มค165","เล็ก14มค65x2","เล็ก14มค65 15กพ66","เล็ก14มค65ต่ออายุ15กพ66"]) test(`compact ambiguous date ${name}`,()=>assert.equal(parsePerRenameStartDate(name),null));
+test("removed OA conversation mapping cannot assign historical package, expiry or renewal offer",()=>{
+ for(const id of ["U47880a424a18a501512b6fea35d3d44a", `U${"3".repeat(32)}`]) {
+  const f=fixture("เล็ก14มค65",id); f.now=Date.parse("2026-10-30T13:00:00Z");
+  const c=projectOwnerMembershipContext(f);
+  assert.equal(c.level,"unknown"); assert.equal(c.expire_at,"");
+  assert.equal(c.renewal_offer,undefined); assert.equal(c.access_verified,false);
+  assert.equal(c.status,"known_member_pending_sync");
+  const truth={ok:true,authority:"my_mmd_entitlement_resolver_v1",identity_status:"owner_oa_linked",owner_membership_context:c};
+  for(const intent of ["membership_status","membership_renewal"]) assert.doesNotMatch(buildKenjiLiveTruthDecision(intent,truth).text,/2,500|โบนัสเพิ่ม 1|ได้รับสิทธิ์แล้ว/);
+ }
+});
+test("approved linked historical account answers renewal and the incident status sentence without access grants",t=>{
+ t.mock.method(Date,"now",()=>Date.parse("2026-10-30T13:00:00Z"));
+ // Synthetic consumer fixture: no production account is granted a quote by the producer.
+ const f=fixture("fixture 14มค65",`U${"3".repeat(32)}`);f.now=Date.now();
+ const owner={...projectOwnerMembershipContext(f),level:"private_premium",status:"owner_confirmed_expiry",lifecycle:"expired",expire_at:"2023-01-13T16:59:59.999Z",renewal_offer:{authority:"owner_reviewed_account_renewal_v1",status:"ready",package_code:"premium",amount_thb:2500,membership_years:1,bonus_years:1,discount_verified:true,approval_ref:"fixture_owner_approval",approved_at:"2026-10-30T12:48:17Z",valid_before:"2026-11-01T00:00:00+07:00",requires_verified_payment:true,grants_access:false,source_record_id:"fixture-rename"}};
+ const truth={ok:true,authority:"my_mmd_entitlement_resolver_v1",identity_status:"owner_oa_linked",owner_membership_context:owner};
+ for(const intent of ["membership_status","membership_renewal"]){const d=buildKenjiLiveTruthDecision(intent,truth);assert.match(d.text,/Premium/);assert.match(d.text,/2,500/);assert.match(d.text,/โบนัสเพิ่ม 1/);assert.doesNotMatch(d.text,/intent=status|ได้รับสิทธิ์แล้ว/);assert.equal(d.handoff_required,true);}
+ const mismatch=structuredClone(truth);mismatch.owner_membership_context.renewal_offer.source_record_id="different";
+ assert.doesNotMatch(buildKenjiLiveTruthDecision("membership_renewal",mismatch).text,/2,500/);
+ t.mock.method(Date,"now",()=>Date.parse("2026-11-02T13:00:00Z"));
+ assert.doesNotMatch(buildKenjiLiveTruthDecision("membership_renewal",truth).text,/2,500/);
+});
 function fixture(name="เอก 25 สค 68", lineUserId=uid) {
   return { lineUserId, now, clients:[{id:"fixture-client",fields:{line_user_id:lineUserId}}], staging:[{id:"fixture-rename",fields:{"Import ID":`line_ofc_per_rename_v1_${lineUserId.toLowerCase()}`,"LINE User ID":lineUserId,"Current LINE Rename":name,"Source Hash":"a".repeat(64),"Imported At":"2026-07-26T12:48:04Z","Canonical Client":["fixture-client"]}}] };
 }
@@ -15,7 +41,7 @@ for (const [start,years,expected] of [["2025-08-25",1,"2026-08-24"],["2025-08-25
 test("known owner start and duration projects expired existing membership only",()=>{const c=projectOwnerMembershipContext(fixture());assert.equal(c.expire_at,"2026-08-24T16:59:59.999Z");assert.equal(c.lifecycle,"expired");assert.equal(c.level,"unknown");assert.equal(c.access_verified,false);assert.equal(c.canonical_sync,"pending");assert.equal(c.source_freshness,"import_timestamp_only");const truth={ok:true,owner_membership_context:c};const answer=renderLineRightsCheck(truth);assert.match(answer.text,/หมดอายุแล้ว/);assert.match(answer.text,/Member\/Entitlement/);assert.doesNotMatch(answer.text,/สถานะสมาชิกยังตรวจยืนยันไม่ครบ|แต้มที่ยืนยันและใช้ได้|ส่งเรื่องให้เปอร์ตรวจแล้ว/);const interest=renderPrivateInterest(truth);assert.equal(interest.audience,"existing_member");assert.doesNotMatch(interest.text,/Welcome|สมัครใหม่|1,199|2,999/);});
 test("unknown actual duration does not guess one/two years from tier/x2",()=>{const f=fixture("Premium x2 25 สค 68",`U${"1".repeat(32)}`);const c=projectOwnerMembershipContext(f);assert.equal(c.expire_at,"");assert.equal(c.membership_known,true);});
 test("changed start conflicts with specific owner fact instead of extending",()=>{const c=projectOwnerMembershipContext(fixture("เอก 25 สค 69"));assert.equal(c.expire_at,"");assert.match(c.conflict,/conflicts/);});
-for (const tier of ["VIP","SVIP"]) test(`reliable ${tier} uses existing expiry reference only`,()=>{const c=projectOwnerMembershipContext(fixture(`${tier} 25 สค 68`,`U${"2".repeat(32)}`));assert.equal(c.level,tier.toLowerCase());assert.equal(c.expire_at,"2028-07-31T16:59:59.999Z");assert.equal(c.access_verified,false);});
+for (const tier of ["VIP","SVIP"]) test(`reliable ${tier} uses existing expiry reference only`,()=>{const c=projectOwnerMembershipContext(fixture(`${tier} 25 สค 68`,`U${"2".repeat(32)}`));assert.equal(c.level,tier.toLowerCase());assert.equal(c.expire_at,tier === "VIP" ? "2027-08-31T16:59:59.999Z" : "");assert.equal(c.non_expiring,tier === "SVIP");assert.equal(c.access_verified,false);});
 test("VIP marketing substring is not protected tier evidence",()=>assert.equal(projectOwnerMembershipContext(fixture("superVIP 25 สค 68",`U${"2".repeat(32)}`)).expire_at,""));
 test("specific account expiry takes priority over VIP reference",()=>{const c=projectOwnerMembershipContext(fixture("VIP 25 สค 68","Ua379e5257fed424d57ecde5add22c0fb"));assert.equal(c.expire_at,"2028-10-03T16:59:59.999Z");});
 for (const alter of [f=>f.clients.push(f.clients[0]),f=>f.staging.push(f.staging[0]),f=>f.staging[0].fields["Canonical Client"]=["another-client"],f=>f.staging[0].fields["Import ID"]="generic_contact_import",f=>f.staging[0].fields["LINE User ID"]=`U${"f".repeat(32)}`,f=>f.staging[0].fields["Imported At"]="2027-01-01",f=>f.staging[0].fields["Imported At"]="invalid",f=>f.staging[0].fields["Source Hash"]=""]) test(`unqualified/ambiguous evidence ${alter}`,()=>{const f=fixture();alter(f);assert.equal(projectOwnerMembershipContext(f),null);});

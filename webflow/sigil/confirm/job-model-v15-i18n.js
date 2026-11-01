@@ -73,6 +73,9 @@
       intro: "เช็กเวลา สถานที่ รายละเอียดงาน และยอดเงินถึงตัวให้เรียบร้อยก่อนออกเดินทาง",
       payout: "ยอดเงินถึงตัว",
       payoutKicker: "ยอดถึงตัว",
+      payoutBreakdown: "แยกตามรูปแบบงาน",
+      standardRate: "เรทอ้างอิง",
+      jobAdjustment: "เพิ่มเฉพาะงานนี้",
       payoutMissingWarning: "ยังไม่พบเรทถึงตัว Model — ขอให้ MMD ระบุเรทก่อนกดยืนยัน",
       details: "รายละเอียดงาน",
       client: "ลูกค้า",
@@ -81,6 +84,9 @@
       time: "เวลา",
       location: "สถานที่",
       map: "เปิด Google Maps ↗",
+      remark: "บรีฟจาก MMD",
+      briefMissing: "ยังไม่มีข้อมูลบรีฟ",
+      meeting: "จุดนัดพบ",
       readyKicker: "พร้อมสำหรับคืนนี้?",
       loadingStatus: "กำลังโหลดรายละเอียดงาน…",
       retry: "ลองใหม่",
@@ -109,6 +115,7 @@
       detailsChangedStatus: "รายละเอียดงานเพิ่งถูกอัปเดต กรุณาตรวจรายละเอียดใหม่แล้วกดยืนยันอีกครั้ง",
       networkStatus: "เชื่อมต่อไม่ได้ กรุณาเช็กอินเทอร์เน็ตแล้วลองใหม่",
       timeoutStatus: "ระบบตอบช้ากว่าปกติ กรุณาลองใหม่",
+      confirmUnknownStatus: "ยังตรวจผลการรับงานไม่ได้ กรุณาตรวจสถานะงานกับ MMD ก่อนกดยืนยันซ้ำ",
       temporaryStatus: "ระบบขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้ง",
       reentryStatus: "กำลังเปิดใน LINE เพื่อยืนยันตัวตน…",
       refLabel: "รหัสอ้างอิงสำหรับแจ้ง MMD"
@@ -120,6 +127,9 @@
       intro: "Check the time, location, job details, and payout before heading out.",
       payout: "Rate to you",
       payoutKicker: "YOUR PAYOUT",
+      payoutBreakdown: "Rate breakdown",
+      standardRate: "Reference rate",
+      jobAdjustment: "Extra for this job",
       payoutMissingWarning: "Model payout is not available yet — ask MMD to set the payout before confirming.",
       details: "Job details",
       client: "Client",
@@ -128,6 +138,9 @@
       time: "Time",
       location: "Location",
       map: "Open Google Maps ↗",
+      remark: "Brief from MMD",
+      briefMissing: "No brief has been added yet.",
+      meeting: "Meeting point",
       readyKicker: "READY FOR TONIGHT?",
       loadingStatus: "Loading job details…",
       retry: "Try again",
@@ -156,6 +169,7 @@
       detailsChangedStatus: "The job details were just updated. Please review them and confirm again.",
       networkStatus: "Can’t connect. Check your internet and try again.",
       timeoutStatus: "The system is slower than usual. Please try again.",
+      confirmUnknownStatus: "The result is not confirmed. Check the job status with MMD before confirming again.",
       temporaryStatus: "Temporary system issue. Please try again.",
       reentryStatus: "Opening in LINE to verify it’s you…",
       refLabel: "Reference for MMD"
@@ -167,6 +181,9 @@
       intro: "出发前请确认时间、地点、工作详情和到手金额。",
       payout: "到手金额",
       payoutKicker: "到手金额",
+      payoutBreakdown: "报酬明细",
+      standardRate: "参考费率",
+      jobAdjustment: "本次工作加价",
       payoutMissingWarning: "尚未设置 Model 到手金额 — 请先让 MMD 设置金额再确认接单。",
       details: "工作详情",
       client: "客户",
@@ -175,6 +192,9 @@
       time: "时间",
       location: "地点",
       map: "打开 Google Maps ↗",
+      remark: "MMD 工作简报",
+      briefMissing: "尚未添加工作简报。",
+      meeting: "见面地点",
       readyKicker: "今晚准备好了吗？",
       loadingStatus: "正在加载工作详情…",
       retry: "重试",
@@ -203,6 +223,7 @@
       detailsChangedStatus: "工作详情刚刚更新，请重新核对后再次确认。",
       networkStatus: "无法连接，请检查网络后重试。",
       timeoutStatus: "系统响应较慢，请重试。",
+      confirmUnknownStatus: "尚未确认处理结果，请先向 MMD 查询工作状态，再决定是否重新确认。",
       temporaryStatus: "系统暂时异常，请再试一次。",
       reentryStatus: "正在 LINE 中打开以验证身份…",
       refLabel: "MMD 参考编号"
@@ -417,13 +438,51 @@
     }
   }
 
+  const ACK_RECEIPT_KEY = "mmd_model_ack_receipts_v1";
+  const SAFE_ERROR_CODES = new Set([
+    "model_identity_reentry", "confirmation_token_expired", "confirmation_token_not_active",
+    "confirmation_token_record_mismatch", "confirmation_token_record_invalid", "confirmation_session_mismatch",
+    "confirmation_role_mismatch", "confirmation_token_required", "expected_role_required",
+    "confirmation_token_not_yet_valid", "invalid_confirmation_token", "invalid_confirmation_token_signature",
+    "invalid_confirmation_token_purpose", "invalid_confirmation_token_subject", "invalid_confirmation_token_lifetime",
+    "session_not_found", "session_id_ambiguous", "confirmation_change_pending",
+    "confirmation_details_changed_reload_required", "timeout", "network_error", "airtable_request_failed",
+    "airtable_not_ready", "confirmation_signing_not_ready", "confirmation_token_store_not_ready", "confirmation_ack_failed", "invalid_response"
+  ]);
+  function safeErrorCode(error) {
+    const code = str(error?.code || error?.message);
+    return SAFE_ERROR_CODES.has(code) ? code : "confirmation_ack_failed";
+  }
+  function ackReceipt(data, error) {
+    const backendId = str(data?.receipt?.request_id || error?.receipt?.request_id);
+    const requestId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(backendId) ? backendId : "";
+    const status = Number(error?.status) || (data ? 200 : 0);
+    const receipt = { schema: "mmd_model_ack_browser_receipt_v1", timestamp: new Date().toISOString(),
+      request_id: requestId, status, code: error ? safeErrorCode(error) : "ok",
+      outcome: error ? (error.receipt?.outcome === "unknown" || !status || status >= 500 || safeErrorCode(error) === "invalid_response" ? "unknown" : "rejected") : "success" };
+    try {
+      const saved = JSON.parse(window.sessionStorage?.getItem(ACK_RECEIPT_KEY) || "[]");
+      // Re-sanitize prior entries instead of trusting browser storage contents.
+      const prior = Array.isArray(saved) ? saved.slice(-9).filter(x => x && x.schema === receipt.schema)
+        .map(x => ({ schema: receipt.schema, timestamp: /^\d{4}-\d\d-\d\dT[0-9:.]+Z$/.test(x.timestamp) ? x.timestamp : "",
+          request_id: /^[0-9a-f-]{36}$/i.test(x.request_id) ? x.request_id : "",
+          status: Number.isInteger(x.status) && x.status >= 0 && x.status <= 599 ? x.status : 0,
+          code: x.code === "ok" ? "ok" : safeErrorCode({code:x.code}),
+          outcome: ["success", "unknown", "rejected"].includes(x.outcome) ? x.outcome : "unknown" })) : [];
+      window.sessionStorage?.setItem(ACK_RECEIPT_KEY, JSON.stringify([...prior.slice(-9), receipt]));
+    } catch (_) { /* Restricted storage never prevents acknowledgement. */ }
+    return requestId;
+  }
+
   function diagFor(error, where) {
-    const code = str(error?.code || error?.message || "unknown").replace(/[^a-z0-9_]/gi, "").slice(0, 60) || "unknown";
+    const code = safeErrorCode(error);
     const status = Number(error?.status) || 0;
     const now = new Date();
     const hhmm = `${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}`;
     const tail = sessionTail();
-    return ["MC", `${where === "confirm" ? "A" : "D"}${status || "000"}`, code, tail || "nosess", hhmm].join("-");
+    const ref = ["MC", `${where === "confirm" ? "A" : "D"}${status || "000"}`, code, tail || "nosess", hhmm].join("-");
+    const id = str(error?.receipt?.request_id);
+    return /^[0-9a-f-]{36}$/i.test(id) ? `${ref} · ${id}` : ref;
   }
 
   const REPLACED_CODES = new Set([
@@ -442,6 +501,7 @@
   function classify(error, where) {
     const code = str(error?.code || error?.message) || "unknown";
     const status = Number(error?.status) || 0;
+    if (where === "confirm" && (error?.receipt?.outcome === "unknown" || ["timeout", "network_error", "invalid_response"].includes(code) || status >= 500)) return { key: "confirmUnknownStatus", error: true, retry: false, diag: true };
     if (code === "model_identity_reentry") return { key: "reentryStatus", error: false, retry: false, diag: false };
     if (code === "confirmation_token_expired" || status === 410) return { key: "expiredStatus", error: true, retry: false, diag: true };
     if (REPLACED_CODES.has(code)) return { key: "replacedStatus", error: true, retry: false, diag: true };
@@ -461,7 +521,7 @@
 
   function logFailure(error, where) {
     try {
-      console.warn("[mmd-model-confirm]", { stage: where, code: str(error?.code || error?.message), status: Number(error?.status) || 0 });
+      console.warn("[mmd-model-confirm]", { stage: where, code: safeErrorCode(error), status: Number(error?.status) || 0 });
     } catch (_) {}
   }
 
@@ -567,10 +627,61 @@
   });
 
   function workType(value) {
-    return str(value).split(":").filter(Boolean).map((part) => taxonomy[part.toLowerCase()] || part).join(" · ") || "—";
+    return str(value).split(/[:+,|]/).map((part) => part.trim()).filter(Boolean).map((part) => taxonomy[part.toLowerCase()] || part).join(" · ") || "—";
   }
 
-  function codedError(code, status = 0) {
+  function renderPayoutBreakdown(card, payout, source, amount) {
+    if (!card) return;
+    let list = card.querySelector("[data-m-payout-breakdown]");
+    const items = Array.isArray(source) ? source.slice(0, 6).map((item) => ({
+      label: str(item?.label).slice(0, 40), amount_thb: Number(item?.amount_thb),
+      standard_amount_thb: item?.standard_amount_thb == null ? null : Number(item.standard_amount_thb),
+      job_adjustment_thb: item?.job_adjustment_thb == null ? null : Number(item.job_adjustment_thb),
+    })).filter((item) => item.label && Number.isFinite(item.amount_thb) && item.amount_thb > 0) : [];
+    const matchesTotal = items.length > 0 && Math.abs(items.reduce((sum, item) => sum + item.amount_thb, 0) - amount) < 0.01;
+    const splitsValid = items.every((item) => item.standard_amount_thb == null && item.job_adjustment_thb == null
+      || Number.isFinite(item.standard_amount_thb) && Number.isFinite(item.job_adjustment_thb)
+        && Math.abs(item.standard_amount_thb + item.job_adjustment_thb - item.amount_thb) < 0.01);
+    if (!matchesTotal || !splitsValid) { if (list) list.hidden = true; return; }
+    if (!list) {
+      list = document.createElement("div");
+      list.setAttribute("data-m-payout-breakdown", "1");
+      list.style.cssText = "display:grid;gap:8px;padding:14px 0 4px;border-top:1px solid rgba(255,255,255,.12);margin-top:14px";
+      const heading = document.createElement("span");
+      heading.setAttribute("data-m-payout-breakdown-title", "1");
+      heading.style.cssText = "font-size:12px;color:#c9bea9";
+      list.appendChild(heading);
+      const rows = document.createElement("div");
+      rows.setAttribute("data-m-payout-breakdown-rows", "1");
+      rows.style.cssText = "display:grid;gap:6px";
+      list.appendChild(rows);
+      const payoutRow = payout?.parentNode;
+      card.insertBefore(list, payoutRow && payoutRow.parentNode === card ? payoutRow : null);
+    }
+    list.hidden = false;
+    const heading = list.querySelector("[data-m-payout-breakdown-title]");
+    if (heading) heading.textContent = dict().payoutBreakdown;
+    const rows = list.querySelector("[data-m-payout-breakdown-rows]");
+    if (!rows) return;
+    rows.replaceChildren();
+    for (const item of items) {
+      const row = document.createElement("div");
+      row.style.cssText = "display:grid;grid-template-columns:1fr auto;gap:2px 12px;font-size:14px;line-height:1.5";
+      const label = document.createElement("span"); label.textContent = item.label;
+      const value = document.createElement("strong"); value.textContent = money(item.amount_thb);
+      row.append(label, value);
+      if (item.standard_amount_thb != null && item.job_adjustment_thb != null) {
+        const detail = document.createElement("small");
+        detail.style.cssText = "grid-column:1/-1;color:#c9bea9;font-size:12px";
+        const sign = item.job_adjustment_thb > 0 ? "+" : item.job_adjustment_thb < 0 ? "−" : "";
+        detail.textContent = `${dict().standardRate} ${money(item.standard_amount_thb)} · ${dict().jobAdjustment} ${sign}${money(Math.abs(item.job_adjustment_thb))}`;
+        row.appendChild(detail);
+      }
+      rows.appendChild(row);
+    }
+  }
+
+function codedError(code, status = 0) {
     const error = new Error(code || "request_failed");
     error.code = code || "request_failed";
     error.status = status;
@@ -607,8 +718,16 @@
       let data = {};
       try { data = raw ? JSON.parse(raw) : {}; } catch (_) {}
       if (!response.ok || data.ok === false) {
-        throw codedError(str(data.error || data.message) || `http_${response.status}`, response.status);
+        const error = codedError(str(data.error || data.message) || `http_${response.status}`, response.status);
+        error.receipt = {
+          request_id: data.receipt?.request_id,
+          // Only failure outcomes are accepted here; an HTTP/API error cannot become success.
+          outcome: path === "/v1/confirm/ack" && ["unknown", "rejected"].includes(data.receipt?.outcome)
+            ? data.receipt.outcome : undefined
+        };
+        throw error;
       }
+      if (path === "/v1/confirm/ack" && data.ok !== true) throw codedError("invalid_response", response.status);
       return data;
     })();
     request.catch(() => {});
@@ -621,7 +740,12 @@
       }, REQUEST_TIMEOUT_MS);
     });
     try {
-      return await Promise.race([request, watchdog]);
+      const data = await Promise.race([request, watchdog]);
+      if (path === "/v1/confirm/ack") ackReceipt(data);
+      return data;
+    } catch (error) {
+      if (path === "/v1/confirm/ack") ackReceipt(null, error);
+      throw error;
     } finally {
       clearTimeout(timer);
     }
@@ -685,8 +809,54 @@
     } else if (el.vipRow) {
       el.vipRow.hidden = true;
     }
-    const mapUrl = str(data.google_map_url);
-    if (el.map && /^https:\/\//i.test(mapUrl)) {
+    const meeting = str(data.model_meeting_point).slice(0, 500);
+    const meetingRows = root.querySelector(".mm15__rows");
+    if (meetingRows) {
+      let meetingRow = meetingRows.querySelector("[data-m-model-meeting]");
+      if (!meetingRow && meeting) {
+        meetingRow = document.createElement("div");
+        meetingRow.setAttribute("data-m-model-meeting", "1");
+        const label = document.createElement("span");
+        label.setAttribute("data-m-model-meeting-label", "1");
+        const value = document.createElement("strong");
+        value.setAttribute("data-m-model-meeting-text", "1");
+        meetingRow.append(label, value);
+        meetingRows.appendChild(meetingRow);
+      }
+      if (meetingRow) {
+        meetingRow.hidden = !meeting;
+        meetingRow.querySelector("[data-m-model-meeting-label]").textContent = dict().meeting;
+        meetingRow.querySelector("[data-m-model-meeting-text]").textContent = meeting;
+      }
+    }
+    const remark = str(data.model_remark).slice(0, 2000);
+    const rowsContainer = root.querySelector(".mm15__rows");
+    if (rowsContainer) {
+      let remarkRow = rowsContainer.querySelector("[data-m-model-remark]");
+      if (!remarkRow) {
+        remarkRow = document.createElement("div");
+        remarkRow.setAttribute("data-m-model-remark", "1");
+        const label = document.createElement("span");
+        label.setAttribute("data-m-model-remark-label", "1");
+        const value = document.createElement("strong");
+        value.setAttribute("data-m-model-remark-text", "1");
+        value.style.whiteSpace = "pre-wrap";
+        remarkRow.append(label, value);
+        rowsContainer.appendChild(remarkRow);
+      }
+      if (remarkRow) {
+        remarkRow.hidden = false;
+        remarkRow.querySelector("[data-m-model-remark-label]").textContent = dict().remark;
+        remarkRow.querySelector("[data-m-model-remark-text]").textContent = remark || dict().briefMissing;
+      }
+    }
+    const explicitMapUrl = str(data.google_map_url);
+    const mapUrl = /^https:\/\//i.test(explicitMapUrl)
+      ? explicitMapUrl
+      : str(data.location_name)
+        ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(str(data.location_name))}`
+        : "";
+    if (el.map && mapUrl) {
       el.map.href = mapUrl;
       el.map.hidden = false;
     } else if (el.map) {
@@ -696,6 +866,7 @@
     // customer amounts/rates never reach it (payments-worker strips them).
     const payout = Number(data.model_payout_thb);
     const hasPayout = Number.isFinite(payout) && payout > 0;
+    renderPayoutBreakdown(el.payoutCard, el.payout, data.model_payout_breakdown, payout);
     if (hasPayout) {
       if (el.payout) el.payout.textContent = money(payout);
       if (el.payoutCard) el.payoutCard.hidden = false;
@@ -757,6 +928,8 @@
     } catch (error) {
       logFailure(error, "load");
       if (gateVisible()) {
+        setPill("");
+        setStatus("");
         setState("gate");
       } else {
         const result = classify(error, "load");

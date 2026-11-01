@@ -9,7 +9,7 @@ function renderActions(state, allowed){
  const children=[];const host={innerHTML:'',append:b=>children.push(b)};
  const nextCode=source.match(/next=(\{.*?\}),v=/)[1];
  const next=vm.runInNewContext('('+nextCode+')');
- const context={$:()=>host,document:{createElement:()=>({dataset:{}})},ses:{allowed_actions:allowed},next,d:()=>({ac:{start_travel:'เริ่มเดินทาง',mark_arrived:'ถึงจุดนัดแล้ว'}})};
+ const context={L:'th',$:()=>host,document:{createElement:()=>({dataset:{}})},ses:{allowed_actions:allowed},next,d:()=>({ac:{start_travel:'เริ่มเดินทาง',mark_arrived:'ถึงจุดนัดแล้ว'}})};
  vm.runInNewContext(actionCode+';actions('+JSON.stringify(state)+');',context);return children;
 }
 test('latest v3 shows the real travel action for a confirmed owned-session presentation',()=>{
@@ -33,8 +33,13 @@ test('finished work retains separation action only when server allows it',()=>{
  assert.equal(renderActions('work_finished',[]).length,0);
  assert.equal(renderActions('separated',['confirm_separated']).length,0);
 });
+test('unavailable is offered only for server-authorized offered jobs',()=>{
+ assert.deepEqual(renderActions('offered',['decline_job']).map(b=>b.textContent),['ไม่สะดวก']);
+ assert.equal(renderActions('confirmed',['decline_job']).length,0);
+ assert.equal(renderActions('offered',[]).length,0);
+});
 test('action submission rechecks backend hints and state before making a request',()=>{
- assert.match(source,/async function act\(a\)\{if\(busy\|\|!ses\|\|!\(next\[state\(ses\)\]\|\|\[\]\)\.includes\(a\)\|\|!Array\.isArray\(ses.allowed_actions\)\|\|!ses.allowed_actions.includes\(a\)\)return/);
+ assert.match(source,/async function act\(a,proposal\)\{if\(busy\|\|!ses\|\|!\(next\[state\(ses\)\]\|\|\[\]\)\.includes\(a\)\|\|!Array\.isArray\(ses.allowed_actions\)\|\|!ses.allowed_actions.includes\(a\)\)return/);
 });
 test('restored entry cannot initiate legacy sibling LIFF login or reload',()=>{
  assert.doesNotMatch(bootstrap,/<script|liff\.init|liff\.login|location\.reload/);

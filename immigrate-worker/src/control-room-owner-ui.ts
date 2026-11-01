@@ -1,5 +1,5 @@
 import { renderOwnerControlRoomPage as renderLegacyOwnerControlRoomPage } from "./control-room-owner-ui-legacy";
-import { MMD_OPERATIONS_FLOW, MMD_OPERATIONS_STYLE } from "./control-room-mmd-flow";
+import { MMD_OPERATIONS_FLOW, MMD_OPERATIONS_SCRIPT, MMD_OPERATIONS_STYLE } from "./control-room-mmd-flow";
 import { ADMIN_WORKSPACE_PANEL, ADMIN_WORKSPACE_STYLE, ADMIN_WORKSPACE_SCRIPT } from "./admin-workspace-launcher";
 
 const encoder = new TextEncoder();
@@ -119,7 +119,7 @@ function canonicalizeOwnerControlRoom(html: string): string {
     .replaceAll("เริ่ม session จาก canonical client", "เริ่ม Job จาก canonical client")
     .replaceAll("/internal/ceo/dashboard", "/internal/ceo")
     .replaceAll("MMD PRIVÉ · OWNER CONTROL ROOM · 05 SEP 2026", "MMD PRIVÉ · OWNER CONTROL ROOM · 07 SEP 2026")
-    .replace("</body>", `${CONTROL_ROOM_CANON_SCRIPT}${CONTROL_ROOM_V2_SCRIPT}${OWNER_ANALYTICS_SCRIPT}${OWNER_ACTIONS_SCRIPT}${AI_OPS_SCRIPT}${SAFETY_LOCATION_UI_SCRIPT}${ADMIN_WORKSPACE_SCRIPT}</body>`);
+    .replace("</body>", `${CONTROL_ROOM_CANON_SCRIPT}${CONTROL_ROOM_V2_SCRIPT}${OWNER_ANALYTICS_SCRIPT}${OWNER_ACTIONS_SCRIPT}${AI_OPS_SCRIPT}${SAFETY_LOCATION_UI_SCRIPT}${ADMIN_WORKSPACE_SCRIPT}${MMD_OPERATIONS_SCRIPT}</body>`);
 }
 
 export function renderOwnerControlRoomPage(): Response {

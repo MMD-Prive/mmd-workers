@@ -44,7 +44,7 @@ function fakeModelWorker() {
         assert.equal(input.media_type, "public_gallery");
         assert.equal(input.content_type, "image/png");
         plannedFileName = input.file_name;
-        return Response.json({ ok: true, upload_url: `${ORIGIN}/v1/model/media/upload-url?authorization=test`, upload_method: "PUT", review_required: true });
+        return Response.json({ ok: true, upload_url: `${ORIGIN}/v1/model/media/upload-url?authorization=test`, upload_method: "PUT", review_required: false });
       }
 
       if (req.method === "PUT" && url.pathname === "/v1/model/media/upload-url") {
@@ -54,7 +54,7 @@ function fakeModelWorker() {
           media_id: "media_smokee2e12345678",
           media_type: "public_gallery",
           asset_role: "gallery_candidate",
-          review_status: "pending_review",
+          review_status: "active",
           file_name: plannedFileName,
           file_type: "image/png",
           file_size_bytes: object.byteLength,
@@ -67,7 +67,7 @@ function fakeModelWorker() {
           policy: "model_self_managed_public",
           main_action: "await_review",
         };
-        return Response.json({ ok: true, media, review_required: true }, { status: 201 });
+        return Response.json({ ok: true, media, review_required: false }, { status: 201 });
       }
 
       if (req.method === "GET" && url.pathname === "/v1/model/media") {
@@ -116,7 +116,7 @@ test("owner-gated smoke exercises model session, upload, registry, R2 read-back 
     short_lived_upload_authorized: true,
     r2_write: true,
     media_record_created: true,
-    pending_review_observed: true,
+    active_gallery_observed: true,
     media_record_read_back: true,
     r2_file_opened: true,
     byte_match: true,

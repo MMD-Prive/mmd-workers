@@ -72,5 +72,6 @@ jobs:
       - name: Booking snapshot contract
         run: |
           grep -F 'entitlement_snapshot_at_confirm' sigil-booking-worker/src/entitlement-runtime-worker.js
-          grep -F 'honor_after_expiry' sigil-booking-worker/src/runtime-index.js
+          grep -F 'honor_after_expiry' sigil-booking-worker/src/entitlement-runtime-worker.js
+          grep -F 'currentPrivateAccess' sigil-booking-worker/src/index.js
           grep -F 'payment_verified_at_confirm' sigil-booking-worker/src/entitlement-runtime-worker.js

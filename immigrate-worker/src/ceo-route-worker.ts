@@ -1,3 +1,4 @@
+import { handleMoneyControlWorkerHome } from "../../admin-worker/src/money-control-worker-home.js";
 const CEO_ROOT = "/internal/ceo";
 const CEO_DASHBOARD = "/internal/ceo/dashboard";
 const WEBFLOW_ORIGIN = "https://mmdprive.webflow.io";
@@ -37,6 +38,11 @@ export function markCeoGateResponse(response: Response): Response {
 
 export async function serveCeoRoute(request: Request): Promise<Response> {
   const incoming = new URL(request.url);
+  const path = incoming.pathname.replace(/\/+$/, "");
+  if (path === "/internal/ceo/payment-slip-inbox") return handleMoneyControlWorkerHome(request);
+  if (path === "/internal/ceo/admin-preview") {
+    return new Response(null, { status: 302, headers: { location: "/internal/admin/control-room" + incoming.search, "cache-control": "no-store" } });
+  }
   if (incoming.pathname === CEO_ROOT) {
     return redirectToCeoDashboard(request);
   }

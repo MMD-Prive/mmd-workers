@@ -19,6 +19,7 @@ import {
   handleCustomerChangeRequest,
 } from "./customer-change-request.js";
 import { notifyPartnerJobAfterOfficialVerify } from "./partner-job-confirm.js";
+import { BLACKCARD_COMPANION_PREFERENCE_PATH, handleBlackCardCompanionPreference } from "./blackcard-companion-preference.js";
 import { constantTimeEqual, formulaValue, httpError } from "./lib/payment-primitives.js";
 export { PointsPhase1Coordinator } from "./points-phase1.js";
 
@@ -73,6 +74,10 @@ export default {
     }
     if (path === PAYOUT_DEST_SUBMIT_PATH && (method === "POST" || method === "OPTIONS")) {
       return handlePayoutDestinationSubmit(request, env);
+    }
+
+    if (path === BLACKCARD_COMPANION_PREFERENCE_PATH && (method === "GET" || method === "POST" || method === "OPTIONS")) {
+      return handleBlackCardCompanionPreference(request, env);
     }
 
     if (path === CUSTOMER_CHANGE_REQUEST_PATH && (method === "POST" || method === "OPTIONS")) {

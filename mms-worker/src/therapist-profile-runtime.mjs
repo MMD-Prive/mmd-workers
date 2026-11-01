@@ -1,3 +1,5 @@
+import { linkedServiceZoneCodes, loadMmsServiceZoneIndex } from "./service-zones-runtime.mjs";
+
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const PROFILE_PREFIX = "/male-massage/therapists/api/auth/profile";
 const SESSION_COOKIE = "__Secure-mms_therapist_session";
@@ -87,7 +89,9 @@ export function therapistProfileErrorResponse(error, request, env = {}) {
 
 async function getProfile(current, request, env) {
   const manifest = await loadManifest(current.therapist_id, env);
-  return json({ ok: true, data: safeProfile(current, manifest) }, 200, request, env);
+  let serviceZoneIndex = null;
+  try { serviceZoneIndex = await loadMmsServiceZoneIndex(env); } catch { /* Keep profile editing available if the zone catalog is temporarily down. */ }
+  return json({ ok: true, data: safeProfile(current, manifest, serviceZoneIndex) }, 200, request, env);
 }
 
 async function updateProfile(current, request, env) {
@@ -102,10 +106,23 @@ async function updateProfile(current, request, env) {
   if (!new Set(["public", "hidden"]).has(visibility)) throw profileError(400, "PROFILE_VISIBILITY_INVALID");
 
   const courses = body.courses === undefined ? manifest.courses : validateCourses(body.courses);
+  const hasServiceZoneUpdate = body.base_service_zone_code !== undefined || body.coverage_service_zone_codes !== undefined;
+  let serviceZoneIndex = null;
+  let serviceZoneFields = null;
+  if (hasServiceZoneUpdate) {
+    if (body.base_service_zone_code === undefined || body.coverage_service_zone_codes === undefined) throw profileError(400, "SERVICE_ZONES_INVALID");
+    serviceZoneIndex = await loadMmsServiceZoneIndex(env);
+    serviceZoneFields = validateServiceZoneSelection(body.base_service_zone_code, body.coverage_service_zone_codes, serviceZoneIndex);
+  }
 
-  if (displayName !== current.display_name) {
-    await updateTherapist(env, current.record_id, { "Display Name": displayName });
-    current.display_name = displayName;
+  const airtableFields = {};
+  if (displayName !== current.display_name) airtableFields["Display Name"] = displayName;
+  if (serviceZoneFields) Object.assign(airtableFields, serviceZoneFields);
+  if (Object.keys(airtableFields).length) await updateTherapist(env, current.record_id, airtableFields);
+  if (airtableFields["Display Name"]) current.display_name = displayName;
+  if (serviceZoneFields) {
+    current.fields["Base Service Zone"] = serviceZoneFields["Base Service Zone"];
+    current.fields["Coverage Service Zones"] = serviceZoneFields["Coverage Service Zones"];
   }
 
   const next = {
@@ -117,7 +134,10 @@ async function updateProfile(current, request, env) {
     updated_at: new Date().toISOString(),
   };
   await saveManifest(current.therapist_id, next, env);
-  return json({ ok: true, data: safeProfile(current, next) }, 200, request, env);
+  if (!serviceZoneIndex) {
+    try { serviceZoneIndex = await loadMmsServiceZoneIndex(env); } catch { /* Profile data remains available without zone labels. */ }
+  }
+  return json({ ok: true, data: safeProfile(current, next, serviceZoneIndex) }, 200, request, env);
 }
 
 async function uploadPhoto(current, request, env) {
@@ -230,15 +250,23 @@ async function requireCurrentTherapist(request, env) {
     therapist_id: clean(record.fields?.["Therapist ID"], 80),
     display_name: clean(record.fields?.["Display Name"], 120),
     availability_status: clean(record.fields?.["Availability Status"], 40) || "Unavailable",
+    fields: {
+      "Base Service Zone": record.fields?.["Base Service Zone"],
+      "Coverage Service Zones": record.fields?.["Coverage Service Zones"],
+    },
     role: SESSION_ROLE,
   };
 }
 
-function safeProfile(current, manifest) {
+function safeProfile(current, manifest, serviceZoneIndex = null) {
   return {
     therapist_id: current.therapist_id,
     display_name: current.display_name,
     availability_status: current.availability_status,
+    service_zones: serviceZoneIndex ? {
+      base_service_zone_code: linkedServiceZoneCodes(current.fields?.["Base Service Zone"], serviceZoneIndex)[0] || "",
+      coverage_service_zone_codes: linkedServiceZoneCodes(current.fields?.["Coverage Service Zones"], serviceZoneIndex),
+    } : null,
     role: SESSION_ROLE,
     intro: manifest.intro,
     profile_visibility: manifest.profile_visibility,
@@ -259,6 +287,21 @@ function photoView(therapistId, manifest, photo) {
     selected_public: manifest.public_photo_ids.includes(photo.id),
     preview_url: `${PROFILE_PREFIX}/photos/${encodeURIComponent(photo.id)}/content`,
     public_url: isPublic ? `${PROFILE_PREFIX}/public-photo/${encodeURIComponent(therapistId)}/${encodeURIComponent(photo.id)}` : null,
+  };
+}
+
+function validateServiceZoneSelection(baseValue, coverageValue, index) {
+  const baseCode = clean(baseValue, 80);
+  if (!Array.isArray(coverageValue) || coverageValue.length > 30) throw profileError(400, "SERVICE_ZONES_INVALID");
+  const coverageCodes = [...new Set(coverageValue.map((value) => clean(value, 80)).filter(Boolean))];
+  if (!baseCode && coverageCodes.length === 0) return { "Base Service Zone": [], "Coverage Service Zones": [] };
+  if (!baseCode || coverageCodes.length === 0 || !coverageCodes.includes(baseCode)) throw profileError(400, "SERVICE_ZONES_INVALID");
+  const records = coverageCodes.map((code) => index.byCode.get(code));
+  const base = index.byCode.get(baseCode);
+  if (!base || records.some((zone) => !zone)) throw profileError(400, "SERVICE_ZONE_NOT_ACTIVE");
+  return {
+    "Base Service Zone": [base.record_id],
+    "Coverage Service Zones": records.map((zone) => zone.record_id),
   };
 }
 
@@ -315,7 +358,7 @@ async function findUniqueTherapist(env, therapistId) {
   const url = new URL(`${AIRTABLE_API}/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${encodeURIComponent(tableId(env))}`);
   url.searchParams.set("maxRecords", "2");
   url.searchParams.set("filterByFormula", `{Therapist ID}=${formulaString(therapistId)}`);
-  for (const field of ["Therapist ID", "Display Name", "Availability Status", "Status", "Therapist Auth Status", "LINE Subject Hash"]) url.searchParams.append("fields[]", field);
+  for (const field of ["Therapist ID", "Display Name", "Availability Status", "Base Service Zone", "Coverage Service Zones", "Status", "Therapist Auth Status", "LINE Subject Hash"]) url.searchParams.append("fields[]", field);
   const payload = await airtableFetch(url, { method: "GET" }, env);
   const records = Array.isArray(payload.records) ? payload.records : [];
   if (records.length > 1) throw profileError(503, "THERAPIST_IDENTITY_CONFLICT");

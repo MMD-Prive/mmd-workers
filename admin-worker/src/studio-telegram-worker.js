@@ -1,3 +1,4 @@
+import { MODEL_DISCOVERY_PATH, handleModelDiscoverySettings } from "./model-customer-discovery-settings.js";
 import studioWorker from "./studio-finance-worker.js";
 import { listModelActivationCandidates } from "./index.js";
 import {
@@ -36,6 +37,10 @@ import {
   handleModelAssetReadinessRequest,
   isModelAssetReadinessRequest,
 } from "./model-asset-readiness.js";
+import {
+  handleOwnerCustomerIdentityRequest,
+  isOwnerCustomerIdentityRequest,
+} from "./owner-customer-identity.js";
 
 const STUDIO_API_PREFIX = "/studio/api";
 const HISTORICAL_BACKFILL_CANONICAL_API = "/v1/admin/payments/historical-backfill";
@@ -52,6 +57,10 @@ export default {
     const url = new URL(request.url);
     const path = normalizePathname(url.pathname);
     const method = request.method.toUpperCase();
+
+    if (isOwnerCustomerIdentityRequest(path, method)) {
+      return handleOwnerCustomerIdentityRequest(request, env);
+    }
 
     // CEO Model Asset Console lookup is read-only. The credential-bound admin
     // wrapper has already authenticated /v1/admin/* before this request reaches
@@ -111,6 +120,7 @@ export default {
 
     // Model Dashboard GPS Visibility is a permission preference only. It never
     // accepts or stores coordinates and does not request device location access.
+    if (path === MODEL_DISCOVERY_PATH) return handleModelDiscoverySettings(request, env);
     if (isModelGpsVisibilityRequest(path)) {
       return handleModelGpsVisibilityRequest(request, env);
     }

@@ -2,9 +2,13 @@ import assert from 'node:assert/strict';
 import { pathToFileURL } from 'node:url';
 
 export const environmentName = 'mmd-production-mutation';
+export const adminWorkerSoloEnvironmentName = 'mmd-admin-worker-solo-mutation';
+export const soloReviewer = { login: 'mmdprive', id: 216427112 };
 
-// A dispatch checkbox alone is not a reviewer gate. Never create or weaken the
-// environment here: missing/forbidden/ambiguous protection must stop the release.
+// The owner-authorized single-operator policy applies to every approved
+// production environment: Per is the sole required reviewer, self-review is
+// allowed, and administrator bypass remains disabled. Never mutate environment
+// settings here; missing, forbidden, or ambiguous protection stops release.
 export async function verifyProductionApproval(env, request = fetch) {
   assert.equal(env.GITHUB_EVENT_NAME, 'workflow_dispatch', 'manual dispatch required');
   assert.equal(env.GITHUB_REF, 'refs/heads/main', 'production must use main');
@@ -13,8 +17,10 @@ export async function verifyProductionApproval(env, request = fetch) {
   assert.ok(env.APPROVAL_REF?.trim(), 'owner approval reference required');
   assert.match(env.GITHUB_REPOSITORY || '', /^[\w.-]+\/[\w.-]+$/, 'repository required');
   assert.ok(env.GH_TOKEN, 'GitHub protection-read token required');
+  const targetEnvironment = env.PRODUCTION_ENVIRONMENT_NAME || environmentName;
+  assert.ok([environmentName, adminWorkerSoloEnvironmentName].includes(targetEnvironment), 'unapproved production environment');
   const response = await request(
-    `https://api.github.com/repos/${env.GITHUB_REPOSITORY}/environments/${environmentName}`,
+    `https://api.github.com/repos/${env.GITHUB_REPOSITORY}/environments/${targetEnvironment}`,
     { method: 'GET', headers: {
       Authorization: `Bearer ${env.GH_TOKEN}`,
       Accept: 'application/vnd.github+json',
@@ -23,21 +29,22 @@ export async function verifyProductionApproval(env, request = fetch) {
   );
   assert.equal(response.status, 200, 'cannot verify production environment protection');
   const protection = await response.json();
-  assert.equal(protection.name, environmentName, 'wrong environment');
+  assert.equal(protection.name, targetEnvironment, 'wrong environment');
   assert.equal(protection.can_admins_bypass, false, 'admin protection bypass must be disabled');
   const reviewers = protection.protection_rules?.filter(rule => rule.type === 'required_reviewers');
   assert.equal(reviewers?.length, 1, 'one required-reviewer rule must exist');
-  assert.equal(reviewers[0].prevent_self_review, true, 'self-review must be disabled');
-  assert.ok(reviewers[0].reviewers?.some(entry =>
-    ['User', 'Team'].includes(entry.type) && Number.isSafeInteger(entry.reviewer?.id) && entry.reviewer.id > 0),
-  'required reviewer must be configured');
-  return { environment: environmentName, approved_sha: env.GITHUB_SHA };
+  assert.equal(reviewers[0].prevent_self_review, false, 'owner-only production policy must allow self-review');
+  assert.equal(reviewers[0].reviewers?.length, 1, 'Per must be the sole required reviewer');
+  assert.equal(reviewers[0].reviewers[0].type, 'User', 'required reviewer must be an individual user');
+  assert.equal(reviewers[0].reviewers[0].reviewer?.login, soloReviewer.login, 'Per must be the required reviewer');
+  assert.equal(reviewers[0].reviewers[0].reviewer?.id, soloReviewer.id, 'required reviewer identity must match Per');
+  return { environment: targetEnvironment, approved_sha: env.GITHUB_SHA };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
     await verifyProductionApproval(process.env);
-    console.log('Protection verified; the production job still requires environment reviewer approval.');
+    console.log(`Protection verified for ${process.env.PRODUCTION_ENVIRONMENT_NAME || environmentName}.`);
   } catch (error) {
     console.error(`Production approval blocked: ${error.message}`);
     process.exitCode = 1;

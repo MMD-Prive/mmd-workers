@@ -1,4 +1,7 @@
+import { maybeHandleCustomerSearch } from './customer-search-runtime.mjs';
 import runtime from "./runtime-index-with-application-v4.js";
+import { maybeHandleMmsChat } from './mms-chat-runtime.mjs';
+export { MmsDirectChat } from './mms-chat-object.mjs';
 import { authorityRuntimeHealth } from "../../shared/posthog-authority-events.mjs";
 import { maybeHandleMyMmsDispatch } from "./my-mms-dispatch-runtime.mjs";
 import { maybeHandleWorkspaceAdmin } from "./workspace-admin-runtime.mjs";
@@ -9,6 +12,7 @@ import { canonicalZoneErrorResponse, maybeHandleCanonicalZoneBooking } from "./c
 import { canonicalZoneApplicationErrorResponse, maybeHandleCanonicalZoneApplication } from "./canonical-zone-application-runtime.mjs";
 export { MmsCoordinator } from "./runtime-index-with-application-v4.js";
 export { MmsDispatchCoordinator } from "./my-mms-dispatch-runtime.mjs";
+export { MmsTherapistScheduleCoordinator } from "./my-mms-therapist-schedule-object.mjs";
 
 const PREBOOKING_PATH = "/mms/api/prebookings";
 const PREBOOKING_ID_RE = /^mmspre_[a-f0-9]{24}$/;
@@ -90,6 +94,10 @@ async function autoDispatchPrebooking(request, response, env) {
 
 export default {
   async fetch(request, env, ctx) {
+    const searchResponse = await maybeHandleCustomerSearch(request, env);
+    if (searchResponse) return searchResponse;
+    const chatResponse = await maybeHandleMmsChat(request, env);
+    if (chatResponse) return chatResponse;
     const spaResponse = await maybeHandleRelaxSpaLedger(request, env);
     if (spaResponse) return spaResponse;
     const workspaceAdminResponse = await maybeHandleWorkspaceAdmin(request, env);

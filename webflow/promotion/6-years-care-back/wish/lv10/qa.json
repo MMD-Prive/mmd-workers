@@ -1,0 +1,23 @@
+{
+  "pass": true,
+  "scripts": 9,
+  "checks": [
+    "real legacy V27, V26 and consent scripts cannot duplicate the hero or restore old layout; form follows hero and complete policy remains available",
+    "single consent, 280-character form, two-layer/three-frame hero, reduced motion and controls",
+    "late Webflow enablement cannot unlock an invalid or unconsented form",
+    "empty/over-limit rejected locally; prompts preserve typed text",
+    "one POST, exact success, coupon handoff, success before wall, server-only wall rendered as text",
+    "missing state retains draft and permits retry",
+    "wrong state retains draft and permits retry",
+    "HTTP failure retains draft and permits retry",
+    "timeout retains draft and permits retry",
+    "stable request id for identical retries; changed note gets a new request id",
+    "linked private outcome survives TH/EN/ZH switches",
+    "linked member outcome survives TH/EN/ZH switches",
+    "safe server result is retained"
+  ],
+  "network": "All API calls mocked; no real wishes, linking requests or messages sent.",
+  "limitations": [
+    "DOM interaction checks are not visual layout verification. Visual viewport checks are recorded separately."
+  ]
+}

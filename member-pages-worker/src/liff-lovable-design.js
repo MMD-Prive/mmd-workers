@@ -3,6 +3,8 @@
 // Source: docs/worker-design-export/my-mmd-tokens.css
 // Commit: b91ad04dbeb0da9767be5e4a37d09c19751145f1
 // Refresh deliberately after reviewing the source design; never import preview data.
+export { APPROVED_ENTRY_CSS as MY_MMD_VERIFICATION_CSS } from "./liff-approved-entry.js";
+
 export const MY_MMD_LOVABLE_DESIGN_CSS = `
 body.app-entered:not(.signup-mode) {
   --mmd-base: #111110;
@@ -77,4 +79,61 @@ body.app-entered:not(.signup-mode) .digital-snapshot { min-width: 0; overflow-wr
 body.app-entered:not(.signup-mode) .digital-quick button,
 body.app-entered:not(.signup-mode) .digital-mission-toggle,
 body.app-entered:not(.signup-mode) .digital-needs button { min-height: 44px; }
+/* Carry the published MMD NOW image/CTA from the reviewed Public presentation.
+   The existing Worker feed still decides which posts and URLs are customer-safe. */
+body.app-entered:not(.signup-mode) .digital-news-card.has-image {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+}
+body.app-entered:not(.signup-mode) .digital-news-image {
+  display: block;
+  width: 64px;
+  height: 64px;
+  border-radius: 4px;
+  object-fit: cover;
+  background: var(--digital-raised);
+}
+body.app-entered:not(.signup-mode) .digital-news-copy { min-width: 0; }
+body.app-entered:not(.signup-mode) a.digital-feed-cta {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  color: var(--digital-gold);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+body.app-entered:not(.signup-mode) .digital-news-retry {
+  display: block;
+  min-height: 44px;
+  width: 100%;
+  border: 1px solid var(--digital-line);
+  border-radius: var(--digital-radius);
+  background: var(--digital-surface);
+  color: var(--digital-cream);
+  font: inherit;
+}
+`;
+
+// Public composition stays scoped; the canonical Worker brand decision is unchanged.
+export const MY_MMD_PUBLIC_BLEND_CSS = `
+body.app-entered:not(.signup-mode) .digital-public-wordmark,
+body.app-entered:not(.signup-mode) .digital-public-slogan{display:none}
+body.app-entered:not(.signup-mode)[data-brand-audience="public"]{background:#f4f1eb;color:#221e20;color-scheme:light;--v4-bg:#f4f1eb;--v4-panel:#fffdfa;--v4-ink:#221e20;--v4-muted:#665d5d;--v4-line:#d6cec7;--v4-gold:#a41d36;--digital-text:#221e20;--digital-bg:#f4f1eb;--digital-surface:#fffdfa;--digital-raised:#ede9e2;--digital-cream:#221e20;--digital-muted:#665d5d;--digital-gold:#a41d36;--digital-line:#d6cec7;--mmd-base:#f4f1eb;--mmd-graphite:#fffdfa;--mmd-ivory:#221e20;--mmd-muted:#665d5d;--mmd-gold:#a41d36;--mmd-line:#d6cec7;--mmd-focus:#a41d36}
+body.app-entered:not(.signup-mode)[data-brand-audience="public"] .digital-public-wordmark{display:block;font-size:clamp(30px,8vw,42px);font-weight:650;letter-spacing:-.045em;margin:0 0 10px;color:var(--digital-cream)}
+body.app-entered:not(.signup-mode)[data-brand-audience="public"] .digital-public-wordmark span{border-bottom:3px solid #a41d36}
+body.app-entered:not(.signup-mode)[data-brand-audience="public"] .digital-public-slogan{display:block;font-size:12px;line-height:1.5}
+body.app-entered:not(.signup-mode)[data-brand-audience="public"] :is(main,.digital-home,.digital-snapshot,.digital-news-disclosure,.digital-news-feed,.digital-quick,.digital-dock,.customer-progress){background:var(--digital-bg);color:var(--digital-cream)}
+body.app-entered:not(.signup-mode)[data-brand-audience="public"] :is(.digital-greeting,.digital-sub,.digital-news-summary,.digital-snapshot strong,.digital-quick-grid button){color:var(--digital-cream)}
+body.app-entered:not(.signup-mode)[data-brand-audience="public"] .pm-choices img,
+body.app-entered:not(.signup-mode)[data-brand-audience="public"] .pm [data-pm-avatar]{object-position:center top}
+body.app-entered:not(.signup-mode)[data-brand-audience="public"] .digital-news-summary{border-top:2px solid var(--digital-gold)}
+body.app-entered:not(.signup-mode)[data-brand-audience="public"] .digital-news-card.has-image{grid-template-columns:80px minmax(0,1fr)}
+body.app-entered:not(.signup-mode)[data-brand-audience="public"] .digital-news-image{width:80px;height:96px}
+body.app-entered:not(.signup-mode)[data-brand-audience="public"] .digital-quick-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+body.app-entered:not(.signup-mode)[data-brand-audience="public"] .digital-quick-grid button{min-width:0;min-height:56px;white-space:normal;overflow-wrap:anywhere;font-size:12px}
+body.app-entered:not(.signup-mode) .digital-account-row{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;padding:14px 0;border-bottom:1px solid var(--digital-line);overflow-wrap:anywhere}
+body.app-entered:not(.signup-mode) #digital-account progress{width:100%;accent-color:var(--digital-gold)}
+@media(max-width:430px){body.app-entered:not(.signup-mode)[data-brand-audience="public"] .digital-home{padding-inline:16px}body.app-entered:not(.signup-mode)[data-brand-audience="public"] .digital-snapshot{gap:12px;padding:14px}body.app-entered:not(.signup-mode)[data-brand-audience="public"] .digital-news-image{width:64px;height:80px}body.app-entered:not(.signup-mode)[data-brand-audience="public"] .digital-news-card.has-image{grid-template-columns:64px minmax(0,1fr)}}
 `;

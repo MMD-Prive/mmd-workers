@@ -26,7 +26,9 @@ test("exact signup and renewal keywords keep their dedicated replies", () => {
   assert.equal(inferLineIntent("ต่ออายุสมาชิก", event("ต่ออายุสมาชิก")), "membership_renewal");
 });
 
-test("general membership questions keep the existing broad reply", () => {
-  const text = "Standard กับ Premium ต่างกันยังไง";
-  assert.notEqual(inferLineIntent(text, event(text)), "membership_menu");
+test("Standard and Premium comparisons route to the Per-reviewed pricing path", () => {
+  for (const text of ["Standard กับ Premium ต่างกันยังไง", "สนใจ Standard กับ Premium ต่างกันยังไง", "สอบถาม Premium ต่างจาก Standard ยังไง", "compare Standard and Premium"]) {
+    assert.equal(inferLineIntent(text, event(text)), "membership_pricing", text);
+    assert.match(buildKenjiLineReply(event(text)), /ให้ Per ช่วยตรวจรายละเอียด/);
+  }
 });

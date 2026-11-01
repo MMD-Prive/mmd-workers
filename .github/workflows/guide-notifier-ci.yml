@@ -1,0 +1,30 @@
+name: Guide notification deploy contract
+on:
+  pull_request:
+    paths:
+      - 'member-dashboard-chat-worker/src/guide-*.mjs'
+      - 'member-dashboard-chat-worker/src/my-mms-customer-front-gate-entry.js'
+      - 'member-dashboard-chat-worker/test/guide-owner-notifications.test.mjs'
+      - 'member-dashboard-chat-worker/wrangler.toml'
+      - 'scripts/check-guide-notifier-bundle.mjs'
+      - '.github/workflows/guide-notifier-ci.yml'
+      - '.github/workflows/deploy-member-dashboard-chat-worker.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'member-dashboard-chat-worker/src/guide-*.mjs'
+      - 'member-dashboard-chat-worker/src/my-mms-customer-front-gate-entry.js'
+      - '.github/workflows/guide-notifier-ci.yml'
+permissions:
+  contents: read
+jobs:
+  guide-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test member-dashboard-chat-worker/test/guide-owner-notifications.test.mjs
+      - run: npx --yes wrangler@4 deploy --dry-run --env="" --config member-dashboard-chat-worker/wrangler.toml --outdir "$RUNNER_TEMP/guide-bundle"
+      - run: node scripts/check-guide-notifier-bundle.mjs "$RUNNER_TEMP/guide-bundle/guide-notification-entry.js"

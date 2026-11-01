@@ -3,9 +3,9 @@ main = "src/index.js"
 compatibility_date = "2026-06-07"
 workers_dev = false
 
-# Default OFF even after merge/deploy: require explicit production release approval.
+# Keep the approved SIGIL Cloud Release active on standard Worker deployments.
 [vars]
-SIGIL_BOOKING_CLOUD_RELEASE_ENABLED = "false"
+SIGIL_BOOKING_CLOUD_RELEASE_ENABLED = "true"
 
 [observability]
 enabled = true

@@ -14,6 +14,8 @@ export { FollowUpAutopilot } from "./follow-up-autopilot.js";
 const CONTEXT_PATH = "/v1/admin/ai-ops/context";
 const CLIENT_PATH = "/v1/admin/ai-ops/client.js";
 const AI_OPS_PREFIX = "/v1/admin/ai-ops/";
+const MEDIA_FLUSH_PREVIEW_PATH = "/v1/admin/ai-ops/media/flush";
+const MEDIA_FLUSH_ADMIN_PATH = "/v1/admin/model-media/flush-preview";
 
 export default {
   async fetch(request, env, ctx) {
@@ -22,8 +24,32 @@ export default {
     const method = request.method.toUpperCase();
 
     if (method !== "OPTIONS" && path.startsWith(AI_OPS_PREFIX) && path !== CLIENT_PATH) {
-      const auth = await verifyAdminStrict(request);
+      const service = env.MMS_ADMIN;
+      if (typeof service?.fetch !== "function") return json({ ok: false, error: "admin_service_unavailable" }, 503);
+      const auth = await verifyAdminStrict(request, service);
       if (!auth.ok) return unauthorized();
+    }
+
+    if (path === MEDIA_FLUSH_PREVIEW_PATH) {
+      if (method !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405);
+      if (request.headers.get("origin") !== url.origin) {
+        return json({ ok: false, error: "same_origin_required" }, 403);
+      }
+      const headers = new Headers({ "accept": "application/json", "content-type": "application/json", "origin": url.origin });
+      for (const key of ["cookie", "user-agent"]) {
+        const value = request.headers.get(key);
+        if (value) headers.set(key, value);
+      }
+      try {
+        const target = new URL(MEDIA_FLUSH_ADMIN_PATH, url.origin);
+        return await env.MMS_ADMIN.fetch(new Request(target, {
+          method: "POST", headers, redirect: "manual",
+          body: JSON.stringify({ action: "preview_all" }),
+          signal: AbortSignal.timeout(45000),
+        }));
+      } catch {
+        return json({ ok: false, error: "media_flush_preview_unavailable" }, 503);
+      }
     }
 
     if (path === FOLLOW_UP_STATE_PATH) {
@@ -33,7 +59,7 @@ export default {
 
     if (path === FOLLOW_UP_SYNC_PATH) {
       if (method !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405);
-      const dashboard = await readAdminJson(request, "/v1/admin/dashboard");
+      const dashboard = await readAdminJson(request, "/v1/admin/dashboard", env.MMS_ADMIN);
       if (!dashboard.ok || !dashboard.data) {
         return json({
           ok: false,
@@ -79,7 +105,7 @@ export default {
       const patched = source
         .replace("WATCHING · FOUNDATION", "WATCHING · AUTOPILOT")
         .replace("AI ช่วยอ่าน/สรุป/เช็ก · เปอร์ยืนยันจุดสำคัญ · authority จริงยังอยู่ backend", "AI ช่วยอ่าน/สรุป/เช็ก/ตามให้ · เปอร์ยืนยันจุดสำคัญ · authority จริงยังอยู่ backend");
-      return new Response(`${patched}\n${FOLLOW_UP_CLIENT_LAYER}`, {
+      return new Response(`${patched}\n${FOLLOW_UP_CLIENT_LAYER}\n${MEDIA_FLUSH_CLIENT_LAYER}`, {
         status: base.status,
         statusText: base.statusText,
         headers,
@@ -197,9 +223,10 @@ async function decorateCommandCenter(response, followUp) {
   return new Response(JSON.stringify(payload), { status: response.status, statusText: response.statusText, headers });
 }
 
-async function verifyAdminStrict(request) {
+async function verifyAdminStrict(request, service = null) {
   try {
     const url = new URL(request.url);
+    if (!["https://mmdbkk.com", "https://www.mmdbkk.com"].includes(url.origin)) return { ok: false };
     url.pathname = "/v1/admin/auth/me";
     url.search = "";
     const headers = new Headers({ accept: "application/json" });
@@ -207,15 +234,16 @@ async function verifyAdminStrict(request) {
       const value = request.headers.get(key);
       if (value) headers.set(key, value);
     }
-    const response = await fetch(url.toString(), {
+    const init = {
       method: "GET",
       headers,
       redirect: "manual",
-    });
+    };
+    const response = await service.fetch(new Request(url, { ...init, signal: AbortSignal.timeout(7000) }));
     if (!response.ok) return { ok: false };
     const body = await response.json().catch(() => null);
     return {
-      ok: Boolean(body && body.ok === true && body.authenticated === true),
+      ok: Boolean(body && body.ok === true && body.authenticated === true && body.worker === "admin-worker"),
       actor: body || null,
     };
   } catch {
@@ -223,7 +251,7 @@ async function verifyAdminStrict(request) {
   }
 }
 
-async function readAdminJson(request, route) {
+async function readAdminJson(request, route, service) {
   const base = new URL(request.url);
   const target = new URL(route, `${base.protocol}//${base.host}`);
   const headers = new Headers({ accept: "application/json" });
@@ -232,7 +260,7 @@ async function readAdminJson(request, route) {
     if (value) headers.set(key, value);
   }
   try {
-    const response = await fetch(target.toString(), { method: "GET", headers, redirect: "manual" });
+    const response = await service.fetch(new Request(target, { method: "GET", headers, redirect: "manual", signal: AbortSignal.timeout(9000) }));
     const text = await response.text();
     let data = null;
     try { data = text ? JSON.parse(text) : null; } catch {}
@@ -280,3 +308,58 @@ function json(payload, status = 200) {
 }
 
 const FOLLOW_UP_CLIENT_LAYER = String.raw`;(()=>{'use strict';const p=location.pathname.replace(/\/+$/,'')||'/';if(p!=='/internal/admin/control-room')return;if(document.querySelector('[data-mmd-follow-up-runtime]'))return;const root=document.createElement('div');root.dataset.mmdFollowUpRuntime='p1';const style=document.createElement('style');style.textContent='[data-mmd-follow-up-panel]{margin:10px 0 0;border:1px solid rgba(217,184,108,.18);border-radius:12px;background:rgba(14,13,11,.82);color:#eee7da;font-family:-apple-system,BlinkMacSystemFont,"Noto Sans Thai",sans-serif}[data-mmd-follow-up-panel] summary{list-style:none;cursor:pointer;padding:10px 12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}[data-mmd-follow-up-panel] summary::-webkit-details-marker{display:none}[data-mmd-follow-up-panel] b{color:#d9b86c;font-size:8px;letter-spacing:.08em}[data-mmd-follow-up-panel] .mmd-fu-meta{color:#8f877b;font-size:8px}[data-mmd-follow-up-panel] .mmd-fu-list{padding:0 10px 10px;display:grid;gap:6px}[data-mmd-follow-up-panel] .mmd-fu-item{padding:9px;border:1px solid #292319;border-radius:9px;background:#090806;display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center}[data-mmd-follow-up-panel] .mmd-fu-item strong{display:block;font-size:9px}[data-mmd-follow-up-panel] .mmd-fu-item small{display:block;margin-top:3px;color:#837b70;font-size:8px;line-height:1.35}[data-mmd-follow-up-panel] .mmd-fu-actions{display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end}[data-mmd-follow-up-panel] a,[data-mmd-follow-up-panel] button{border:1px solid #493a21;border-radius:7px;background:#151108;color:#cfb470;padding:6px 8px;text-decoration:none;font:800 7px/1 -apple-system,BlinkMacSystemFont,"Noto Sans Thai",sans-serif;cursor:pointer}[data-mmd-follow-up-panel] .mmd-fu-note{padding:0 12px 10px;color:#716a61;font-size:7px}@media(max-width:720px){[data-mmd-follow-up-panel] .mmd-fu-item{grid-template-columns:1fr}[data-mmd-follow-up-panel] .mmd-fu-actions{justify-content:flex-start}}';document.head.appendChild(style);document.body.appendChild(root);const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));let panel=null;function mount(){if(panel)return panel;const host=document.querySelector('[data-per-owner-strip]')||document.querySelector('#mmd-os-v1 .top');if(!host)return null;panel=document.createElement('details');panel.setAttribute('data-mmd-follow-up-panel','p1');host.insertAdjacentElement('afterend',panel);return panel}function render(d){const el=mount();if(!el)return;const c=d&&d.counts?d.counts:{active:0,due:0,snoozed:0};const watches=Array.isArray(d&&d.watches)?d.watches:[];const items=watches.slice(0,8).map(w=>'<div class="mmd-fu-item" data-watch-id="'+esc(w.id)+'"><div><strong>'+esc((w.state==='due'?'DUE · ':'')+(w.title||w.kind||'Follow-up'))+'</strong><small>'+esc(w.summary||'')+'<br>Due '+esc(w.due_at||'-')+'</small></div><div class="mmd-fu-actions"><a href="'+esc(w.href||'/internal/admin/control-room')+'">เปิด</a><button type="button" data-fu-action="snooze">พัก 1 ชม.</button><button type="button" data-fu-action="close">ปิด Watch</button></div></div>').join('')||'<div class="mmd-fu-item"><div><strong>ตอนนี้ไม่มีรายการที่ต้องตาม</strong><small>ระบบจะสร้าง Watch เฉพาะเมื่อมี stable ID + verified condition + due rule</small></div></div>';el.innerHTML='<summary><b>FOLLOW-UP AUTOPILOT</b><span class="mmd-fu-meta">Active '+esc(c.active||0)+' · Due '+esc(c.due||0)+' · Snoozed '+esc(c.snoozed||0)+' · '+esc(d.notification_channel||'command_center_only')+'</span></summary><div class="mmd-fu-list">'+items+'</div><div class="mmd-fu-note">เตือนเปอร์เท่านั้น · ปิด Watch/พักเตือนไม่ได้เปลี่ยนสถานะ Job, Payment, Membership หรือส่งข้อความหาลูกค้า</div>';el.querySelectorAll('[data-fu-action]').forEach(btn=>{btn.onclick=async()=>{const row=btn.closest('[data-watch-id]');if(!row)return;btn.disabled=true;try{const r=await fetch('/v1/admin/ai-ops/follow-ups/action',{method:'POST',credentials:'include',cache:'no-store',headers:{'content-type':'application/json'},body:JSON.stringify({id:row.getAttribute('data-watch-id'),action:btn.getAttribute('data-fu-action'),snooze_minutes:60})}),x=await r.json();if(!r.ok||x.ok===false)throw Error(x.error||('HTTP '+r.status));render(x);document.dispatchEvent(new Event('mmd:ai-ops:refresh'))}catch(e){btn.textContent='ลองใหม่'}finally{btn.disabled=false}}})}function waiting(text){const el=mount();if(!el)return;el.innerHTML='<summary><b>FOLLOW-UP AUTOPILOT</b><span class="mmd-fu-meta">WAITING</span></summary><div class="mmd-fu-note">'+esc(text||'ยังอ่าน reminder state ไม่ได้')+'</div>'}async function sync(){waiting('กำลัง revalidate จาก verified dashboard…');try{const r=await fetch('/v1/admin/ai-ops/follow-ups/sync',{method:'POST',credentials:'include',cache:'no-store',headers:{accept:'application/json'}}),t=await r.text();let d;try{d=JSON.parse(t)}catch{throw Error('non-JSON')}if(!r.ok||d.ok===false)throw Error(d.error||('HTTP '+r.status));render(d);document.dispatchEvent(new Event('mmd:ai-ops:refresh'))}catch(e){waiting('Autopilot ยัง sync ไม่ได้ · '+(e.message||e))}}sync();document.addEventListener('mmd:follow-up:refresh',sync);})();`;
+
+const MEDIA_FLUSH_CLIENT_LAYER = String.raw`;(()=>{'use strict';
+  const path=location.pathname.replace(/\/+$/,'')||'/';
+  if(!(path.startsWith('/internal/admin/')||path==='/internal/ceo'||path.startsWith('/internal/ceo/')))return;
+  if(window.__mmdMediaFlushClientV1)return;window.__mmdMediaFlushClientV1=true;
+  const style=document.createElement('style');
+  style.textContent='[data-mmd-media-flush]{margin:10px 0;border:1px solid #e9b17d;border-radius:12px;background:#fff8ef;color:#26211c;padding:12px;font:500 12px/1.45 -apple-system,BlinkMacSystemFont,"Noto Sans Thai",sans-serif}[data-mmd-media-flush] summary{cursor:pointer;font-weight:800;font-size:12px;color:#71360f}[data-mmd-media-flush] p{margin:7px 0;color:#765b46}[data-mmd-media-flush] button{background:#edaa70;border:1px solid #c67739;border-radius:9px;color:#2d1b0d;font-weight:800;min-height:44px;padding:10px 14px;cursor:pointer}[data-mmd-media-flush] button:disabled{opacity:.6;cursor:wait}[data-mmd-media-flush] ul{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:4px}[data-mmd-media-flush] li{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid #ecdfd1;padding:5px 0;color:#3a3029;font-size:11px}[data-mmd-media-flush] .muted{font-size:10px;color:#856e5f}[data-mmd-media-flush] [role=status]{display:block;margin-top:8px;color:#654832;font-size:11px;white-space:pre-wrap}';
+  document.head.appendChild(style);
+  let last=null,loading=false,error='';
+  function mount(){
+    const host=document.querySelector('.mmd-aiops-b');
+    if(!host)return;
+    let panel=host.querySelector('[data-mmd-media-flush]');
+    if(panel)return;
+    panel=document.createElement('details');
+    panel.setAttribute('data-mmd-media-flush','v1');
+    const title=document.createElement('summary');title.textContent='🚽 FLUSH ALL MEDIA · PER';
+    const note=document.createElement('p');note.textContent='Google Drive: malemodel.bkk@gmail.com เท่านั้น · 8 หมวดโมเดล + MMD NOW';
+    const button=document.createElement('button');button.type='button';button.textContent='FLUSH · ตรวจรายการล่าสุด';
+    const status=document.createElement('span');status.setAttribute('role','status');
+    const results=document.createElement('ul');
+    const foot=document.createElement('p');foot.className='muted';
+    foot.textContent='ขั้นตรวจสอบเท่านั้น ยังไม่เขียน R2/Airtable หรือเผยแพร่ · Telegram Standard / MMD Recommended รอ Topic ID';
+    panel.append(title,note,button,status,results,foot);
+    host.prepend(panel);
+    const render=()=>{
+      button.disabled=loading;
+      status.textContent=loading?'กำลังตรวจโฟลเดอร์ต้นทาง…':error?error:last?('ตรวจเมื่อ '+new Date(last.checked_at).toLocaleString('th-TH')+' · '+(last.state==='inventory_checked'?'ตรวจครบตามขอบเขต':'บางรายการยังตรวจไม่ครบ')):'กดเมื่อต้องการตรวจรูปที่อัปเดต';
+      results.replaceChildren();
+      if(!last)return;
+      for(const item of [...(last.catalogue||[]),...(last.mmd_now||[])]) {
+        const li=document.createElement('li'),label=document.createElement('span'),value=document.createElement('span');
+        label.textContent=item.label||item.key||'';
+        value.textContent=item.state==='inventory_checked'?(String(item.images||0)+' รูป · '+String(item.videos||0)+' วิดีโอ'):item.state==='topic_id_unresolved'?'รอข้อมูล Topic':item.state==='incomplete_scan'?'ตรวจได้บางส่วน':item.state==='source_unverified'?'ต้นทางไม่ผ่านการตรวจ':'ตรวจไม่ได้';
+        li.append(label,value);results.append(li);
+      }
+    };
+    button.onclick=async()=>{
+      if(loading)return;loading=true;error='';render();
+      const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),50000);
+      try{
+        const r=await fetch('/v1/admin/ai-ops/media/flush',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'content-type':'application/json',accept:'application/json'},body:'{}',signal:controller.signal});
+        const data=await r.json().catch(()=>null);
+        if(!r.ok||!data||data.ok!==true)throw Error(r.status===401||r.status===403?'กรุณาเข้าสู่ระบบ Owner':data?.error||('HTTP '+r.status));
+        last=data;
+      }catch(e){error='FLUSH ยังตรวจไม่สำเร็จ · '+String(e.message||e);}
+      finally{clearTimeout(timer);loading=false;render();}
+    };
+    render();
+  }
+  const run=()=>{if(!document.body)return;mount();};
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',run,{once:true});
+  else run();
+  const observer=new MutationObserver(run);observer.observe(document.documentElement,{subtree:true,childList:true});
+})();`;

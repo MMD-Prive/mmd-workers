@@ -4,6 +4,7 @@ import {
   buildCommandCenter,
   previewCommand,
 } from "./command-center.js";
+import { buildMmsAdvisory } from './mms-advisory.js';
 
 const SCHEMA = "mmd_ai_ops_layer_v1";
 const CONTEXT_PATH = "/v1/admin/ai-ops/context";
@@ -49,6 +50,7 @@ const INTEL_BY_SURFACE = Object.freeze({
   studio_model_preview: ["/v1/admin/models/list?limit=12"],
   studio_care_back: ["/v1/admin/models/list?limit=12"],
   kenji: ["/v1/admin/kenji/control/memory"],
+  mms: ["/v1/admin/mms/ai-ops"],
 });
 
 export default {
@@ -62,7 +64,7 @@ export default {
 
     if (path === COMMAND_PREVIEW_PATH) {
       if (method !== "POST") return response(request, { ok: false, error: "method_not_allowed" }, 405);
-      const auth = await verifyAdmin(request);
+      const auth = await verifyAdmin(request, env.MMS_ADMIN);
       if (!auth.ok) return response(request, { ok: false, error: "unauthorized" }, 401);
       const body = await request.json().catch(() => null);
       return response(request, previewCommand(body?.command || body?.text || ""));
@@ -70,9 +72,9 @@ export default {
 
     if (path === COMMAND_CENTER_PATH) {
       if (method !== "GET") return response(request, { ok: false, error: "method_not_allowed" }, 405);
-      const auth = await verifyAdmin(request);
+      const auth = await verifyAdmin(request, env.MMS_ADMIN);
       if (!auth.ok) return response(request, { ok: false, error: "unauthorized" }, 401);
-      const dashboard = await readAdminJson(request, "/v1/admin/dashboard");
+      const dashboard = await readAdminJson(request, "/v1/admin/dashboard", env.MMS_ADMIN);
       return response(request, {
         ok: true,
         schema_version: SCHEMA,
@@ -87,12 +89,17 @@ export default {
     if (path !== CONTEXT_PATH) return response(request, { ok: false, error: "not_found" }, 404);
     if (method !== "GET") return response(request, { ok: false, error: "method_not_allowed" }, 405);
 
-    const auth = await verifyAdmin(request);
+    const page = resolveSurface(url.searchParams.get("path") || "");
+    // Same-zone Worker routes require the admin service binding on every surface.
+    const service = env.MMS_ADMIN;
+    if (typeof service?.fetch !== "function") {
+      return response(request, { ok: false, error: "admin_service_unavailable" }, 503);
+    }
+    const auth = await verifyAdmin(request, service);
     if (!auth.ok) return response(request, { ok: false, error: "unauthorized" }, 401);
 
-    const page = resolveSurface(url.searchParams.get("path") || "");
     const context = readContext(url.searchParams);
-    const intel = await collectIntel(request, page.surface);
+    const intel = await collectIntel(request, page.surface, service);
     const advisory = buildAdvisory(page, context, intel);
     const dashboardRead = (page.surface === "control_room" || page.surface === "dashboard")
       ? intel.find((item) => item.route === "/v1/admin/dashboard") || null
@@ -115,9 +122,10 @@ export default {
   },
 };
 
-async function verifyAdmin(request) {
+async function verifyAdmin(request, service = null) {
   try {
     const u = new URL(request.url);
+    if (!["https://mmdbkk.com", "https://www.mmdbkk.com"].includes(u.origin)) return { ok: false };
     u.pathname = "/v1/admin/auth/me";
     u.search = "";
     const headers = new Headers();
@@ -125,21 +133,23 @@ async function verifyAdmin(request) {
       const value = request.headers.get(key);
       if (value) headers.set(key, value);
     }
-    const r = await fetch(u.toString(), { method: "GET", headers, redirect: "manual" });
+    const init = { method: "GET", headers, redirect: "manual" };
+    if (typeof service?.fetch !== "function") return { ok: false };
+    const r = await service.fetch(new Request(u, { ...init, signal: AbortSignal.timeout(7000) }));
     if (!r.ok) return { ok: false };
     const body = await r.json().catch(() => null);
-    return { ok: Boolean(body?.ok !== false), actor: body || null };
+    return { ok: body?.ok === true && body?.authenticated === true && body?.worker === "admin-worker", actor: null };
   } catch {
     return { ok: false };
   }
 }
 
-async function collectIntel(request, surface) {
+async function collectIntel(request, surface, service = null) {
   const routes = INTEL_BY_SURFACE[surface] || [];
-  return Promise.all(routes.slice(0, 3).map((route) => readAdminJson(request, route)));
+  return Promise.all(routes.slice(0, 3).map((route) => readAdminJson(request, route, service)));
 }
 
-async function readAdminJson(request, route) {
+async function readAdminJson(request, route, service = null) {
   const base = new URL(request.url);
   const target = new URL(route, `${base.protocol}//${base.host}`);
   const headers = new Headers({ accept: "application/json" });
@@ -148,7 +158,8 @@ async function readAdminJson(request, route) {
     if (value) headers.set(key, value);
   }
   try {
-    const r = await fetch(target.toString(), { method: "GET", headers, redirect: "manual" });
+    const init = { method: "GET", headers, redirect: "manual" };
+    const r = await service.fetch(new Request(target, { ...init, signal: AbortSignal.timeout(9000) }));
     const text = await r.text();
     let data = null;
     try { data = text ? JSON.parse(text) : null; } catch {}
@@ -206,7 +217,11 @@ function buildAdvisory(page, ctx, intel) {
   } else if (page.surface === "owner_setup") {
     brief.push("ใช้เป็น runtime/setup health guide; AI ชี้สิ่งที่ขาดได้ แต่ไม่เปิด authority หรือ bypass safety gate เอง");
   } else if (page.surface === "mms") {
-    brief.push("สรุป MMS operating context และพาไป action ที่เกี่ยวข้อง โดยคง Partner/Owner scope ตาม backend");
+    const mms = buildMmsAdvisory(intel.find(item => item.route === '/v1/admin/mms/ai-ops'));
+    verified.push(...mms.verified);
+    brief.push(...mms.brief);
+    anomalies.push(...mms.anomalies);
+    next.push(...mms.next_actions);
   } else {
     brief.push("AI Ops พร้อมช่วยสรุป context, missing evidence และทางไปทำงานต่อ โดยไม่ย้าย authority มาไว้หน้าเว็บ");
   }
@@ -259,4 +274,4 @@ function jsResponse(source) {
   return new Response(source, { status: 200, headers: { "content-type": "application/javascript; charset=utf-8", "cache-control": "public, max-age=60" } });
 }
 
-const CLIENT_JS = String.raw`(()=>{'use strict';const p=location.pathname.replace(/\/+$/,'')||'/';if(!p.startsWith('/internal/admin/'))return;if(document.querySelector('[data-mmd-ai-ops]'))return;const q=(s,r=document)=>r.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));const pick=(names)=>{for(const n of names){const e=q('[data-'+n+']');if(e){const v=(e.value||e.dataset?.value||e.textContent||'').trim();if(v&&v!=='-')return v}const u=new URL(location.href).searchParams.get(n.replace(/-/g,'_'));if(u)return u}return''};const params=()=>{const o={path:p,client_id:pick(['client-id','selected-client-id']),member_id:pick(['member-id']),model_id:pick(['model-id','selected-model-id']),job_id:pick(['job-id']),session_id:pick(['session-id']),payment_ref:pick(['payment-ref']),record_id:pick(['record-id'])},u=new URLSearchParams;for(const[k,v]of Object.entries(o))if(v)u.set(k,v);return u};const h=document.createElement('div');h.dataset.mmdAiOps='v1';h.innerHTML='<style>.mmd-aiops-btn{position:fixed;right:14px;bottom:16px;z-index:2147483000;border:1px solid rgba(216,185,111,.45);background:#11100f;color:#e7d09a;border-radius:999px;padding:11px 14px;font:800 11px/1 -apple-system,BlinkMacSystemFont,"Noto Sans Thai",sans-serif;box-shadow:0 12px 40px #0008}.mmd-aiops{position:fixed;right:14px;bottom:62px;z-index:2147482999;width:min(430px,calc(100vw - 28px));max-height:min(76vh,760px);overflow:auto;border:1px solid #3a3122;border-radius:18px;background:rgba(12,11,10,.97);color:#f3eee6;box-shadow:0 28px 80px #000b;font-family:-apple-system,BlinkMacSystemFont,"Noto Sans Thai",sans-serif;backdrop-filter:blur(18px)}.mmd-aiops[hidden]{display:none}.mmd-aiops-h{position:sticky;top:0;display:flex;justify-content:space-between;gap:12px;padding:14px;border-bottom:1px solid #282117;background:#0d0c0b}.mmd-aiops-h b{font-size:13px}.mmd-aiops-h small{display:block;margin-top:3px;color:#8f8576;font-size:9px}.mmd-aiops-x{border:0;background:transparent;color:#aaa;font-size:18px}.mmd-aiops-b{padding:14px}.mmd-aiops-k{margin:13px 0 6px;color:#c3a45f;font-size:8px;font-weight:900;letter-spacing:.12em}.mmd-aiops-item{padding:10px;border:1px solid #2a241b;border-radius:11px;background:#11100e;margin:6px 0;font-size:10px;line-height:1.55}.mmd-aiops-warn{border-color:#5b4524;color:#f0cf8a}.mmd-aiops-a{display:block;padding:10px;border:1px solid #44371f;border-radius:10px;color:#dfc27d;text-decoration:none;margin:6px 0;font-size:10px;font-weight:800}.mmd-aiops-meta{margin-top:10px;color:#736c62;font-size:8px;line-height:1.5}.mmd-aiops-cmd{display:flex;gap:6px;margin-bottom:10px}.mmd-aiops-cmd input{min-width:0;flex:1;border:1px solid #30291f;border-radius:10px;background:#090806;color:#f3eee6;padding:10px;font:500 10px/1.35 inherit;outline:none}.mmd-aiops-cmd button{border:1px solid #5b4825;border-radius:10px;background:#1a150b;color:#dfc27d;padding:0 11px;font:800 9px/1 inherit}.mmd-aiops-sub{display:block;color:#8f8576;font-size:8px;margin-top:3px}.mmd-aiops-card strong{display:block;color:#f3eee6;font-size:10px}.mmd-aiops-card span{display:block;color:#8f8576;font-size:9px;margin-top:3px}</style><button class="mmd-aiops-btn" type="button">AI OPS</button><aside class="mmd-aiops" hidden><div class="mmd-aiops-h"><div><b>AI OPS · MMD</b><small>Brief · Missing · Next</small></div><button class="mmd-aiops-x" type="button">×</button></div><div class="mmd-aiops-b"><div class="mmd-aiops-item">กำลังอ่านบริบทหน้านี้…</div></div></aside>';document.body.appendChild(h);const panel=q('.mmd-aiops',h),body=q('.mmd-aiops-b',h),btn=q('.mmd-aiops-btn',h);const sec=(k,x)=>'<div class="mmd-aiops-k">'+k+'</div>'+x,items=(a,w)=>a?.length?a.map(x=>'<div class="mmd-aiops-item'+(w?' mmd-aiops-warn':'')+'">'+esc(x.text||x.summary||x.title||x)+'</div>').join(''):'<div class="mmd-aiops-item">—</div>',acts=a=>(a||[]).map(x=>'<a class="mmd-aiops-a" href="'+esc(x.href||'#')+'">'+esc((x.priority?x.priority+'. ':'')+(x.label||x.title||x.action||'Open'))+(x.summary?'<span class="mmd-aiops-sub">'+esc(x.summary)+'</span>':'')+'</a>').join('')||'<div class="mmd-aiops-item">—</div>';function cmdBox(){if(p!=='/internal/admin/control-room')return'';return '<div class="mmd-aiops-k">ASK PER AI</div><div class="mmd-aiops-cmd"><input type="text" maxlength="600" placeholder="เช่น เช็กสลิปคุณหนุ่ย / สร้าง Job / ดูระบบ"><button type="button">Preview</button></div><div data-mmd-aiops-command-result></div>'}function cc(d){const c=d.command_center;if(!c)return'';const need=(c.needs_per||[]).map(x=>'<a class="mmd-aiops-a mmd-aiops-card" href="'+esc(x.href||'#')+'"><strong>'+esc(x.title||'ต้องดู')+'</strong><span>'+esc(x.summary||'')+'</span></a>').join('')||'<div class="mmd-aiops-item">ตอนนี้ไม่มี verified exception เพิ่ม</div>',prep=acts(c.prepared||[]),watch=(c.watching?.items||[]).map(x=>'<div class="mmd-aiops-item mmd-aiops-card"><strong>'+esc(x.title||x.kind||'Watching')+'</strong><span>'+esc(x.summary||'')+'</span></div>').join('')||'<div class="mmd-aiops-item">—</div>';return sec('NEEDS PER',need)+sec('PREPARED',prep)+sec('WATCHING · FOUNDATION',watch)}function bindCommand(){const input=q('.mmd-aiops-cmd input',body),go=q('.mmd-aiops-cmd button',body),out=q('[data-mmd-aiops-command-result]',body);if(!input||!go||!out)return;const run=async()=>{const text=input.value.trim();if(!text)return;out.innerHTML='<div class="mmd-aiops-item">กำลังเตรียมทางไปต่อ…</div>';try{const r=await fetch('/v1/admin/ai-ops/command/preview',{method:'POST',credentials:'include',cache:'no-store',headers:{'content-type':'application/json'},body:JSON.stringify({command:text})}),t=await r.text();let d;try{d=JSON.parse(t)}catch{throw Error('endpoint returned non-JSON')}if(!r.ok||d.ok===false)throw Error(d.message||d.error||('HTTP '+r.status));if(!d.matched){out.innerHTML='<div class="mmd-aiops-item mmd-aiops-warn">'+esc(d.message||'ยังไม่รองรับคำสั่งนี้')+'</div>';return}const a=d.action_card||{};out.innerHTML='<a class="mmd-aiops-a mmd-aiops-card" href="'+esc(a.href||'#')+'"><strong>'+esc(a.title||d.intent||'ทำต่อ')+'</strong><span>'+esc(a.summary||'')+'</span></a><div class="mmd-aiops-meta">Preview only · '+esc(d.guard||'no mutation')+'</div>'}catch(e){out.innerHTML='<div class="mmd-aiops-item mmd-aiops-warn">Command preview ใช้งานไม่ได้ · '+esc(e.message||e)+'</div>'}};go.onclick=run;input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();run()}})}function render(d){const advisory=sec('AI BRIEF',items(d.brief))+sec('MISSING / ANOMALY',items(d.anomalies,true))+sec('NEXT BEST ACTION',acts(d.next_actions||[]));body.innerHTML=cmdBox()+cc(d)+advisory+'<div class="mmd-aiops-meta">Money: '+esc(d.authority?.money||'-')+' · Entitlement: '+esc(d.authority?.entitlement||'-')+'<br>AI ช่วยสรุป/เตรียมงาน · final authority ยังอยู่ backend</div>';bindCommand()}async function load(){body.innerHTML='<div class="mmd-aiops-item">กำลังสรุป context ล่าสุด…</div>';try{const r=await fetch('/v1/admin/ai-ops/context?'+params(),{credentials:'include',cache:'no-store'}),t=await r.text();let d;try{d=JSON.parse(t)}catch{throw Error('endpoint returned non-JSON')}if(!r.ok||d.ok===false)throw Error(d.error||('HTTP '+r.status));render(d)}catch(e){body.innerHTML='<div class="mmd-aiops-item mmd-aiops-warn">AI Ops ยังอ่านบริบทไม่ได้ · '+esc(e.message||e)+'</div>'}}btn.onclick=()=>{panel.hidden=!panel.hidden;if(!panel.hidden)load()};q('.mmd-aiops-x',h).onclick=()=>panel.hidden=true;document.addEventListener('mmd:ai-ops:refresh',()=>{if(!panel.hidden)load()})})();`;
+const CLIENT_JS = String.raw`(()=>{'use strict';const p=location.pathname.replace(/\/+$/,'')||'/';if(!p.startsWith('/internal/admin/'))return;if(document.querySelector('[data-mmd-ai-ops]'))return;const q=(s,r=document)=>r.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));const pick=(names)=>{for(const n of names){const e=q('[data-'+n+']');if(e){const v=(e.value||e.dataset?.value||e.textContent||'').trim();if(v&&v!=='-')return v}const u=new URL(location.href).searchParams.get(n.replace(/-/g,'_'));if(u)return u}return''};const params=()=>{const o={path:p,client_id:pick(['client-id','selected-client-id']),member_id:pick(['member-id']),model_id:pick(['model-id','selected-model-id']),job_id:pick(['job-id']),session_id:pick(['session-id']),payment_ref:pick(['payment-ref']),record_id:pick(['record-id'])},u=new URLSearchParams;for(const[k,v]of Object.entries(o))if(v)u.set(k,v);return u};const h=document.createElement('div');h.dataset.mmdAiOps='v1';h.innerHTML='<style>.mmd-aiops-btn{position:fixed;right:14px;bottom:16px;z-index:2147483000;border:1px solid rgba(216,185,111,.45);background:#11100f;color:#e7d09a;border-radius:999px;padding:11px 14px;font:800 11px/1 -apple-system,BlinkMacSystemFont,"Noto Sans Thai",sans-serif;box-shadow:0 12px 40px #0008}.mmd-aiops{position:fixed;right:14px;bottom:62px;z-index:2147482999;width:min(430px,calc(100vw - 28px));max-height:min(76vh,760px);overflow:auto;border:1px solid #3a3122;border-radius:18px;background:rgba(12,11,10,.97);color:#f3eee6;box-shadow:0 28px 80px #000b;font-family:-apple-system,BlinkMacSystemFont,"Noto Sans Thai",sans-serif;backdrop-filter:blur(18px)}.mmd-aiops[hidden]{display:none}.mmd-aiops-h{position:sticky;top:0;display:flex;justify-content:space-between;gap:12px;padding:14px;border-bottom:1px solid #282117;background:#0d0c0b}.mmd-aiops-h b{font-size:13px;color:#f3eee6!important}.mmd-aiops-h small{display:block;margin-top:3px;color:#d0c7b5!important;font-size:9px}.mmd-aiops-x{border:0;background:transparent;color:#aaa;font-size:18px}.mmd-aiops-b{padding:14px}.mmd-aiops-k{margin:13px 0 6px;color:#c3a45f;font-size:8px;font-weight:900;letter-spacing:.12em}.mmd-aiops-item{padding:10px;border:1px solid #2a241b;border-radius:11px;background:#11100e;margin:6px 0;font-size:10px;line-height:1.55}.mmd-aiops-warn{border-color:#5b4524;color:#f0cf8a}.mmd-aiops-a{display:block;padding:10px;border:1px solid #44371f;border-radius:10px;color:#dfc27d;text-decoration:none;margin:6px 0;font-size:10px;font-weight:800}.mmd-aiops-meta{margin-top:10px;color:#736c62;font-size:8px;line-height:1.5}.mmd-aiops-cmd{display:flex;gap:6px;margin-bottom:10px}.mmd-aiops-cmd input{min-width:0;flex:1;border:1px solid #30291f;border-radius:10px;background:#090806;color:#f3eee6;padding:10px;font:500 10px/1.35 inherit;outline:none}.mmd-aiops-cmd button{border:1px solid #5b4825;border-radius:10px;background:#1a150b;color:#dfc27d;padding:0 11px;font:800 9px/1 inherit}.mmd-aiops-sub{display:block;color:#8f8576;font-size:8px;margin-top:3px}.mmd-aiops-card strong{display:block;color:#f3eee6;font-size:10px}.mmd-aiops-card span{display:block;color:#8f8576;font-size:9px;margin-top:3px}html:root body [data-mmd-ai-ops] .mmd-aiops,html:root body [data-mmd-ai-ops] .mmd-aiops-h,html:root body [data-mmd-ai-ops] .mmd-aiops-b,html:root body [data-mmd-ai-ops] .mmd-aiops-item,html:root body [data-mmd-ai-ops] .mmd-aiops-a{background:#fff!important;border-color:#d1d5db!important;color:#202936!important;-webkit-text-fill-color:#202936!important}html:root body [data-mmd-ai-ops] :is(b,strong,small,span,p,.mmd-aiops-k,.mmd-aiops-sub,.mmd-aiops-meta){color:#202936!important;-webkit-text-fill-color:#202936!important}html:root body [data-mmd-ai-ops] :is(.mmd-aiops-sub,.mmd-aiops-meta,.mmd-aiops-h small){color:#4b5563!important;-webkit-text-fill-color:#4b5563!important;font-size:12px}html:root body [data-mmd-ai-ops] :is(.mmd-aiops-item,.mmd-aiops-a,.mmd-aiops-card strong){font-size:14px;line-height:1.6}html:root body [data-mmd-ai-ops] .mmd-aiops-h b{font-size:16px}html:root body [data-mmd-ai-ops] :is(.mmd-aiops-btn,.mmd-aiops-x,.mmd-aiops-cmd button){background:#ffdab0!important;border:1px solid #c7833c!important;color:#202936!important;-webkit-text-fill-color:#202936!important}html:root body [data-mmd-ai-ops] .mmd-aiops-x{min-width:44px;min-height:44px}html:root body [data-mmd-ai-ops] .mmd-aiops-cmd input{background:#fff!important;border-color:#9ca3af!important;color:#202936!important;-webkit-text-fill-color:#202936!important;font-size:14px}html:root body [data-mmd-ai-ops] .mmd-aiops-cmd input::placeholder{color:#4b5563!important;-webkit-text-fill-color:#4b5563!important}html:root body [data-mmd-ai-ops] :is(button,a,input):focus-visible{outline:3px solid #9a4d0a!important;outline-offset:3px}</style><button class="mmd-aiops-btn" type="button">AI OPS</button><aside class="mmd-aiops" hidden><div class="mmd-aiops-h"><div><b>AI OPS · MMD</b><small>Brief · Missing · Next</small></div><button class="mmd-aiops-x" type="button">×</button></div><div class="mmd-aiops-b"><div class="mmd-aiops-item">กำลังอ่านบริบทหน้านี้…</div></div></aside>';document.body.appendChild(h);const panel=q('.mmd-aiops',h),body=q('.mmd-aiops-b',h),btn=q('.mmd-aiops-btn',h);const sec=(k,x)=>'<div class="mmd-aiops-k">'+k+'</div>'+x,items=(a,w)=>a?.length?a.map(x=>'<div class="mmd-aiops-item'+(w?' mmd-aiops-warn':'')+'">'+esc(x.text||x.summary||x.title||x)+'</div>').join(''):'<div class="mmd-aiops-item">—</div>',acts=a=>(a||[]).map(x=>'<a class="mmd-aiops-a" href="'+esc(x.href||'#')+'">'+esc((x.priority?x.priority+'. ':'')+(x.label||x.title||x.action||'Open'))+(x.summary?'<span class="mmd-aiops-sub">'+esc(x.summary)+'</span>':'')+'</a>').join('')||'<div class="mmd-aiops-item">—</div>';function cmdBox(){if(p!=='/internal/admin/control-room')return'';return '<div class="mmd-aiops-k">ASK PER AI</div><div class="mmd-aiops-cmd"><input type="text" maxlength="600" placeholder="เช่น เช็กสลิปคุณหนุ่ย / สร้าง Job / ดูระบบ"><button type="button">Preview</button></div><div data-mmd-aiops-command-result></div>'}function cc(d){const c=d.command_center;if(!c)return'';const need=(c.needs_per||[]).map(x=>'<a class="mmd-aiops-a mmd-aiops-card" href="'+esc(x.href||'#')+'"><strong>'+esc(x.title||'ต้องดู')+'</strong><span>'+esc(x.summary||'')+'</span></a>').join('')||'<div class="mmd-aiops-item">ตอนนี้ไม่มี verified exception เพิ่ม</div>',prep=acts(c.prepared||[]),watch=(c.watching?.items||[]).map(x=>'<div class="mmd-aiops-item mmd-aiops-card"><strong>'+esc(x.title||x.kind||'Watching')+'</strong><span>'+esc(x.summary||'')+'</span></div>').join('')||'<div class="mmd-aiops-item">—</div>';return sec('NEEDS PER',need)+sec('PREPARED',prep)+sec('WATCHING · FOUNDATION',watch)}function bindCommand(){const input=q('.mmd-aiops-cmd input',body),go=q('.mmd-aiops-cmd button',body),out=q('[data-mmd-aiops-command-result]',body);if(!input||!go||!out)return;const run=async()=>{const text=input.value.trim();if(!text)return;out.innerHTML='<div class="mmd-aiops-item">กำลังเตรียมทางไปต่อ…</div>';try{const r=await fetch('/v1/admin/ai-ops/command/preview',{method:'POST',credentials:'include',cache:'no-store',headers:{'content-type':'application/json'},body:JSON.stringify({command:text})}),t=await r.text();let d;try{d=JSON.parse(t)}catch{throw Error('endpoint returned non-JSON')}if(!r.ok||d.ok===false)throw Error(d.message||d.error||('HTTP '+r.status));if(!d.matched){out.innerHTML='<div class="mmd-aiops-item mmd-aiops-warn">'+esc(d.message||'ยังไม่รองรับคำสั่งนี้')+'</div>';return}const a=d.action_card||{};out.innerHTML='<a class="mmd-aiops-a mmd-aiops-card" href="'+esc(a.href||'#')+'"><strong>'+esc(a.title||d.intent||'ทำต่อ')+'</strong><span>'+esc(a.summary||'')+'</span></a><div class="mmd-aiops-meta">Preview only · '+esc(d.guard||'no mutation')+'</div>'}catch(e){out.innerHTML='<div class="mmd-aiops-item mmd-aiops-warn">Command preview ใช้งานไม่ได้ · '+esc(e.message||e)+'</div>'}};go.onclick=run;input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();run()}})}function render(d){const advisory=sec('AI BRIEF',items(d.brief))+sec('MISSING / ANOMALY',items(d.anomalies,true))+sec('NEXT BEST ACTION',acts(d.next_actions||[]));body.innerHTML=cmdBox()+cc(d)+advisory+'<div class="mmd-aiops-meta">Money: '+esc(d.authority?.money||'-')+' · Entitlement: '+esc(d.authority?.entitlement||'-')+'<br>AI ช่วยสรุป/เตรียมงาน · final authority ยังอยู่ backend</div>';bindCommand()}async function load(){body.innerHTML='<div class="mmd-aiops-item">กำลังสรุป context ล่าสุด…</div>';try{const r=await fetch('/v1/admin/ai-ops/context?'+params(),{credentials:'include',cache:'no-store'}),t=await r.text();let d;try{d=JSON.parse(t)}catch{throw Error('endpoint returned non-JSON')}if(!r.ok||d.ok===false)throw Error(d.error||('HTTP '+r.status));render(d)}catch(e){body.innerHTML='<div class="mmd-aiops-item mmd-aiops-warn">AI Ops ยังอ่านบริบทไม่ได้ · '+esc(e.message||e)+'</div>'}}btn.onclick=()=>{panel.hidden=!panel.hidden;if(!panel.hidden)load()};q('.mmd-aiops-x',h).onclick=()=>panel.hidden=true;document.addEventListener('mmd:ai-ops:refresh',()=>{if(!panel.hidden)load()})})();`;

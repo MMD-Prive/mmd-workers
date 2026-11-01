@@ -1,3 +1,4 @@
+import { requestSessionPaidProjection } from './session-paid-projection.js';
 import { stablePaymentRef } from "./unified-payment-proof.js";
 import { formulaValue, httpError } from "./lib/payment-primitives.js";
 import { BALANCE_FIELDS, readVerifiedSessionBalance, balancePayment } from "./verified-session-balance.js";
@@ -229,6 +230,15 @@ function paymentVerified(record) {
 // Derived display snapshots only. Never changes payment/session verification,
 // overwrites the original deposit reference, or creates a second received amount.
 async function syncDerivedBalance(env, sessionRecordId, summary) {
+  if (env.SESSION_PAID_PROJECTION_COORDINATOR) {
+    const projection = await requestSessionPaidProjection(env, { session_id: summary.session_id, stage: 'final' });
+    // The new MMD writer owns only paid_received_sum; balance_due_calc is the
+    // existing Airtable formula. Excluded lanes retain their legacy path.
+    if (projection.status === 'skipped' && projection.reason === 'excluded_lane') {
+      // Continue through the unchanged legacy behavior below.
+    } else if (['updated', 'unchanged'].includes(projection.status)) return;
+    else throw httpError(503, 'session_paid_projection_pending');
+  }
   await patchRecord(env, sessionsTable(env), sessionRecordId, {
     [BALANCE_FIELDS.paidSum]: summary.verified_paid_thb,
     [BALANCE_FIELDS.customerDue]: summary.remaining_amount_thb,

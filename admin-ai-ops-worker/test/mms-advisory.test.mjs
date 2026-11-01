@@ -1,0 +1,104 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { buildMmsAdvisory } from '../src/mms-advisory.js';
+import worker from '../src/customer-360-live-entry.js';
+
+const data = { ok: true, schema: 'mms_ai_ops_read_v1', sources: { snapshot: { available: true, complete: false }, workspace: { available: true, complete: true } },
+  actions: [{ key: 'applications', count: 2, label: 'ใบสมัคร', partial: true, href: '/internal/admin/mms#applications' }], henna: { configured: true, auto_reply_enabled: false }, kenji: { line_auto_reply_enabled: false, mutations_kill_switch_active: true } };
+
+test('MMS advisory carries partial counts, real actions and disabled automation truth', () => {
+  const result = buildMmsAdvisory({ ok: true, data });
+  assert.match(result.next_actions[0].label, /2 \(ที่อ่านได้\)/);
+  assert.equal(result.next_actions[0].href, '/internal/admin/mms#applications');
+  assert.equal(result.anomalies[0].code, 'mms_snapshot_incomplete');
+  assert.match(result.brief.join(' '), /ตอบอัตโนมัติ ปิด/);
+  assert.match(result.brief.join(' '), /ตัวหยุดการแก้ข้อมูล ทำงาน/);
+});
+
+test('unknown and empty partial source never claims an empty queue', () => {
+  const failed = buildMmsAdvisory({ ok: false, data });
+  assert.equal(failed.next_actions.length, 0);
+  assert.equal(failed.verified.length, 0);
+  const partial = buildMmsAdvisory({ ok: true, data: { ...data, actions: [] } });
+  assert.match(partial.brief[0], /จึงยังสรุปว่าคิวว่างไม่ได้/);
+});
+
+test('MMS brief labels observed default controls without inferring LINE activation', () => {
+  const result = buildMmsAdvisory({ ok: true, data: { ...data, kenji: {
+    line_auto_reply_enabled: true, line_reply_kill_switch_active: false, mutations_kill_switch_active: false,
+    runtime_controls: { all_kenji_mutations: { available: true, origin: 'default', enabled: false, version: 0 } },
+  } } });
+  const text = result.brief.join(' ');
+  assert.match(text, /ตัวหยุดตอบ LINE ไม่ทำงาน/);
+  assert.match(text, /ตัวหยุดการแก้ข้อมูล ไม่ทำงาน \(ค่าเริ่มต้น v0\)/);
+  assert.doesNotMatch(text, /LINE เปิดตอบ|LINE ปิดตอบ/);
+});
+
+test('advisory rejects external and unrelated action destinations', () => {
+  const result = buildMmsAdvisory({ ok: true, data: { ...data, actions: [
+    ...data.actions, { key: 'unsafe', label: 'no', count: 1, href: 'https://example.com/private' }, { key: 'unrelated', label: 'no', count: 1, href: '/internal/admin/payments' },
+  ] } });
+  assert.equal(result.next_actions.length, 1);
+});
+
+test('actual AI context reads only MMS projection after auth and returns actionable MMS intel', async () => {
+  const original = globalThis.fetch, calls = [];
+  globalThis.fetch = async () => { throw new Error('MMS must not use same-zone global fetch'); };
+  const service = { fetch: async (input) => {
+    const path = new URL(input.url).pathname;
+    calls.push(path); assert.equal(input.method, 'GET');
+    assert.equal(input.headers.get('cookie'), 'synthetic-session');
+    if (path === '/v1/admin/auth/me') return Response.json({ ok: true, authenticated: true, worker: 'admin-worker' });
+    assert.equal(path, '/v1/admin/mms/ai-ops');
+    return Response.json(data);
+  } };
+  try {
+    const response = await worker.fetch(new Request('https://www.mmdbkk.com/v1/admin/ai-ops/context?path=%2Finternal%2Fadmin%2Fmms', { headers: { cookie: 'synthetic-session' } }), { MMS_ADMIN: service }, {});
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.deepEqual(calls, ['/v1/admin/auth/me', '/v1/admin/auth/me', '/v1/admin/mms/ai-ops']);
+    assert.equal(body.next_actions[0].href, '/internal/admin/mms#applications');
+    assert.equal(body.sources[0].route, '/v1/admin/mms/ai-ops');
+    assert.match(body.brief.join(' '), /ตอบอัตโนมัติ ปิด/);
+  } finally { globalThis.fetch = original; }
+});
+
+test('missing MMS binding fails closed and never falls back to the public origin', async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => { assert.fail('unexpected public origin call'); };
+  try {
+    const result = await worker.fetch(new Request('https://mmdbkk.com/v1/admin/ai-ops/context?path=/internal/admin/mms'), {}, {});
+    assert.equal(result.status, 503);
+    assert.equal((await result.json()).error, 'admin_service_unavailable');
+  } finally { globalThis.fetch = original; }
+});
+
+test('MMS service rejects missing, malformed and expired auth before reading any data', async () => {
+  for (const auth of [Response.json({ ok: false }, { status: 401 }), Response.json({ ok: true }), new Response('<html>origin</html>')]) {
+    const calls = [];
+    const result = await worker.fetch(new Request('https://mmdbkk.com/v1/admin/ai-ops/context?path=/internal/admin/mms'), { MMS_ADMIN: { fetch: async request => { calls.push(new URL(request.url).pathname); return auth; } } }, {});
+    assert.equal(result.status, 401);
+    assert.deepEqual(calls, ['/v1/admin/auth/me']);
+  }
+});
+
+test('MMS service never forwards a session from a non-production host', async () => {
+  const result = await worker.fetch(new Request('https://example.com/v1/admin/ai-ops/context?path=/internal/admin/mms', { headers: { cookie: 'synthetic-session' } }), { MMS_ADMIN: { fetch: async () => { assert.fail('unexpected binding call'); } } }, {});
+  assert.equal(result.status, 401);
+});
+
+test('other AI contexts validate the same Back Office session via binding', async () => {
+ const calls=[];const service={fetch:async request=>{const path=new URL(request.url).pathname;calls.push(path);assert.equal(request.headers.get('cookie'),'synthetic-session');if(path==='/v1/admin/auth/me')return Response.json({ok:true,authenticated:true,worker:'admin-worker'});return Response.json({ok:true})}};
+ const result=await worker.fetch(new Request('https://mmdbkk.com/v1/admin/ai-ops/context?path=/internal/admin/control-room',{headers:{cookie:'synthetic-session'}}),{MMS_ADMIN:service},{});
+ assert.equal(result.status,200);assert.deepEqual(calls,['/v1/admin/auth/me','/v1/admin/auth/me','/v1/admin/dashboard']);
+});
+
+test('MMS advisory distinguishes activation from all three versioned kill switches',()=>{
+ const result=buildMmsAdvisory({ok:true,data:{...data,kenji:{line_auto_reply_enabled:false,model_reply_enabled:false,shadow_enabled:false,line_reply_kill_switch_active:false,model_reply_kill_switch_active:true,mutations_kill_switch_active:false,runtime_controls:{line_oa_auto_reply:{available:true,enabled:false,version:7,origin:'recorded'},model_keyword_auto_reply:{available:true,enabled:true,version:3,origin:'recorded'},all_kenji_mutations:{available:true,enabled:false,version:0,origin:'default'}}}}});
+ const text=result.brief.join(' ');
+ assert.match(text,/ตอบ LINE ปิด · ใช้ Model ตอบ ปิด · Shadow ปิด/);
+ assert.match(text,/ตัวหยุดตอบ LINE ไม่ทำงาน \(v7\)/);
+ assert.match(text,/ตัวหยุดตอบ Model ทำงาน \(v3\)/);
+ assert.match(text,/ตัวหยุดการแก้ข้อมูล ไม่ทำงาน \(ค่าเริ่มต้น v0\)/);
+ assert.doesNotMatch(text,/ยังตรวจไม่ได้/);
+});

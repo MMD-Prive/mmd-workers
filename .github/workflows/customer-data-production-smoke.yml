@@ -25,7 +25,18 @@ jobs:
       ADMIN_SMOKE_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}
 
     steps:
-      - name: Authenticated Customer 360 V7 page and queue smoke
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Validate Customer Data HTML contracts
+        run: node --test scripts/check-customer-data-page.test.mjs
+
+      - name: Authenticated Customer 360 page and queue smoke
         shell: bash
         run: |
           set -euo pipefail
@@ -51,17 +62,7 @@ jobs:
             page_code="$(curl --retry 4 --retry-delay 1 --retry-all-errors -sS \
               -D "$headers" -o "$body" -b "$cookie" -w "%{http_code}" \
               "$origin/internal/admin/customer-data")"
-            test "$page_code" = "200"
-            grep -qi '^content-type:.*text/html' "$headers"
-            grep -Eqi '^x-mmd-customer-data-ui:[[:space:]]*readable-v3' "$headers"
-            grep -Eqi '^x-mmd-customer-ux:[[:space:]]*owner-readable-v7' "$headers"
-            grep -q 'Customer 360' "$body"
-            grep -q 'ลูกค้า → ตัวตน → ตรวจ → ทำต่อ' "$body"
-            grep -q 'ค้นลูกค้า ตรวจว่าตัวตนตรงกัน' "$body"
-            grep -q 'คิวที่ต้องดู' "$body"
-            grep -q 'ตัดสินใจเรื่องตัวตน' "$body"
-            grep -q 'href="/internal/admin/jobs/create-job"' "$body"
-            grep -q '>สร้างงาน ↗</a>' "$body"
+            node scripts/check-customer-data-page.mjs "$page_code" "$headers" "$body" authenticated
 
             queue_code="$(curl --retry 4 --retry-delay 1 --retry-all-errors -sS \
               -D "$headers" -o "$body" -b "$cookie" -w "%{http_code}" \
@@ -90,6 +91,7 @@ jobs:
           console.log(`Customer Data queue connected: ${count} review_required`);
           NODE
 
-            echo "PASS: $origin authenticated Customer 360 V7 + live queue"
+            echo "PASS: $origin authenticated Customer 360 HTML + live queue"
             rm -f "$cookie" "$headers" "$body"
           done
+

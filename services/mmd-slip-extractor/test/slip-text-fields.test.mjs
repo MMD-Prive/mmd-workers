@@ -120,3 +120,15 @@ test("labeled amount wins over unrelated decimal numbers and preserves cents", (
   );
   assert.equal(r.amount_thb, 1234.56);
 });
+
+test("Thai OCR letter spacing and separated month dots preserve the transfer fields", () => {
+  const r = normalizeOcrText("จํา น ว น เง ิ น 5,000.00 บ า ท\nค ่ า ธร ร ม เน ี ย ม 0.00 บ า ท\nว ั น ท ี ่ ท ํ า ร า ย ก า ร 03 ต . ค . 2569 - 21:19", 80);
+  assert.equal(r.amount_thb, 5000);
+  assert.equal(r.paid_at, "2026-10-03T14:19:00.000Z");
+});
+test("spaced fee labels stay excluded and unrecognized months are never guessed", () => {
+  const r = normalizeOcrText("ค ่ า ธร ร ม เน ี ย ม 25.00 บ า ท\n03 ๓. ค . 2569 - 21:19");
+  assert.equal(r.amount_thb, null);
+  assert.equal(r.paid_at, "");
+  assert.equal(normalizeOcrText("จํา น ว น เง ิ น 100 บ า ท\nจํา น ว น เง ิ น 200 บ า ท").amount_thb, null);
+});

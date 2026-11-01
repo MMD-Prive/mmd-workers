@@ -2,6 +2,8 @@ const PRIVATE_FOLDERS = new Set(["standard", "premium", "vip", "exclusive"]);
 
 export const SIGIL_CUSTOMER_SEARCH_POLICY_VERSION = "sigil-customer-search-v1";
 export const PUBLIC_MODEL_MIN_BUDGET_THB = 5000;
+export const MODEL_BODY_TYPES = new Set(["lean", "athletic", "muscular", "slim", "soft"]);
+export const MODEL_SKIN_TONES = new Set(["fair", "light", "medium", "tan", "deep"]);
 
 export function normalizeSearchMode(value) {
   const token = cleanToken(value);
@@ -161,11 +163,13 @@ export function safeSearchIntent(input = {}) {
   const preferredName = String(input.preferred_model_name || input.model_name || input.model_search_query || "").trim().slice(0, 160);
   const telegramReference = sanitizeTelegramReference(input.telegram_post_url || input.telegram_reference || input.telegram_link);
   const fallbackAllowed = input.fallback_allowed === true || ["1", "true", "yes", "similar"].includes(cleanToken(input.fallback_allowed));
+  const profileFilters = normalizeProfileFilters(input);
   const errors = [];
   if (mode === "search" && !budget.provided) errors.push("budget_required");
   if (input.customer_lane && !customerLane) errors.push("customer_lane_invalid");
   if ((input.work_lane || input.job_class || input.private_work) && !workLane) errors.push("work_lane_invalid");
   if ((input.telegram_post_url || input.telegram_reference || input.telegram_link) && !telegramReference) errors.push("telegram_reference_invalid");
+  errors.push(...profileFilters.errors);
   return {
     mode,
     customer_lane: customerLane,
@@ -175,8 +179,55 @@ export function safeSearchIntent(input = {}) {
     preferred_model_name: preferredName,
     telegram_reference: telegramReference,
     fallback_allowed: fallbackAllowed,
+    profile_filters: profileFilters.filters,
     errors,
   };
+}
+
+export function normalizeProfileFilters(input = {}) {
+  const filters = {
+    min_height_cm: boundedInteger(input.min_height_cm, 100, 230),
+    max_height_cm: boundedInteger(input.max_height_cm, 100, 230),
+    min_weight_kg: boundedInteger(input.min_weight_kg, 30, 200),
+    max_weight_kg: boundedInteger(input.max_weight_kg, 30, 200),
+    body_type: cleanToken(input.body_type),
+    skin_tone: cleanToken(input.skin_tone),
+  };
+  const errors = [];
+  for (const key of ["min_height_cm", "max_height_cm", "min_weight_kg", "max_weight_kg"]) {
+    const raw = input[key];
+    if (raw !== undefined && raw !== null && String(raw).trim() && filters[key] === null) errors.push(`${key}_invalid`);
+  }
+  if (filters.min_height_cm !== null && filters.max_height_cm !== null && filters.min_height_cm > filters.max_height_cm) errors.push("height_range_invalid");
+  if (filters.min_weight_kg !== null && filters.max_weight_kg !== null && filters.min_weight_kg > filters.max_weight_kg) errors.push("weight_range_invalid");
+  if (filters.body_type && !MODEL_BODY_TYPES.has(filters.body_type)) errors.push("body_type_invalid");
+  if (filters.skin_tone && !MODEL_SKIN_TONES.has(filters.skin_tone)) errors.push("skin_tone_invalid");
+  for (const key of Object.keys(filters)) if (filters[key] === null) delete filters[key];
+  return { filters, errors };
+}
+
+export function modelProfileMatches(fields = {}, filters = {}) {
+  const height = finiteProfileNumber(first(fields, ["height_cm"]));
+  const weight = finiteProfileNumber(first(fields, ["weight_kg"]));
+  if (filters.min_height_cm !== undefined && (height === null || height < filters.min_height_cm)) return false;
+  if (filters.max_height_cm !== undefined && (height === null || height > filters.max_height_cm)) return false;
+  if (filters.min_weight_kg !== undefined && (weight === null || weight < filters.min_weight_kg)) return false;
+  if (filters.max_weight_kg !== undefined && (weight === null || weight > filters.max_weight_kg)) return false;
+  if (filters.body_type && cleanToken(first(fields, ["body_type"])) !== filters.body_type) return false;
+  if (filters.skin_tone && cleanToken(first(fields, ["skin_tone"])) !== filters.skin_tone) return false;
+  return true;
+}
+
+function boundedInteger(value, min, max) {
+  if (value === undefined || value === null || String(value).trim() === "") return null;
+  const number = Number(value);
+  return Number.isInteger(number) && number >= min && number <= max ? number : null;
+}
+
+function finiteProfileNumber(value) {
+  if (value === "" || value === null || value === undefined) return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
 }
 
 function parseDurations(value) {
@@ -214,3 +265,4 @@ function first(fields, names) {
 function cleanToken(value) {
   return String(value == null ? "" : value).trim().toLowerCase().normalize("NFKC").replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
 }
+

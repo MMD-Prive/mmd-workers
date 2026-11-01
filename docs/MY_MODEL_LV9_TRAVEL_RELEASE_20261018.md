@@ -35,7 +35,7 @@ LINE push uses one stable retry key and a durable delivery journal, never a mode
 
 ## Release dependencies and open limits
 
-1. Inspect CI on the exact head and approve this runtime release separately from the prior V3 graphics publish. This candidate has not been merged, deployed or saved/published to Webflow.
+1. PR #2512 was merged as `d36c34d435ae87f990105fc2796c3d8803ce3af8` (tested head `d3db68b4cf97e2abceb83a3487d583b3e99b891f`). Merge is not a deployment/publish receipt. Inspect CI and approve the exact follow-up release separately from the prior V3 graphics save.
 2. Deploy the changed backend owners as one reviewed source revision. Two new admin route patterns are prepared in wrangler.toml: both production hosts under `/v1/model/session/travel*`. Customer APIs reuse the existing member-app proxy prefix.
 3. Verify the existing private bucket, canonical table mappings, admin → member-dashboard-chat service binding and shared internal authentication without exposing values. Do not invent or copy a token from the model/MMS world.
 4. Update the two existing Webflow skin/runtime blocks in place from the generated candidates. Preserve the legacy auth/upload/runtime blocks. Inspect unrelated drafts and confirm the actual publish scope before any full-site publish.
@@ -44,3 +44,23 @@ LINE push uses one stable retry key and a durable delivery journal, never a mode
 Inherited ETA writes still use the existing Jobs events append path. This change does not claim to provide a transaction across all legacy Airtable lifecycle/event writers. The new message/photo quota and timeline do not depend on that capped events array. Notification retries occur through the same saved receipt; no new periodic delivery scheduler is enabled. These limits must remain explicit during release review.
 
 Status: **CODE_READY / LOCAL_CHECKS_PASSED / NOT_PUBLISHED / HUMAN_ACCEPTANCE_PENDING**.
+
+## 19 October follow-up (local source, not release acceptance)
+
+Base `59f31465efcaa030624b15777fb87d32071e69e7` includes #2508/#2509/#2512. Regression-first checks reproduced `payment_status=unpaid` opening MISSION and legacy ETA projection ignoring lifecycle. The follow-up:
+
+- Replaces substring payment matching with exact existing `paid`, `deposit_paid`, `verified`, `official_verified` evidence. Unknown/negative non-empty evidence vetoes conflicting positives; booking state never verifies payment. No payment write, ledger, payout or verification operation is changed.
+- Shares #2509's customer lifecycle normalizer with travel reads; equivalent `on_the_way`/`en_route` aliases agree, while unknown/conflicting fields remain `checking`.
+- Uses one authorized Jobs ETA resolver for `/current`, signed `/context` and `/travel`. No event on one matching Job is `missing`; missing/duplicate/wrong Job, malformed JSON or failed reads are `unavailable`. Arrived and later/terminal lifecycles cannot return an active countdown. Legacy field names remain available with shared hour/minute copy.
+- Preserves signed-cookie-less context and authenticated owner-only travel/photo access. No second store, ETA writer, sender or scheduler is added.
+
+Read-only Cloudflare metadata on 19 October showed these 100% allocations (not source-equivalence proof):
+
+| Owner | Active version | Deployment |
+| --- | --- | --- |
+| admin-worker | `f09db2e6-c239-4891-b199-c8315dfc3ade` | `0c20988f-ede6-4395-b9c1-4ca829703b19` |
+| events-worker | `d66f8b76-dbcb-4710-b8ca-5b45e0e1ddc4` | `d11c135d-e9e2-4c7b-99e5-e470cd656be9` |
+| member-pages-worker | `a18a4c83-b0df-4d4a-b213-f58763721dd5` | `ce7b59a1-fd4a-40f5-9d0f-c5173b587356` |
+| member-dashboard-chat-worker | `c49b5a43-5720-4a47-afe5-4b38cb091ca0` | `1349c377-6b45-403b-9232-01b7dc96aa73` |
+
+The admin/member-pages allocations predate #2512. Do not claim that all four owners serve LV9 or overwrite the historical admin bundle without source pairing. Existing Console Footer staging has a separately identified composition defect (`$$` replacement); its corrected local artifact has not been saved/published. This follow-up does not retry that mutation. Production, responsive visual acceptance and physical LINE/iPhone acceptance remain open.

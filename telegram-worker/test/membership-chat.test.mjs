@@ -287,3 +287,99 @@ test("explicit owner handoff commands retain their original handler", async () =
   const { body } = await receive("/case-review HYPE-PER-20260919120000-abc12345");
   assert.equal(body.flow, "hype_owner_handoff_transition");
 });
+
+test("HYPE private acquisition route offers services without asking for gender", async () => {
+  const sent = mockTelegram();
+  const { status, body } = await receiveUpdate({
+    update_id: 200,
+    message: { message_id: 12, text: "/start route", chat: { id: 123, type: "private" }, from: { id: 123, is_bot: false } },
+  });
+  assert.equal(status, 200);
+  assert.equal(body.flow, "hype_preview_lead_routing");
+  assert.doesNotMatch(sent[0].text, /ผู้หญิง|เพศ|gender/i);
+  assert.deepEqual(sent[0].reply_markup.inline_keyboard, [
+    [{ text: "สมัครสมาชิกใหม่", url: "https://www.mmdbkk.com/pay/membership" }],
+    [{ text: "ต่ออายุสมาชิก", url: "https://www.mmdbkk.com/member/liff?intent=renew" }],
+    [{ text: "ดูหนุ่ม ๆ · คุยต่อทาง LINE", url: "https://lin.ee/xRqsALs" }],
+    [{ text: "กลับไป Telegram Preview", url: "https://t.me/MMDPriveTH" }],
+  ]);
+});
+
+test("HYPE acquisition routing does not run or reveal choices in a public Telegram group", async () => {
+  const sent = mockTelegram();
+  const { body } = await receiveUpdate({
+    update_id: 201,
+    message: { message_id: 13, text: "/start route", chat: { id: 123, type: "group" }, from: { id: 123, is_bot: false } },
+  });
+  assert.notEqual(body.flow, "hype_preview_lead_routing");
+  assert.equal(sent.length, 0);
+});
+
+
+test("private acquisition starts offer membership and MMD links without reading personal context", async () => {
+  const sent = mockTelegram();
+  let reads = 0;
+  const authority = { fetch() { reads++; throw new Error("Start must not read personal context"); } };
+  for (const text of ["/start route", "/start", "/start@mmdprivebot"]) {
+    const { body } = await receiveUpdate({ message: {
+      text, chat: { id: 123456, type: "private" },
+      from: { id: 123456, is_bot: false, first_name: "ผู้หญิง", username: "female" },
+    } }, { ...runtime(), HYPE_OPERATIONS: authority, TELEGRAM_BIND_AUTHORITY: authority });
+    assert.equal(body.flow, "hype_preview_lead_routing");
+    const reply = sent.at(-1);
+    assert.match(reply.text, /LINE Official/);
+    assert.deepEqual(reply.reply_markup.inline_keyboard.flat().map(button => button.url), [
+      "https://www.mmdbkk.com/pay/membership", "https://www.mmdbkk.com/member/liff?intent=renew",
+      "https://lin.ee/xRqsALs", "https://t.me/MMDPriveTH",
+    ]);
+    assert.doesNotMatch(JSON.stringify(reply), /believe|inme|female|male|ผู้หญิง|เพศ/i);
+  }
+  assert.equal(reads, 0);
+});
+
+test("private acquisition preserves configured MMD LINE and Preview destinations", async () => {
+  const sent = mockTelegram();
+  await receiveUpdate({ message: { text: "/start route", chat: { id: 123456, type: "private" },
+    from: { id: 123456, is_bot: false },
+  } }, { ...runtime(), MMD_LINE_OFC_URL: "https://line.me/test-mmd", TELEGRAM_PREVIEW_CHANNEL_URL: "https://t.me/testPreview" });
+  assert.deepEqual(sent.at(-1).reply_markup.inline_keyboard.flat().map(button => button.url), [
+    "https://www.mmdbkk.com/pay/membership", "https://www.mmdbkk.com/member/liff?intent=renew",
+    "https://line.me/test-mmd", "https://t.me/testPreview",
+  ]);
+});
+
+test("public or edited acquisition starts never read private routing context", async () => {
+  mockTelegram();
+  let reads = 0;
+  const env = { ...runtime(), HYPE_OPERATIONS: { fetch(req) {
+    if (new URL(req.url).pathname === "/__internal/hype/operational-status") reads++;
+    return Response.json({ ok: false, state: "none" });
+  } } };
+  for (const type of ["group", "supergroup", "channel"]) {
+    const { body } = await receiveUpdate({ message: { text: "/start route", chat: { id: 123456, type },
+      from: { id: 123456, is_bot: false },
+    } }, env);
+    assert.notEqual(body.flow, "hype_preview_lead_routing");
+  }
+  const { body } = await receiveUpdate({ edited_message: { text: "/start route", chat: { id: 123456, type: "private" },
+    from: { id: 123456, is_bot: false },
+  } }, env);
+  assert.notEqual(body.flow, "hype_preview_lead_routing");
+  assert.equal(reads, 0);
+});
+
+
+test("HYPE advertises approved signup and renewal terms through Bangkok October deadline", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-10-31T23:59:59+07:00") });
+  const sent = mockTelegram();
+  const start = { message: { text: "/start route", chat: { id: 123, type: "private" }, from: { id: 123, is_bot: false } } };
+  await receiveUpdate(start);
+  assert.match(sent.at(-1).text, /สมัคร Premium ใหม่.*รวม 2 ปี/);
+  assert.match(sent.at(-1).text, /ต่ออายุ Premium 1 ปี รับเพิ่มฟรีอีก 1 ปี/);
+  assert.match(sent.at(-1).text, /ต่ออายุ Standard 1 ปี รับเพิ่มฟรีอีก 180 วัน/);
+  assert.match(sent.at(-1).text, /31 ต.ค. 2569/);
+  t.mock.timers.setTime(Date.parse("2026-11-01T00:00:00+07:00"));
+  await receiveUpdate(start);
+  assert.doesNotMatch(sent.at(-1).text, /CARE BACK|รับเพิ่มฟรี|31 ต.ค./);
+  assert.equal(sent.at(-1).reply_markup.inline_keyboard.length, 4);
+});

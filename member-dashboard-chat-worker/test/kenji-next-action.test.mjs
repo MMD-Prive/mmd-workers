@@ -20,11 +20,10 @@ const membership = applyKenjiNextAction({
     },
   },
 });
-assert.equal(membership.cta_type, "open_action_route");
-assert.equal(membership.cta_route, "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=overview");
-assert.equal(membership.cta_appended, true);
-assert.match(membership.text, /MY MMD Home/);
-assert.match(membership.text, /https:\/\/miniapp\.line\.me\/2010862595-yT4DCEMc\/\?intent=status&view=overview/);
+assert.equal(membership.cta_type, "none");
+assert.equal(membership.cta_route, "");
+assert.equal(membership.cta_appended, false);
+assert.doesNotMatch(membership.text, /MY MMD Home|intent=status/);
 assert.equal(membership.next_action_policy.max_primary_cta, 1);
 assert.equal(membership.next_action_policy.relationship_mode, "known_customer_continuation");
 assert.doesNotMatch(membership.text, /อนุมัติสิทธิ์|ได้รับสิทธิ์แล้ว|เปิดสิทธิ์แล้ว/i);
@@ -57,8 +56,8 @@ const renewal = applyKenjiNextAction({
   text: "เริ่มขั้นตอนต่ออายุสมาชิกได้ที่นี่ครับ → https://miniapp.line.me/2010862595-yT4DCEMc/?intent=renew&view=package",
   intent: "membership_renewal",
 }, { continuity: {} });
-assert.equal(renewal.cta_type, "open_action_route");
-assert.equal(renewal.cta_route, "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=renew&view=package");
+assert.equal(renewal.cta_type, "none");
+assert.equal(renewal.cta_route, "");
 assert.equal(renewal.cta_appended, false);
 assert.doesNotMatch(renewal.text, /สถานะ.*(?:เปลี่ยนแล้ว|active แล้ว)|อนุมัติแล้ว/i);
 
@@ -69,7 +68,7 @@ const protectedPayment = decideKenjiCapability({
 assert.equal(protectedPayment.capability, "protected_authority");
 assert.equal(protectedPayment.requested_domain, "payment");
 const protectedPaymentReply = buildProtectedCapabilityReply(protectedPayment);
-assert.match(protectedPaymentReply, /https:\/\/mmdbkk\.com\/member\/payments/);
+assert.match(protectedPaymentReply, /https:\/\/miniapp\.line\.me\/2010862595-yT4DCEMc\/\?intent=continue_payment/);
 assert.match(protectedPaymentReply, /ไม่ต้องสร้างรายการหรือส่งหลักฐานซ้ำ/);
 assert.doesNotMatch(protectedPaymentReply, /confirm\/payment-proof/);
 assert.doesNotMatch(protectedPaymentReply, /ชำระ(?:เงิน)?สำเร็จ(?:แล้ว)?|อนุมัติแล้ว|(?:ได้รับการ)?ยืนยัน(?:การ)?ชำระ(?:เงิน)?แล้ว/i);
@@ -96,12 +95,13 @@ const paymentNeedsAction = resolveKenjiNextAction({
   continuity: { matrix: { conversation_stage: "in_progress", do_not_ask_again: [] } },
 });
 assert.equal(paymentNeedsAction.type, "open_action_route");
-assert.equal(paymentNeedsAction.route, "https://mmdbkk.com/member/payments");
+assert.equal(paymentNeedsAction.route, "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=continue_payment");
 assert.match(paymentNeedsAction.customer_text, /รายการชำระเงิน/);
 assert.match(paymentNeedsAction.customer_text, /ไม่ต้องสร้างหรือส่งซ้ำ/);
 assert.doesNotMatch(paymentNeedsAction.customer_text, /confirm\/payment-proof/);
 
 const existingCta = applyKenjiNextAction({
+  truth_status: "verified",
   text: "ดูสถานะล่าสุดได้ที่ https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=overview ครับ",
   intent: "membership_status",
 }, { continuity: {} });

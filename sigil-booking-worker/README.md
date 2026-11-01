@@ -15,12 +15,53 @@ Webflow must not read Airtable, R2, Google Drive, or Gmail directly. This worker
   - Active members become `public_private`.
 
 - `GET|POST /sigil/api/models/search`
-  - Searches Airtable `Models` by `working_name`, `nickname`, `unique_key`, `folder_name`, `r2_prefix`, and `primary_image_key`.
-  - Hydrates the selected primary image, additional public gallery images, and intro clips from the MMD Model Media Assets registry. Only active, `public_safe` assets with public visibility are included.
+  - Searches Airtable `Models` by customer-facing `working_name` and `nickname` only. Search never falls back to scanning arbitrary Airtable fields or private/storage identifiers. When MY MODEL visibility fields are configured, the record must have an approved visibility selection; hidden/internal and pending-review records are excluded. Private discovery still requires the server-resolved entitlement and matching access folder.
+  - Hydrates the Studio-approved cover and Model-published public gallery separately from the MMD Model Media Assets registry.
 - `GET /sigil/api/models/media/:media_id`
-  - Streams public-safe MMD MODEL media from R2 and supports byte ranges for video playback. Private, pending, and unsafe media return not found.
+  - Streams eligible public-safe MMD MODEL media from R2 and supports byte ranges for video playback. Private, pending, revoked, and unsafe media return not found.
   - Returns only public-safe preview fields.
   - Private search requires a prior booking request with `member_status=active` and `access_scope=public_private`.
+
+### Public booking media contract
+
+Each returned Model includes `approved_media` for approved cover/clip media and
+`gallery_media` for Model-published public photos, even when either is empty.
+Entries contain only:
+
+```json
+{
+  "media_id": "media_aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+  "media_source": "mmd_model_media_assets",
+  "kind": "photo"
+}
+```
+
+`kind` is `photo` or `clip`. Clients construct the media endpoint exclusively as
+`https://sigil.mmdbkk.com/sigil/api/models/media/{media_id}`. Search responses do
+not expose `public_image_url`, `cover_url`, storage URLs, Drive links, or R2 keys.
+Only an approved `profile_main` can be `primary_media_id`. An active gallery photo
+never becomes the search card cover merely because it was uploaded first. Clients
+show `gallery_media` after the customer opens the Model detail.
+
+The registry is joined using its actual `Model` record links, never a display
+name. Studio-approved covers and active Model-published `public_gallery` assets
+with the correct public bucket, Model-owned key, and media MIME
+type are eligible. A current canonical Public Model is required both when
+hydrating search and on **every** media GET/HEAD. R2 metadata must match the media
+ID, Model ID, file size, MIME type, and recorded SHA-256 metadata format. Missing,
+revoked, ambiguous, or unverifiable records fail closed; no approval is created
+or changed by discovery.
+
+The approved registry scan is paginated and capped at 5,000 rows per search; an
+incomplete or unavailable registry yields no media instead of legacy fallbacks.
+Media responses use browser/CDN `no-store` to keep revocation checks active.
+Exact origins come from `ALLOWED_ORIGINS`, including mmdbkk.com, the connected
+Lovable preview, the published `sigil-bookings.lovable.app` (plural), the existing
+`sigil-booking.lovable.app` origin, and `mmdprive.webflow.io`.
+Approved origins receive credentialed CORS for the browser session; this only
+permits communication and never grants Private package entitlement.
+GET, HEAD, byte-range requests, and OPTIONS preflight are supported; other browser
+origins are denied before any registry or storage read.
 
 - `POST /sigil/api/booking/intake`
   - Saves the booking draft into `SIGIL Booking Requests`.
@@ -178,3 +219,4 @@ If `telegram_notify.ok` is false, check:
 ## Safety lock
 
 This worker never confirms booking, model availability, private access, or payment by itself. Records are booking drafts only until official review and payment verification.
+

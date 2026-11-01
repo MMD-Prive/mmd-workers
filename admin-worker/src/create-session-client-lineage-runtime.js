@@ -175,7 +175,7 @@ export async function handleCreateSessionClientLineageRequest(request, env = {},
       snapshot.records.length === 0,
     );
     const records = useManualFallback
-      ? [buildManualPublicClient(query)]
+      ? []
       : snapshot.records;
     const lineageWarnings = useManualFallback
       ? [...snapshot.warnings, "manual_public_only_pending_reconcile"]
@@ -196,7 +196,7 @@ export async function handleCreateSessionClientLineageRequest(request, env = {},
       items: records,
       count: records.length,
       lineage_warnings: lineageWarnings,
-      degraded_sources: lineageWarnings,
+      degraded_sources: snapshot.warnings,
       no_canonical_match: noCanonicalMatch,
       manual_fallback: useManualFallback,
       ...(canonicalOnly ? { canonical_only: true, line_candidates: snapshot.lineCandidates } : {}),
@@ -298,6 +298,7 @@ async function buildClientLineageRecords(env, { query = "", limit = 40, recent =
   const entitlementIndexes = buildEntitlementIndexes(entitlements);
   const stagingIndexes = buildStagingIndexes(staging);
   const needles = searchVariants(query);
+  const exactClientId = /^rec[A-Za-z0-9]{6,32}$/.test(clean(query)) ? clean(query) : "";
 
   const rows = clients
     .map((record) => {
@@ -319,6 +320,13 @@ async function buildClientLineageRecords(env, { query = "", limit = 40, recent =
             matched_on: "recent",
             matched_value: "",
           }
+        : exactClientId && record.id === exactClientId
+          ? {
+              score: 1000,
+              priority: 1000,
+              matched_on: "client_id",
+              matched_value: record.id,
+            }
         : bestLineageMatch(needles, searchEntries);
 
       if (!recent && needles.length && match.score <= 0) return null;
@@ -854,11 +862,21 @@ function stagingSearchFormula(query) {
     "matched_client_id",
   ];
   const needles = rawNeedles.map(airtableFormulaString);
-  const checks = fields.flatMap((field) => needles.flatMap((needle) => [
-    `IFERROR(SEARCH(\"${needle}\",LOWER({${field}}&\"\")),0)>0`,
-    `IFERROR(SEARCH(\"${needle}\",LOWER(SUBSTITUTE({${field}}&\"\",\" \",\"\"))),0)>0`,
-  ]));
+  const checks = fields.flatMap((field) => {
+    const toneFreeField = thaiToneFreeFormula(`{${field}}&""`);
+    return needles.flatMap((needle) => [
+      `FIND("${needle}",LOWER(${toneFreeField}))>0`,
+      `FIND("${needle}",LOWER(SUBSTITUTE(${toneFreeField}," ","")))>0`,
+    ]);
+  });
   return `OR(${checks.join(",")})`;
+}
+
+function thaiToneFreeFormula(expression) {
+  return ["่", "้", "๊", "๋"].reduce(
+    (formula, mark) => `SUBSTITUTE(${formula},${JSON.stringify(mark)},"")`,
+    expression,
+  );
 }
 
 function airtableFormulaString(value) {
@@ -1015,7 +1033,7 @@ function compact(object) {
 }
 
 function normalizeSearch(value) {
-  return clean(value).toLowerCase().replace(/\s+/g, " ");
+  return clean(value).toLowerCase().replace(/[\u0E48-\u0E4B]/gu, "").replace(/\s+/g, " ");
 }
 
 function searchVariants(value) {

@@ -151,7 +151,7 @@ test("MMD 3-level Rich Menu actions match the canonical customer labels", () => 
   ]);
 
   assert.deepEqual(map.private, [
-    { type: "postback", label: "KENJI AI", data: "mmd_action=kenji_ai&audience=private&source=private_rich_menu" },
+    { type: "uri", label: "KENJI AI", uri: "https://www.mmdbkk.com/concierge/kenji?source=line&entry_route=rich_menu_private_kenji" },
     { type: "uri", label: "MODEL CARDS", uri: "https://mmdbkk.com/sigil/booking?mode=search&scope=private&source=line&entry_route=rich_menu_model_cards" },
     { type: "uri", label: "BOOKING", uri: "https://mmdbkk.com/sigil/booking?mode=booking&scope=private&source=line&entry_route=rich_menu_private_booking" },
     { type: "uri", label: "MY MMD", uri: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=home" },
@@ -173,7 +173,7 @@ test("Guest and Public support stay Kenji-invisible while Private keeps a typed 
   assert.equal(map.public[5].type, "postback");
   assert.equal(JSON.stringify(map.guest[5]).includes("Hi Kenji"), false);
   assert.equal(JSON.stringify(map.public[5]).includes("Hi Kenji"), false);
-  assert.deepEqual(map.private[0], { type: "postback", label: "KENJI AI", data: "mmd_action=kenji_ai&audience=private&source=private_rich_menu" });
+  assert.deepEqual(map.private[0], { type: "uri", label: "KENJI AI", uri: "https://www.mmdbkk.com/concierge/kenji?source=line&entry_route=rich_menu_private_kenji" });
   assert.deepEqual(map.private[5], { type: "postback", label: "SUPPORT", data: "mmd_action=kenji_ai&entry=support&audience=private&source=private_rich_menu" });
 });
 
@@ -208,7 +208,7 @@ test("unverified known customer maps to Guest", () => {
 });
 
 test("current production object version preserves the approved LV1 v4.1 artwork and Mini App MY MMD entry", () => {
-  assert.equal(getMmdRichMenuVersion(), "mmd-rm3-20261004-v4.15");
+  assert.equal(getMmdRichMenuVersion(), "mmd-rm3-20261027-v4.16");
   assert.ok(getMmdRichMenuImageSources().guest.every((url) => url.includes("Guest%20v4.1%20LINE.png")));
   const map = getMmdRichMenuDestinationMap();
   assert.match(map.public[3].uri, /^https:\/\/miniapp\.line\.me\/2010862595-yT4DCEMc\//);
@@ -441,9 +441,13 @@ test("three-level prepare and audit routes are recognized but remain internal-to
 
 
 
-test("every installed button uses the same bounded menu command, including KENJI and SUPPORT", () => {
+test("Private Kenji opens the web while other installed buttons keep bounded menu commands", () => {
   for (const [menu, actions] of Object.entries(getMmdRichMenuActionMap())) {
     actions.forEach((action, index) => {
+      if (menu === "private" && index === 0) {
+        assert.deepEqual(action, { type: "uri", label: "KENJI AI", uri: "https://www.mmdbkk.com/concierge/kenji?source=line&entry_route=rich_menu_private_kenji" });
+        return;
+      }
       assert.equal(action.type, "postback");
       assert.equal(action.data, `mmd_action=rich_menu&menu=${menu}&button=${index}`);
     });

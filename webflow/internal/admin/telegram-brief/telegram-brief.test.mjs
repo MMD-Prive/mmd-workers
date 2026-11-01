@@ -5,3 +5,31 @@ test('router projection fails closed on unavailable or malformed payloads',()=>{
 test('copy fallback is provided next to both answer and brief controls',()=>{assert.match(html,/id="tb-answer-fallback" readonly hidden/);assert.match(html,/id="tb-copy-fallback" readonly hidden/);assert.match(script,/target==='#tb-answer-feedback'\?'#tb-answer-fallback':'#tb-copy-fallback'/);});
 test('refresh errors clear stale health, counters and checked time',()=>{assert.match(script,/catch\(e\)\{health=null;renderLanes\(\);qa\('\[data-count\]'\)/);assert.match(script,/r.status===401\|\|r.status===403/);assert.match(script,/controller.abort\(\)/);});
 test('HENNA shared transport is distinct from bot identity and settlement',()=>{assert.match(html,/HENNA LINE → mms-worker → telegram-worker ร่วม/);assert.match(html,/username ของบอต Telegram แยกยังไม่ยืนยัน/);assert.match(html,/การคัดลอกยังไม่เปลี่ยนคำสั่งของบอตจริง/);assert.doesNotMatch(html,/https:\/\/t.me\/(?:henna|HENNA)/);});
+
+test('mascot hero keeps HYPE and HENNA visuals separate and selectable',()=>{assert.match(html,/id="tb-mascot-hero"/);assert.match(html,/id="tb-hero-next"/);assert.ok(html.includes('#sigil-telegram-brief .tb-hero :is(h2,p){color:#f8f5e9!important'));assert.match(html,/6a619b07ff52a9ed58217f10_HYPE%20Bot\.webp/);assert.match(html,/6a79c2a1213c008f8210dd4b_HYPE_Footer\.webp/);assert.match(html,/6ad11d77ef42d3236cf6bd9d_HENNA%2C%20the%20Forest-Green%20Guardian%20Hen\.webp/);assert.match(script,/function renderHero\(/);assert.match(script,/renderHero\(\);q\('#tb-case'\)\.replaceChildren\(\)/);});
+function hexLuminance(hex){const c=hex.replace('#','').match(/../g).map(x=>parseInt(x,16)/255).map(x=>x<=.04045?x/12.92:((x+.055)/1.055)**2.4);return .2126*c[0]+.7152*c[1]+.0722*c[2]}
+function contrast(a,b){const x=hexLuminance(a),y=hexLuminance(b);return (Math.max(x,y)+.05)/(Math.min(x,y)+.05)}
+test('LV10 premium rebuild stays scoped and readable on mobile',()=>{assert.ok(!html.includes('format(\"woff2)}'));assert.match(html,/data-release="telegram-brief-rebuilt-lv10-20261028"/);assert.match(html,/--canvas:#f4f1e8/);assert.match(html,/--gold:#c6a867/);assert.match(html,/@media\(max-width:440px\)/);assert.match(html,/prefers-reduced-motion:reduce/);assert.ok(contrast('#202a27','#f4f1e8')>=4.5);assert.ok(contrast('#5d6863','#fffdf8')>=4.5);assert.ok(contrast('#fffdf8','#173f35')>=4.5);});
+
+
+test('LV10 preserves the existing HENNA welcome scenario and official LINE CTA',()=>{const start=script.indexOf('var cases=');const end=script.indexOf('var selected=');assert.ok(start>=0&&end>start);const model=runInNewContext(script.slice(start,end)+'\n({cases,profiles})');const welcome=model.cases.henna[0];assert.equal(welcome[0],'welcome');assert.equal(welcome[5],'https://lin.ee/wNQ68VE');assert.equal(welcome[6],'แอด LINE MMD');assert.equal(model.profiles.henna.links[0][1],welcome[5]);assert.match(script,/textContent=\(c\[6\]\|\|'เปิดหน้าจัดการ'\)/);});
+
+
+test('HAY has its own hero, work examples and isolated brief while preserving HENNA LINE',()=>{
+ const nodes=new Map();const buttons=['hype','henna','hay'].map(bot=>({dataset:{bot},setAttribute(k,v){this[k]=v}}));
+ const node=s=>{if(!nodes.has(s))nodes.set(s,{value:'',textContent:'',hidden:false,dataset:{},children:[],replaceChildren(){this.children=[];if(s==='#tb-case')this.value=''},appendChild(x){this.children.push(x)},append(...x){this.children.push(...x)},focus(){},select(){}});return nodes.get(s)};
+ const root={dataset:{},querySelector:node,querySelectorAll:s=>s==='.tb-bot[data-bot]'?buttons:[]};let copied='';
+ runInNewContext(script,{document:{getElementById:()=>root,createElement:()=>({})},navigator:{clipboard:{writeText:async text=>{copied=text}}},fetch:async()=>({status:401}),AbortController,setTimeout:()=>1,clearTimeout(){},console});
+ node('#tb-instruction').value='HYPE draft';buttons[2].onclick();
+ assert.equal(node('#tb-hero-title').textContent,'หน่วยวิ่งไว · หน่วยผลิตสื่อ');assert.match(node('#tb-hero-image').src,/hay-reception-hero-v1\.webp$/);assert.equal(node('#tb-hero-next').hidden,true);assert.equal(root.dataset.mascot,'hay');assert.equal(node('#tb-case').children.length,3);assert.match(node('#tb-instruction').value,/ผู้ตรวจอนุมัติ/);assert.equal(node('#tb-compose').textContent,'Brief Composer · HAY');
+ node('#tb-instruction').value='HAY private draft';node('#tb-copy-brief').onclick();assert.match(copied,/^HAY \/ SĪGIL BRIEF/);assert.match(copied,/HAY private draft/);
+ buttons[1].onclick();assert.equal(node('#tb-instruction').value,'');assert.equal(node('[data-field="next-link"]').href,'https://lin.ee/wNQ68VE');assert.equal(node('[data-field="next-link"]').textContent,'แอด LINE MMD ↗');assert.equal(node('#tb-hay-note').hidden,true);
+ buttons[0].onclick();assert.equal(node('#tb-instruction').value,'HYPE draft');buttons[2].onclick();assert.equal(node('#tb-instruction').value,'HAY private draft');assert.equal(node('#tb-hay-note').hidden,false);
+});
+
+ test('reception heroes use pinned artwork without replacing canonical selector avatars',()=>{
+ const images=runInNewContext(script.slice(script.indexOf('var heroImages='),script.indexOf('function renderHero'))+'heroImages');
+ for(const who of ['henna','hay']){assert.match(images[who][0].src,/\/mmd-workers@[0-9a-f]{40}\/webflow\/internal\/admin\/telegram-brief\/assets\//);assert.ok(images[who][0].src.endsWith(who+'-reception-hero-v1.webp'));}
+ assert.equal(images.hype.length,2);assert.match(images.hype[0].src,/6a65e131bf33efae2edd1c0c_OWL%20HYPE.webp/);
+ assert.match(html,/6ae22ec8b6370647ea97a6ef_hay-telegram-profile.webp/);
+ });

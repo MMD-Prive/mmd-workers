@@ -1,3 +1,4 @@
+import {personalMain} from "../../shared/personal-main-catalog.mjs";
 const PAGE_PATHS = new Set(["/member/kenji", "/member/kenji/"]);
 const CHAT_PATHS = new Set(["/api/member/kenji/chat", "/api/member/kenji/chat/"]);
 const LEGACY_PATHS = new Set(["/member/kenji-ai-20", "/member/kenji-ai-20/"]);
@@ -156,9 +157,11 @@ export async function handleKenjiMemberChat(request, env = {}) {
   const result = await askAiWorker(truth.payload, message, env);
   if (!result.ok) return json({ ok: false, error: result.reason }, result.status);
 
+  const selected = truth.payload.personal_main?.source === "member-pages-worker" ? personalMain(truth.payload.personal_main.id) : null;
   return json({
     ok: true,
-    reply: text(result.data.reply, 1200),
+    personal_main: selected ? {id:selected.id,name:selected.name} : null,
+    reply: (selected ? selected.greeting + "\n" : "") + text(result.data.reply, 1200),
     action: result.data.action || null,
     intent: text(result.data.intent, 80),
     review_required: result.data?.safety?.review_required === true,

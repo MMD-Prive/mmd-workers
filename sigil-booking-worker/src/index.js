@@ -1,8 +1,12 @@
+import { currentPrivateAccess } from "./current-private-access.js";
+import { customerDiscoveryAllowed, resolveDiscoveryViewer } from "./customer-discovery-policy.js";
+import { buildBookingTelegramReplyMarkup, buildBookingTelegramText } from "./booking-telegram-formatter.js";
 // sigil-booking-worker/src/index.js
 // MMD Booking / SIGIL public booking resolver
 import { resolveMemberEntitlements } from "../../auth-worker/src/member-entitlement-resolver.js";
 import { resolveModelSalesOffer } from "../../shared/model-sales-control-v1.mjs";
 import { authorityRuntimeHealth, queueAuthorityEvent } from "../../shared/posthog-authority-events.mjs";
+import { derivePrivateServiceLevel, privateWorkCapabilities, privateWorkAllowed } from "../../shared/private-model-work-capabilities.mjs";
 import {
   SIGIL_CUSTOMER_SEARCH_POLICY_VERSION,
   allowedCustomerModelFolders,
@@ -10,6 +14,7 @@ import {
   defaultDurationOptions,
   inferCustomerModelFolder,
   isProtectedCampaignModel,
+  modelProfileMatches,
   priceFitsBudget,
   publicBudgetFloorError,
   safeSearchIntent,
@@ -30,6 +35,13 @@ const PUBLIC_JOB_V2_FORMATS = new Set([
   "other",
 ]);
 const PRIVATE_JOB_TYPE_TOKENS = new Set(["pn", "vip", "private_review"]);
+// Exact records withheld from customer discovery and intake. Names and other
+// registry classifications do not extend this bounded exclusion.
+const CUSTOMER_EXCLUDED_MODEL_IDS = new Set(["rec13E9zF71wnDotX", "rec687cy5e8sx6yLI", "rec88tNFcOJwgrQVE"]);
+
+export function customerModelExcluded(recordId) {
+  return CUSTOMER_EXCLUDED_MODEL_IDS.has(str(recordId));
+}
 
 export default {
   async fetch(req, env, ctx) {
@@ -109,13 +121,16 @@ async function handleClientResolve(req, env) {
 }
 
 async function handleModelSearch(req, env, url) {
-  requireAirtable(env);
   const body = req.method.toUpperCase() === "POST" ? await safeJson(req) : {};
   const queryInput = Object.fromEntries(url.searchParams.entries());
   const intent = safeSearchIntent({ ...queryInput, ...body });
   const q = str(url.searchParams.get("q") || body.q || body.model_search_query || body.model_id_or_name || intent.preferred_model_name);
   const scopeToken = token(url.searchParams.get("scope") || body.scope || body.model_scope || "public");
   const scope = scopeToken === "private" ? "private" : scopeToken === "booking" ? "booking" : "public";
+  if (scope === "private" && (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID)) {
+    return { ok: true, matched: false, blocked: true, reason: "private_requires_active_member", access_scope: "public_only", member_status: "unknown", items: [] };
+  }
+  requireAirtable(env);
   const bookingRef = str(url.searchParams.get("booking_ref") || body.booking_ref || body.request_id);
   const sessionId = str(url.searchParams.get("session_id") || body.session_id);
 
@@ -126,16 +141,23 @@ async function handleModelSearch(req, env, url) {
   if (publicBudgetError) {
     return { ok: false, matched: false, validation_error: true, errors: [publicBudgetError], items: [], policy_version: SIGIL_CUSTOMER_SEARCH_POLICY_VERSION };
   }
-  if (!q && intent.mode !== "search") return { ok: true, matched: false, reason: "missing_query", items: [], policy_version: SIGIL_CUSTOMER_SEARCH_POLICY_VERSION };
+  // Booking may browse using Create Job's scope filters without a remembered name.
+  // The same server access and model projection gates below still apply.
 
   const storedAccess = await lookupStoredBookingAccess(env, { bookingRef, sessionId });
-  const salesContext = await resolveBookingSalesContext(env, storedAccess);
-  const allowedFolders = allowedCustomerModelFolders(salesContext.entitlement_snapshot);
+  const viewerRef = await resolveDiscoveryViewer(req, env);
+  const current = scope === "private" || scope === "booking"
+    ? await currentPrivateAccess(req, env, storedAccess.member_record_id, viewerRef)
+    : null;
+  const salesContext = await resolveBookingSalesContext(env, current
+    ? { ...storedAccess, entitlement_snapshot: current.snapshot }
+    : storedAccess);
+  const allowedFolders = current?.allowedFolders || [];
   const requestedFolder = token(url.searchParams.get("selected_access_folder") || body.selected_access_folder || body.access_folder);
   const effectiveAllowedFolders = requestedFolder
     ? (allowedFolders.includes(requestedFolder) ? [requestedFolder] : [])
     : allowedFolders;
-  const privateAllowed = storedAccess.member_status === "active" && allowedFolders.length > 0;
+  const privateAllowed = allowedFolders.length > 0;
 
   if (scope === "private" && (!privateAllowed || (requestedFolder && effectiveAllowedFolders.length === 0))) {
     return {
@@ -152,27 +174,34 @@ async function handleModelSearch(req, env, url) {
     };
   }
 
-  const records = q ? await searchModels(env, q, 40) : await listModels(env, 100);
+  const records = q ? await searchModels(env, q, 40) : await listModels(env, 500);
   const baseModels = records
     .map((record) => sanitizeModelForBooking(record, {
       scope,
       privateAllowed,
+      viewerRef,
       allowedFolders: effectiveAllowedFolders,
       customerLane: intent.customer_lane,
       workLane: intent.work_lane,
+      profileFilters: intent.profile_filters,
       env,
     }))
     .filter(Boolean);
 
   const allowed = [];
+  const requestedAt = body.requested_at || body.preferred_at || body.date_time || url.searchParams.get("requested_at") || new Date().toISOString();
   for (const model of baseModels) {
-    const projected = projectBookingSalesControl(model, salesContext, {
-      requested_at: body.requested_at || body.preferred_at || body.date_time || url.searchParams.get("requested_at") || new Date().toISOString(),
+    let projected = projectBookingSalesControl(model, salesContext, {
+      requested_at: requestedAt,
       work_lane: intent.work_lane || model.scope || scope,
     });
     if (projected.sales_control?.configured === true && projected.sales_control.sellable !== true) continue;
-    const visibleRate = projected.sales_control?.price_visible === true ? projected.sales_control.customer_rate_thb : null;
-    if (Number.isFinite(visibleRate) && !priceFitsBudget(visibleRate, intent.budget)) continue;
+    if (scope === "public") projected = projectPublicSearchModel(projected, salesContext.rules, requestedAt);
+    const visibleRate = scope === "public"
+      ? projected.sales_control?.public_starting_price_thb
+      : (projected.sales_control?.price_visible === true ? projected.sales_control.customer_rate_thb : null);
+    if (scope === "public" && intent.budget?.provided && (!Number.isFinite(visibleRate) || !priceFitsBudget(visibleRate, intent.budget))) continue;
+    if (scope !== "public" && Number.isFinite(visibleRate) && !priceFitsBudget(visibleRate, intent.budget)) continue;
     projected.offer = buildCustomerDurationOffer(projected, {
       requested_duration_minutes: body.duration_minutes || url.searchParams.get("duration_minutes"),
       work_lane: intent.work_lane || "",
@@ -205,8 +234,21 @@ async function handleBookingIntake(req, env, ctx) {
 
   const bookingRef = str(body.booking_ref || body.request_id || makeRef("book"));
   const sessionId = str(body.session_id || makeRef("mmd_session"));
+  if (customerModelExcluded(body.selected_model_id) || customerModelExcluded(body.resolved_model_key)) {
+    const error = new Error("selected_model_unavailable");
+    error.status = 422;
+    throw error;
+  }
   const incomingResolver = body.resolver_payload_json && typeof body.resolver_payload_json === "object" ? body.resolver_payload_json : {};
   const intakeScope = token(body.lane || body.model_scope) === "private" ? "private" : "public";
+  const requestedOptions = body.service_options ?? incomingResolver.filters?.service_options ?? [];
+  const options = Array.isArray(requestedOptions) ? [...new Set(requestedOptions.map(token))] : ["invalid"];
+  if (options.some((option) => !["mk", "burn"].includes(option)) || (intakeScope === "public" && options.length)) {
+    const error = new Error("customer_booking_service_option_invalid");
+    error.status = 422;
+    throw error;
+  }
+  const serviceOptions = intakeScope === "private" ? options : [];
   const intentSource = intakeScope === "public"
     ? { ...(incomingResolver.filters || {}), ...body, work_lane: "", private_work: "", job_class: "" }
     : { ...(incomingResolver.filters || {}), ...body };
@@ -232,12 +274,16 @@ async function handleBookingIntake(req, env, ctx) {
   const modelQuery = str(body.model_search_query || body.model_id_or_name || intent.preferred_model_name || body.preference_text);
   const resolverPayload = {
     ...incomingResolver,
+    filters: { ...(incomingResolver.filters || {}), service_options: serviceOptions, profile_filters: intent.profile_filters },
+    service_options: serviceOptions,
     kind: intent.mode === "search" ? "sigil_search_customer_intake_v1" : "sigil_booking_customer_intake_v1",
     customer_search: {
       policy_version: SIGIL_CUSTOMER_SEARCH_POLICY_VERSION,
       mode: intent.mode,
       customer_lane: intent.customer_lane,
       work_lane: intakeScope === "private" ? intent.work_lane : "",
+      service_options: serviceOptions,
+      profile_filters: intent.profile_filters,
       budget: intent.budget,
       spec: intent.spec,
       preferred_model_name: intent.preferred_model_name,
@@ -494,7 +540,7 @@ async function resolveBookingSalesContext(env, storedAccess) {
       };
     }
     if (!/^rec[A-Za-z0-9]{14,24}$/.test(memberRecordId)) {
-      return { available: false, entitlement_snapshot: null, rules: [], client_record_id: clientRecordId, protected_review_required: false };
+      return { available: false, entitlement_snapshot: null, rules, client_record_id: clientRecordId, protected_review_required: false };
     }
 
     const entitlementTable = env.AIRTABLE_TABLE_ENTITLEMENTS_ID || env.AIRTABLE_TABLE_MEMBER_ENTITLEMENTS_ID || env.AIRTABLE_TABLE_MEMBER_ENTITLEMENTS || "MMD — Member Entitlements";
@@ -513,6 +559,101 @@ async function resolveBookingSalesContext(env, storedAccess) {
   } catch {
     return { available: false, entitlement_snapshot: null, rules: [], client_record_id: clientRecordId, protected_review_required: false };
   }
+}
+
+const PUBLIC_SEARCH_ENTITLEMENT = Object.freeze({ access: { public_member: true } });
+
+function isPublicAudienceRule(record) {
+  const fields = record?.fields || {};
+  const values = Array.isArray(fields.audience_scope) ? fields.audience_scope : [fields.audience_scope];
+  return values
+    .map((value) => token(value?.name || value))
+    .some((value) => ["public_member", "public", "member"].includes(value));
+}
+
+export function resolvePublicStartingPrice(model = {}, rules = [], requestedAt = new Date().toISOString()) {
+  const modelId = str(model.model_id || model.model_record_id);
+  const modelKey = str(model.model_key || model.unique_key).toLowerCase();
+  const publicRules = (Array.isArray(rules) ? rules : []).filter((record) => isPublicAudienceRule(record));
+  if ((!modelId && !modelKey) || !publicRules.length) return null;
+  const offer = resolveModelSalesOffer({
+    model_id: modelId,
+    model_key: modelKey,
+    requested_at: requestedAt,
+    work_lane: "",
+    entitlement_snapshot: PUBLIC_SEARCH_ENTITLEMENT,
+    rules: publicRules,
+  });
+  return offer.price_visible === true && Number.isFinite(Number(offer.customer_rate_thb))
+    ? Number(offer.customer_rate_thb)
+    : null;
+}
+
+export function projectPublicSearchModel(model = {}, rules = [], requestedAt = new Date().toISOString()) {
+  const projected = {};
+  for (const key of [
+    "model_id",
+    "model_key",
+    "display_name",
+    "height_cm",
+    "weight_kg",
+    "body_type",
+    "skin_tone",
+    "source",
+    "asset_source",
+    "media_source",
+    "preview_approved",
+    "scope",
+    "duration_options",
+    "primary_media_id",
+    "approved_media",
+    "gallery_media",
+  ]) {
+    if (Object.hasOwn(model, key)) projected[key] = model[key];
+  }
+  if (model.offer && typeof model.offer === "object") {
+    projected.offer = projectPublicDurationOffer(model.offer);
+  }
+  projected.sales_control = {
+    public_starting_price_thb: resolvePublicStartingPrice(model, rules, requestedAt),
+  };
+  return projected;
+}
+
+function projectPublicDurationOffer(offer = {}) {
+  const durationOffers = Array.isArray(offer.duration_offers)
+    ? offer.duration_offers.map((row) => ({
+        duration_minutes: Number(row?.duration_minutes),
+        price_visible: row?.price_visible === true,
+        customer_rate_thb: row?.price_visible === true && Number.isFinite(Number(row?.customer_rate_thb))
+          ? Number(row.customer_rate_thb)
+          : null,
+        requires_per_approval: row?.requires_per_approval !== false,
+        rate_review_required: row?.rate_review_required !== false,
+      })).filter((row) => Number.isFinite(row.duration_minutes) && row.duration_minutes > 0)
+    : [];
+  return {
+    price_visible: offer.price_visible === true && Number.isFinite(Number(offer.customer_rate_thb)),
+    customer_rate_thb: offer.price_visible === true && Number.isFinite(Number(offer.customer_rate_thb))
+      ? Number(offer.customer_rate_thb)
+      : null,
+    base_rate_duration_minutes: Number.isFinite(Number(offer.base_rate_duration_minutes))
+      ? Number(offer.base_rate_duration_minutes)
+      : null,
+    requires_per_approval: offer.requires_per_approval !== false,
+    rate_review_required: offer.rate_review_required !== false,
+    duration_options: Array.isArray(offer.duration_options)
+      ? offer.duration_options.map(Number).filter((value) => Number.isFinite(value) && value > 0)
+      : [],
+    duration_offers: durationOffers,
+    requested_duration_minutes: Number.isFinite(Number(offer.requested_duration_minutes))
+      ? Number(offer.requested_duration_minutes)
+      : null,
+    requested_duration_offer: offer.requested_duration_offer && typeof offer.requested_duration_offer === "object"
+      ? durationOffers.find((row) => row.duration_minutes === Number(offer.requested_duration_offer.duration_minutes)) || null
+      : null,
+    work_lane: str(offer.work_lane),
+  };
 }
 
 export function buildCustomerDurationOffer(projected = {}, requestContext = {}) {
@@ -601,27 +742,57 @@ function projectBookingSalesControl(model, context, requestContext = {}) {
 async function searchModels(env, q, limit) {
   const table = env.AIRTABLE_TABLE_MODELS_ID || env.AIRTABLE_TABLE_MODELS || "Models";
   const needle = q.toLowerCase();
-  const formula = `OR(FIND(${formulaText(needle)},LOWER({working_name})),FIND(${formulaText(needle)},LOWER({nickname})),FIND(${formulaText(needle)},LOWER({unique_key})),FIND(${formulaText(needle)},LOWER({folder_name})),FIND(${formulaText(needle)},LOWER({r2_prefix})),FIND(${formulaText(needle)},LOWER({primary_image_key})))`;
-  let rows = await airtableListByFormula(env, table, formula, limit);
-  if (!rows.length) {
-    rows = await airtableListByFormula(env, table, "", Math.max(limit, 100));
-    rows = rows.filter((row) => JSON.stringify(row.fields || {}).toLowerCase().includes(needle)).slice(0, limit);
-  }
-  return rows;
+  // Customer discovery may match only approved display names. Never search IDs,
+  // folder names, storage keys, private notes, or arbitrary Airtable fields.
+  const formula = `OR(FIND(${formulaText(needle)},LOWER({working_name})),FIND(${formulaText(needle)},LOWER({nickname})))`;
+  return airtableListByFormula(env, table, formula, limit);
 }
 
 async function listModels(env, limit) {
   const table = env.AIRTABLE_TABLE_MODELS_ID || env.AIRTABLE_TABLE_MODELS || "Models";
-  return airtableListByFormula(env, table, "", Math.max(1, Math.min(100, limit)));
+  const cap = Math.max(1, Math.min(500, limit));
+  const records = [];
+  const seenOffsets = new Set();
+  let offset = "";
+  do {
+    const params = new URLSearchParams({ pageSize: String(Math.min(100, cap - records.length)) });
+    if (offset) params.set("offset", offset);
+    const response = await airtableFetch(env, `/${encodeURIComponent(table)}?${params}`);
+    if (!response.ok || !Array.isArray(response.data.records)) throw new Error("model_search_unavailable");
+    records.push(...response.data.records.map((record) => ({ id: record.id, fields: record.fields || {} })));
+    offset = str(response.data.offset);
+    if (offset && seenOffsets.has(offset)) throw new Error("model_search_incomplete");
+    if (offset) seenOffsets.add(offset);
+  } while (offset && records.length < cap);
+  return records.slice(0, cap);
 }
 
-export function sanitizeModelForBooking(record, { scope, privateAllowed, allowedFolders = [], customerLane = "", workLane = "", env }) {
+export function sanitizeModelForBooking(record, { scope, privateAllowed, allowedFolders = [], customerLane = "", workLane = "", profileFilters = {}, viewerRef = "", env }) {
   const f = record.fields || {};
+  if (customerModelExcluded(record.id)) return null;
+  if (!customerDiscoveryAllowed(f, viewerRef)) return null;
   const status = token(f.status || f.availability_status);
   if (["inactive", "blocked", "archived", "hidden", "retired"].includes(status)) return null;
+  const clientVisibilityStatus = token(f.client_visibility_status);
+  const approvedVisibility = token(f.approved_client_visibility);
+  const visibilityReviewStatus = token(f.visibility_review_status);
+  const visibilityConfigured = ["client_visibility_status", "approved_client_visibility", "visibility_review_status"]
+    .some((field) => Object.hasOwn(f, field));
+  // MY MODEL visibility updates are authoritative. When those fields are in
+  // use, only an approved selection can enter customer search; hidden/internal
+  // and unapproved VIP/Black Card selections stay out of public discovery.
+  if (visibilityConfigured && (
+    clientVisibilityStatus !== "approved" ||
+    visibilityReviewStatus && visibilityReviewStatus !== "approved" ||
+    !["standard", "featured", "vip", "black_card"].includes(approvedVisibility)
+  )) return null;
   if (isProtectedCampaignModel(f)) return null;
   if (!customerLaneMatches(f, customerLane)) return null;
+  if (!modelProfileMatches(f, profileFilters)) return null;
 
+  // Protected visibility needs a curated per-model reveal gate. A stale lower
+  // access_folder must never downgrade a VIP/Black Card record into discovery.
+  if (["vip", "black_card"].includes(approvedVisibility)) return null;
   const canPublic = bool(f.can_work_public) || bool(f["Public Search Enabled"]) || token(f.sales_layer).includes("public") || token(f.visibility) === "public";
   const canPrivate = bool(f.can_work_private) || token(f.sales_layer).includes("private") || token(f.private_tier) || token(f.private_work_format);
   const folder = canPrivate ? inferCustomerModelFolder(f) : "";
@@ -633,6 +804,8 @@ export function sanitizeModelForBooking(record, { scope, privateAllowed, allowed
   } else if (!canPublic) return null;
 
   const effectiveScope = canPublic && scope !== "private" ? "public" : "private";
+  const privateLevel = effectiveScope === "private" ? derivePrivateServiceLevel(f).level : "";
+  if (effectiveScope === "private" && !privateWorkAllowed(privateLevel, workLane)) return null;
   const durationOptions = effectiveScope === "private" ? defaultDurationOptions(folder, f) : [];
   return compact({
     model_id: record.id,
@@ -642,15 +815,32 @@ export function sanitizeModelForBooking(record, { scope, privateAllowed, allowed
     display_name: str(f.working_name || f.nickname || f.display_name_compact || "Model"),
     working_name: str(f.working_name),
     nickname: str(f.nickname),
+    height_cm: customerProfileNumber(f.height_cm, 100, 230),
+    weight_kg: customerProfileNumber(f.weight_kg, 30, 200),
+    body_type: customerProfileChoice(f.body_type, ["lean", "athletic", "muscular", "slim", "soft"]),
+    skin_tone: customerProfileChoice(f.skin_tone, ["fair", "light", "medium", "tan", "deep"]),
     source: "approved_catalog",
     asset_source: "approved_catalog",
     preview_approved: bool(f["Preview Image Approved"]),
     scope: effectiveScope,
     access_folder: effectiveScope === "private" ? folder : undefined,
     duration_options: durationOptions,
+    private_service_level: effectiveScope === "private" ? privateLevel : undefined,
+    private_work_capabilities: effectiveScope === "private" ? privateWorkCapabilities(privateLevel) : undefined,
     work_lane: workLane || undefined,
     booking_discovery: scope === "booking" ? true : undefined
   });
+}
+
+function customerProfileNumber(value, min, max) {
+  if (value === "" || value === null || value === undefined) return undefined;
+  const number = Number(value);
+  return Number.isFinite(number) && number >= min && number <= max ? Math.round(number) : undefined;
+}
+
+function customerProfileChoice(value, allowed) {
+  const normalized = token(value);
+  return allowed.includes(normalized) ? normalized : undefined;
 }
 
 async function upsertBookingRequest(env, bookingRef, fields) {
@@ -727,7 +917,7 @@ async function notifyBookingDraft(env, { body, fields, rec, bookingRef, sessionI
 
   const threadId = str(env.TG_THREAD_BOOKING_DRAFT || env.TELEGRAM_BOOKING_THREAD_ID || env.TELEGRAM_THREAD_ID);
   const adminUrl = buildAdminBookingUrl(env, bookingRef, rec?.id || "");
-  const text = buildBookingTelegramText({ body, fields, bookingRef, sessionId, recordId: rec?.id || "", nextUrl, adminUrl });
+  const text = buildBookingTelegramText({ body, fields });
   const draftMode = token(body.search_mode || body.mode || fields["Source"]) === "sigil_search" || token(body.search_mode || body.mode) === "search" ? "search" : "booking";
   const payload = compact({
     chat_id: chatId,
@@ -740,7 +930,8 @@ async function notifyBookingDraft(env, { body, fields, rec, bookingRef, sessionI
     intent: draftMode === "search" ? "sigil_search_draft_notify" : "booking_draft_notify",
     booking_ref: bookingRef,
     session_id: sessionId,
-    airtable_record_id: rec?.id || ""
+    airtable_record_id: rec?.id || "",
+    reply_markup: buildBookingTelegramReplyMarkup(adminUrl)
   });
   try {
     const headers = { "Content-Type": "application/json" };
@@ -753,61 +944,6 @@ async function notifyBookingDraft(env, { body, fields, rec, bookingRef, sessionI
   } catch (error) {
     return { ok: false, skipped: false, error: String(error?.message || error) };
   }
-}
-
-function buildBookingTelegramText({ body, fields, bookingRef, sessionId, recordId, nextUrl, adminUrl }) {
-  const resolver = parseJsonObject(fields.resolver_payload_json);
-  const search = resolver.customer_search && typeof resolver.customer_search === "object" ? resolver.customer_search : {};
-  const mode = token(body.search_mode || search.mode || fields["Source"]) === "search" || token(fields["Source"]) === "sigil_search" ? "search" : "booking";
-  const publicJob = resolver.public_job && typeof resolver.public_job === "object" ? resolver.public_job : null;
-  const route = `${str(fields.lane || "public").toUpperCase()} / ${str(publicJob?.format || fields.job_class || search.work_lane || "travel").toUpperCase()}`;
-  const access = `${str(fields.member_status || "unknown")} · ${str(fields.access_scope || "public_only")}`;
-  const model = str(fields["Selected Model Name"] || fields.model_search_query || search.preferred_model_name || "ให้ MMD หา");
-  const duration = str(body.duration_minutes || search.duration_minutes || body.duration);
-  const date = [fields["Preferred Date"], fields["Preferred Time"], duration ? duration + " นาที" : ""].map(str).filter(Boolean).join(" · ") || "not set";
-  const place = [body.city, body.google_address].map(str).filter(Boolean).join(" · ") || "not set";
-  const customerLane = str(body.customer_lane || search.customer_lane || "-");
-  const workLane = str(body.work_lane || search.work_lane || fields.job_class || "-").toUpperCase();
-  const budgetObject = search.budget && typeof search.budget === "object" ? search.budget : {};
-  const budget = str(body.budget_thb)
-    ? Number(body.budget_thb).toLocaleString("th-TH") + " THB"
-    : str(body.budget_band || budgetObject.label || "-");
-  const spec = str(body.spec || search.spec || "-");
-  const telegramRef = str(body.telegram_post_url || search.telegram_reference || "");
-  const serviceContext = str(body.service_context || body.service || search.service_context || "");
-  const fallback = body.fallback_allowed === true || search.fallback_allowed === true ? "ได้" : "เฉพาะที่ระบุ";
-  const reviewRequested = body.review_requested === true || search.review_requested === true || resolver.review_requested === true || resolver.filters?.review_requested === true;
-  return [
-    mode === "search" ? "🔎 <b>SIGIL SEARCH · WAITING FOR PER</b>" : "📅 <b>SIGIL BOOKING · WAITING FOR PER</b>",
-    `Ref: <code>${escHtml(bookingRef)}</code>`,
-    recordId ? `Airtable: <code>${escHtml(recordId)}</code>` : "",
-    "",
-    `Client: <b>${escHtml(fields.client_nickname || fields["Contact Name"] || "ไม่ระบุ")}</b>`,
-    `Contact: ${escHtml(fields.client_contact || fields.line_or_member_id || fields["Contact Value"] || "ไม่ระบุ")}`,
-    `Status: ${escHtml(access)}`,
-    `Route: <b>${escHtml(route)}</b>`,
-    publicJob
-      ? `Public: <b>${escHtml(publicJob.format)}</b> · ลูกค้า ${Number(publicJob.customer_count)} คน · ดูแลพิเศษ ${Number(publicJob.care_count)} คน · ต้องการ Model ${Number(publicJob.model_count)} คน`
-      : `Preference: ${escHtml(customerLane)} · ${escHtml(workLane)}`,
-    publicJob?.duties ? `Duties: ${escHtml(publicJob.duties)}` : "",
-    publicJob?.special_care_names ? `Special care: ${escHtml(publicJob.special_care_names)}` : "",
-    publicJob?.model_assignment_note ? `Assignment: ${escHtml(publicJob.model_assignment_note)}` : "",
-    publicJob?.presentation_note ? `Presentation: ${escHtml(publicJob.presentation_note)}` : "",
-    !publicJob && serviceContext ? `Context: ${escHtml(serviceContext)}` : "",
-    mode === "search" ? `Budget: <b>${escHtml(budget)}</b>` : (budget !== "-" ? `Budget: ${escHtml(budget)}` : ""),
-    `Spec: ${escHtml(spec)}`,
-    `Preferred: ${escHtml(model)}`,
-    telegramRef ? `Telegram ref: ${escHtml(telegramRef)}` : "",
-    `Fallback: ${escHtml(fallback)}`,
-    reviewRequested ? "Review requested: YES · ใช้เฉพาะ Review ที่ผ่าน customer-safe review" : "",
-    `When: ${escHtml(date)}`,
-    `Place: ${escHtml(place)}`,
-    "",
-    "<b>HYPE: PREPARE ONLY</b> · ห้าม publish Job Board / confirm Model / confirm Rate เอง",
-    "รอ Per ตรวจและกดอนุมัติก่อนทุกครั้ง",
-    adminUrl ? `Admin: ${escHtml(adminUrl)}` : "",
-    nextUrl ? `Next: ${escHtml(nextUrl)}` : ""
-  ].filter(Boolean).join("\n");
 }
 
 function buildAdminBookingUrl(env, bookingRef, recordId) {
@@ -880,6 +1016,7 @@ function corsHeaders(req, env) {
   const allowed = str(env.ALLOWED_ORIGINS).split(",").map((x) => x.trim()).filter(Boolean);
   const h = new Headers();
   if (origin && (!allowed.length || allowed.includes(origin))) h.set("Access-Control-Allow-Origin", origin);
+  if (origin && allowed.includes(origin)) h.set("Access-Control-Allow-Credentials", "true");
   h.set("Vary", "Origin");
   h.set("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
   h.set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Confirm-Key");
@@ -914,3 +1051,4 @@ function isRequestStatusSelectFailure(res, fields) { return Object.hasOwn(fields
 function withoutRequestStatus(fields) { const next = { ...fields }; delete next["Request Status"]; return next; }
 function publicUrlFromKey(env, key) { const base = str(env.MODEL_PUBLIC_ASSET_BASE_URL).replace(/\/+$/, ""); const k = str(key).replace(/^\/+/, ""); return base && k ? `${base}/${encodeURI(k)}` : ""; }
 function escHtml(v) { return str(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+

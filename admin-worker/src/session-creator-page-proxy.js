@@ -1,3 +1,4 @@
+import { ownerEditLink } from './owner-job-edit-page.js';
 const SESSION_CREATOR_ORIGIN = "https://mmd-os.lovable.app";
 const WORK_ASSET_PREFIX = "/internal/admin/work/assets/";
 
@@ -5,7 +6,6 @@ const SESSION_CREATOR_PAGES = new Set([
   "/internal/admin/work",
   "/internal/admin/payments",
   "/internal/admin/jobs/all",
-  "/internal/admin/jobs/create-job",
   "/internal/admin/jobs/job-board",
 ]);
 
@@ -96,6 +96,8 @@ export async function handleSessionCreatorPageRequest(request) {
 
   const upstreamUrl = new URL(upstreamPath, SESSION_CREATOR_ORIGIN);
   upstreamUrl.search = incoming.search;
+  // This selector stays at the Worker boundary and is not an app query parameter.
+  upstreamUrl.searchParams.delete("mmd_worker_view");
   const upstream = await fetch(new Request(upstreamUrl, {
     method: request.method,
     headers: upstreamRequestHeaders(request),
@@ -125,7 +127,10 @@ export async function handleSessionCreatorPageRequest(request) {
   headers.set("x-mmd-route-owner", "admin-worker-session-creator-pro");
   if (String(headers.get("content-type") || "").toLowerCase().includes("text/html") && request.method !== "HEAD") {
     const html = await upstream.text();
-    return new Response(rewritePageAssets(html), {
+    const link = normalizedPath(incoming.pathname) === '/internal/admin/jobs/all' && upstream.ok
+      ? ownerEditLink(incoming.searchParams.get('session_id') || '') : '';
+    const decorated = link ? (/<\/body>/i.test(html) ? html.replace(/<\/body>/i, link + '</body>') : html + link) : html;
+    return new Response(rewritePageAssets(decorated), {
       status: upstream.status,
       statusText: upstream.statusText,
       headers,

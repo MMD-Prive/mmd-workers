@@ -220,10 +220,13 @@ async function findMatrix(env, conversationHash, timeoutMs = AIRTABLE_READ_TIMEO
 
 async function findClientRecordId(env, lineUserId) {
   const result = await airtableList(env, clientsTable(env), {
-    pageSize: 1,
+    pageSize: 2,
     filterByFormula: `{${F.CLIENT_LINE_USER_ID}}=\"${escapeFormulaValue(lineUserId)}\"`,
   });
-  return result.ok ? text(result.records[0]?.id) : "";
+  if (!result.ok) return { id: "", status: "unavailable" };
+  if (result.records.length > 1) return { id: "", status: "ambiguous" };
+  const id = text(result.records[0]?.id);
+  return { id, status: id ? "linked" : "unlinked" };
 }
 
 function defaultMatrix({ conversationHash = "", clientRecordId = "", relationshipContext = "new_contact", now = "" } = {}) {
@@ -302,7 +305,7 @@ export async function resolveKenjiLineContinuity({ env = {}, event = {}, current
   if (!lineUserId) {
     const matrix = defaultMatrix({ conversationHash: "", relationshipContext: "unknown", now: stamp });
     const resolution = resolveConversationContinuityV1({ matrix, message: eventText(event), current_intent: current, now: stamp });
-    return { ...resolution, effective_intent: current, matrix, matrix_record_id: "", conversation_hash: "", client_record_id: "", storage_status: "unavailable", available: false };
+    return { ...resolution, effective_intent: current, matrix, matrix_record_id: "", conversation_hash: "", client_record_id: "", identity_status: "unavailable", storage_status: "unavailable", available: false };
   }
 
   const conversationHash = await sha256Hex(`line_ofc:${lineUserId}`);
@@ -317,6 +320,7 @@ export async function resolveKenjiLineContinuity({ env = {}, event = {}, current
       matrix_record_id: "",
       conversation_hash: conversationHash,
       client_record_id: "",
+      identity_status: "unavailable",
       storage_status: lookup.reason || "unavailable",
       available: false,
     };
@@ -324,14 +328,21 @@ export async function resolveKenjiLineContinuity({ env = {}, event = {}, current
 
   let matrix = mapMatrixRecord(lookup.record);
   let clientRecordId = text(matrix?.client_record_id);
-  if (!matrix) {
-    clientRecordId = await findClientRecordId(env, lineUserId);
-    matrix = defaultMatrix({
-      conversationHash,
-      clientRecordId,
-      relationshipContext: clientRecordId ? "known_customer" : "new_contact",
-      now: stamp,
-    });
+  let identityStatus = clientRecordId ? "linked" : "unlinked";
+  if (!matrix || !clientRecordId || current === "membership_pricing") {
+    const identity = await findClientRecordId(env, lineUserId);
+    const conflictingLink = Boolean(clientRecordId && identity.id && clientRecordId !== identity.id);
+    clientRecordId = identity.id;
+    identityStatus = conflictingLink ? "ambiguous" : identity.status;
+    if (conflictingLink) clientRecordId = "";
+    matrix = matrix
+      ? { ...matrix, client_record_id: clientRecordId }
+      : defaultMatrix({
+          conversationHash,
+          clientRecordId,
+          relationshipContext: clientRecordId ? "known_customer" : "new_contact",
+          now: stamp,
+        });
   }
 
   const resolution = resolveConversationContinuityV1({
@@ -348,6 +359,7 @@ export async function resolveKenjiLineContinuity({ env = {}, event = {}, current
     matrix_record_id: text(lookup.record?.id),
     conversation_hash: conversationHash,
     client_record_id: clientRecordId,
+    identity_status: identityStatus,
     storage_status: "ready",
     available: true,
   };
@@ -355,6 +367,9 @@ export async function resolveKenjiLineContinuity({ env = {}, event = {}, current
 
 function stageForTurn({ continuity = {}, decision = {}, delivered = false, attempted = false, truthDomains = [] } = {}) {
   const intent = text(decision.intent).toLowerCase();
+  if (intent === "membership_pricing" && decision.handoff_required === true) {
+    return attempted && !delivered ? "awaiting_review" : "awaiting_per";
+  }
   if (text(continuity.decision) === "stale_refresh") return "stale_needs_refresh";
   if (attempted && !delivered) return "awaiting_review";
   if (decision.handoff_required === true) {
@@ -459,6 +474,7 @@ export function buildKenjiPostTurnMatrix({
   const truthDomains = unique([
     ...list(continuity.live_truth_domains),
     ...inferLiveTruthDomains(intent),
+    ...(intent === "membership_pricing" ? ["pricing"] : []),
   ]);
   const stage = stageForTurn({ continuity, decision, delivered, attempted, truthDomains });
   const awaitingFrom = awaitingFromForStage(stage);

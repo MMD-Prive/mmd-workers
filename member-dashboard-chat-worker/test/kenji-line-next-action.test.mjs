@@ -12,7 +12,7 @@ test("payment_center opens canonical Payment Center without implying payment tru
     continuity: {},
   });
   assert.equal(action.type, "open_action_route");
-  assert.equal(action.route, "https://mmdbkk.com/member/payments");
+  assert.equal(action.route, "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=continue_payment");
   assert.equal(action.reason, "payment_center_is_navigation_not_payment_confirmation");
   assert.doesNotMatch(action.customer_text, /ชำระสำเร็จ|ยืนยันยอด|paid/i);
 });

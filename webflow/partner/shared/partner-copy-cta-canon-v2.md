@@ -77,22 +77,22 @@ Friend Referral remains separate from Modeling Partner / agency / rate flows.
 
 ## Theme
 
-Reference: quiet near-black editorial field with generous negative space.
+Reference: quiet burnt-brown editorial field with generous negative space (updated 2026-10-23). The color direction supersedes the 2026-09-22 near-black palette; voice, lifecycle and routes remain as written.
 
-- Canvas: `#0a0908`
-- Canvas mid: `#0f0d0b`
-- Panel: `#12100e`
-- Ivory: `#fff9f0`
-- Body: `#d9d1c7`
-- Muted: `#91887f`
-- Champagne gold: `#d7af67`
-- Gold light: `#f5e2b5`
-- Gold line: `rgba(215,175,103,.28)`
+- Canvas: `#160d08`
+- Canvas mid: `#1d110a`
+- Panel: `#28180f`
+- Golden headings: `#f0cd83`
+- Body: `#ead9b9`
+- Muted: `#c2a77f`
+- Champagne gold: `#e3b861`
+- Gold light: `#f3d58e`
+- Gold line: `rgba(198,139,73,.35)`
 - Deep wine: `#2a0e13`
-- CTA ink: `#17120b`
+- CTA ink: `#25150b`
 - Verification sage: `#5f9272`
 
-Primary CTA: champagne-gold pill with dark ink.
+Primary CTA: champagne-gold pill with dark brown ink. Use gold for headings and short labels; long Thai copy stays pale warm cream for comfortable reading. Minimum body text is 14px and mobile hero rails are at least 10px.
 Secondary CTA: near-black transparent surface with restrained gold border/text.
 Green: small verified / LINE signal only; never a large full-green Partner CTA.
 

@@ -54,9 +54,11 @@ test("personal status routes remain protected and contain no raw Worker URL", ()
 });
 
 
-test("explicit Private membership signup is separated from generic Public signup", () => {
+test("generic and explicit Private signup both navigate to Private", () => {
   const generic = lineTextEvent("สมัครสมาชิก");
   assert.equal(inferLineIntent("สมัครสมาชิก", generic), "membership_signup");
+  assert.match(buildKenjiLineReply(generic), /world=private/);
+  assert.doesNotMatch(buildKenjiLineReply(generic), /Public|HITO/);
 
   for (const text of ["สมัคร Private Membership", "สมัคร Standard", "สมัคร Premium"]) {
     const event = lineTextEvent(text);

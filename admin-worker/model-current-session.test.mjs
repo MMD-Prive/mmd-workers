@@ -36,8 +36,18 @@ test('Bangkok midnight and same-day scheduled jobs are handled without UTC-day d
  assert.equal(selectCanonicalCurrentSession([r],BOOK,{},Date.parse('2026-10-16T17:10:00Z')).record.id,'sameDay');
 });
 test('terminal states and past-only jobs do not become current', () => {
- for(const state of ['closed','separated','offer_declined','offer_expired','under_review','payout_pending','work_finished'])assert.equal(select([row('done',BOOK,'2026-10-18',state)]).status,404);
+ for(const state of ['closed','separated','offer_declined','offer_expired','under_review','payout_pending'])assert.equal(select([row('done',BOOK,'2026-10-18',state)]).status,404);
  assert.equal(select([row('past',BOOK,'2026-09-17')]).status,404);
+});
+test('reload keeps unfinished separation on the same owned job, ahead of future offers', () => {
+ const done=row('await-separation',BOOK,'2026-10-15','work_finished');
+ const future=row('next',BOOK,'2026-10-18');
+ for(const rows of [[done,future],[future,done]])assert.equal(select(rows).record.id,'await-separation');
+ assert.equal(select([done],BANK).status,404);
+ assert.equal(select([done,row('other-active',BOOK,'2026-10-16','en_route')]).status,409);
+ assert.equal(select([done,row('also-finished',BOOK,'2026-10-15','work_finished')]).status,409);
+ const after={...done,fields:{...done.fields,model_session_state:'separated'}};
+ assert.equal(select([after,future]).record.id,'next');
 });
 test('missing lane stays missing; selector does not touch money or fields', () => {
  const r=row('mine',BOOK,'2026-10-18','confirmed',{pay_model_thb:1234,payment_status:'partial'}),before=JSON.stringify(r);

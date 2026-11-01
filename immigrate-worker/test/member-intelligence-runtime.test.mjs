@@ -276,6 +276,26 @@ test("Member Intelligence hands canonical clients to the correct operator surfac
   assert.doesNotMatch(source, /\/internal\/admin\/jobs\/create-session\?client_id=/);
 });
 
+test("Member Intelligence removes only inline placeholder text nodes from its own root", () => {
+  const start = source.indexOf("function cleanInlineArtifacts(root){");
+  const end = source.indexOf("\n  const lower=", start);
+  assert.ok(start >= 0 && end > start, "placeholder cleanup is available");
+  assert.match(source, /cleanInlineArtifacts\(root\);/);
+
+  const cleanup = new Function("clean", `${source.slice(start, end)}; return cleanInlineArtifacts;`)(
+    (value) => String(value ?? "").trim(),
+  );
+  const removed = [];
+  const nodes = [
+    { nodeType: 3, nodeValue: "##INLINE1##", remove() { removed.push(this.nodeValue); } },
+    { nodeType: 3, nodeValue: "ข้อความปกติ", remove() { removed.push(this.nodeValue); } },
+    { nodeType: 1, nodeValue: "##INLINE2##", remove() { removed.push("element"); } },
+  ];
+  cleanup({ querySelectorAll: () => [{ childNodes: nodes }] });
+  assert.deepEqual(removed, ["##INLINE1##"]);
+  cleanup(null);
+});
+
 test("Member Intelligence browser code is served inside the existing Worker-owned Control Room route family", () => {
   assert.match(canonicalCore, /MEMBER_INTELLIGENCE_RUNTIME_PATH\s*=\s*"\/internal\/admin\/control-room\/member-intelligence-runtime"/);
   assert.match(canonicalCore, /BUNDLED_MEMBER_INTELLIGENCE_RUNTIME_PATH\s*=\s*"\/a\/member-intelligence\.js"/);

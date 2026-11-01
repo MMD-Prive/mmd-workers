@@ -1,9 +1,15 @@
 <main id="mmd-review" data-mmd-color-lock data-mmd-headline-gradient="off" data-mmd-type-skip>
   <nav class="mr-nav" aria-label="Admin"><a href="/internal/admin/dashboard">← หน้าหลักแอดมิน</a><span>MMD PRIVÉ · ADMIN</span></nav>
-  <header class="mr-header"><div><p class="mr-eyebrow">MEDIA REVIEW</p><h1>MMD Review</h1><p class="mr-muted">ตรวจสื่อ Public และ Private ตามสิทธิ์ก่อนนำไปใช้</p></div><span class="mr-badge">สำหรับแอดมิน</span></header>
+  <header class="mr-header"><div><p class="mr-eyebrow">MEDIA REVIEW</p><h1>MMD Review</h1><p class="mr-muted">ดูรูปพร้อมกัน เลือกเป็นชุด · คงสิทธิ์ Public และ Private เดิม</p></div><span class="mr-badge">สำหรับแอดมิน</span></header>
   <section class="mr-toolbar" aria-label="เลือกคิว"><label for="mr-filter">สถานะ <select id="mr-filter"><option value="pending_review">รอตรวจ</option><option value="approved">อนุมัติแล้ว</option><option value="rejected">ปฏิเสธ / เพิกถอนแล้ว</option></select></label><button type="button" id="mr-refresh">โหลดใหม่</button></section>
   <p id="mr-status" role="status" aria-live="polite">กำลังตรวจสิทธิ์และโหลดคิว…</p>
   <section id="mr-list" class="mr-list" aria-label="รายการสื่อ"></section>
+  <section id="mr-batch" class="mr-batch" aria-label="อนุมัติรูปที่เลือก" hidden>
+    <strong id="mr-selection" role="status" aria-live="polite">ยังไม่ได้เลือก</strong>
+    <label class="mr-check"><input type="checkbox" id="mr-batch-confirm"> ตรวจรูปที่เลือกครบแล้ว · คงประเภทและสิทธิ์เดิม</label>
+    <div class="mr-actions"><button type="button" id="mr-batch-approve" class="mr-primary" disabled>อนุมัติที่เลือก</button><button type="button" id="mr-clear">ล้างการเลือก</button></div>
+    <p id="mr-batch-status" role="status" aria-live="polite"></p>
+  </section>
   <button type="button" id="mr-more" hidden>โหลดรายการถัดไป</button>
   <aside class="mr-help"><strong>อนุมัติสื่อ Public และ Private แยกสิทธิ์</strong><p>สื่อ Public จะแสดงได้เมื่ออนุมัติและ public_safe เท่านั้น ส่วนสื่อ Private ยังต้องผ่านสิทธิ์ลูกค้าแยกต่างหาก</p></aside>
   <dialog id="mr-dialog" aria-labelledby="mr-title">

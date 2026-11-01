@@ -29,9 +29,14 @@ export function validateJobServicePricing(body) {
   const partnerManaged = isPartnerManagedJob(body);
   const fail = () => { const error = new Error("Invalid service pricing breakdown or aggregate amounts.");
     error.code = "service_pricing_invalid"; error.status = 400; throw error; };
+  const travelFee = body.travel_fee_thb ?? p?.travel_fee_thb ?? 0;
+  const modelTravelFee = body.model_travel_fee_thb ?? p?.model_travel_fee_thb ?? 0;
   if (!p || p.version !== 1 || p.currency !== "THB" || !["direct", "platform"].includes(p.settlement_mode)
     || (!partnerManaged && p.settlement_mode !== body?.private_access?.settlement_mode) || !Array.isArray(p.addons)
     || p.addons.length > OPTIONS.length || !money(p.client_base_amount_thb) || p.client_base_amount_thb <= 0) fail();
+  if (!money(travelFee) || !money(modelTravelFee)
+    || (p.travel_fee_thb !== undefined && !sameMoney(p.travel_fee_thb, travelFee))
+    || (p.model_travel_fee_thb !== undefined && !sameMoney(p.model_travel_fee_thb, modelTravelFee))) fail();
   if (body?.work?.job_visibility !== "private" || !money(body.amount_thb) || body.amount_thb <= 0) fail();
   if ((partnerManaged || p.settlement_mode === "platform") && [body.pay_model_thb, body.model_payout_thb,
     body?.model_payout?.amount_thb, body?.payment?.model_payout_thb].some(value => value !== undefined)) fail();
@@ -53,14 +58,15 @@ export function validateJobServicePricing(body) {
   catch { fail(); }
   // Only the existing, official-verification-bound renewal marker can explain
   // a non-service payment component. It does not grant or renew membership.
-  const customerTotal = components?.customer_total_thb ?? clientTotal;
-  if (components && components.service_amount_thb !== clientTotal) fail();
+  const serviceCharge = round2(clientTotal + travelFee);
+  const customerTotal = components?.customer_total_thb ?? serviceCharge;
+  if (components && (components.service_amount_thb !== serviceCharge || components.customer_total_thb !== customerTotal)) fail();
   if (!sameMoney(body.amount_thb, customerTotal)) fail();
   for (const amount of [body.service_amount_thb, body?.payment?.service_amount_thb]) {
-    if (amount !== undefined && !sameMoney(amount, clientTotal)) fail();
+    if (amount !== undefined && !sameMoney(amount, serviceCharge)) fail();
   }
   // original_amount_thb is the pre-discount amount when a discount is declared.
-  if (body.original_amount_thb !== undefined && !sameMoney(body.original_amount_thb, discount ? clientGross : clientTotal)) fail();
+  if (body.original_amount_thb !== undefined && !sameMoney(body.original_amount_thb, round2((discount ? clientGross : clientTotal) + travelFee))) fail();
   if (body?.payment?.amount_thb !== undefined && !sameMoney(body.payment.amount_thb, customerTotal)) fail();
   // Partner quotes cover settlement with the partner; MMD does not issue a model payout.
   const needsModel = !partnerManaged && (p.settlement_mode === "direct" || p.addons.length > 0);
@@ -68,7 +74,8 @@ export function validateJobServicePricing(body) {
   if (discount && !needsModel && discount.model_share_thb > 0) fail();
   const modelGross = needsModel ? total(p.model_base_payout_thb, p.addons, "model_payout_thb") : null;
   if (discount && needsModel && p.model_gross_payout_thb !== modelGross) fail();
-  const modelTotal = needsModel ? (discount ? round2(modelGross - discount.model_share_thb) : modelGross) : null;
+  const modelServiceTotal = needsModel ? (discount ? round2(modelGross - discount.model_share_thb) : modelGross) : null;
+  const modelTotal = needsModel ? round2(modelServiceTotal + modelTravelFee) : null;
   if ((needsModel && !money(modelTotal)) || p.model_total_payout_thb !== modelTotal
     || (!needsModel && p.model_base_payout_thb !== null)) fail();
   if (!partnerManaged && p.settlement_mode === "direct") {
@@ -82,7 +89,8 @@ export function validateJobServicePricing(body) {
     client_base_amount_thb: p.client_base_amount_thb, model_base_payout_thb: p.model_base_payout_thb,
     addons: OPTIONS.flatMap(option => p.addons.filter(a => a.option === option).map(a => ({ option,
       client_amount_thb: a.client_amount_thb, model_payout_thb: a.model_payout_thb }))),
-    client_total_amount_thb: clientTotal, model_total_payout_thb: modelTotal,
+    client_total_amount_thb: clientTotal, ...(travelFee > 0 ? { travel_fee_thb: travelFee } : {}),
+    ...(modelTravelFee > 0 ? { model_travel_fee_thb: modelTravelFee } : {}), model_total_payout_thb: modelTotal,
     ...(discount ? { client_gross_amount_thb: clientGross, model_gross_payout_thb: modelGross, discount } : {}) };
   // Reject an oversized machine envelope before grants or creation writes.
   withJobServicePricingNote(preservePartnerSnapshot(note, body), snapshot);

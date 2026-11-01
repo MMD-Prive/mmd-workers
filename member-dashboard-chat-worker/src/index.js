@@ -1,3 +1,5 @@
+import { restrictedReplyCategories } from './kenji-reply-category-gate.mjs';
+import { careBackOctoberReply } from './kenji-care-back-october.mjs';
 import { deliverTravelNotice } from '../../shared/model-travel-line.mjs';
 import {
   isRenewalRoute,
@@ -15,11 +17,17 @@ import { parseModelKnowledgeIdAllowlist, selectApprovedLineModelKnowledge } from
 import { fetchKenjiCanonicalPublishedKnowledge } from "./kenji-canonical-knowledge-runtime.mjs";
 import { resolveKenjiLineContinuity, writeKenjiLineMatrixTurn } from "./kenji-line-continuity-runtime.mjs";
 import { aggregateKenjiLineTurn, prepareKenjiLineWebhookBatch } from "./kenji-line-turn-aggregation.mjs";
+import { CHECKPTS_INTAKE, isCheckptsShortcut } from "./checkpts-command.mjs";
 import { buildKenjiLineConversationHistory, recordDeliveredKenjiLineReply } from "./kenji-line-conversation-history.mjs";
 import { KENJI_CONTEXTUAL_SHADOW_INTERNALS } from "./kenji-line-contextual-understanding-shadow.mjs";
 // Canonical member-status voice policy (Per/HITO) is resolved before any generic LINE fallback.
 import { generateSafeReply, canonicalRichMenuIntent } from "../../shared/verified-member-concierge.mjs";
 import { resolveKenjiLiveMemberContext } from "./kenji-live-member-truth-adapter.mjs";
+import {
+  inferPrivateMembershipNavigation,
+  privateMembershipNavigationReply,
+  resolvePrivateMembershipFollowup,
+} from "./kenji-private-membership-navigation.mjs";
 import { INTERNAL_AI_SERVICE_BINDING_SMOKE, runInternalAiServiceBindingSmoke } from "./internal-ai-service-binding-smoke.mjs";
 import {
   CONTEXTUAL_UNDERSTANDING_SHADOW_SMOKE_MODE,
@@ -34,6 +42,7 @@ import {
 export { KenjiModelIdempotency, KenjiShadowReceipt };
 
 const LINE_PUSH_URL = "https://api.line.me/v2/bot/message/push";
+import { isEmsAlbumCommand, emsAlbumNavigationReply, emsAlbumQuickReply } from '../../shared/ems-album-navigation.mjs';
 const LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply";
 const LINE_PROFILE_BASE_URL = "https://api.line.me/v2/bot/profile";
 const LINE_RICH_MENU_LINK_URL = "https://api.line.me/v2/bot/user";
@@ -52,6 +61,7 @@ const MEMBER_LIFF_ID = "2010862595-yT4DCEMc";
 const MEMBER_SIGNUP_URL = `https://miniapp.line.me/${MEMBER_LIFF_ID}/?intent=signup&view=signup`;
 const PRIVATE_MEMBER_SIGNUP_URL = MEMBER_SIGNUP_URL;
 const MEMBER_RENEWAL_URL = `https://miniapp.line.me/${MEMBER_LIFF_ID}/?intent=renew&view=package`;
+const MEMBER_PAYMENT_URL = `https://miniapp.line.me/${MEMBER_LIFF_ID}/?intent=continue_payment`;
 const MEMBER_STATUS_URL = `https://miniapp.line.me/${MEMBER_LIFF_ID}/?intent=status&view=overview`;
 const MEMBER_POINTS_URL = `https://miniapp.line.me/${MEMBER_LIFF_ID}/?intent=status&view=points`;
 const LINE_RICH_MENU_SYNC_PATH = "/v1/internal/line/rich-menu/sync";
@@ -138,9 +148,10 @@ function isEnabled(value) {
 }
 
 export function kenjiLineModelOnlyAllowsReply({ intent = "", modelIntent = {} } = {}) {
-  const canonicalIntent = asString(intent);
-  if (canonicalIntent === "model_lookup" || canonicalIntent === "model_access_verification") return true;
-  return Boolean(modelIntent?.campaign_trigger && asString(modelIntent?.query));
+  const canonicalIntent = String(intent || '').trim();
+  if (['promotion_overview', 'care_back_overview', 'care_back_dates', 'care_back_new_member', 'care_back_new_standard', 'care_back_new_premium', 'care_back_current_member', 'care_back_expired_member', 'care_back_membership_price'].includes(canonicalIntent)) return true;
+  if (canonicalIntent === 'model_lookup' || canonicalIntent === 'model_access_verification') return true;
+  return Boolean(modelIntent?.campaign_trigger && String(modelIntent?.query || '').trim());
 }
 
 function parseHashAllowlist(value) {
@@ -464,6 +475,9 @@ export function inferLineIntent(text = "", event = {}) {
   if (/(?:comp\s*card|คอมพ์?การ์ด|คอมการ์ด).{0,24}(?:ดู|ขอดู|ตัวอย่าง|standard|สแตนดาร์ด)|(?:อยาก|ขอ).{0,12}(?:ดู|เห็น).{0,12}(?:model|นายแบบ|โปรไฟล์)/i.test(normalized)) return "standard_comp_card_preview";
   if (/(?:เคยใช้บริการที่ไหน|เคยใช้ที่ไหน|ใช้บริการที่ไหนมาก่อน|ไม่เคยใช้บริการ|เคยใช้บริการ)/i.test(normalized)) return "membership_experience";
   if (/(?:งบ|บัดเจต|บัทเจท|budget).{0,24}(?:ต่อครั้ง|ครั้งละ|บริการ)|(?:ครั้งละ|ต่อครั้ง).{0,18}(?:กี่บาท|เท่าไหร่|เท่าไร|งบ|budget)/i.test(normalized)) return "membership_budget";
+  const privateNavigation = inferPrivateMembershipNavigation(text);
+  if (privateNavigation) return privateNavigation;
+  if (/(?:standard|premium|สแตนดาร์ด|พรีเมียม|พรีเมี่ยม).{0,28}(?:ต่างกัน|ต่างจาก|เทียบ|เปรียบเทียบ|ข้อแตกต่าง|difference|compare)|(?:ต่างกัน|ต่างจาก|เทียบ|เปรียบเทียบ|ข้อแตกต่าง|difference|compare).{0,28}(?:standard|premium|สแตนดาร์ด|พรีเมียม|พรีเมี่ยม)/i.test(normalized)) return "membership_pricing";
   if (/(?:สนใจ|อยากรู้|สอบถาม|อยากดู).{0,18}(?:สมาชิก|membership|standard|premium|private)/i.test(normalized)) return "membership_interest";
   var membershipAcquisitionHasBenefitQuestion = /(?:แต้ม|คะแนน|points?|care\s*back|แคร์|คูปอง|coupon|wish|อวยพร|สิทธิ์)/i.test(normalized);
   if (!membershipAcquisitionHasBenefitQuestion && /(?:สมัคร|join).{0,16}(?:private\s*membership|private|standard|premium|สแตนดาร์ด|พรีเมียม)/i.test(normalized)) return "private_membership_signup";
@@ -476,6 +490,7 @@ export function inferLineIntent(text = "", event = {}) {
   // Keep earning rules, historical calculations, and payment-credit questions
   // on their separate informational intents above.
   if (
+    /^check\s+points(?:\s*[.!?])?$/i.test(normalized) ||
     /^(?:(?:ขอ)?\s*)?(?:เช็ก|เช็ค|ดู|ตรวจสอบ|ตรวจ|สอบถาม)?\s*(?:(?:ยอด|จำนวน)\s*)?(?:แต้ม|คะแนน|points?)(?:\s*(?:ของ)?(?:ผม|ฉัน|หนู|เรา))?(?:\s*(?:ตอนนี้|ปัจจุบัน|ล่าสุด))?(?:\s*(?:มี|เหลือ|คงเหลือ|อยู่)?\s*(?:เท่าไหร่|เท่าไร|กี่แต้ม|กี่คะแนน|กี่\s*points?))?\s*(?:ครับ|ค่ะ|หน่อย)?$/i.test(normalized) ||
     /^(?:แต้ม|คะแนน|points?)(?:ของ)?(?:ผม|ฉัน|หนู)?\s*(?:เข้า|เพิ่ม|มา)(?:แล้ว)?(?:หรือยัง|ไหม|หรือเปล่า)?(?:ครับ|ค่ะ)?$/i.test(normalized)
   ) return "points_status";
@@ -506,6 +521,7 @@ export function inferLineIntent(text = "", event = {}) {
   if (/(?:เข้าเพจ|เปิดเพจ|เปิดหน้า|เข้า\s*page|open\s*page).{0,20}(?:คูปอง|coupon)|(?:wish|คำอวยพร).{0,20}(?:10(?:\s*%)?|คูปอง|coupon).{0,12}(?:ได้เลย|ได้ไหม|หรือยัง|เปิด)/i.test(normalized)) return "care_back_coupon_wish";
   if (/(?:\d[\d,\s]*\s*(?:บาท|thb).{0,16}(?:กี่แต้ม|กี่คะแนน|กี่\s*points?)|(?:กี่แต้ม|กี่คะแนน).{0,16}\d[\d,\s]*\s*(?:บาท|thb))/i.test(normalized)) return "care_back_historical_points";
   if (/^(?:ผม|ฉัน|หนู|เรา)?\s*(?:จ่าย|ชำระ|โอน)(?:เงิน)?\s*(?:แล้ว|เรียบร้อยแล้ว)(?:ครับ|ค่ะ|นะ)?$/i.test(normalized)) return "payment_status";
+  if (/^(?:อยากทราบ|ขอทราบ|ตรวจสอบ)\s*สถานะสมาชิก(?:ของ(?:ผม|ฉัน|หนู))?(?:ตอนนี้)?\s*(?:พิมพ์\s*(?:เช็ก|เช็ค)สิทธิ์)?\s*(?:ครับ|ค่ะ)?$/i.test(normalized)) return "membership_status";
   if (/^(?:สถานะ(?:สมาชิก)?(?:ของ)?ผม|สถานะ(?:สมาชิก)?(?:ของ)?ฉัน|สถานะ(?:สมาชิก)?(?:ของ)?หนู)(?:เป็นยังไง|เป็นอย่างไร|ตอนนี้)?(?:ครับ|ค่ะ)?$/i.test(normalized)) return "membership_status";
   if (/^(?:(?:ขอ)?\s*)?(?:เช็ก|เช็ค|ตรวจ(?:สอบ)?|ดู)\s*(?:(?:สถานะ)?\s*)?สิทธิ์(?:สมาชิก)?(?:ของ(?:ผม|ฉัน|หนู|เรา))?(?:ตอนนี้)?\s*(?:ครับ|ค่ะ|หน่อย)?$/i.test(normalized)) return "membership_status";
   if (/(สลิป|โอน|จ่าย|ชำระ|payment|paid|slip)/i.test(normalized)) return "payment_slip";
@@ -960,6 +976,9 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   let intent = ["note_only", "line_event"].includes(inferredIntent) && continuityIntent
     ? continuityIntent
     : inferredIntent;
+  intent = resolvePrivateMembershipFollowup(text, intent, options?.continuity);
+  const careBackPublicCommon = careBackOctoberReply(intent, String(event?.message?.text || ''), Date.now());
+  if (careBackPublicCommon) return `${careBackPublicCommon.text}\n${careBackPublicCommon.label} → ${careBackPublicCommon.route}`;
   const priorIntent = asString(options?.continuity?.matrix?.last_customer_intent).toLowerCase();
   if (/^\s*\d[\d,]*(?:\s*(?:บาท|thb))?\s*(?:ครับ|ค่ะ|นะ)?\s*$/i.test(text) && [
     "membership_interest", "membership_experience", "membership_budget", "membership_pricing",
@@ -969,6 +988,9 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   const activeModel = contextualModelForTurn(text, intent, options);
   const name = asString(profile?.displayName).split(/\s+/).filter(Boolean)[0] || "";
   const prefix = name ? `คุณ ${name} ` : "";
+
+  const privateNavigation = privateMembershipNavigationReply({ intent, text, memberContext: options.verifiedMemberContext });
+  if (privateNavigation) return `${prefix}${privateNavigation}`;
 
   if (event?.type === "follow") {
     return `ครับ ${prefix}พิมพ์เรื่องที่อยากให้ช่วยได้เลยครับ`;
@@ -1094,17 +1116,17 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   }
 
   if (intent === "membership_pricing") {
-    return `${prefix}สนใจ Standard หรือ Premium อยู่ครับ หรือให้เปอร์ช่วยเทียบสองแบบให้ดูก่อนได้ ปกติตั้งงบต่อครั้งไว้ประมาณเท่าไหร่ครับ`;
+    return `${prefix}เดี๋ยวเปอร์ขอตรวจราคาเฉพาะคุณก่อนครับ\nดูแพ็กเกจ Private → https://www.mmdbkk.com/sigil/member/membership`;
   }
 
   if (intent === "payment_center") {
-    return `${prefix}เปิด Payment Center เพื่อดูรายการที่ต้องชำระ รายการที่กำลังตรวจ และประวัติการชำระของบัญชีนี้ได้ครับ → https://mmdbkk.com/member/payments
+    return `${prefix}เปิด Payment Center เพื่อดูรายการที่ต้องชำระ รายการที่กำลังตรวจ และประวัติการชำระของบัญชีนี้ได้ครับ → ${MEMBER_PAYMENT_URL}
 
 ถ้ามีรายการเดิมอยู่แล้ว ให้ใช้รายการเดิมครับ ระบบจะไม่ถือว่าชำระสำเร็จจนกว่าสถานะทางการจะอัปเดต`;
   }
 
   if (intent === "payment_slip") {
-    return `${prefix}ไปต่อจากรายการชำระของคุณได้ที่นี่ครับ: https://mmdbkk.com/member/payments
+    return `${prefix}ไปต่อจากรายการชำระของคุณได้ที่นี่ครับ: ${MEMBER_PAYMENT_URL}
 
 ถ้ามีรายการเดิมหรือส่งหลักฐานไว้แล้ว ให้ใช้รายการเดิมและไม่ต้องส่งซ้ำครับ MMD จะตรวจยอด จับคู่รายการ และอัปเดตสถานะอย่างเป็นทางการก่อนครับ หลักฐานอย่างเดียวยังไม่ถือว่ายืนยันยอดหรืออนุมัติ request ครับ`;
   }
@@ -1196,6 +1218,9 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
 
 export async function buildKenjiKnowledgeLineReply(event = {}, profile = {}, env = {}, options = {}) {
   const fallback = buildKenjiLineReply(event, profile, options);
+  const text = getLineEventText(event);
+  const intent = resolvePrivateMembershipFollowup(text, inferLineIntent(text, event), options?.continuity);
+  if (privateMembershipNavigationReply({ intent, text, memberContext: options.verifiedMemberContext })) return fallback;
   if (!isEnabled(env.LINE_KENJI_KNOWLEDGE_ENABLED)) return fallback;
   const answer = await getPublishedPerVoiceReply(env, inferLineIntent(getLineEventText(event), event));
   return answer || fallback;
@@ -1203,17 +1228,19 @@ export async function buildKenjiKnowledgeLineReply(event = {}, profile = {}, env
 
 export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, options = {}) {
   const eventText = getLineEventText(event);
+  if (isEmsAlbumCommand(eventText)) return emsAlbumNavigationReply();
   const resolvedModelIntent = options?.modelIntent?.matched === true ? options.modelIntent : resolveKenjiModelIntent(eventText);
   const inferredIntent = resolvedModelIntent.campaign_trigger ? "card_campaign_lead" : inferLineIntent(eventText, event);
   const postbackIntent = event?.type === "postback"
     ? canonicalRichMenuIntent({ data: event?.postback?.data })
     : "";
   const continuityIntent = asString(options?.continuity?.effective_intent);
-  const intent = postbackIntent || (
+  let intent = postbackIntent || (
     ["note_only", "line_event"].includes(inferredIntent) && continuityIntent
       ? continuityIntent
       : inferredIntent
   );
+  intent = resolvePrivateMembershipFollowup(eventText, intent, options?.continuity);
   const lineUserId = getLineUserId({ event });
   const liveMemberContext = await resolveKenjiLiveMemberContext(env, lineUserId, intent);
 
@@ -1347,6 +1374,26 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
     return buildKenjiModelAccessDecision(access, { pendingStored: pending.ok === true && pending.stored === true, clearOnFailure: true });
   }
 
+  // Membership navigation uses the existing verified context, but grants no
+  // rights or offers. Keep it ahead of generic/Public sales knowledge.
+  const privateNavigation = capabilityDecision.capability !== KENJI_CAPABILITIES.PROTECTED_AUTHORITY &&
+    privateMembershipNavigationReply({ intent, text: eventText, memberContext: replyOptions.verifiedMemberContext });
+  if (privateNavigation) {
+    return {
+      text: privateNavigation,
+      fallback: false,
+      reply_source: "private_membership_navigation",
+      model_attempted: false,
+      model_success: false,
+      model_latency_ms: 0,
+      knowledge_hits: 0,
+      guard_blocked: false,
+      guard_reason: "",
+      handoff_required: false,
+      handoff_reason: "",
+    };
+  }
+
   const conciergeInput = replyOptions.verifiedMemberContext ? { ...replyOptions.verifiedMemberContext, intent: canonicalRichMenuIntent({ intent, data: event?.postback?.data }) } : null;
   const conciergeReply = conciergeInput ? generateSafeReply(conciergeInput) : null;
   if (conciergeReply?.silent === true && conciergeReply?.next_action === "manual_silent") {
@@ -1369,6 +1416,7 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
     : "";
   const generated = deterministicFirst ? deterministicReply : (cachedKnowledge || deterministicReply);
   if (generated) {
+    const perHandoffRequired = intent === "membership_pricing";
     return {
       text: generated,
       fallback: false,
@@ -1379,6 +1427,8 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
       knowledge_hits: (!deterministicFirst && cachedKnowledge) ? 1 : 0,
       guard_blocked: false,
       guard_reason: "",
+      handoff_required: perHandoffRequired,
+      handoff_reason: perHandoffRequired ? "membership_pricing:per_review" : "",
     };
   }
 
@@ -1520,10 +1570,12 @@ export async function deliverLineText(env = {}, lineUserId, text, options = {}) 
 }
 
 export async function deliverLinePublicMenu(env = {}, lineUserId, options = {}) {
+  if (restrictedReplyCategories(env)) return {ok:false,suppressed:true,error:'reply_category_silent'};
   return deliverLineText(env, lineUserId, PUBLIC_MENU_TEXT, options);
 }
 
 async function sendLineReply(env = {}, replyToken, text, options = {}) {
+  if (restrictedReplyCategories(env)) return {ok:false,suppressed:true,error:'reply_category_silent'};
   const token = asString(env.LINE_CHANNEL_ACCESS_TOKEN);
   const safeText = sanitizeLineText(text);
   const reply = asString(replyToken);
@@ -1543,7 +1595,7 @@ async function sendLineReply(env = {}, replyToken, text, options = {}) {
       },
       body: JSON.stringify({
         replyToken: reply,
-        messages: [{ type: "text", text: safeText }],
+        messages: [{ type: "text", text: safeText, ...(options.ems_album_navigation ? {quickReply:emsAlbumQuickReply()} : {}) }],
       }),
     });
   } catch (_) {
@@ -1791,6 +1843,64 @@ function getStableLineMessageId(event = {}) {
 async function sha256Hex(value) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(value || "")));
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function claimPricingHandoff(env, event) {
+  const eventId = getStableLineMessageId(event);
+  const lineUserId = getLineUserId({ event });
+  const timestamp = Number(event?.timestamp);
+  const age = Date.now() - timestamp;
+  // Claims live for 24h. The event window ends first, including clock-skew
+  // tolerance, so claim expiry cannot reopen an old signed event for replay.
+  if (!eventId || !lineUserId || !Number.isFinite(timestamp) || timestamp <= 0 || age < -60_000 || age >= 24 * 60 * 60 * 1000 - 60_000) {
+    return { ok: false, reason: "pricing_handoff_event_invalid" };
+  }
+  if (!env.KENJI_MODEL_DEDUPE?.idFromName || !env.KENJI_MODEL_DEDUPE?.get) {
+    return { ok: false, reason: "pricing_handoff_claim_unavailable" };
+  }
+  const controller = new AbortController();
+  let timer;
+  try {
+    const key = await sha256Hex(`pricing:${lineUserId}:${eventId}`);
+    const subject = await sha256Hex(lineUserId);
+    const stub = env.KENJI_MODEL_DEDUPE.get(env.KENJI_MODEL_DEDUPE.idFromName(`kenji-line-pricing-handoff-v1:${subject}`));
+    const request = async (body) => {
+      // Reuse the existing transactional claim API in an isolated object scope.
+      // This endpoint has no model calls or model quota side effects.
+      const response = await stub.fetch("https://kenji-model-dedupe.internal/campaign-lead/claim", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ key, ...body }),
+        signal: controller.signal,
+      });
+      const payload = await response.json();
+      if (!response.ok || payload?.ok !== true) throw new Error("pricing_claim_failed");
+      return payload;
+    };
+    return await Promise.race([
+      (async () => {
+        const claim = await request({ action: "claim" });
+        if (claim.claimed !== true) return { ok: false, reason: "pricing_handoff_duplicate_claim" };
+        // Commit BEFORE any Matrix/LINE side effect. Unknown write or delivery
+        // outcomes must never release the claim and repeat the customer action.
+        const committed = await request({ action: "commit", claim_token: claim.claim_token });
+        return committed.committed === true
+          ? { ok: true }
+          : { ok: false, reason: "pricing_handoff_claim_unconfirmed" };
+      })(),
+      new Promise((resolve) => {
+        timer = setTimeout(() => {
+          controller.abort();
+          resolve({ ok: false, reason: "pricing_handoff_claim_timeout" });
+        }, 1000);
+      }),
+    ]);
+  } catch {
+    return { ok: false, reason: "pricing_handoff_claim_unavailable" };
+  } finally {
+    clearTimeout(timer);
+    controller.abort();
+  }
 }
 
 async function claimKenjiModelEvent(env = {}, event = {}) {
@@ -2139,10 +2249,10 @@ export function createPublicWorldRichMenuDraft() {
     chatBarText: "MMD",
     areas: [
       { bounds: richMenuBounds(0, 0, 833, 843), action: { type: "message", text: "Hi Per" } },
-      { bounds: richMenuBounds(834, 0, 833, 843), action: { type: "uri", uri: mmdbkkMembershipUrl("public_membership") } },
+      { bounds: richMenuBounds(834, 0, 833, 843), action: { type: "uri", uri: memberLiffUrl("signup", "signup") } },
       { bounds: richMenuBounds(1667, 0, 833, 843), action: { type: "uri", uri: memberLiffUrl("status", "profile") } },
       { bounds: richMenuBounds(0, 843, 833, 843), action: { type: "uri", uri: mmdbkkMembershipUrl("booking_request", "&service=dinner_travel") } },
-      { bounds: richMenuBounds(834, 843, 833, 843), action: { type: "uri", uri: "https://mmdbkk.com/member/payments?source=line&entry_route=payment_status" } },
+      { bounds: richMenuBounds(834, 843, 833, 843), action: { type: "uri", uri: MEMBER_PAYMENT_URL } },
       { bounds: richMenuBounds(1667, 843, 833, 843), action: { type: "message", text: "Hi MMD" } },
     ],
   };
@@ -2159,7 +2269,7 @@ export function createPrivateMemberRichMenuDraft() {
     areas: [
       { bounds: richMenuBounds(0, 0, 833, 843), action: { type: "uri", uri: memberLiffUrl("status", "profile") } },
       { bounds: richMenuBounds(834, 0, 833, 843), action: { type: "uri", uri: memberLiffUrl("status", "points") } },
-      { bounds: richMenuBounds(1667, 0, 833, 843), action: { type: "uri", uri: memberLiffUrl("renew", "profile") } },
+      { bounds: richMenuBounds(1667, 0, 833, 843), action: { type: "uri", uri: MEMBER_RENEWAL_URL } },
       {
         bounds: richMenuBounds(0, 843, 833, 843),
         action: {
@@ -2168,7 +2278,7 @@ export function createPrivateMemberRichMenuDraft() {
           displayText: "Private Support",
         },
       },
-      { bounds: richMenuBounds(834, 843, 833, 843), action: { type: "uri", uri: "https://mmdbkk.com/member/payments?source=line&entry_route=payment_status" } },
+      { bounds: richMenuBounds(834, 843, 833, 843), action: { type: "uri", uri: MEMBER_PAYMENT_URL } },
       { bounds: richMenuBounds(1667, 843, 833, 843), action: { type: "message", text: "Hi MMD" } },
     ],
   };
@@ -2911,7 +3021,11 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
 
   const events = Array.isArray(body.events) ? body.events : [];
   const preparedEvents = prepareKenjiLineWebhookBatch(events);
-  const runtimeStatus = await requestKenjiRuntimeStatus(env);
+  const commandIntake = env[CHECKPTS_INTAKE] === true;
+  const pointsOnlyIntake = commandIntake && events.length > 0 && events.every(isCheckptsShortcut);
+  // The signed Seed owner checks controls, identity and takeover before replying.
+  // This private intake branch can only persist an inbound event; it cannot reply.
+  const runtimeStatus = pointsOnlyIntake ? { ok: false, controls: {} } : await requestKenjiRuntimeStatus(env);
   const runtimeControls = runtimeStatus.controls || {};
   const runtimeAllKill = !runtimeStatus.ok || runtimeControls.all_kenji_mutations === true;
   const runtimeLineKill = runtimeAllKill || runtimeControls.line_oa_auto_reply === true;
@@ -2924,6 +3038,17 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
 
   for (const prepared of preparedEvents) {
     const rawEvent = prepared.raw_event || prepared.turn_event || {};
+    if (commandIntake && isCheckptsShortcut(rawEvent)) {
+      const persist = syncLineEventAfterReply(env, rawEvent, "points_status", false, false, {
+        turn_aggregation: { source: "points_command", suppressed: false, aggregate_count: 1 },
+      }).catch(() => ({ skipped: true, reason: "airtable_sync_failed", deduped: false }));
+      const canDefer = typeof ctx?.waitUntil === "function";
+      if (canDefer) ctx.waitUntil(persist);
+      const record = canDefer ? { pending: true } : await persist;
+      saved.push({ ok: true, type: rawEvent.type, intent: "points_status", replied: false,
+        recorded: Boolean(record?.id), record_pending: Boolean(record?.pending), message_id: getLineEventId(rawEvent) });
+      continue;
+    }
     if (prepared.suppressed === true) {
       const rawText = getLineEventText(rawEvent);
       const rawIntent = inferLineIntent(rawText, rawEvent);
@@ -3014,7 +3139,7 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
           storage_status: "disabled",
           available: false,
         };
-    const effectiveIntent = asString(continuity?.effective_intent) || inferredIntent;
+    const effectiveIntent = resolvePrivateMembershipFollowup(text, asString(continuity?.effective_intent) || inferredIntent, continuity);
     const ownerTakeover = lineBrainEnabled && lineUserId
       ? await getLineOwnerTakeoverState(env, lineUserId, continuity)
       : { ok: true, active: false, reason: "", source: lineBrainEnabled ? "not_applicable" : "line_brain_v1_disabled" };
@@ -3193,7 +3318,7 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
               modelIntent,
             })
           : { text: "", fallback: false, reply_source: null, model_attempted: false, model_success: false, model_latency_ms: 0, knowledge_hits: 0, guard_blocked: false, guard_reason: "" });
-    const replyText = replyDecision.text;
+    let replyText = replyDecision.text;
     const postDecisionTakeover = lineUserId && replyText
       ? (lineBrainEnabled
           ? await getLineOwnerTakeoverState(env, lineUserId, continuity)
@@ -3204,7 +3329,7 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
     const takeoverClear = !lineUserId ||
       (postDecisionTakeover?.ok === true && postDecisionTakeover.active !== true) ||
       (postDecisionTakeover?.ok !== true && postDecisionTakeover?.reason === "takeover_lookup_unconfigured");
-    const shouldReply = Boolean(
+    let shouldReply = Boolean(
       modelOnlyAllowed &&
       (autoReplyEnabled || (campaignEvent && campaignCanReply)) &&
       eventMode !== "standby" &&
@@ -3213,7 +3338,76 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
       takeoverClear &&
       (!campaignEvent || options.suppressCampaignReply !== true)
     );
-    const replyResult = shouldReply ? await sendLineReply(env, getReplyToken(event), replyText, { trusted_event: true }) : null;
+    const requiresDurablePricingHandoff = intent === "membership_pricing" && replyDecision.handoff_required === true;
+    let pricingHandoffWrite = null;
+    let pricingMatrixSkipReason = "";
+    const pricingIdentityStatus = continuity?.available === true ? asString(continuity.identity_status) : "unavailable";
+    if (requiresDurablePricingHandoff && ["ambiguous", "unavailable"].includes(pricingIdentityStatus)) {
+      pricingMatrixSkipReason = "pricing_handoff_identity_unresolved";
+      shouldReply = false;
+      replyText = "";
+      replyDecision.text = "";
+      replyDecision.guard_blocked = true;
+      replyDecision.guard_reason = `pricing_handoff_identity_${pricingIdentityStatus}`;
+    }
+    if (requiresDurablePricingHandoff && shouldReply) {
+      const eventId = getLineEventId(rawEvent);
+      const alreadyPersistedEvent = Boolean(eventId && asString(continuity?.matrix?.last_event_id) === eventId);
+      if (event?.deliveryContext?.isRedelivery === true || alreadyPersistedEvent) {
+        pricingMatrixSkipReason = "pricing_handoff_duplicate_suppressed";
+        shouldReply = false;
+        replyText = "";
+        replyDecision.text = "";
+        replyDecision.guard_blocked = true;
+        replyDecision.guard_reason = event?.deliveryContext?.isRedelivery === true
+          ? "pricing_handoff_redelivery_suppressed"
+          : "pricing_handoff_duplicate_event_suppressed";
+      }
+    }
+    if (requiresDurablePricingHandoff && shouldReply) {
+      const claim = await claimPricingHandoff(env, rawEvent);
+      if (!claim.ok) {
+        pricingMatrixSkipReason = claim.reason;
+        shouldReply = false;
+        replyText = "";
+        replyDecision.text = "";
+        replyDecision.guard_blocked = true;
+        replyDecision.guard_reason = claim.reason;
+      } else if (!asString(continuity?.client_record_id)) {
+        // The existing Per consumer requires a canonical Client link. Offer a
+        // real identity step instead of creating an invisible/orphan handoff.
+        pricingMatrixSkipReason = "pricing_handoff_client_unlinked";
+        replyText = `ยังเชื่อมบัญชี MY MMD สำหรับส่งคำถามนี้ถึง Per ไม่ได้ครับ เปิด MY MMD เพื่อยืนยันตัวตนก่อน แล้วส่งคำถามเปรียบเทียบ Standard/Premium อีกครั้งในแชทนี้ได้ครับ\n${MEMBER_STATUS_URL}`;
+        replyDecision.text = replyText;
+        replyDecision.handoff_required = false;
+        replyDecision.handoff_reason = "";
+      }
+    }
+    if (requiresDurablePricingHandoff && shouldReply && !pricingMatrixSkipReason) {
+      pricingHandoffWrite = await writeKenjiLineMatrixTurn({
+        env,
+        continuity,
+        decision: { ...replyDecision, intent },
+        delivered: false,
+        attempted: false,
+        lastEventId: getLineEventId(rawEvent),
+        now: new Date().toISOString(),
+      }).catch(() => ({ skipped: true, reason: "matrix_write_failed" }));
+      if (!pricingHandoffWrite?.id) {
+        shouldReply = false;
+        replyText = "";
+        replyDecision.text = "";
+        replyDecision.guard_blocked = true;
+        replyDecision.guard_reason = "pricing_handoff_persist_failed";
+      } else {
+        continuity.matrix_record_id = pricingHandoffWrite.id;
+        continuity.matrix = pricingHandoffWrite.matrix;
+      }
+    }
+    if (requiresDurablePricingHandoff && !shouldReply && !pricingHandoffWrite && !pricingMatrixSkipReason) {
+      pricingMatrixSkipReason = "pricing_handoff_reply_suppressed";
+    }
+    const replyResult = shouldReply ? await sendLineReply(env, getReplyToken(event), replyText, { trusted_event: true, ems_album_navigation:replyDecision.reply_source==='ems_album_navigation_v1' }) : null;
     const outboundHistoryPromise = lineBrainEnabled && replyResult?.ok === true
       ? recordDeliveredKenjiLineReply({ env, event: rawEvent, replyText }).catch(() => ({ skipped: true, reason: "outbound_turn_runtime_error" }))
       : Promise.resolve({ skipped: true, reason: lineBrainEnabled ? "reply_not_delivered" : "line_brain_v1_disabled" });
@@ -3229,10 +3423,15 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
         effective_intent: intent,
       },
     };
-    const afterReply = campaignEvent
+    const duplicatePricingEvent = ["pricing_handoff_duplicate_suppressed", "pricing_handoff_duplicate_claim"].includes(pricingMatrixSkipReason);
+    const afterReply = duplicatePricingEvent
+      ? Promise.resolve({ skipped: true, reason: pricingMatrixSkipReason, deduped: true })
+      : campaignEvent
       ? Promise.resolve(campaignLeadRecord || { skipped: true, reason: "campaign_lead_not_processed", deduped: false })
       : syncLineEventAfterReply(env, rawEvent, intent, autoReplyEnabled, kenjiEnabled, historyMetadata);
-    const historyAssessmentPromise = runKenjiFolderHistoryAssessment({ env, event: rawEvent }).catch(() => ({
+    const historyAssessmentPromise = duplicatePricingEvent
+      ? Promise.resolve({ skipped: true, reason: pricingMatrixSkipReason })
+      : runKenjiFolderHistoryAssessment({ env, event: rawEvent }).catch(() => ({
       enabled: false,
       eligible: false,
       persisted: false,
@@ -3244,8 +3443,22 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
       handoff_required: replyDecision.handoff_required === true || ownerReplyBlocked,
       handoff_reason: asString(replyDecision.handoff_reason || (ownerReplyBlocked ? ownerTakeover.reason : "")),
     };
-    const matrixWritePromise = lineBrainEnabled
-      ? writeKenjiLineMatrixTurn({
+    const matrixWritePromise = pricingMatrixSkipReason
+      ? Promise.resolve({ skipped: true, reason: pricingMatrixSkipReason })
+      : pricingHandoffWrite
+        ? pricingHandoffWrite.id && replyResult?.ok !== true
+        ? writeKenjiLineMatrixTurn({
+            env,
+            continuity,
+            decision: matrixDecision,
+            delivered: false,
+            attempted: true,
+            lastEventId: getLineEventId(rawEvent),
+            now: new Date().toISOString(),
+          }).catch(() => ({ skipped: true, reason: "matrix_write_failed" }))
+          : Promise.resolve(pricingHandoffWrite)
+        : lineBrainEnabled
+          ? writeKenjiLineMatrixTurn({
           env,
           continuity,
           decision: matrixDecision,
@@ -3253,8 +3466,8 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
           attempted: shouldReply,
           lastEventId: getLineEventId(rawEvent),
           now: new Date().toISOString(),
-        }).catch(() => ({ skipped: true, reason: "matrix_write_failed" }))
-      : Promise.resolve({ skipped: true, reason: "line_brain_v1_disabled" });
+          }).catch(() => ({ skipped: true, reason: "matrix_write_failed" }))
+          : Promise.resolve({ skipped: true, reason: "line_brain_v1_disabled" });
 
     const canDefer = typeof ctx?.waitUntil === "function";
     let record = campaignEvent ? await afterReply : { pending: canDefer, deduped: false };
@@ -3264,7 +3477,13 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
       persisted: false,
       reason: canDefer ? "assessment_pending" : "assessment_not_run",
     };
-    let matrixWriteResult = { pending: canDefer, skipped: false, reason: canDefer ? "matrix_write_pending" : "" };
+    let matrixWriteResult = pricingMatrixSkipReason
+      ? { skipped: true, reason: pricingMatrixSkipReason }
+      : pricingHandoffWrite
+      ? pricingHandoffWrite.id && replyResult?.ok !== true && canDefer
+        ? { pending: true, skipped: false, reason: "matrix_write_pending" }
+        : pricingHandoffWrite
+      : { pending: canDefer, skipped: false, reason: canDefer ? "matrix_write_pending" : "" };
     if (canDefer) {
       const backgroundWork = Promise.all([
         ...(campaignEvent ? [] : [afterReply.catch(() => {
@@ -3489,7 +3708,15 @@ export default {
     }
 
     if (request.method === "GET" && url.pathname === "/health") {
-      return json({ ok: true, worker: WORKER_NAME });
+      // Read-only MMS admin projection. Public health and webhook processing
+      // retain their existing contract; use the existing internal auth checks.
+      const runtime = hasServiceBindingAuth(request, ['admin-worker']) && hasBearerInternalAuth(request, env)
+        ? { schema: 'mmd.kenji_runtime_flags.v1',
+            line_auto_reply_enabled: isEnabled(env.LINE_AUTO_REPLY_ENABLED),
+            model_reply_enabled: isEnabled(env.LINE_KENJI_MODEL_ENABLED),
+            shadow_enabled: isEnabled(env.KENJI_LINE_CONTEXTUAL_SHADOW_ENABLED) }
+        : null;
+      return json({ ok: true, worker: WORKER_NAME, ...(runtime ? { kenji_runtime: runtime } : {}) });
     }
 
     if (request.method === "GET" && LINE_WEBHOOK_PATHS.has(url.pathname)) {

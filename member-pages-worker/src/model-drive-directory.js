@@ -1,9 +1,12 @@
+import { listModelFolderMedia, readModelFolderMedia } from "./model-drive-admin-media.js";
 const DRIVE_API = "https://www.googleapis.com/drive/v3";
 const INTERNAL_HOST = "model-drive-directory.internal";
 const SEARCH_PATH = "/__internal/model-drive/search";
 const RESOLVE_PATH = "/__internal/model-drive/resolve";
 const PHOTO_PATH = "/__internal/model-drive/photo";
 const CANONICAL_FILE_PATH = "/__internal/model-drive/canonical-file";
+const ADMIN_MEDIA_LIST_PATH="/__internal/model-drive/admin-media-list";
+const ADMIN_MEDIA_FILE_PATH="/__internal/model-drive/admin-media-file";
 const FOLDER_MIME = "application/vnd.google-apps.folder";
 const SIGNATURE_TTL_SECONDS = 90;
 
@@ -34,7 +37,7 @@ export function isModelDriveDirectoryRequest(request) {
   let url;
   try { url = new URL(request.url); } catch { return false; }
   const routeMatches = (request.method === "GET" && (url.pathname === SEARCH_PATH || url.pathname === PHOTO_PATH))
-    || (request.method === "POST" && (url.pathname === RESOLVE_PATH || url.pathname === CANONICAL_FILE_PATH));
+    || (request.method === "POST" && (url.pathname === RESOLVE_PATH || url.pathname === CANONICAL_FILE_PATH || url.pathname === ADMIN_MEDIA_LIST_PATH || url.pathname === ADMIN_MEDIA_FILE_PATH));
   if (!routeMatches) return false;
   return url.hostname === INTERNAL_HOST || url.hostname.endsWith(".workers.dev");
 }
@@ -53,6 +56,17 @@ export async function handleModelDriveDirectoryRequest(request, env = {}) {
 
   try {
     const accessToken = await googleDriveAccessToken(env);
+    if(request.method === "POST" && [ADMIN_MEDIA_LIST_PATH,ADMIN_MEDIA_FILE_PATH].includes(url.pathname)) {
+      const body=await request.json().catch(()=>null),folderId=clean(body?.drive_folder_id,160);
+      if(!isDriveId(folderId))return json({ok:false,error:"drive_folder_id_invalid"},400);
+      const resolved=await resolveApprovedModelFolder(accessToken,folderId,env);
+      if(!resolved)return json({ok:false,error:"drive_folder_not_approved"},404);
+      try {
+        if(url.pathname===ADMIN_MEDIA_LIST_PATH)return json(await listModelFolderMedia(accessToken,folderId,resolved.lane==="public"?"public":"private",body.cover_only===true));
+        const headers=new Headers();if(typeof body.range==="string")headers.set("range",body.range);
+        return await readModelFolderMedia(new Request("https://model-drive-directory.internal/media",{method:body.head===true?"HEAD":"GET",headers}),accessToken,folderId,clean(body.file_id,180));
+      }catch(error){return json({ok:false,error:"drive_media_unavailable"},[404,409,416].includes(error.status)?error.status:503);}
+    }
     if (request.method === "GET" && url.pathname === PHOTO_PATH) {
       const folderId = clean(url.searchParams.get("drive_folder_id"), 160);
       const fileName = clean(url.searchParams.get("file_name"), 240);
@@ -92,8 +106,15 @@ export async function handleModelDriveDirectoryRequest(request, env = {}) {
     console.error(JSON.stringify({
       event: "model_drive_directory_error",
       failure_class: failureClass(error),
+      reason_code: oauthReasonCode(error),
     }));
-    return json({ ok: false, error: "model_drive_directory_unavailable" }, 503);
+    return json({
+      ok: false,
+      error: "model_drive_directory_unavailable",
+      // This is an allowlisted operational signal for the signed internal caller.
+      // It must never include Google's error description or credential material.
+      reason_code: oauthReasonCode(error),
+    }, 503);
   }
 }
 
@@ -111,19 +132,26 @@ export async function searchApprovedModelFolders(accessToken, query, lane = "all
   url.searchParams.set("includeItemsFromAllDrives", "true");
   url.searchParams.set("supportsAllDrives", "true");
 
-  const response = await fetch(url, { headers: { authorization: `Bearer ${accessToken}` } });
-  const payload = await response.json().catch(() => null);
-  if (!response.ok || !payload || !Array.isArray(payload.files)) throw new Error("drive_model_search_failed");
+  // Exact names must not disappear behind the first page of broad matches.
+  const exactUrl = new URL(url);
+  exactUrl.searchParams.set("q", `mimeType='${FOLDER_MIME}' and trashed=false and name = '${escapeDriveQuery(q)}'`);
+  const pages = await Promise.all([exactUrl, url].map(async target => {
+    const response = await fetch(target, { headers: { authorization: `Bearer ${accessToken}` } });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || !Array.isArray(payload?.files)) throw new Error("drive_model_search_failed");
+    return payload.files.slice(0, 100);
+  }));
+  const files = [...new Map(pages.flat().map(file => [file?.id, file])).values()];
 
   const wantedLane = normalizeLane(lane);
   // Score names before walking Drive parent chains. Broad tokens (for example
   // "Captain") can match many folders, while only the best 24 are worth resolving.
-  const rankedFiles = payload.files
-    .slice(0, 100)
+  const rankedFiles = files
     .filter((file) => file?.id && file.trashed !== true && file.mimeType === FOLDER_MIME)
+    .filter((file) => !isOperationalModelChildFolderName(file.name))
     .map((file) => ({ file, score: modelNameScore(q, file.name) }))
     .filter((item) => item.score >= 0.28)
-    .sort((a, b) => b.score - a.score || clean(a.file.name).localeCompare(clean(b.file.name)))
+    .sort((a, b) => exactNameRank(q, a.file.name) - exactNameRank(q, b.file.name) || b.score - a.score || clean(a.file.name).localeCompare(clean(b.file.name)))
     .slice(0, 24);
   const resolvedRows = new Array(rankedFiles.length);
   let cursor = 0;
@@ -142,9 +170,30 @@ export async function searchApprovedModelFolders(accessToken, query, lane = "all
     .filter(Boolean)
     .sort((a, b) => b.score - a.score || a.folder_name.localeCompare(b.folder_name));
 
-  return collapseDescendantsOfUniqueExactModelMatch(q, qualified)
+  return collapseDescendantsOfUniqueExactModelMatch(q, prioritizeModelDriveCandidates(q, qualified, env))
     .slice(0, 24)
     .map(({ score, ...item }) => item);
+}
+
+// Search preference only: never change exact-folder resolution, identity, or
+// previously linked jobs. The main catalogue belongs to malemodel.bkk@gmail.com.
+export function prioritizeModelDriveCandidates(query, candidates = [], env = {}) {
+  const roots = approvedRoots(env);
+  const mainRoots = new Set([roots.public, roots.private, roots.exclusive]);
+  const rows = candidates.filter(item => item && !isOperationalModelChildFolderName(item.folder_name));
+  const main = rows.filter(item => mainRoots.has(item.approved_root_id));
+  return (main.length ? main : rows).map(item => ({
+    ...item,
+    drive_priority: mainRoots.has(item.approved_root_id) ? "primary" : "fallback",
+    match_kind: exactNameRank(query, item.folder_name) < 2 ? "exact" : "similar",
+  })).sort((a, b) => exactNameRank(query, a.folder_name) - exactNameRank(query, b.folder_name)
+    || (b.score || 0) - (a.score || 0) || a.folder_name.localeCompare(b.folder_name));
+}
+
+function exactNameRank(query, name) {
+  if (clean(query, 240) === clean(name, 240)) return 0;
+  if (clean(query, 240).toLocaleLowerCase() === clean(name, 240).toLocaleLowerCase()) return 1;
+  return 2;
 }
 
 export function collapseDescendantsOfUniqueExactModelMatch(query, candidates = []) {
@@ -397,8 +446,22 @@ async function googleDriveAccessToken(env) {
   });
   const payload = await response.json().catch(() => null);
   const token = clean(payload?.access_token, 6000);
-  if (!response.ok || !token) throw new Error("google_oauth_failed");
+  if (!response.ok || !token) {
+    const error = new Error("google_oauth_failed");
+    error.reasonCode = response.ok ? "token_missing" : safeOauthErrorCode(payload?.error);
+    throw error;
+  }
   return token;
+}
+
+function safeOauthErrorCode(value) {
+  const code = clean(value, 80);
+  return ["invalid_grant", "invalid_client", "unauthorized_client", "invalid_scope", "access_denied", "token_missing"].includes(code)
+    ? code : "oauth_rejected";
+}
+
+function oauthReasonCode(error) {
+  return error?.message === "google_oauth_failed" ? safeOauthErrorCode(error.reasonCode) : "not_oauth";
 }
 
 async function verifySignedCaller(request, env) {
@@ -539,3 +602,4 @@ function json(data, status = 200) {
     },
   });
 }
+

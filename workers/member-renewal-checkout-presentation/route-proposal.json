@@ -1,0 +1,28 @@
+{
+  "state": "PROPOSAL_ONLY_NOT_APPLIED",
+  "worker": "member-renewal-presentation-worker",
+  "preserve_existing_routes": true,
+  "proposed_additions": [
+    "mmdbkk.com/pay/checkout*",
+    "www.mmdbkk.com/pay/checkout*"
+  ],
+  "runtime_path_guard": [
+    "/pay/checkout",
+    "/pay/checkout/"
+  ],
+  "backend_routes_changed": false,
+  "cost_change_requested": false,
+  "requires_explicit_route_and_worker_deploy_approval": true,
+  "preserve_module": "worker.mjs",
+  "existing_version_observed": "a82b8b48-d83f-4a57-b54f-b7c8dcd6906f",
+  "preserved_module_sha256": "3fd70459220fcd33637cc607cfe993cb3fdc7ed4d86f742abc0c471fe9d14fb3",
+  "existing_deployment_observed": "7ad68d35-8574-48db-9ec2-3b129395adb3",
+  "deployment_requirements": [
+    "Fresh readback of existing presentation Worker and exact preserved module hash",
+    "Copy the unchanged live worker.mjs module into the reviewed addon artifact; do not rebuild LV12",
+    "Preserve all existing metadata and bindings",
+    "Explicit approval of both proposed routes and presentation Worker deployment",
+    "Verify X-MMD-Renewal-Checkout-UI pending-finish-v1 before considering Renewal flag activation",
+    "Stop if upstream CSP or changed HTML anchors prevent decoration"
+  ]
+}

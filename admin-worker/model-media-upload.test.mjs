@@ -5,12 +5,58 @@ import {
   normalizeModelMediaUploadSpec,
   hasMismatchedDeclaredContentLength,
   isApprovedPublicModelMedia,
+  isApprovedCoverMedia,
+  registerPendingPublicMedia,
   modelMediaCapacity,
   parseMediaRoute,
   recordOwnedByCanonicalModel,
 } from "./src/model-liff-worker-legacy.js";
 
 const MB = 1024 * 1024;
+
+test("verified gallery upload publishes its registry row without a Studio review request", async () => {
+  const original = globalThis.fetch;
+  const writes = [];
+  globalThis.fetch = async (url, init) => {
+    writes.push({ url: String(url), fields: JSON.parse(init.body).records[0].fields });
+    return Response.json({ records: [{ id: "recMedia", fields: writes.at(-1).fields }] });
+  };
+  try {
+    const result = await registerPendingPublicMedia({ AIRTABLE_API_KEY: "test", AIRTABLE_BASE_ID: "appTest" }, {
+      mediaId: `media_${"a".repeat(32)}`, modelRecordId: "recModel12345678", mediaType: "public_gallery",
+      assetRole: "gallery_candidate", fileName: "gallery.webp", mime: "image/webp", size: 100,
+      objectKey: `models/recModel12345678/public_gallery/media_${"a".repeat(32)}.webp`, uploadedAt: "2026-10-26T00:00:00Z",
+    });
+    assert.equal(result.ok, true);
+    assert.equal(writes.length, 1);
+    assert.equal(writes[0].fields.review_status, "active");
+    assert.equal(writes[0].fields.public_safe, true);
+    assert.equal(writes[0].fields.asset_role, "gallery_candidate");
+    assert.equal(isApprovedCoverMedia(writes[0].fields), false);
+  } finally { globalThis.fetch = original; }
+});
+
+test("cover upload remains pending and creates a Studio review request", async () => {
+  const original = globalThis.fetch;
+  const writes = [];
+  globalThis.fetch = async (url, init) => {
+    const fields = JSON.parse(init.body).records[0].fields;
+    writes.push({ url: String(url), fields });
+    return Response.json({ records: [{ id: `recMedia${writes.length}`, fields }] });
+  };
+  try {
+    const result = await registerPendingPublicMedia({ AIRTABLE_API_KEY: "test", AIRTABLE_BASE_ID: "appTest" }, {
+      mediaId: `media_${"b".repeat(32)}`, modelRecordId: "recModel12345678", mediaType: "profile_photo",
+      assetRole: "profile_candidate", fileName: "cover.webp", mime: "image/webp", size: 100,
+      objectKey: `models/recModel12345678/profile_photo/media_${"b".repeat(32)}.webp`, uploadedAt: "2026-10-26T00:00:00Z",
+    });
+    assert.equal(result.ok, true);
+    assert.equal(writes.length, 2);
+    assert.equal(writes[0].fields.review_status, "pending_review");
+    assert.equal(writes[0].fields.public_safe, false);
+    assert.equal(writes[1].fields.request_status, "pending_review");
+  } finally { globalThis.fetch = original; }
+});
 
 test("MMD MODEL upload accepts public photos up to 25MB", () => {
   assert.equal(normalizeModelMediaType("public_gallery"), "public_gallery");
@@ -57,6 +103,8 @@ test("pending public candidates cannot become profile main before Studio approva
   assert.equal(isApprovedPublicModelMedia({ review_status: "approved", public_safe: false }), false);
   assert.equal(isApprovedPublicModelMedia({ review_status: "approved", public_safe: true }), true);
   assert.equal(isApprovedPublicModelMedia({ review_status: "active", public_safe: true }), true);
+  assert.equal(isApprovedCoverMedia({ review_status: "active", public_safe: true }), false);
+  assert.equal(isApprovedCoverMedia({ review_status: "approved", public_safe: true }), true);
 });
 
 test("photo and clip media types stay explicit", () => {

@@ -19,6 +19,7 @@ import { COMPCARD_PHOTO_PATH, COMPCARD_TEXT_PATH, COMPCARD_DESTINATIONS_PATH, ha
 
 const LOCK = "telegram-preview-hype-v20260621a-v1-alias";
 const PREVIEW_START = "preview";
+const PREVIEW_LEAD_ROUTING_START = "route";
 const MEMBERSHIP_CHAT_INTENTS = new Set([
   INTENTS.MEMBERSHIP_PACKAGE,
   INTENTS.MEMBERSHIP_SIGNUP,
@@ -30,6 +31,7 @@ const DEFAULT_PUBLIC_BASE_URL = "https://www.mmdbkk.com";
 const DEFAULT_PREVIEW_CHANNEL_URL = "https://t.me/MMDPriveTH";
 const TOPIC_SMOKE_CONFIRMATION = "SEND_REDACTED_TOPIC_SMOKE";
 const HYPE_PREVIEW_INTRO_CONFIRMATION = "INTRODUCE_HYPE_PREVIEW_V1";
+import { isPrivateCareBackAnnouncementVisible } from "../../shared/membership-promotion-policy.mjs";
 import { MEMBER_PRESENCE_PATHS, handleMemberPresence } from "./member-presence.js";
 const HYPE_PREMIUM_ROOM_SYNC_CONFIRMATION = "SYNC_HYPE_PREMIUM_ROOM_V1";
 const TELEGRAM_CANONICAL_WEBHOOK_URL = "https://mmdbkk.com/telegram/webhook";
@@ -713,6 +715,16 @@ async function handleTelegramWebhook(update, env) {
   if (joinCleanup) return joinCleanup;
 
   const startArg = parseStartArg(text);
+  if (update.message && chatType === "private" && message.from?.is_bot !== true
+    && (startArg.toLowerCase() === PREVIEW_LEAD_ROUTING_START || /^\/start(?:@\w+)?$/i.test(text))) {
+    const telegram = await sendTelegramMessage({
+      chat_id: chatId,
+      text: hypePreviewLeadRoutingText(),
+      disable_web_page_preview: true,
+      reply_markup: hypePreviewLeadRoutingButtons(env),
+    }, env);
+    return { handled: true, flow: "hype_preview_lead_routing", telegram };
+  }
   if (startArg.toLowerCase() === PREVIEW_START) {
     const telegram = await sendTelegramMessage({
       chat_id: chatId,
@@ -4409,33 +4421,18 @@ function formatBangkokDateTime(value) {
 
 function hypePreviewJoinWelcomeText() {
   return [
-    "👋 <b>ยินดีต้อนรับสู่ MMD Privé Preview ครับ</b>",
+    "👋 <b>ยินดีต้อนรับสู่ MMD Privé Preview</b>",
     "",
-    "ผม <b>HYPE</b> ผู้ช่วย Telegram ของ MMD",
-    "ถ้าอยากดูว่าผมช่วยอะไรได้บ้าง พิมพ์ <b>/commands</b> ได้เลยครับ",
+    "ผม <b>HYPE</b> ผู้ช่วยของ MMD ครับ",
+    "สนใจดูหนุ่ม ๆ หรืออยากรู้จัก MMD มากขึ้น ผมช่วยแนะนำได้ครับ",
     "",
-    "<b>ก่อนแนะนำ Model ผมจะไม่ดึงทุกคนมาให้ดูรวมกัน</b>",
-    "ผมใช้มุมมองที่คุณเลือกไว้ใน MMD เท่านั้น — สำหรับผู้หญิง หรือ LGBT+",
-    "ถ้ายังไม่เคยเลือก ระบบจะ hold ไว้ก่อนและให้คุณเลือกเองครับ",
-    "",
-    "ผมไม่เดาเพศหรือความสนใจจากชื่อ รูป LINE หรือ Telegram ของคุณ",
-    "เลือกมุมมองใน Hall ก่อน แล้วผมค่อยพาไปยังสิ่งที่ตรงกับคุณครับ",
-    "",
-    "ข้อมูลสมาชิก งาน การจอง หรือการชำระ ผมจะพาไปคุยในแชตส่วนตัวเพื่อไม่ให้ข้อมูลส่วนตัวขึ้นในกลุ่มครับ 🔒",
+    ...hypeMembershipPromotionLines(),
+    "กด <b>เริ่มกับ HYPE</b> เพื่อดูโปรสมัคร / ต่ออายุ และคุยกันส่วนตัวครับ 🔒",
   ].join("\n");
 }
 
 function hypePreviewWelcomeButtons(env) {
-  return {
-    inline_keyboard: [
-      [{ text: "เลือกมุมมองใน Hall", url: publicUrl(env, "/hall") }],
-      [{ text: "คุยกับ HYPE แบบส่วนตัว", url: `https://t.me/${encodeURIComponent(botUsername(env))}` }],
-      [
-        { text: "MY MMD", url: publicUrl(env, "/my-mmd/") },
-        { text: "CARE BACK Phase 2", url: publicUrl(env, "/promotion/6-years-care-back") },
-      ],
-    ],
-  };
+  return hypePreviewEntryButtons(env);
 }
 
 function hypePremiumRoomDescription() {
@@ -4956,10 +4953,11 @@ async function postPreviewChannelCta(body, env) {
 
   const text = clean(body.text) || [
     "MMD Privé · 6 YEARS CARE BACK — CARE BACK CONTINUES",
-    "Phase 2 เปิดถึง 30 กันยายน 2026 ครับ",
+    ...hypeMembershipPromotionLines(),
+    "Phase 2 เปิดถึง 31 ตุลาคม 2026 ครับ",
     "",
     "Phase 2 ใช้สิทธิ์ชุดเดียวกับช่วง Birthday เดิม ไม่ใช่สิทธิ์รอบสอง และไม่สร้าง claim / coupon / points bonus ซ้ำครับ",
-    "กดเช็กสิทธิ์ด้านล่าง → ยืนยันผ่าน LINE/LIFF → ให้ MMD ตรวจสถานะและประวัติที่เชื่อมได้ → ส่ง Birthday Wish ให้บันทึกสำเร็จ",
+    "กดเริ่มกับ HYPE ด้านล่างเพื่อเลือกช่องทางที่สนใจ ก่อนตรวจสิทธิ์ผ่าน LINE/LIFF และส่ง Birthday Wish ให้บันทึกสำเร็จ",
     "หลัง Wish saved จึงเปิดคูปองส่วนตัว “ส่วนลดสูงสุด 10%” ได้ 1 ครั้ง โดยอัตราจริงขึ้นกับระดับนายแบบ × รูปแบบงาน และสิทธิ์ที่ตรวจสอบได้ครับ",
     "คูปองต้องใช้ยืนยันการจองภายใน 2 เดือนหลัง activation และวันรับบริการอยู่ได้ไม่เกิน 90 วันนับจากวันที่จองเดิมครับ",
   ].join("\n");
@@ -4970,7 +4968,7 @@ async function postPreviewChannelCta(body, env) {
       dry_run: true,
       chat_id: chatId,
       text,
-      reply_markup: previewButtonMarkup(env),
+      reply_markup: hypePreviewEntryButtons(env),
     };
   }
 
@@ -4979,7 +4977,7 @@ async function postPreviewChannelCta(body, env) {
     text,
     parse_mode: "HTML",
     disable_web_page_preview: true,
-    reply_markup: previewButtonMarkup(env),
+    reply_markup: hypePreviewEntryButtons(env),
   }, env);
 
   return {
@@ -5041,6 +5039,49 @@ function previewButtonMarkup(env) {
         text: "Back to Preview Channel",
         url: previewChannelUrl(env),
       }],
+    ],
+  };
+}
+
+function hypePreviewEntryButtons(env) {
+  const name = encodeURIComponent(botUsername(env));
+  return {
+    inline_keyboard: [
+      [{ text: "เริ่มกับ HYPE · เลือกช่องทางที่สนใจ", url: `https://t.me/${name}?start=route` }],
+    ],
+  };
+}
+
+function hypeMembershipPromotionLines() {
+  if (!isPrivateCareBackAnnouncementVisible()) return [];
+  return [
+    "🎁 MMD CARE BACK · สมัคร / ต่ออายุสมาชิก",
+    "สมัคร Premium ใหม่ รับสมาชิก รวม 2 ปี",
+    "ต่ออายุ Premium 1 ปี รับเพิ่มฟรีอีก 1 ปี",
+    "ต่ออายุ Standard 1 ปี รับเพิ่มฟรีอีก 180 วัน",
+    "วันนี้ถึง 31 ต.ค. 2569 · ตามเงื่อนไขแพ็กเกจและสิทธิ์ของสมาชิก",
+    "",
+  ];
+}
+
+function hypePreviewLeadRoutingText() {
+  return [
+    "สวัสดีครับ ผม HYPE จาก MMD Privé 👋",
+    "",
+    ...hypeMembershipPromotionLines(),
+    "เลือกสมัครใหม่หรือต่ออายุด้านล่างได้เลยครับ",
+    "สนใจดูหนุ่ม ๆ หรือสอบถามบริการ คุยต่อทาง LINE Official ของ MMD ได้ครับ",
+  ].join("\n");
+}
+
+function hypePreviewLeadRoutingButtons(env) {
+  const lineUrl = clean(env.MMD_LINE_OFC_URL) || "https://lin.ee/xRqsALs";
+  return {
+    inline_keyboard: [
+      [{ text: "สมัครสมาชิกใหม่", url: publicUrl(env, "/pay/membership") }],
+      [{ text: "ต่ออายุสมาชิก", url: publicUrl(env, "/member/liff?intent=renew") }],
+      [{ text: "ดูหนุ่ม ๆ · คุยต่อทาง LINE", url: lineUrl }],
+      [{ text: "กลับไป Telegram Preview", url: previewChannelUrl(env) }],
     ],
   };
 }

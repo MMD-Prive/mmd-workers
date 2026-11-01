@@ -4,6 +4,11 @@ on:
     paths:
       - 'mms-worker/**'
       - 'member-dashboard-chat-worker/src/mms-therapist-workspace.js'
+      - 'member-dashboard-chat-worker/src/mms-graphic*.mjs'
+      - 'member-dashboard-chat-worker/src/mms-direct-chat-page.mjs'
+      - 'member-dashboard-chat-worker/src/my-mms-customer-app-front-gate.js'
+      - 'member-dashboard-chat-worker/test/mms-direct-chat-page.test.mjs'
+      - 'shared/mms-chat-policy.mjs'
       - 'member-dashboard-chat-worker/src/my-mms-customer-front-gate-entry.js'
       - 'member-dashboard-chat-worker/wrangler.toml'
       - 'member-dashboard-chat-worker/test/mms-therapist-workspace.test.mjs'
@@ -16,11 +21,28 @@ on:
     paths:
       - 'mms-worker/**'
       - 'member-dashboard-chat-worker/src/mms-therapist-workspace.js'
+      - 'member-dashboard-chat-worker/src/mms-graphic*.mjs'
+      - 'member-dashboard-chat-worker/src/mms-direct-chat-page.mjs'
+      - 'member-dashboard-chat-worker/src/my-mms-customer-app-front-gate.js'
+      - 'member-dashboard-chat-worker/test/mms-direct-chat-page.test.mjs'
+      - 'shared/mms-chat-policy.mjs'
       - 'member-dashboard-chat-worker/src/my-mms-customer-front-gate-entry.js'
       - 'member-dashboard-chat-worker/wrangler.toml'
 permissions:
   contents: read
 jobs:
+  direct-chat:
+    runs-on: ubuntu-latest
+    env:
+      MMS_CHAT_REQUIRE_SQLITE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci --ignore-scripts
+      - name: Test direct chat, SQLite isolation, moderation and browser DOM flows
+        run: node --test mms-worker/test/mms-chat-policy.test.mjs mms-worker/test/mms-chat-store.test.mjs mms-worker/test/mms-chat-runtime.test.mjs member-dashboard-chat-worker/test/mms-direct-chat-page.test.mjs
   contracts:
     runs-on: ubuntu-latest
     steps:
