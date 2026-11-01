@@ -22,14 +22,14 @@ const fake = (expectInput = {action:"stage_all"}) => {
 };
 
 test("PER · AI OPS forwards only the supported FLUSH actions and saved run ID", async () => {
-  for(const input of [{action:'preview_all'},{action:'stage_all',run_id:'00000000-0000-4000-8000-000000000001'},{action:'review_queue'}]){
+  for(const input of [{action:'preview_all'},{action:'stage_all',run_id:'00000000-0000-4000-8000-000000000001'},{action:'review_queue'},{action:'review_draft_queue'},{action:'review_draft_detail',record_id:'rec00000000000001'}]){
     const f=fake(input),result=await gate.fetch(good(input),{MMS_ADMIN:f.service},{});
     assert.equal(result.status,200);assert.equal((await result.json()).publication,false);
     assert.deepEqual(f.seen.map(x=>x.path),['/v1/admin/auth/me','/v1/admin/model-media/flush-preview']);
   }
 });
 test("unsupported publication or source overrides never reach the FLUSH backend",async()=>{
- for(const input of [{action:'publish_all'},{action:'stage_all',sourceRoots:['unapproved']},{action:'stage_all',model_id:'unapproved'}]){
+ for(const input of [{action:'publish_all'},{action:'stage_all',sourceRoots:['unapproved']},{action:'stage_all',model_id:'unapproved'},{action:'review_draft_detail',record_id:'rec00000000000001',approve:true},{action:'review_draft_queue',sourceRoots:['outside']}]){
   const f=fake(),res=await gate.fetch(good(input),{MMS_ADMIN:f.service},{});assert.equal(res.status,400);assert.equal(f.seen.some(x=>x.path==='/v1/admin/model-media/flush-preview'),false);
  }
 });
