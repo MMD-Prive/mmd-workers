@@ -66,6 +66,6 @@ test('empty/auth/review/error remain distinct contracts in the mock transport',a
  for(const [state,status,error] of [['auth',401,'model_session_required'],['review',403,'identity_review_required'],['error',503,'fixture_unavailable']]){
   const r=await fetch(origin+'/v1/model/session/current',{headers:{referer:origin+'/sigil/model/console?fixture_state='+state}});assert.equal(r.status,status);assert.equal((await r.json()).error,error);
  }
- const dashboard=await fetch(origin+'/v1/model/session/current',{headers:{referer:origin+'/sigil/model/dashboard?fixture_state=empty'}});assert.equal(dashboard.status,404);assert.equal((await dashboard.json()).error,'active_session_not_found');
- const consoleR=await fetch(origin+'/v1/model/session/current',{headers:{referer:origin+'/sigil/model/console?fixture_state=empty'}});assert.equal(consoleR.status,200);assert.equal((await consoleR.json()).session,null);
+ const dashboard=await fetch(origin+'/v1/model/session/current',{headers:{referer:origin+'/sigil/model/dashboard?fixture_state=empty'}});assert.equal(dashboard.status,404);assert.equal((await dashboard.json()).error,'session_not_found');
+ const consoleR=await fetch(origin+'/v1/model/session/current',{headers:{referer:origin+'/sigil/model/console?fixture_state=empty'}});assert.equal(consoleR.status,404);assert.equal((await consoleR.json()).error,'session_not_found');
 });

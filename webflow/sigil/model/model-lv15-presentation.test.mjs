@@ -44,3 +44,16 @@ test('shared fonts have explicit hosted faces in both unminified and built skin'
  assert.doesNotMatch(LV15_FONT_CSS,/local\(|data:|\/Users\/|\/__lv15\//);
  for(const family of ['Canela','Playfair Display','Outfit','Noto Sans Thai'])assert.ok(LV15_FONT_FACES.some(face=>face[0]===family));
 });
+
+test('Console recovery buttons use matching opaque theme tokens in empty and error views only', () => {
+  const rule = LV15_CSS.match(/#sigil-model-console-v3\[data-lv15-world\] :is\(\[data-view="empty"\],\[data-view="error"\]\) \[data-refresh\]\{([^}]+)\}/);
+  assert.ok(rule);
+  assert.match(rule[1], /background:var\(--v15-accent\)!important/);
+  assert.match(rule[1], /color:var\(--v15-button-ink\)!important/);
+  assert.match(rule[1], /-webkit-text-fill-color:var\(--v15-button-ink\)!important/);
+  const luminance = hex => hex.match(/../g).map(v => parseInt(v,16)/255).map(v => v<=.04045?v/12.92:((v+.055)/1.055)**2.4).reduce((a,v,i)=>a+v*[.2126,.7152,.0722][i],0);
+  for(const [bg,ink] of [['b41332','fff8ed'],['d9bd77','171b17']]) {
+    const a=luminance(bg),b=luminance(ink);
+    assert.ok((Math.max(a,b)+.05)/(Math.min(a,b)+.05)>=4.5);
+  }
+});

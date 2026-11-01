@@ -254,3 +254,22 @@ test('assembled Webflow bundle contains one UI owner, working profile/media host
   for(const match of html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g))new vm.Script(match[1]);
   assert.ok(Buffer.byteLength(html)<50000,'Webflow embed fits 50,000-byte budget');
 });
+
+for (const error of ['session_not_found', 'active_session_not_found']) {
+  test(`current job 404 ${error} shows no-job without locking verified profile`, async () => {
+    const f = fixture({job:{ok:false,status:404,error}}); await settle();
+    assert.equal(f.nodes.get('[data-mm-job]').textContent, 'ยังไม่มีงานที่กำลังใช้งาน');
+    assert.equal(f.nodes.get('[data-mm-workspace]').hidden, false);
+    assert.equal(f.nodes.get('[data-mm-name]').textContent, 'Fixture Model');
+    assert.equal(f.nodes.get('[data-mm-console]').href, '/sigil/model/console');
+    assert.equal(f.calls.some(c => c.options?.method || c.sdk), false);
+  });
+}
+for (const [status,error] of [[401,'model_session_expired'],[403,'forbidden'],[503,'session_not_found'],[503,'session_lookup_unavailable'],[404,'route_not_found'],[404,''],[200,'session_not_found']]) {
+  test(`current job ${status}/${error || 'missing code'} never claims no-job`, async () => {
+    const f = fixture({job:{ok:false,status,error}}); await settle();
+    assert.notEqual(f.nodes.get('[data-mm-job]').textContent, 'ยังไม่มีงานที่กำลังใช้งาน');
+    assert.equal(f.calls.some(c => c.options?.method || c.sdk), false);
+    if (status === 401) assert.equal(f.nodes.get('[data-mm-workspace]').hidden, true);
+  });
+}
