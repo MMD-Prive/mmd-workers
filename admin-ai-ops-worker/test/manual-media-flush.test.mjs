@@ -49,5 +49,5 @@ test("the shared client contains a functional manual media preview control", asy
   const text=await result.text();
   assert.match(text,/FLUSH ALL MEDIA/);
   assert.match(text,/v1\/admin\/ai-ops\/media\/flush/);
-  assert.match(text,/preview_only/);
+  assert.match(text,/ยังไม่เขียน R2\/Airtable/);
 });
