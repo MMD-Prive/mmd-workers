@@ -11,9 +11,19 @@ export const DO_CLASS = 'CustomerRequestMutationCoordinator';
 export const DO_BINDING = 'CUSTOMER_REQUEST_MUTATION';
 export const OLD_MIGRATION_TAG = 'v3-remembered-login-device';
 export const NEW_MIGRATION_TAG = 'v5-customer-request-mutation';
+export const EXPECTED_MEMBER_CANDIDATE_SHA256 = '3cb754442de491c63bcbe3992055c76feefb667853f0172ea6c482d77af4d628';
+export const EXPECTED_ADMIN_CANDIDATE_SHA256 = 'dfccb9dc54c98662a99e596c3765dec19a2c70c183ef5182fa0ad3984a070164';
 
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
-const esbuild = process.env.ESBUILD || '/opt/homebrew/lib/node_modules/wrangler/node_modules/esbuild/bin/esbuild';
+const esbuild = process.env.ESBUILD || 'esbuild';
+
+function verifyReviewedSource(sourceDir, paths) {
+  for (const path of paths) {
+    const expected = execFileSync('git', ['rev-parse', `${RECOVERY_SOURCE_SHA}:${path}`], { cwd: sourceDir, encoding: 'utf8' }).trim();
+    const actual = execFileSync('git', ['hash-object', path], { cwd: sourceDir, encoding: 'utf8' }).trim();
+    assert.equal(actual, expected, `reviewed source blob drift: ${path}`);
+  }
+}
 
 function bundle(entry, globalName, out) {
   execFileSync(esbuild, [entry, '--bundle', '--format=iife', `--global-name=${globalName}`, '--platform=neutral', '--target=es2022', '--minify=false', `--outfile=${out}`], { stdio: 'ignore' });
@@ -22,6 +32,12 @@ function bundle(entry, globalName, out) {
 
 export function buildMemberRecoveryArtifact({ activeBytes, recoverySourceDir, outputPath, manifestPath }) {
   assert.equal(sha256(activeBytes), ACTIVE_MEMBER_SHA256, 'active member artifact drift');
+  verifyReviewedSource(recoverySourceDir, [
+    'member-pages-worker/src/member-email-recovery.js',
+    'member-pages-worker/src/liff-identity-foundation.js',
+    'member-pages-worker/src/owner-my-mmd-recovery-diagnostic.js',
+    'member-pages-worker/src/customer-request-mutation-durable-object.js',
+  ]);
   const tmp = resolve(dirname(outputPath), '.recovery-build');
   mkdirSync(tmp, { recursive: true });
   const recoveryPatch = bundle(resolve(recoverySourceDir, 'member-pages-worker/src/member-email-recovery.js'), 'RecoveryPatch', resolve(tmp, 'recovery.js'));
@@ -34,6 +50,7 @@ export function buildMemberRecoveryArtifact({ activeBytes, recoverySourceDir, ou
   const injected = `${identityPatch}\n${recoveryPatch}\n${ownerPatch}\n${recoveryDo}\nhandleStart = IdentityPatch.handleStart;\nhandleMemberEmailRecovery = RecoveryPatch.handleMemberEmailRecovery;\nisMemberEmailRecoveryPath = RecoveryPatch.isMemberEmailRecoveryPath;\nhandleOwnerMyMmdRecoveryDiagnosticRpc = OwnerPatch.handleOwnerMyMmdRecoveryDiagnosticRpc;\nisOwnerMyMmdRecoveryDiagnosticRpc = OwnerPatch.isOwnerMyMmdRecoveryDiagnosticRpc;\nvar ${DO_CLASS} = RecoveryDO.${DO_CLASS};\n`;
   const candidateText = source.replace(exportMarker, `\n${injected}\nexport {\n  ${DO_CLASS},\n`);
   const candidate = Buffer.from(candidateText);
+  assert.equal(sha256(candidate), EXPECTED_MEMBER_CANDIDATE_SHA256, 'member candidate hash drift');
   const manifest = {
     method: 'active-worker-byte-overlay',
     baseline_sha256: ACTIVE_MEMBER_SHA256,
@@ -56,6 +73,7 @@ export function buildMemberRecoveryArtifact({ activeBytes, recoverySourceDir, ou
 
 export function buildAdminRecoveryArtifact({ activeBytes, recoverySourceDir, outputPath, manifestPath }) {
   assert.equal(sha256(activeBytes), ACTIVE_ADMIN_SHA256, 'active admin artifact drift');
+  verifyReviewedSource(recoverySourceDir, ['admin-worker/src/owner-my-mmd-recovery-diagnostic.js']);
   const tmp = resolve(dirname(outputPath), '.recovery-build');
   mkdirSync(tmp, { recursive: true });
   const patch = bundle(resolve(recoverySourceDir, 'admin-worker/src/owner-my-mmd-recovery-diagnostic.js'), 'AdminRecoveryPatch', resolve(tmp, 'admin-recovery.js'));
@@ -64,6 +82,7 @@ export function buildAdminRecoveryArtifact({ activeBytes, recoverySourceDir, out
   assert.equal(source.split(marker).length, 2, 'admin worker export boundary must be unique');
   const injected = `${patch}\nhandleOwnerMyMmdRecoveryDiagnostic = AdminRecoveryPatch.handleOwnerMyMmdRecoveryDiagnostic;\nisOwnerMyMmdRecoveryDiagnosticRequest = AdminRecoveryPatch.isOwnerMyMmdRecoveryDiagnosticRequest;\n`;
   const candidate = Buffer.from(source.replace(marker, `\n${injected}${marker}`));
+  assert.equal(sha256(candidate), EXPECTED_ADMIN_CANDIDATE_SHA256, 'admin candidate hash drift');
   const manifest = {
     method: 'active-worker-byte-overlay',
     baseline_sha256: ACTIVE_ADMIN_SHA256,
