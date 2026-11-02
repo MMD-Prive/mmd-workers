@@ -1374,7 +1374,7 @@ test('welcome reads accept the current backend authority for returning copy with
   const context = {
     AbortController, CONFIG:{welcomeContextEndpoint:'/member/api/liff/welcome-context'},
     setTimeout:()=>1, clearTimeout:()=>{},
-    fetch:async()=>new Response(JSON.stringify(payload), {headers:{'x-mmd-welcome-audience-authority':authority}}),
+    memberApiFetch:async()=>new Response(JSON.stringify(payload), {headers:{'x-mmd-welcome-audience-authority':authority}}),
     applyWorldTheme:(data, _display, source)=>{ brand.reset(); audience = context.resolveWelcomeAudience(data, source); }
   };
   runInNewContext(resolver + reader, context);
