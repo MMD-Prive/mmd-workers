@@ -14,7 +14,7 @@ const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const jsonHash = value => hash(Buffer.from(JSON.stringify(value ?? null)));
 const same = (a, b, message) => assert.equal(JSON.stringify(a), JSON.stringify(b), message);
 
-export function metadataFor(baseline, manifest, worker) {
+export function metadataFor(baseline, manifest, worker, liveSettings = null) {
   const resources = baseline?.resources;
   assert.ok(resources?.script && resources?.script_runtime && Array.isArray(resources.bindings), `${worker} baseline incomplete`);
   const metadata = {
@@ -28,8 +28,13 @@ export function metadataFor(baseline, manifest, worker) {
   if (resources.script.placement !== undefined) metadata.placement = structuredClone(resources.script.placement);
   else if (resources.script.placement_mode === 'smart') metadata.placement = { mode: 'smart' };
   if (baseline.cache_options !== undefined && baseline.cache_options !== null) metadata.cache_options = structuredClone(baseline.cache_options);
-  for (const key of ['observability', 'tail_consumers', 'tags']) {
-    const value = baseline[key] ?? resources.script[key];
+  // The version resource does not consistently expose script-level settings
+  // (notably observability/tail/tags).  Full-script PUT replaces the script,
+  // so take those values from the fresh script-settings snapshot when present.
+  // Keep this allowlist narrow: settings not understood by the upload API must
+  // not be copied into deployment metadata by accident.
+  for (const key of ['observability', 'tail_consumers', 'tags', 'logpush']) {
+    const value = liveSettings?.[key] ?? baseline[key] ?? resources.script[key];
     if (value !== undefined) metadata[key] = structuredClone(value);
   }
   Object.defineProperty(metadata, '__expected_bindings', { value: resources.bindings.map(binding => {
@@ -80,8 +85,8 @@ export async function executeRecoveryArtifactRelease(io, plan) {
       admin: { deployment_id: admin.deployment.id, version_id: admin.version.id },
     };
     const baselineSettings = { member: member.settings, admin: admin.settings };
-    const memberMeta = metadataFor(member.version, plan.memberManifest, MEMBER_WORKER);
-    const adminMeta = metadataFor(admin.version, plan.adminManifest, ADMIN_WORKER);
+    const memberMeta = metadataFor(member.version, plan.memberManifest, MEMBER_WORKER, member.settings);
+    const adminMeta = metadataFor(admin.version, plan.adminManifest, ADMIN_WORKER, admin.settings);
     assert.equal(hash(plan.memberBytes), plan.memberManifest.candidate_sha256, 'member candidate hash drift');
     assert.equal(hash(plan.adminBytes), plan.adminManifest.candidate_sha256, 'admin candidate hash drift');
     await io.approve('upload');
@@ -117,6 +122,44 @@ export async function executeRecoveryArtifactRelease(io, plan) {
   }
 }
 
+// Full-script deployment is required when the member candidate creates a new
+// Durable Object class. Unlike versions upload + promotion, PUT /scripts/{name}
+// applies the migration as part of an immediate deployment. The receipt and
+// post-write checks make that side effect explicit; there is no fake staging
+// claim and no unsafe rollback to the pre-migration version.
+export async function executeRecoveryFullScriptDeploy(io, plan) {
+  const receipt = { phase: 'preflight', scope: 'membership-recovery-full-script-pair', deployment_policy: 'immediate_full_script_deploy', rollback_policy: 'no_automatic_rollback_across_DO_migration', fallback_strategy: 'manual_forward_compatible_full_script_deploy_required', rollback_targets: {}, deploy_attempts: {} };
+  const save = value => io.save?.(structuredClone(value));
+  try {
+    await io.approve('preflight');
+    const member = await io.snapshot(MEMBER_WORKER); const admin = await io.snapshot(ADMIN_WORKER);
+    verifyBaseline(member, plan.member, MEMBER_WORKER); verifyBaseline(admin, plan.admin, ADMIN_WORKER);
+    io.assertMigrationReady?.();
+    receipt.rollback_targets = { member: { deployment_id: member.deployment.id, version_id: member.version.id }, admin: { deployment_id: admin.deployment.id, version_id: admin.version.id } };
+    const memberMeta = metadataFor(member.version, plan.memberManifest, MEMBER_WORKER, member.settings);
+    const adminMeta = metadataFor(admin.version, plan.adminManifest, ADMIN_WORKER, admin.settings);
+    assert.equal(hash(plan.memberBytes), plan.memberManifest.candidate_sha256, 'member candidate hash drift');
+    assert.equal(hash(plan.adminBytes), plan.adminManifest.candidate_sha256, 'admin candidate hash drift');
+    await io.approve('deploy');
+    receipt.phase = 'member-deploy-attempted-outcome-unknown'; receipt.deploy_attempts.member = { state: 'started' }; await save(receipt);
+    const memberResult = await io.deploy(MEMBER_WORKER, memberMeta, plan.memberBytes);
+    receipt.deploy_attempts.member = { state: 'returned' }; await save(receipt);
+    const memberAfter = await io.verifyDeployed(MEMBER_WORKER, member.version.id, plan.memberManifest.candidate_sha256, member.settings);
+    receipt.deployed = { member: { version_id: memberAfter.version.id, deployment_id: memberAfter.deployment.id } }; await save(receipt);
+    receipt.phase = 'admin-deploy-attempted-outcome-unknown'; receipt.deploy_attempts.admin = { state: 'started' }; await save(receipt);
+    const adminResult = await io.deploy(ADMIN_WORKER, adminMeta, plan.adminBytes);
+    receipt.deploy_attempts.admin = { state: 'returned' }; await save(receipt);
+    const adminAfter = await io.verifyDeployed(ADMIN_WORKER, admin.version.id, plan.adminManifest.candidate_sha256, admin.settings);
+    receipt.deployed.admin = { version_id: adminAfter.version.id, deployment_id: adminAfter.deployment.id };
+    receipt.provider_results = { member: Boolean(memberResult), admin: Boolean(adminResult) };
+    receipt.phase = 'complete'; await save(receipt); return receipt;
+  } catch (error) {
+    receipt.phase = receipt.phase.includes('deploy-attempted') ? 'partial-or-unknown-deployment' : 'stopped';
+    receipt.error = String(error?.message || 'release_failed').slice(0, 200); await save(receipt);
+    throw Object.assign(new Error('Recovery full-script deployment stopped; inspect receipt and forward-compatible recovery plan.'), { receipt });
+  }
+}
+
 const workerRoot = worker => `/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${worker}`;
 const versionRoot = worker => `/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/workers/${worker}/versions`;
 const uuid = value => typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value);
@@ -146,7 +189,7 @@ export function createCloudflareRecoveryAdapter({ token, request = fetch, accoun
   assert.equal(accountId, CLOUDFLARE_ACCOUNT_ID, 'unexpected Cloudflare account');
   const call = async (path, { method = 'GET', body } = {}) => {
     assert.ok(path.startsWith(`/accounts/${accountId}/workers/`), 'Cloudflare path outside Worker scope');
-    assert.ok(['GET', 'POST'].includes(method), 'Cloudflare method outside release scope');
+    assert.ok(['GET', 'POST', 'PUT'].includes(method), 'Cloudflare method outside release scope');
     const response = await request(CLOUDFLARE_API + path, {
       method, body, redirect: 'error', signal: AbortSignal.timeout(30000),
       headers: { Authorization: `Bearer ${token}`, ...(body instanceof FormData ? {} : { 'Content-Type': 'application/json' }) },
@@ -210,6 +253,21 @@ export function createCloudflareRecoveryAdapter({ token, request = fetch, accoun
     assert.ok(result?.id, `${worker} promotion returned no deployment`);
     return result;
   };
+  const deploy = async (worker, metadata, bytes) => {
+    assert.ok(bytes instanceof Uint8Array && bytes.byteLength > 0, `${worker} candidate bytes missing`);
+    const form = new FormData(); form.set('metadata', JSON.stringify(metadata));
+    form.set('worker.js', new Blob([bytes], { type: 'application/javascript+module' }), 'worker.js');
+    return call(workerRoot(worker) + '?bindings_inherit=strict', { method: 'PUT', body: form });
+  };
+  const verifyDeployed = async (worker, baselineVersionId, candidateSha256, baselineSettings) => {
+    const current = await snapshot(worker);
+    assert.notEqual(current.version.id, baselineVersionId, `${worker} deployment did not create a new version`);
+    assert.equal(current.deployment.versions?.length, 1, `${worker} deployment split traffic`);
+    assert.equal(current.deployment.versions[0].version_id, current.version.id, `${worker} deployment serving mismatch`);
+    assert.equal(hash(current.module_bytes), candidateSha256, `${worker} deployed module hash mismatch`);
+    assert.equal(jsonHash(current.settings), jsonHash(baselineSettings), `${worker} settings changed during deployment`);
+    return current;
+  };
   const verifyPromoted = async (worker, versionId, baselineSettings) => {
     const current = await snapshot(worker);
     assert.equal(current.version.id, versionId, `${worker} post-promotion version mismatch`);
@@ -222,7 +280,7 @@ export function createCloudflareRecoveryAdapter({ token, request = fetch, accoun
     approve: async stage => {
       requireRecoveryExecuteApproval(env);
     },
-    snapshot, upload, verifyUploaded, promote, verifyPromoted,
+    snapshot, upload, verifyUploaded, promote, verifyPromoted, deploy, verifyDeployed,
     save: receipt => {
       const destination = env.MMD_RECOVERY_RECEIPT_PATH;
       if (!destination) return;
@@ -252,7 +310,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     const plan = readPlan(process.env.MMD_RECOVERY_MEMBER_CANDIDATE, process.env.MMD_RECOVERY_ADMIN_CANDIDATE, process.env.MMD_RECOVERY_MEMBER_MANIFEST, process.env.MMD_RECOVERY_ADMIN_MANIFEST);
     plan.member = { version: process.env.MMD_RECOVERY_MEMBER_VERSION, deployment: process.env.MMD_RECOVERY_MEMBER_DEPLOYMENT, baseline_sha256: plan.memberManifest.baseline_sha256 };
     plan.admin = { version: process.env.MMD_RECOVERY_ADMIN_VERSION, deployment: process.env.MMD_RECOVERY_ADMIN_DEPLOYMENT, baseline_sha256: plan.adminManifest.baseline_sha256 };
-    await executeRecoveryArtifactRelease(createCloudflareRecoveryAdapter({ token: process.env.CLOUDFLARE_API_TOKEN }), plan);
+    await executeRecoveryFullScriptDeploy(createCloudflareRecoveryAdapter({ token: process.env.CLOUDFLARE_API_TOKEN }), plan);
   } else {
     throw new Error('Use --plan-only or --execute');
   }

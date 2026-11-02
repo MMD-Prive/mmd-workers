@@ -189,6 +189,7 @@ jobs:
           MMD_RECOVERY_APPROVAL: approved
           MMD_RECOVERY_APPROVAL_REF: ${{ inputs.approval_ref }}
           MMD_RECOVERY_APPROVED_SHA: ${{ inputs.approved_sha }}
+          MMD_RECOVERY_MIGRATION_MODE: full-script-deploy-reviewed
           MMD_RECOVERY_MEMBER_CANDIDATE: ${{ runner.temp }}/recovery-artifacts/member-pages-worker-recovery-candidate.js
           MMD_RECOVERY_ADMIN_CANDIDATE: ${{ runner.temp }}/recovery-artifacts/admin-worker-recovery-candidate.js
           MMD_RECOVERY_MEMBER_MANIFEST: ${{ runner.temp }}/recovery-artifacts/member-pages-recovery-artifact-manifest.json

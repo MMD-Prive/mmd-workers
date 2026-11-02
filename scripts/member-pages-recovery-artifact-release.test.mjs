@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { createCloudflareRecoveryAdapter, executeRecoveryArtifactRelease, metadataFor, requireRecoveryExecuteApproval, verifyBaseline } from './member-pages-recovery-artifact-release.mjs';
+import { createCloudflareRecoveryAdapter, executeRecoveryArtifactRelease, executeRecoveryFullScriptDeploy, metadataFor, requireRecoveryExecuteApproval, verifyBaseline } from './member-pages-recovery-artifact-release.mjs';
 
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const snapshot = (worker, version, deployment) => ({ version: { id: version, resources: { script: { main_module: 'worker.js' }, script_runtime: { compatibility_date: '2026-06-20', migration_tag: worker === 'member-pages-worker' ? 'v3-remembered-login-device' : 'v1' }, bindings: [{ name: 'KEEP', type: 'secret_text' }] } }, deployment: { id: deployment, versions: [{ version_id: version, percentage: 100 }] }, latest_version: version });
@@ -11,6 +11,21 @@ test('metadata preserves existing bindings and adds only the mutation DO migrati
   const m = metadataFor(snapshot('member-pages-worker', id(1), id(2)).version, manifest(), 'member-pages-worker');
   assert.deepEqual(m.bindings, [{ name: 'KEEP', type: 'inherit' }, { name: 'CUSTOMER_REQUEST_MUTATION', type: 'durable_object_namespace', class_name: 'CustomerRequestMutationCoordinator' }]);
   assert.deepEqual(m.migrations, { old_tag: 'v3-remembered-login-device', new_tag: 'v5-customer-request-mutation', new_sqlite_classes: ['CustomerRequestMutationCoordinator'] });
+});
+
+test('full-script metadata carries script-level settings from the fresh settings snapshot', () => {
+  const baseline = snapshot('admin-worker', id(1), id(2)).version;
+  const settings = {
+    observability: { enabled: true, head_sampling_rate: 0.25 },
+    tail_consumers: [{ service: 'audit-tail' }],
+    tags: ['mmd-prive', 'admin'],
+    logpush: { enabled: true },
+  };
+  const metadata = metadataFor(baseline, manifest(), 'admin-worker', settings);
+  assert.deepEqual(metadata.observability, settings.observability);
+  assert.deepEqual(metadata.tail_consumers, settings.tail_consumers);
+  assert.deepEqual(metadata.tags, settings.tags);
+  assert.deepEqual(metadata.logpush, settings.logpush);
 });
 
 test('baseline verification rejects version, deployment, split traffic, and migration drift', () => {
@@ -116,4 +131,19 @@ test('upload receipt preserves a returned member version when the admin upload i
   await assert.rejects(executeRecoveryArtifactRelease(io, { member: { version: id(1), deployment: id(2) }, admin: { version: id(3), deployment: id(4) }, memberBytes: bytes, adminBytes: bytes, memberManifest: manifest(digest), adminManifest: manifest(digest) }));
   assert.deepEqual(receipt.at(-1).upload_attempts.member, { state: 'returned', version_id: id(5) });
   assert.deepEqual(receipt.at(-1).upload_attempts.admin, { state: 'started' });
+});
+
+test('full-script deployment applies member migration first and records partial admin failure without rollback', async () => {
+  const calls = []; const receipts = []; const bytes = Buffer.from('candidate'); const digest = createHash('sha256').update(bytes).digest('hex');
+  const io = {
+    save: value => receipts.push(value), approve: async stage => calls.push('approve:' + stage),
+    assertMigrationReady: () => calls.push('migration-ready'),
+    snapshot: async worker => ({ version: { id: id(worker === 'member-pages-worker' ? 1 : 3), resources: { script: { main_module: 'worker.js' }, script_runtime: { compatibility_date: '2026-06-20', migration_tag: worker === 'member-pages-worker' ? 'v3-remembered-login-device' : 'v1' }, bindings: [] } }, deployment: { id: id(worker === 'member-pages-worker' ? 2 : 4), versions: [{ version_id: id(worker === 'member-pages-worker' ? 1 : 3), percentage: 100 }] }, latest_version: id(worker === 'member-pages-worker' ? 1 : 3), settings: {} }),
+    deploy: async worker => { calls.push('deploy:' + worker); if (worker === 'admin-worker') throw Error('admin deploy denied'); return { id: 'script-result' }; },
+    verifyDeployed: async (worker, baseline, candidate, settings) => { calls.push('verify:' + worker); assert.equal(candidate, digest); return { version: { id: id(9) }, deployment: { id: id(10) } }; },
+  };
+  await assert.rejects(executeRecoveryFullScriptDeploy(io, { member: { version: id(1), deployment: id(2) }, admin: { version: id(3), deployment: id(4) }, memberBytes: bytes, adminBytes: bytes, memberManifest: { candidate_sha256: digest, unchanged_prefix_suffix: true, migration: { new_tag: 'v5-customer-request-mutation' } }, adminManifest: { candidate_sha256: digest, unchanged_prefix_suffix: true } }));
+  assert.deepEqual(calls, ['approve:preflight', 'migration-ready', 'approve:deploy', 'deploy:member-pages-worker', 'verify:member-pages-worker', 'deploy:admin-worker']);
+  assert.equal(receipts.at(-1).phase, 'partial-or-unknown-deployment');
+  assert.deepEqual(receipts.at(-1).deployed.member, { version_id: id(9), deployment_id: id(10) });
 });
