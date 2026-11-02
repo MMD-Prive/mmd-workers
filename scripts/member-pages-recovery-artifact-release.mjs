@@ -28,6 +28,14 @@ export function metadataFor(baseline, manifest, worker) {
   if (resources.script.placement !== undefined) metadata.placement = structuredClone(resources.script.placement);
   else if (resources.script.placement_mode === 'smart') metadata.placement = { mode: 'smart' };
   if (baseline.cache_options !== undefined && baseline.cache_options !== null) metadata.cache_options = structuredClone(baseline.cache_options);
+  for (const key of ['observability', 'tail_consumers', 'tags']) {
+    const value = baseline[key] ?? resources.script[key];
+    if (value !== undefined) metadata[key] = structuredClone(value);
+  }
+  Object.defineProperty(metadata, '__expected_bindings', { value: resources.bindings.map(binding => {
+    if (['secret_text', 'secret_key'].includes(binding.type)) return { name: binding.name, type: binding.type };
+    return structuredClone(binding);
+  }), enumerable: false });
   if (worker === MEMBER_WORKER) {
     metadata.bindings.push({ name: 'CUSTOMER_REQUEST_MUTATION', type: 'durable_object_namespace', class_name: DO_CLASS });
     metadata.migrations = { old_tag: 'v3-remembered-login-device', new_tag: 'v5-customer-request-mutation', new_sqlite_classes: [DO_CLASS] };
@@ -165,8 +173,13 @@ export function createCloudflareRecoveryAdapter({ token, request = fetch, accoun
     assert.ok(uuid(versionId), `${worker} uploaded version id invalid`);
     const exact = await call(workerRoot(worker) + '/versions/' + versionId);
     assert.equal(exact?.id, versionId, `${worker} uploaded version identity mismatch`);
-    const names = new Set(exact?.resources?.bindings?.map(binding => binding.name) || []);
-    for (const binding of metadata.bindings || []) assert.ok(names.has(binding.name), `${worker} binding readback missing: ${binding.name}`);
+    const actualBindings = exact?.resources?.bindings || [];
+    const actualByName = new Map(actualBindings.map(binding => [binding.name, binding]));
+    for (const binding of metadata.__expected_bindings || []) {
+      const actual = actualByName.get(binding.name); assert.ok(actual, `${worker} binding readback missing: ${binding.name}`);
+      for (const key of Object.keys(binding)) if (key !== 'text' && key !== 'secret_text' && key !== 'secret_key') assert.deepEqual(actual[key], binding[key], `${worker} binding changed: ${binding.name}.${key}`);
+    }
+    assert.ok(actualByName.has('CUSTOMER_REQUEST_MUTATION') === (worker === MEMBER_WORKER), `${worker} mutation binding scope changed`);
     if (worker === MEMBER_WORKER) {
       assert.equal(exact?.resources?.script_runtime?.migration_tag, manifest.migration?.new_tag, `${worker} migration readback mismatch`);
     }

@@ -67,7 +67,7 @@ test('production adapter uses only scoped Cloudflare reads, uploads and promotio
     }
     if (path === root + '/versions' && u.search === '?bindings_inherit=strict' && init.method === 'POST') {
       state.uploadedReady = true;
-      state.uploadedVersion = { id: state.uploaded, resources: { bindings: [{ name: 'KEEP' }, ...(worker === 'member-pages-worker' ? [{ name: 'CUSTOMER_REQUEST_MUTATION' }] : [])], script_runtime: { migration_tag: state.newMigration } } };
+      state.uploadedVersion = { id: state.uploaded, resources: { bindings: [{ name: 'KEEP', type: 'secret_text' }, ...(worker === 'member-pages-worker' ? [{ name: 'CUSTOMER_REQUEST_MUTATION', type: 'durable_object_namespace' }] : [])], script_runtime: { migration_tag: state.newMigration } } };
       return response({ id: state.uploaded });
     }
     if (path === root + '/deployments' && init.method === 'POST') {

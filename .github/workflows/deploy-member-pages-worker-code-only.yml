@@ -158,6 +158,25 @@ jobs:
           fetch-depth: 0
           path: recovery-source
           persist-credentials: false
+      - name: Install pinned recovery build tool
+        if: inputs.execution_mode == 'recovery-artifact'
+        run: npm install --prefix "$RUNNER_TEMP/recovery-build-tools" --ignore-scripts --no-audit --no-fund esbuild@0.27.3
+      - name: Fetch and verify exact active recovery baselines
+        if: inputs.execution_mode == 'recovery-artifact'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          MMD_RECOVERY_MEMBER_VERSION: ${{ inputs.recovery_member_version }}
+          MMD_RECOVERY_MEMBER_DEPLOYMENT: ${{ inputs.recovery_member_deployment }}
+          MMD_RECOVERY_ADMIN_VERSION: ${{ inputs.recovery_admin_version }}
+          MMD_RECOVERY_ADMIN_DEPLOYMENT: ${{ inputs.recovery_admin_deployment }}
+        run: node scripts/fetch-member-pages-recovery-baseline.mjs "$RUNNER_TEMP/recovery-artifacts"
+      - name: Build and hash reviewed recovery candidates
+        if: inputs.execution_mode == 'recovery-artifact'
+        env:
+          ESBUILD: ${{ runner.temp }}/recovery-build-tools/node_modules/.bin/esbuild
+        run: |
+          node scripts/build-member-pages-recovery-artifact.mjs member "$RUNNER_TEMP/recovery-artifacts/member-active.js" "$GITHUB_WORKSPACE/recovery-source" "$RUNNER_TEMP/recovery-artifacts/member-pages-worker-recovery-candidate.js" "$RUNNER_TEMP/recovery-artifacts/member-pages-recovery-artifact-manifest.json"
+          node scripts/build-member-pages-recovery-artifact.mjs admin "$RUNNER_TEMP/recovery-artifacts/admin-active.js" "$GITHUB_WORKSPACE/recovery-source" "$RUNNER_TEMP/recovery-artifacts/admin-worker-recovery-candidate.js" "$RUNNER_TEMP/recovery-artifacts/admin-recovery-artifact-manifest.json"
       - name: Verify scoped recovery release runner without production writes
         if: inputs.execution_mode == 'recovery-artifact'
         run: |
@@ -170,16 +189,24 @@ jobs:
           MMD_RECOVERY_APPROVAL: approved
           MMD_RECOVERY_APPROVAL_REF: ${{ inputs.approval_ref }}
           MMD_RECOVERY_APPROVED_SHA: ${{ inputs.approved_sha }}
-          MMD_RECOVERY_MEMBER_CANDIDATE: ${{ github.workspace }}/release-tools/active-artifacts/member-pages-worker-recovery-candidate.js
-          MMD_RECOVERY_ADMIN_CANDIDATE: ${{ github.workspace }}/release-tools/active-artifacts/admin-worker-recovery-candidate.js
-          MMD_RECOVERY_MEMBER_MANIFEST: ${{ github.workspace }}/release-tools/scripts/member-pages-recovery-artifact-manifest.json
-          MMD_RECOVERY_ADMIN_MANIFEST: ${{ github.workspace }}/release-tools/scripts/admin-recovery-artifact-manifest.json
+          MMD_RECOVERY_MEMBER_CANDIDATE: ${{ runner.temp }}/recovery-artifacts/member-pages-worker-recovery-candidate.js
+          MMD_RECOVERY_ADMIN_CANDIDATE: ${{ runner.temp }}/recovery-artifacts/admin-worker-recovery-candidate.js
+          MMD_RECOVERY_MEMBER_MANIFEST: ${{ runner.temp }}/recovery-artifacts/member-pages-recovery-artifact-manifest.json
+          MMD_RECOVERY_ADMIN_MANIFEST: ${{ runner.temp }}/recovery-artifacts/admin-recovery-artifact-manifest.json
           MMD_RECOVERY_MEMBER_VERSION: ${{ inputs.recovery_member_version }}
           MMD_RECOVERY_MEMBER_DEPLOYMENT: ${{ inputs.recovery_member_deployment }}
           MMD_RECOVERY_ADMIN_VERSION: ${{ inputs.recovery_admin_version }}
           MMD_RECOVERY_ADMIN_DEPLOYMENT: ${{ inputs.recovery_admin_deployment }}
           MMD_RECOVERY_RECEIPT_PATH: ${{ runner.temp }}/member-pages-recovery-receipt.json
         run: node scripts/member-pages-recovery-artifact-release.mjs --execute
+      - name: Upload sanitized recovery release receipt
+        if: always() && inputs.execution_mode == 'recovery-artifact'
+        uses: actions/upload-artifact@v4
+        with:
+          name: member-pages-recovery-${{ github.run_id }}
+          path: ${{ runner.temp }}/member-pages-recovery-receipt.json
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Check out original startup source for promotion-only recovery
         if: inputs.execution_mode == 'promote-existing'
         uses: actions/checkout@v5
