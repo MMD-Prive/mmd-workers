@@ -47,5 +47,6 @@ test('workflow contract fetches baselines, builds candidates, then invokes execu
   assert.match(workflow, /build-member-pages-recovery-artifact\.mjs admin/);
   assert.match(workflow, /member-pages-recovery-artifact-release\.mjs --execute/);
   assert.match(workflow, /MMD_RECOVERY_MIGRATION_MODE: full-script-deploy-reviewed/);
+  assert.match(workflow, /member-pages-recovery-frontend-compatibility\.mjs/);
   assert.match(workflow, /member-pages-recovery-receipt/);
 });

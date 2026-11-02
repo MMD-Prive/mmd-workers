@@ -181,6 +181,7 @@ jobs:
         if: inputs.execution_mode == 'recovery-artifact'
         run: |
           node --test scripts/member-pages-recovery-artifact.test.mjs scripts/member-pages-recovery-artifact-release.test.mjs
+          node scripts/member-pages-recovery-frontend-compatibility.mjs ../recovery-source/webflow/sigil/member/login-existing-member-dialog.html ../recovery-source/webflow/sigil/member/existing-member-dialog.html
           node scripts/member-pages-recovery-artifact-release.mjs --plan-only
       - name: Execute approved paired recovery artifact release
         if: inputs.execution_mode == 'recovery-artifact'
