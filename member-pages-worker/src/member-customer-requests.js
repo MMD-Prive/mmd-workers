@@ -38,7 +38,7 @@ export async function handleMemberCustomerRequest(request, env = {}) {
 
 async function handleRequest(request, env, identity) {
   if (request.method === "GET" || request.method === "HEAD") {
-    const raw = await listInbox(env, identity.lineUserId);
+    const raw = await listInbox(env, identity.lineUserId); if (raw === null) return fail(503, "REQUEST_QUEUE_UNAVAILABLE");
     const response = json({ ok: true, authority: "mmd.customer_request_intake.v1", items: raw.map((record) => customerItem(parsePayload(record?.fields?.payload_json))).filter(Boolean).slice(0, MAX_LIST), quota: requestQuota(raw) });
     return request.method === "HEAD" ? new Response(null, { status: response.status, headers: response.headers }) : response;
   }
@@ -46,7 +46,7 @@ async function handleRequest(request, env, identity) {
   const body = await request.json().catch(() => null);
   const input = validateRequest(body);
   if (!input.ok) return fail(400, input.code);
-  const rawPrior = await listInbox(env, identity.lineUserId);
+  const rawPrior = await listInbox(env, identity.lineUserId); if (rawPrior === null) return fail(503, "REQUEST_QUEUE_UNAVAILABLE");
   const prior = rawPrior.map((record) => customerItem(parsePayload(record?.fields?.payload_json))).filter(Boolean);
   const duplicate = prior.find((item) => item.request_id === input.data.request_id);
   if (duplicate) {
@@ -110,7 +110,7 @@ async function handleAdmin(request, env, path) {
   const body = await request.json().catch(() => null);
   const lineUserId = lineId(body?.line_user_id);
   if (!lineUserId) return fail(400, "INVALID_REQUEST");
-  if (path === ADMIN_PATH) return json({ ok: true, authority: "mmd.customer_request_intake.v1", items: await listRequests(env, lineUserId) });
+  if (path === ADMIN_PATH) { const items = await listRequests(env, lineUserId); return items === null ? fail(503, "REQUEST_QUEUE_UNAVAILABLE") : json({ ok: true, authority: "mmd.customer_request_intake.v1", items }); }
   const evidenceId = safeEvidenceId(body?.evidence_id);
   if (!evidenceId) return fail(400, "INVALID_REQUEST");
   const client = await resolveCanonicalClientForLine(env, lineUserId).catch(() => null);
@@ -153,6 +153,7 @@ function validateRequest(body) {
 
 async function listRequests(env, lineUserId) {
   const records = await listInbox(env, lineUserId);
+  if (records === null) return null;
   return records.map((record) => customerItem(parsePayload(record?.fields?.payload_json))).filter(Boolean).slice(0, MAX_LIST);
 }
 
@@ -192,14 +193,14 @@ async function evidenceObject(env, clientId, evidenceId) {
 }
 async function listInbox(env, lineUserId) {
   const key = safeText(env.AIRTABLE_API_KEY, 2000); const base = safeText(env.AIRTABLE_BASE_ID, 100); const table = safeText(env.AIRTABLE_TABLE_CONSOLE_INBOX, 180) || INBOX_TABLE;
-  if (!key || !base) return [];
+  if (!key || !base) return null;
   const records = []; let offset = "";
   for (let page = 0; page < 20; page += 1) {
     const url = new URL(`${API}/${encodeURIComponent(base)}/${encodeURIComponent(table)}`);
     url.searchParams.set("filterByFormula", `AND({line_user_id}=${formula(lineUserId)},{source}='my_mmd_liff',OR({intent}='your_request',{intent}='saved_model',{intent}='profile_update'))`);
     url.searchParams.set("maxRecords", String(MAX_LIST)); url.searchParams.set("pageSize", String(MAX_LIST)); if (offset) url.searchParams.set("offset", offset);
     const response = await airtableFetch(env, url, { headers: { authorization: `Bearer ${key}`, accept: "application/json" } });
-    const payload = await response.json().catch(() => null); if (!response.ok || !Array.isArray(payload?.records)) return [];
+    const payload = await response.json().catch(() => null); if (!response.ok || !Array.isArray(payload?.records)) return null;
     records.push(...payload.records); offset = payload.offset || ""; if (!offset) break;
   }
   return records;
