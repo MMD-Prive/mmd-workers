@@ -21,13 +21,13 @@ export async function handleHistoricalImport(request, env, actor) {
   const unique = [...byKey.values()];
   if (body.dry_run !== false) return json({ ok: true, dry_run: true, quota_exempt: true, records: unique, count: unique.length });
   const run = importQueue.then(async () => {
-  const operationId = crypto.randomUUID(); const lock = body.dry_run !== false ? { ok: true } : await importLease(env, operationId, 'begin'); if (!lock.ok) return json({ ok: false, error: lock.error || 'HISTORICAL_IMPORT_UNAVAILABLE' }, lock.status || 503);
+  const operationId = crypto.randomUUID(); let importOutcome = 'committed'; const lock = body.dry_run !== false ? { ok: true } : await importLease(env, operationId, 'begin'); if (!lock.ok) return json({ ok: false, error: lock.error || 'HISTORICAL_IMPORT_UNAVAILABLE' }, lock.status || 503);
   try {
     const existing = await listExisting(env); const seen = new Set(existing.map(record => parse(record.fields?.payload_json).historical_key).filter(Boolean)); const imported = [];
     for (const row of unique) { if (seen.has(row.historical_key)) continue; const payload = { schema: 'mmd_customer_request_v1', request_id: `hist_${hashKey(row.historical_key)}`, request_type: 'your_request', source: 'line_history_import', archival: true, quota_exempt: true, historical_key: row.historical_key, created_at: row.conversation_date, status: 'reviewing', canonical_client_id: null, model: { display_name: row.model_name || null, social: row.social_url || null, reason: row.query, audience: 'unknown' }, evidence_ids: [], missing_original: row.missing_original, historical_provenance: { source_ref: row.source_ref, conversation_date: row.conversation_date, query: row.query }, visibility: 'internal_only' }; imported.push(await create(env, { source: 'line', intent: 'note_only', line_id: payload.request_id, admin_note: `Historical Your Request · ${row.historical_key}`, payload_json: JSON.stringify(payload), status: 'done' })); seen.add(row.historical_key); }
     return json({ ok: true, dry_run: false, quota_exempt: true, imported: imported.length, skipped_duplicates: unique.length - imported.length });
-  } catch { if (body.dry_run === false) await importLease(env, operationId, 'finish', 'uncertain'); return json({ ok: false, error: 'HISTORICAL_IMPORT_UNAVAILABLE' }, 503); }
-  finally { if (body.dry_run === false && lock.ok) await importLease(env, operationId, 'finish', 'committed'); }
+  } catch { importOutcome = 'uncertain'; return json({ ok: false, error: 'HISTORICAL_IMPORT_UNAVAILABLE' }, 503); }
+  finally { if (body.dry_run === false && lock.ok) await importLease(env, operationId, 'finish', importOutcome); }
   });
   importQueue = run.catch(() => {});
   return run;

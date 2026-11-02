@@ -264,14 +264,15 @@ async function listInbox(env, lineUserId) {
   const key = safeText(env.AIRTABLE_API_KEY, 2000); const base = safeText(env.AIRTABLE_BASE_ID, 100); const table = safeText(env.AIRTABLE_TABLE_CONSOLE_INBOX, 180) || INBOX_TABLE;
   if (!key || !base) return null;
   const records = []; let offset = "";
-  for (let page = 0; page < 20; page += 1) {
+  for (let page = 0; page < 1000; page += 1) {
     const url = new URL(`${API}/${encodeURIComponent(base)}/${encodeURIComponent(table)}`);
     url.searchParams.set("filterByFormula", `AND({line_user_id}=${formula(lineUserId)},OR({source}='my_mmd_liff',{source}='line'),OR({intent}='note_only',{intent}='your_request',{intent}='saved_model',{intent}='profile_update'))`);
-    url.searchParams.set("maxRecords", String(MAX_LIST)); url.searchParams.set("pageSize", String(MAX_LIST)); if (offset) url.searchParams.set("offset", offset);
+    url.searchParams.set("pageSize", "100"); if (offset) url.searchParams.set("offset", offset);
     const response = await airtableFetch(env, url, { headers: { authorization: `Bearer ${key}`, accept: "application/json" } });
     const payload = await response.json().catch(() => null); if (!response.ok || !Array.isArray(payload?.records)) return null;
     records.push(...payload.records); offset = payload.offset || ""; if (!offset) break;
   }
+  if (offset) return null;
   return records;
 }
 async function createInbox(env, fields) {

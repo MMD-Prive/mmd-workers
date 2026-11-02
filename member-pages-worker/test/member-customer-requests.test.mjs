@@ -83,7 +83,8 @@ test("Airtable applies the customer-request namespace before the bounded result 
   assert.match(formula, /\{intent\}='your_request'/);
   assert.match(formula, /\{intent\}='saved_model'/);
   assert.match(formula, /\{intent\}='profile_update'/);
-  assert.equal(inboxQuery?.searchParams.get("maxRecords"), "50");
+  assert.equal(inboxQuery?.searchParams.get("pageSize"), "100");
+  assert.equal(inboxQuery?.searchParams.get("maxRecords"), null);
 });
 
 test("Your Request queues private metadata once and returns a customer-safe projection", async () => {

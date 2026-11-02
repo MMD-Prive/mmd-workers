@@ -6,7 +6,7 @@ export class CustomerRequestMutationCoordinator {
     return this.state.blockConcurrencyWhile(async () => {
       const current = await this.state.storage.get('lease');
       if (body.action === 'begin') {
-        if (current && (current.status === 'uncertain' || current.expires_at > Date.now()) && current.operation_id !== body.operation_id) return Response.json({ ok: false, error: current.status === 'uncertain' ? 'REQUEST_MUTATION_UNCERTAIN' : 'REQUEST_MUTATION_IN_FLIGHT' }, { status: 409 });
+        if (current && current.operation_id !== body.operation_id) return Response.json({ ok: false, error: current.status === 'uncertain' ? 'REQUEST_MUTATION_UNCERTAIN' : 'REQUEST_MUTATION_IN_FLIGHT' }, { status: 409 });
         const lease = { operation_id: body.operation_id, expires_at: Date.now() + 30000 }; await this.state.storage.put('lease', lease); return Response.json({ ok: true, lease: body.operation_id });
       }
       if (body.action === 'finish') {
