@@ -153,7 +153,7 @@ test('approval-only execution surface has no write credential, release command, 
  assert.deepEqual([...job.matchAll(/^          ([A-Z_]+):/gm)].map(match=>match[1]),['GH_TOKEN','APPROVAL_REF','APPROVED_SHA']);
  const header=workflow.split('\njobs:')[0];
  assert.doesNotMatch(header,/secrets\.|^env:|: write|id-token/);
- assert.equal((workflow.match(/secrets\./g)||[]).length,6);
+ assert.equal((workflow.match(/secrets\./g)||[]).length,8);
  assert.ok(workflowJobs.get('release').includes('secrets.CLOUDFLARE_API_TOKEN'));
 });
 
