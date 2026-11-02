@@ -280,13 +280,14 @@ export function therapistClient() {
     if (ids.length > 6) { notice("เลือกรูปแสดงได้ไม่เกิน 6 รูปครับ", true); return; }
     await api(P + "/api/auth/profile/photos/public", json("PUT", { photo_ids: ids })); await loadProfile(); notice("บันทึกรูปที่แสดงแล้วครับ");
   });
-  $("logout").onclick = () => busy($("logout"), async () => { clearPrivate(); await api(P + "/api/auth/logout", { method: "POST" }); location.assign(P + "/login"); });
+  $("logout").onclick = () => busy($("logout"), async () => { clearPrivate(); await api(P + "/api/auth/logout", { method: "POST" }); location.assign(P + "/login?logout=1"); });
   $("line-login").onclick = () => location.assign(P + "/login");
   async function login() {
     $("entry").hidden = false;
     const storageKey = "mms-therapist-invite-v1";
     const recoveryKey = "mms-therapist-line-recovery-v1";
     const url = new URL(location.href);
+    let explicitLogout = url.searchParams.get("logout") === "1";
     const hash = new URLSearchParams(url.hash.slice(1));
     const nested = url.searchParams.get("liff.state") || url.searchParams.get("liff_state") || "";
     const primary = url.pathname.replace(/\/$/, "") === P || ["code", "liff.state", "liff_state"].some(key => url.searchParams.has(key));
@@ -301,7 +302,7 @@ export function therapistClient() {
     else {
       try { const saved = JSON.parse(storage.get(storageKey)); if (saved?.until > Date.now()) invite = saved.token || ""; else storage.remove(storageKey); } catch (_) { storage.remove(storageKey); }
     }
-    if (!invite && !primary) { try { await api(P + "/api/auth/me"); location.replace(P + "/app"); return; } catch (_) {} }
+    if (!explicitLogout && !invite && !primary) { try { await api(P + "/api/auth/me"); location.replace(P + "/app"); return; } catch (_) {} }
     // Keep the invitation in the redirect too if browser storage is unavailable.
     const redirect = new URL(P + "/login", url.origin);
     if (invite) redirect.hash = new URLSearchParams({ invite }).toString();
@@ -324,6 +325,14 @@ export function therapistClient() {
         ]);
       } finally { clearTimeout(timeout); }
       progress?.received(step);
+      if (explicitLogout) {
+        window.liff.logout();
+        explicitLogout = false; invite = ""; redirect.hash = "";
+        storage.remove(storageKey); storage.remove(recoveryKey);
+        history.replaceState(null, "", P + "/login");
+        notice("ออกจากบัญชีแล้วครับ กดยืนยันผ่าน LINE เพื่อเลือกบัญชีอีกครั้ง");
+        return;
+      }
       if (!window.liff.isLoggedIn()) { notice("กำลังเปิด LINE เพื่อยืนยันบัญชีครับ"); window.liff.login({ redirectUri: redirect.href }); return; }
       const token = window.liff.getIDToken();
       if (!token) { recoverLine(); return; }
