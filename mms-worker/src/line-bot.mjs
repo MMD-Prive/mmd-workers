@@ -8,7 +8,7 @@ const SAFE_REPLIES = Object.freeze({
   home: "อยากรู้จัก Male Massage ก่อน เริ่มที่นี่ได้เลยครับ 💚\nhttps://www.mmdbkk.com/male-massage/home",
   booking: "พร้อมให้ MMS ดูแลแล้ว ส่งคำขอจองพร้อมวัน เวลา พื้นที่ และบริการที่สนใจได้ที่นี่ครับ 💚\nhttps://www.mmdbkk.com/male-massage/member/mms-booking\nการส่งคำขอยังไม่ใช่การยืนยันคิว MMS จะตรวจรายละเอียดก่อนครับ",
   services: "ดูบริการ MMS และเลือกแนวทางที่เหมาะกับคุณได้ที่นี่ครับ 💚\nhttps://www.mmdbkk.com/male-massage/therapists/mms\nถ้าต้องการคิวหรือรายละเอียดเฉพาะงาน ให้ MMS ตรวจสอบอีกครั้งครับ",
-  my_mms: "MY MMS เป็นพื้นที่ของคุณใน LINE ครับ เปิด Mini App แล้วยืนยันตัวตนก่อนดูข้อมูลที่เชื่อมกับบัญชีของคุณ 💚\nhttps://www.mmdbkk.com/male-massage/my-mms",
+  my_mms: "MY MMS · Online Therapist Explorer 💚\nเมื่อยที่ไหน…ให้คนที่ใช่มาหาคุณ\nเปลี่ยนพิกัด เลือกคนที่ใช่ เห็นเขามาหา\nดูแนวคิดและฟีเจอร์ MY MMS ได้ที่นี่ครับ\nhttps://www.mmdbkk.com/male-massage/my-mms\nกดปุ่มรับ App MY MMS รอไว้เลย\nเตรียมพร้อมก่อน MMS กลับมาเดือนธันวาคม · ตัวเลือกและการเดินทางขึ้นอยู่กับพื้นที่และความพร้อมจริงครับ\nยืนยันบัญชีก่อนดูข้อมูลที่เชื่อมกับคุณ\nระหว่างรอสิ้นปี ติดตามข่าวสารได้ที่ Telegram ครับ\nhttps://t.me/mmdpriveth",
   recruit: "สนใจทำงานกับ MMS ลองดูภาพรวมของ Therapist ก่อนครับ ว่างานเป็นแบบไหน แล้วค่อยตัดสินใจสมัคร 💚\nhttps://www.mmdbkk.com/therapists",
   benefits: "อยากรู้ว่าการเป็น MMS Therapist มีอะไรดี ดูหน้านี้ได้เลยครับ 💚\nhttps://www.mmdbkk.com/apply/mms-therapist-benefits\nจำนวนงานและรายได้ขึ้นกับงานจริง MMS ไม่รับประกันล่วงหน้าครับ",
   rules: "ก่อนรับงาน ลองอ่าน Therapist Rules ให้ครบครับ โดยเฉพาะ Brief อุปกรณ์ และการดูแลลูกค้าจนจบงาน 💚\nhttps://www.mmdbkk.com/apply/mms-therapist-rules",
@@ -222,3 +222,4 @@ function constantTimeEqual(left, right) {
   for (let index = 0; index < length; index += 1) difference |= (a[index] || 0) ^ (b[index] || 0);
   return difference === 0;
 }
+
