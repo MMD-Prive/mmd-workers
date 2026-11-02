@@ -1,8 +1,8 @@
 import {approvedCategoryReply, withCategoryReplyGrant} from './kenji-reply-category-gate.mjs';
 import {careBackOctoberReply} from './kenji-care-back-october.mjs';
 import {lineIntakeCommand, readLineIntakeCatalog, resolveLineIntakeReply} from './kenji-line-intake-commands.mjs';
-import {resolveKenjiCheckptsTruth} from './kenji-line-live-truth.mjs';
-import {resolveCheckptsShortcut} from './rich-menu-conversation.mjs';
+import {resolveKenjiLineLiveTruth} from './kenji-line-live-truth.mjs';
+import {resolveMembershipStatusReply} from './kenji-membership-status-reply.mjs';
 
 export async function runApprovedCategoryTurn(env, event, initialRuntime, io) {
   const now = io.now ?? Date.now();
@@ -30,8 +30,8 @@ export async function runApprovedCategoryTurn(env, event, initialRuntime, io) {
             runtime.controls?.all_kenji_mutations === true || runtime.controls?.line_oa_auto_reply === true ||
             owner?.ok !== true || owner.active === true) return {decision,attempted,delivered:false,deliveryStatus:null};
         if (command === 'checkpts') {
-          const truth = await resolveKenjiCheckptsTruth({env,event,useSnapshot:false});
-          decision = {...resolveCheckptsShortcut(truth,now,false),intent:'approved_command',reply_source:'category_checkpts'};
+          const truth = await resolveKenjiLineLiveTruth({env,event,intent:'membership_status'});
+          decision = {...resolveMembershipStatusReply(truth),intent:'approved_command',reply_source:'category_checkpts'};
         } else {
           const catalog = intake === 'apply' ? null : await readLineIntakeCatalog(env,event);
           const reply = resolveLineIntakeReply(event,{},catalog,now);
