@@ -310,12 +310,15 @@ async function persistMergeRequest(env, { lineUserId, email, memberIdCandidate, 
   const table = tableName(env.AIRTABLE_TABLE_IDENTITY_MERGE_REQUESTS, TABLES.mergeRequests);
   const idempotencyKey = await keyedDigest(env, `identity-recovery:${lineUserId}:${email || "-"}:${memberIdCandidate || "-"}:${phone || "-"}:${telegramUsername || "-"}:${nickname || "-"}`);
   const mergeRequestId = `IMR-${idempotencyKey.slice(0, 20).toUpperCase()}`;
+  const lease = await beginMergeRequestLease(env, idempotencyKey);
+  if (!lease.ok) throw new Error(lease.error || "merge_request_in_flight");
   const existing = await airtableList(env, table, {
     filterByFormula: `{idempotency_key}=${formulaString(idempotencyKey)}`,
     maxRecords: 2,
   });
   if (existing.length > 1) throw new Error("merge_request_ambiguous");
   if (existing.length === 1) {
+    await finishMergeRequestLease(env, lease, "committed");
     return { merge_request_id: String(existing[0]?.fields?.merge_request_id || mergeRequestId), record_id: existing[0].id, resumed: true };
   }
 
@@ -358,8 +361,39 @@ async function persistMergeRequest(env, { lineUserId, email, memberIdCandidate, 
   if (result.candidateClientIds.length) fields["Candidate Client"] = result.candidateClientIds;
   if (result.candidateMemberIds.length) fields["Candidate Member"] = result.candidateMemberIds;
 
-  const created = await airtableCreate(env, table, fields);
-  return { merge_request_id: mergeRequestId, record_id: created.id, resumed: false };
+  try {
+    const created = await airtableCreate(env, table, fields);
+    await finishMergeRequestLease(env, lease, "committed");
+    return { merge_request_id: mergeRequestId, record_id: created.id, resumed: false };
+  } catch (error) {
+    await finishMergeRequestLease(env, lease, "uncertain");
+    throw error;
+  }
+}
+
+async function beginMergeRequestLease(env, idempotencyKey) {
+  const binding = env.CUSTOMER_REQUEST_MUTATION;
+  if (!binding?.idFromName || !binding?.get) return { ok: false, error: "merge_request_mutation_unavailable" };
+  const operation_id = crypto.randomUUID();
+  const mutation_fingerprint = `identity-recovery:${idempotencyKey}`;
+  const id = binding.idFromName(`identity-recovery:${idempotencyKey}`);
+  const response = await binding.get(id).fetch("https://identity-recovery/begin", { method: "POST", body: JSON.stringify({ action: "begin", operation_id }) }).catch(() => null);
+  const body = await response?.json().catch(() => null);
+  if (!response?.ok) return { ok: false, error: body?.error || "merge_request_in_flight" };
+  for (const action of ["prepare", "write_started"]) {
+    const next = await binding.get(id).fetch(`https://identity-recovery/${action}`, { method: "POST", body: JSON.stringify({ action, operation_id, mutation_fingerprint }) }).catch(() => null);
+    if (!next?.ok) return { ok: false, error: `${action}_failed` };
+  }
+  return { ok: true, operation_id, mutation_fingerprint };
+}
+
+async function finishMergeRequestLease(env, lease, status) {
+  const binding = env.CUSTOMER_REQUEST_MUTATION;
+  if (!lease?.operation_id || !binding?.idFromName || !binding?.get) throw new Error("merge_request_mutation_unavailable");
+  const key = lease.mutation_fingerprint?.replace(/^identity-recovery:/, "") || "";
+  const id = binding.idFromName(`identity-recovery:${key}`);
+  const response = await binding.get(id).fetch("https://identity-recovery/finish", { method: "POST", body: JSON.stringify({ action: "finish", operation_id: lease.operation_id, status, mutation_fingerprint: lease.mutation_fingerprint }) }).catch(() => null);
+  if (!response?.ok && status !== "uncertain") throw new Error("merge_request_mutation_finish_failed");
 }
 
 function strongestMatch({ members, clients, preSession, accessEvidence, lineOfc, memberHintMatches, clientsPhone = [], clientsTelegram = [], lineOfcPhone = [], lineOfcTelegram = [], clientsNickname = [], preSessionNickname = [], lineOfcNickname = [] }) {
