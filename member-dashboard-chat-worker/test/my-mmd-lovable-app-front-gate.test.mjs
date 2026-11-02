@@ -493,3 +493,27 @@ test("private preview front gate overwrites rollout mode header and unknown conf
   ), runtime);
   assert.deepEqual(seen, ["pilot", "off"]);
 });
+
+for (const query of ['intent=status', 'intent=status&view=overview', 'liff.state='+encodeURIComponent('/?intent=status&view=overview')]) {
+  test('Nightline home remains on LIFF after login: '+query, async()=>{
+    const shell='<!doctype html><html><head></head><body data-mmd-skin="nightline"><main>Nightline</main><script nonce="existing">bootstrapExistingSession();</script></body></html>';
+    const calls=[];
+    const runtime={MEMBER_PAGES_WORKER:{fetch:async request=>{calls.push(new URL(request.url).pathname);return new Response(shell,{headers:{'content-type':'text/html','set-cookie':'__Host-session=fixture; Secure; HttpOnly; Path=/'}});}}};
+    const response=await worker.fetch(new Request('https://mmdbkk.com/member/liff?'+query),runtime);
+    assert.equal(await response.text(),shell);
+    assert.equal(response.headers.get('x-mmd-liff-ui-mode'),'nightline-home');
+    assert.equal(response.headers.get('x-mmd-liff-return-target'),null);
+    assert.equal(response.headers.get('set-cookie'),'__Host-session=fixture; Secure; HttpOnly; Path=/');
+    assert.deepEqual(calls,['/member/liff']);
+  });
+}
+for (const view of ['ems_albums','gws_albums']) {
+  test('Nightline does not suppress protected album return: '+view, async()=>{
+    const shell='<!doctype html><html><head></head><body data-mmd-skin="nightline"><script nonce="existing">bootstrapExistingSession();</script></body></html>';
+    const runtime={MEMBER_PAGES_WORKER:{fetch:async()=>new Response(shell,{headers:{'content-type':'text/html'}})}};
+    const response=await worker.fetch(new Request('https://mmdbkk.com/member/liff?intent='+view),runtime);
+    const html=await response.text();
+    assert.notEqual(response.headers.get('x-mmd-liff-ui-mode'),'nightline-home');
+    assert.match(html,/mmd-ems-login-return/);
+  });
+}
