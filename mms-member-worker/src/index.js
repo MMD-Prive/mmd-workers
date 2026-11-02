@@ -10,8 +10,6 @@ export class MmsMemberAccount extends DurableObject {
   openSession(...args) { return this.account.openSession(...args); }
   view(...args) { return this.account.view(...args); }
   saveProfile(...args) { return this.account.saveProfile(...args); }
-  createByYourRequest(...args) { return this.account.createByYourRequest(...args); }
-  listByYourRequests(...args) { return this.account.listByYourRequests(...args); }
   logout(...args) { return this.account.logout(...args); }
 }
 

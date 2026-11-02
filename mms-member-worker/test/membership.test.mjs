@@ -81,25 +81,6 @@ test('enrollment, repeat enrollment, editing, restart persistence and logout use
   assert.equal((await handleMemberRequest(req('logout', 'POST', {}, cookie), env)).status, 200);
 });
 
-test('By Your Request is customer-scoped, quota-bound, idempotent and private', async t => {
-  const env = environment(t); mockLine(t);
-  const signed = await login(env);
-  assert.equal((await handleMemberRequest(req('register', 'POST', registration, signed.cookie), env)).status, 200);
-  const requestBody = key => ({ requested_person_key: key, requested_person_label: key, inquiry_text: 'รู้จักไหม', social_links: ['https://instagram.com/example'], media: [], media_status: 'not_provided', identity_unknown: true });
-  assert.equal((await handleMemberRequest(req('by-your-request', 'POST', requestBody('a'), signed.cookie, 'published', { 'idempotency-key': 'retry-a' }), env)).status, 201);
-  const retry = await handleMemberRequest(req('by-your-request', 'POST', requestBody('a'), signed.cookie, 'published', { 'idempotency-key': 'retry-a' }), env);
-  assert.equal(retry.status, 201);
-  for (const key of ['b', 'c', 'd']) assert.equal((await handleMemberRequest(req('by-your-request', 'POST', requestBody(key), signed.cookie), env)).status, 201);
-  const fifth = await handleMemberRequest(req('by-your-request', 'POST', requestBody('e'), signed.cookie), env);
-  assert.equal(fifth.status, 429);
-  const listed = await handleMemberRequest(req('by-your-requests', 'GET', null, signed.cookie), env);
-  const data = (await listed.json()).data;
-  assert.equal(data.records.length, 4);
-  assert.equal(data.quota.used, 4);
-  assert.ok(data.records.every((item) => item.privacy_level === 'private'));
-  assert.ok(data.records.every((item) => item.social_handles_verified === false));
-});
-
 test('rejects forged identities and foreign channels; accepts server-verified access tokens', async t => {
   const env = environment(t); const mocked = mockLine(t);
   assert.equal((await handleMemberRequest(req('line', 'POST', { userId: subjectA }), env)).status, 400);
