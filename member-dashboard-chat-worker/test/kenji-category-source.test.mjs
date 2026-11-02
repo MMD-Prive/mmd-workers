@@ -44,14 +44,14 @@ for(const command of ['checkpts','package','regis','apply'])test(`old Hiro draft
 for(const command of ['checkpts','package','regis','apply'])test(`exact command replies with model disabled: ${command}`,async()=>{
   const x=io();const r=await runApprovedCategoryTurn({...env,LINE_KENJI_MODEL_ENABLED:'false'},event(command),runtime,x);
   assert.equal(r.delivered,true);assert.equal(x.sent.length,1);assert.equal(r.decision.reply_source,`category_${command}`);
-  if(command==='checkpts')assert.match(r.decision.text,/ยังยืนยันยอดไม่ได้/);
+  if(command==='checkpts')assert.match(r.decision.text,/ยังตรวจยืนยันสถานะสมาชิก/);
 });
 test('checkpts reads only signed identity from canonical binding, not historical context',async()=>{
   let calls=0;const e={...env,MEMBER_PAGES_WORKER:{fetch:async request=>{
-    const body=await request.json();calls++;assert.equal(body.line_user_id,'U'+'1'.repeat(32));assert.equal(body.intent,'points_status');
+    const body=await request.json();calls++;assert.equal(body.line_user_id,'U'+'1'.repeat(32));assert.equal(body.intent,'membership_status');
     return Response.json({ok:true,authority:'my_mmd_entitlement_resolver_v1',identity_status:'resolved',membership:{level:'private_premium',label:'Premium',lifecycle:'active',expire_at:'2027-01-01'},points:{status:'verified',active_points:120}});
   }}};
-  const x=io();const r=await runApprovedCategoryTurn(e,event('CHECKPTS'),runtime,x);assert.equal(calls,1);assert.equal(r.delivered,true);assert.match(r.decision.text,/120 Points/);assert.doesNotMatch(r.decision.text,/CTA:/);
+  const x=io();const r=await runApprovedCategoryTurn(e,event('CHECKPTS'),runtime,x);assert.equal(calls,1);assert.equal(r.delivered,true);assert.match(r.decision.text,/Premium/);assert.doesNotMatch(r.decision.text,/Points|120|CTA:/);assert.equal(r.decision.cta_route,'https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=overview');
 });
 test('package uses verified catalog and does not grant membership',async()=>{
   const e={...env,MEMBER_PAGES_WORKER:{fetch:async request=>{

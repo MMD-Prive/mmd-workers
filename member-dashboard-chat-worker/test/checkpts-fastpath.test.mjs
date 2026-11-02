@@ -21,7 +21,14 @@ for (const command of ['checkpts','package','regis','apply','โปร']) test(`
   const {status,calls}=await run(command,{env:categoryEnv});
   assert.equal(status,200);assert.equal(calls.replies.length,1);
   assert.ok(calls.writes.some(w=>w.table==='MMD — Console Inbox'),'inbound intake preserved');
-  if(command==='checkpts') assert.match(calls.replies[0].messages[0].text,/Points: 120 Points/);
+  if(command==='checkpts') {
+    const reply = calls.replies[0].messages[0].text;
+    assert.match(reply,/ประเภทสมาชิก: Premium/);
+    assert.match(reply,/สถานะสมาชิก: ใช้งานอยู่/);
+    assert.match(reply,/intent=status&view=overview/);
+    assert.doesNotMatch(reply,/Points|รับ Hiro/);
+    assert.deepEqual(calls.truth,[{path:'/__internal/kenji/member-truth',intent:'membership_status'}]);
+  }
 });
 for (const options of [{owner:true},{kill:true},{globalKill:true},{ownerAfterTruth:true},{killAfterTruth:true}]) test(`restricted checkpts pause: ${JSON.stringify(options)}`,async()=>{
   const {calls}=await run('checkpts',{...options,env:categoryEnv});assert.equal(calls.replies.length,0);
