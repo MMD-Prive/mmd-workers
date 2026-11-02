@@ -78,9 +78,19 @@
   }
   function clearJob() {
     root.dataset.modelBrandLane = 'public';
-    q('[data-mm-console]').href = '/sigil/model/console';
+    const expected = new URLSearchParams(global.location.search).get('session_id');
+    const previous = new URL(q('[data-mm-console]').href || '/sigil/model/console', global.location.origin).searchParams.get('session_id');
+    q('[data-mm-console]').href = expected || previous ? consoleHref(expected || previous) : '/sigil/model/console';
     text('[data-mm-job]', 'ยังตรวจงานไม่สำเร็จ');
     text('[data-mm-job-copy]', 'ยังสรุปไม่ได้ว่าไม่มีงาน ลองตรวจอีกครั้งหรือให้ MMD ช่วย');
+  }
+  function consoleHref(sessionId) {
+    const params = new URLSearchParams(global.location.search);
+    const url = new URL('/sigil/model/console', global.location.origin);
+    if (params.get('t')) url.searchParams.set('t', params.get('t'));
+    // Navigation context only. The backend still decides ownership and actions.
+    url.searchParams.set('session_id', sessionId);
+    return url.href;
   }
   function locked(error) {
     profile = null; workspace.hidden = true; form.reset();
@@ -131,15 +141,15 @@
       root.dataset.modelBrandLane = world(data, params.get('session_id') || '');
       text('[data-mm-job]', 'มีงานของคุณใน Console');
       text('[data-mm-job-copy]', 'ดูบรีฟ ยอดเงินถึงตัวคุณ และอัปเดตตามขั้นตอนจริงใน Console');
-      const consoleLink = new URL('/sigil/model/console', global.location.origin);
-      if (params.get('t')) consoleLink.searchParams.set('t', params.get('t'));
-      q('[data-mm-console]').href = consoleLink.href;
+      q('[data-mm-console]').href = consoleHref(session.session_id);
       global.dispatchEvent(new CustomEvent('mmd:model-session-ready', {detail:data}));
     } catch (error) {
-      if (error.status === 404 && ['session_not_found', 'active_session_not_found'].includes(error.message)) {
+      const noJob = error.status === 404 && ['session_not_found', 'active_session_not_found'].includes(error.message);
+      if (noJob && !params.get('session_id')) {
+        q('[data-mm-console]').href = '/sigil/model/console';
         text('[data-mm-job]', 'ยังไม่มีงานที่กำลังใช้งาน');
         text('[data-mm-job-copy]', 'บัญชีเชื่อมแล้ว จัดการโปรไฟล์หรือเปิด Jobs Today ต่อได้');
-      } else if (classify(error) === 'review') {
+      } else if (noJob || classify(error) === 'review') {
         text('[data-mm-job]', 'MMD กำลังตรวจข้อมูลงาน');
         text('[data-mm-job-copy]', 'ยังไม่เลือกงานให้อัตโนมัติ ให้ MMD ตรวจข้อมูลที่กำกวมก่อน');
       } else if (classify(error) === 'login') locked(error);

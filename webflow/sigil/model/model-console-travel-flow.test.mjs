@@ -38,8 +38,14 @@ test('unavailable is offered only for server-authorized offered jobs',()=>{
  assert.equal(renderActions('confirmed',['decline_job']).length,0);
  assert.equal(renderActions('offered',[]).length,0);
 });
-test('action submission rechecks backend hints and state before making a request',()=>{
- assert.match(source,/async function act\(a,proposal\)\{if\(busy\|\|!ses\|\|!\(next\[state\(ses\)\]\|\|\[\]\)\.includes\(a\)\|\|!Array\.isArray\(ses.allowed_actions\)\|\|!ses.allowed_actions.includes\(a\)\)return/);
+test('action submission rechecks backend hints, state and in-flight lock before a request',async()=>{
+ const act=source.slice(source.indexOf('async function act(a,proposal)'),source.indexOf('function support(k)'));
+ for(const [current,allowed,posting,busy,expected] of [['confirmed',['start_travel'],0,0,1],['confirmed',[],0,0,0],['work_started',['start_travel'],0,0,0],['confirmed',['start_travel'],1,0,0],['confirmed',['start_travel'],0,1,0]]){
+  const requests=[];
+  const context={posting,busy,ses:{session_id:'owned_fixture',state:current,allowed_actions:allowed},next:vm.runInNewContext('('+source.match(/next=(\{.*?\}),v=/)[1]+')'),state:s=>s.state,lock(){},note(){},load:async()=>{},d:()=>({}),R:{dataset:{actionEndpoint:'/mock-action'}},v:s=>s.session_id,j:async()=>({ok:true}),fetch:async(url,options)=>{requests.push(JSON.parse(options.body));return {ok:true}}};
+  await vm.runInNewContext(act+';act("start_travel")',context);
+  assert.equal(requests.length,expected);if(expected)assert.equal(requests[0].session_id,'owned_fixture');
+ }
 });
 test('restored entry cannot initiate legacy sibling LIFF login or reload',()=>{
  assert.doesNotMatch(bootstrap,/<script|liff\.init|liff\.login|location\.reload/);

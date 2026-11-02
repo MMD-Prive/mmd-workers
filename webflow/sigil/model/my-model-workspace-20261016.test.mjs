@@ -204,7 +204,7 @@ test('expired identity only initializes the registered apex LIFF endpoint, with 
 test('canonical session is server-gated; signed query is not sent to media or arbitrary endpoints',async()=>{
   const f=fixture({search:'?t=fixture-signed&session_id=s1&world=private',job:{ok:true,session:{session_id:'s1',model_work_lane:'private_model'}}});await settle();
   assert.equal(f.calls.find(c=>c.url?.includes('/session/current')).url,'https://mmdbkk.com/v1/model/session/current?t=fixture-signed');
-  assert.equal(f.nodes.get('[data-mm-console]').href,'https://mmdbkk.com/sigil/model/console?t=fixture-signed');
+  assert.equal(f.nodes.get('[data-mm-console]').href,'https://mmdbkk.com/sigil/model/console?t=fixture-signed&session_id=s1');
   assert.equal(f.calls.some(c=>c.url?.includes('/media?')),false);
   assert.match(f.nodes.get('[data-mm-job]').textContent,/Console/);
 });
@@ -212,7 +212,7 @@ test('mismatched job and ambiguous selection reveal no job details or implicit e
   for(const job of [{ok:true,session:{session_id:'other',model_work_lane:'private_model'}},{status:409,error:'current_session_review_required'}]){
     const f=fixture({search:'?session_id=s1',job});await settle();
     assert.match(f.nodes.get('[data-mm-job]').textContent,/กำลังตรวจ/);
-    assert.equal(f.nodes.get('[data-mm-console]').href,'/sigil/model/console');
+    assert.equal(f.nodes.get('[data-mm-console]').href,'https://mmdbkk.com/sigil/model/console?session_id=s1');
   }
 });
 test('session expiry after profile read hides workspace and clears profile/gallery context',async()=>{
@@ -371,4 +371,45 @@ test('profile-save live status stays inside its form beside the save button',()=
     assert.equal(status.closest('form'),d.querySelector('[data-mss-profile-form]'));
     assert.equal(status.previousElementSibling,d.querySelector('[data-mss-save]'));
   } finally {dom.window.close();}
+});
+
+function consoleSession(f) { return new URL(f.nodes.get('[data-mm-console]').href, f.window.location.origin).searchParams.get('session_id'); }
+test('Dashboard pins server-selected A into the Console link across refresh and reopen',async()=>{
+  const options={job:{ok:true,session:{session_id:'sess_A'}},search:'?world=private&job_id=untrusted'};
+  const f=fixture(options);await settle();
+  assert.equal(consoleSession(f),'sess_A');
+  assert.equal(new URL(f.nodes.get('[data-mm-console]').href).searchParams.size,1);
+  await f.nodes.get('[data-mm-refresh]').listeners.click();await settle();
+  assert.equal(consoleSession(f),'sess_A');
+  const reopened=fixture(options);await settle();assert.equal(consoleSession(reopened),'sess_A');
+  assert.equal([...f.calls,...reopened.calls].some(c=>c.options?.method),false);
+});
+test('a fresh Dashboard read can select B without retargeting an already captured A link',async()=>{
+  const f=fixture({job:{ok:true,session:{session_id:'sess_A'}}});await settle();
+  const old=f.nodes.get('[data-mm-console]').href;
+  f.window.fetch=async(url)=>Response.json(String(url).includes('/session/current')?{ok:true,session:{session_id:'sess_B'}}:String(url).includes('/media')?{ok:true,media:[]}:{ok:true,model});
+  await f.nodes.get('[data-mm-refresh]').listeners.click();await settle();
+  assert.equal(consoleSession(f),'sess_B');assert.equal(new URL(old).searchParams.get('session_id'),'sess_A');
+  const pinned=fixture({search:'?session_id=sess_A',job:{ok:true,session:{session_id:'sess_B'}}});await settle();
+  assert.match(pinned.nodes.get('[data-mm-job]').textContent,/กำลังตรวจ/);
+  assert.equal(consoleSession(pinned),'sess_A','review must not offer a silent generic redirect to B');
+});
+
+test('refresh keeps A pinned while current read is pending or unavailable; verified empty clears it',async()=>{
+  const f=fixture({job:{ok:true,session:{session_id:'sess_A'}}});await settle();
+  const pending=deferredResponse();
+  f.window.fetch=async url=>String(url).includes('/session/current')?pending.promise:Response.json(String(url).includes('/media')?{ok:true,media:[]}:{ok:true,model});
+  const refresh=f.nodes.get('[data-mm-refresh]').listeners.click();await settle();
+  assert.equal(consoleSession(f),'sess_A');
+  pending.resolve(Response.json({ok:false,error:'upstream_unavailable'},{status:503}));await refresh;await settle();
+  assert.equal(consoleSession(f),'sess_A');
+  f.window.fetch=async url=>String(url).includes('/session/current')?Response.json({ok:false,error:'session_not_found'},{status:404}):Response.json(String(url).includes('/media')?{ok:true,media:[]}:{ok:true,model});
+  await f.nodes.get('[data-mm-refresh]').listeners.click();await settle();
+  assert.equal(consoleSession(f),null);
+  assert.match(f.nodes.get('[data-mm-job]').textContent,/ยังไม่มีงาน/);
+});
+test('a pinned Dashboard with missing A retains its link and requests review instead of selecting another job',async()=>{
+  const f=fixture({search:'?session_id=sess_A',job:{status:404,error:'session_not_found'}});await settle();
+  assert.equal(consoleSession(f),'sess_A');
+  assert.match(f.nodes.get('[data-mm-job]').textContent,/กำลังตรวจ/);
 });

@@ -88,6 +88,13 @@ const dock=doc.createElement('nav');dock.className='mm-lv-dock';dock.setAttribut
 dock.innerHTML='<a href="#mmd-model-home-v4" aria-current="page" data-mm-lv-nav="home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="m3 10 9-7 9 7v11h-6v-7H9v7H3z"/></svg><span>HOME</span></a><a href="/sigil/model/dashboard/jobs" data-mm-lv-nav="jobs"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3" y="7" width="18" height="14" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 13h18"/></svg><span>JOBS</span></a><a href="/sigil/model/console" data-mm-lv-nav="console"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/><path d="M12 3v4m0 10v4m-9-9h4m10 0h4"/></svg><span>CONSOLE</span></a><a href="#mm-lv-you" data-mm-lv-nav="you" data-mm-lv-open="mm-lv-you"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2"/></svg><span>YOU</span></a>';
 dock.querySelectorAll('a').forEach(a=>{a.querySelector('svg').outerHTML=icon(a.dataset.mmLvNav);});
 root.append(dock);
+// All Console entry points follow the workspace's verified navigation context,
+// including an initial pinned URL, refresh failures and a confirmed empty result.
+const consoleEntry=root.querySelector('[data-mm-console]');
+if(consoleEntry){
+ const syncConsole=()=>{dock.querySelector('[data-mm-lv-nav="console"]').href=consoleEntry.href;};
+ new win.MutationObserver(syncConsole).observe(consoleEntry,{attributes:true,attributeFilter:['href']});syncConsole();
+}
 const messages={
  th:{space:'พื้นที่ของคุณ',homeTitle:'งานปัจจุบัน',homeDescription:'งาน ความพร้อม และข้อมูลของคุณอยู่ที่นี่',you:'ข้อมูลของคุณ',media:'รูปภาพและคลิป',quickYou:'ข้อมูลของฉัน',quickMedia:'รูปและคลิป',guides:'คู่มือและกติกา',availability:'ความพร้อม',support:'ให้ MMD ช่วย',account:'บัญชีที่เชื่อมและรายละเอียด',connection:'สถานะบัญชี'},
  en:{space:'Your space',homeTitle:'Current work',homeDescription:'Jobs, availability and your profile in one place',you:'Your profile',media:'Photos and videos',quickYou:'My profile',quickMedia:'Photos & videos',guides:'Guides & policies',availability:'Availability',support:'Support',account:'Linked accounts & details',connection:'Account status'},
