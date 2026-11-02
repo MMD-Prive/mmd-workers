@@ -575,14 +575,15 @@ test('release workflow is manual, exact-SHA and protected with no data-service c
 
   assert.match(source,/EXPECTED_VERSION: \$\{\{ inputs\.expected_version \}\}/);
   assert.match(source,/EXPECTED_DEPLOYMENT: \$\{\{ inputs\.expected_deployment \}\}/);
-  assert.deepEqual([...source.matchAll(/secrets\.([A-Z_]+)/g)].map(match=>match[1]),Array(6).fill('CLOUDFLARE_API_TOKEN'));
+  assert.deepEqual([...source.matchAll(/secrets\.([A-Z_]+)/g)].map(match=>match[1]),Array(8).fill('CLOUDFLARE_API_TOKEN'));
   assert.match(source,/CLOUDFLARE_API_TOKEN: \$\{\{ secrets\.CLOUDFLARE_API_TOKEN \}\}/);
   assert.doesNotMatch(source,/AIRTABLE|R2_API|ensure-private|ensure-payment|wrangler route|wrangler secret|synthetic_write|production public Wish/i);
   assert.match(source,/node scripts\/member-pages-code-only-release\.mjs --execute-approved/);
   assert.match(source, /node --test [^\n]*member-pages-worker\/test\/points-display-source-guard.test.mjs/);
   assert.match(source, /node --test [^\n]*member-pages-worker\/test\/kenji-line-member-truth.test.mjs/);
   assert.match(source, /ref: fe5f9d98876b600421c5614efc049ffc890b8adb\s+fetch-depth: 0\s+path: release-source/);
-  assert.match(source, /if: inputs.execution_mode == 'release' \|\| inputs.execution_mode == 'recovery-artifact'\s+uses: actions\/checkout@v5\s+with:\s+ref: 871d99cd9eb1c8d53e1d473160119030dca01d4c/);
+  assert.match(source, /if: inputs.execution_mode == 'release'\s+uses: actions\/checkout@v5\s+with:\s+ref: 871d99cd9eb1c8d53e1d473160119030dca01d4c/);
+  assert.match(source, /if: inputs.execution_mode == 'recovery-artifact'\s+uses: actions\/checkout@v5\s+with:\s+ref: d82c284fb48943c7c8a8cc5a970107f799186ee3/);
   assert.match(source, /if: inputs.execution_mode == 'promote-existing'\s+uses: actions\/checkout@v5\s+with:\s+ref: fe5f9d98876b600421c5614efc049ffc890b8adb/);
   assert.match(source, /ref: \$\{\{ github.sha \}\}\s+fetch-depth: 0\s+path: release-tools/);
   assert.match(source, /SOURCE_DIRECTORY: \$\{\{ github.workspace \}\}\/release-source/);
