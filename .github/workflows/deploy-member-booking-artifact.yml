@@ -1,0 +1,87 @@
+name: Release reviewed Booking artifacts and additive coordinator migration
+
+on:
+  workflow_dispatch:
+    inputs:
+      production_approved:
+        description: 'Approve exact SHA, both Booking artifacts, MEMBER_BOOKING_COORDINATOR and the stated SQLite migration'
+        type: boolean
+        required: true
+        default: false
+      approved_sha:
+        description: 'Full reviewed main SHA'
+        type: string
+        required: true
+      approved_migration_tag:
+        description: 'Exact reviewed additive migration tag'
+        type: string
+        required: true
+      approval_ref:
+        description: 'Owner approval reference for this exact artifact and migration plan'
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: deploy-member-pages-worker-production
+  cancel-in-progress: false
+
+env:
+  APPROVED_SHA: ${{ inputs.approved_sha }}
+  APPROVED_MIGRATION_TAG: ${{ inputs.approved_migration_tag }}
+  APPROVAL_REF: ${{ inputs.approval_ref }}
+  APPROVED_RELEASE_SCOPE: booking-artifact-with-migration
+
+jobs:
+  owner-policy:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.actor == 'mmdprive' && inputs.production_approved == true && inputs.approved_sha == github.sha && inputs.approved_migration_tag == 'v4-member-booking-coordinator-20261102' && inputs.approval_ref != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Verify existing owner protection without Cloudflare credentials
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/member-booking-release-cli.mjs --verify-protection
+
+  release:
+    needs: owner-policy
+    environment: member-pages-code-only-owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Install pinned build tool outside the checkout
+        run: npm install --prefix "$RUNNER_TEMP/booking-build-tools" --ignore-scripts --no-audit --no-fund esbuild@0.27.3
+      - name: Run targeted release guard regressions
+        run: node --test scripts/member-booking-release.test.mjs scripts/member-booking-owner-approval.test.mjs scripts/member-booking-workflow.test.mjs member-pages-worker/test/liff-member-booking-return.test.mjs
+      - name: Release supporting handler then atomic Member migration
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          PRODUCTION_APPROVED: ${{ inputs.production_approved }}
+          RELEASE_MODE: booking-artifact-with-migration
+          ESBUILD_BIN: ${{ runner.temp }}/booking-build-tools/node_modules/.bin/esbuild
+        run: node scripts/member-booking-release-cli.mjs --execute-approved
+      - name: Preserve safe release receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: booking-release-receipt-${{ github.run_id }}
+          path: ${{ runner.temp }}/booking-release-${{ github.run_id }}.json
+          if-no-files-found: ignore

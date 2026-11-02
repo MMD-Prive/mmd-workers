@@ -15,7 +15,7 @@ const SEARCH_FIELDS = [
 ];
 
 export default {
-  async fetch(request, env, ctx) {
+  async fetch(request, env, ctx, memberContext = null) {
     const path = normalizePath(new URL(request.url).pathname);
     const method = request.method.toUpperCase();
     if (path.startsWith(MODEL_MEDIA_PREFIX)) {
@@ -32,7 +32,7 @@ export default {
       return mediaCors(response, request, env);
     }
 
-    const response = await bookingWorker.fetch(request, env, ctx);
+    const response = await bookingWorker.fetch(request, env, ctx, memberContext);
     if (!["GET", "POST"].includes(method) || path !== MODEL_SEARCH_PATH || !response.ok) return response;
     const original = await response.json().catch(() => null);
     if (!original || original.ok !== true) return jsonWithHeaders(original, response);

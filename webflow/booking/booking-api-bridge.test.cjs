@@ -57,7 +57,7 @@ test('public search filters scope, safely renders media, sends reviewed details,
     assert.equal(bodies[1].service_context,'Dinner');assert.equal(bodies[1].city,'Bangkok');
     assert.match(bodies[1].client_notes,/2026-11-01/);
     assert.equal(bodies[1].source_path,'/booking');assert.equal(bodies[1].request_status,'draft');
-    assert.equal(d.querySelector('.bk-api-private').href,'https://sigil.mmdbkk.com/sigil/booking?scope=private&mode=booking');
+    assert.equal(d.querySelector('a[href*="scope=private"]'),null,'Public must not expose private booking');
   } finally {dom.window.close();}
 });
 test('unverified discovery and false intake success fail closed',async()=>{
@@ -68,4 +68,17 @@ test('unverified discovery and false intake success fail closed',async()=>{
     d.querySelector('[data-service="Dinner"]').click();f.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));await pause();
     d.querySelector('[data-copy]').click();await pause();assert.match(d.querySelector('[data-status]').textContent,/ยังยืนยัน/);assert.equal(d.querySelector('[data-copy]').disabled,false);
   } finally {dom.window.close();}
+});
+
+test('Public search pending state never fabricates time-based progress or exposes private booking',async()=>{
+ let finish;const pending=new Promise(resolve=>finish=resolve);
+ const {dom,d}=setup(()=>pending);
+ try {
+  assert.equal(d.querySelector('a[href*="scope=private"]'),null);
+  d.querySelector('[data-public-search]').click();
+  assert.equal(d.querySelector('.bk-api-models progress').hasAttribute('value'),false);
+  assert.equal(d.querySelector('[data-search-status]').textContent,'กำลังค้นหา');
+  finish({ok:true,json:async()=>({ok:true,discovery_scope:'public',visibility_enforced:true,items:[]})});
+  await pause();assert.equal(d.querySelector('.bk-api-models progress').hidden,true);
+ }finally{dom.window.close();}
 });

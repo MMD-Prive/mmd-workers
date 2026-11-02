@@ -1,3 +1,5 @@
+import { isMemberBookingPath, handleMemberBooking } from './member-booking-flow.js';
+export { MemberBookingCoordinator } from './member-booking-coordinator.js';
 import { DISCOVERY_VIEWER_PATH, handleDiscoveryViewer, attachDiscoverySession } from "./booking-discovery-viewer.js";
 import { isEmsAlbumRequest, handleEmsAlbums } from './member-ems-albums.js';
 import {isPersonalMainRequest, handlePersonalMain} from "./member-personal-main.js";
@@ -146,6 +148,7 @@ const worker = {
     if (isMemberClientCreditsRequest(request)) {
       return handleMemberClientCredits(request, env);
     }
+    if (isMemberBookingPath(request)) return handleMemberBooking(request, env);
     if (isMemberCustomerRequestPath(request)) {
       return handleMemberCustomerRequest(request, env);
     }

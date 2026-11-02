@@ -24,7 +24,7 @@
     <label>รูปร่าง<select name="body_type"><option value="">ทั้งหมด</option><option value="lean">ลีน</option><option value="athletic">สมส่วนแบบนักกีฬา</option><option value="muscular">กล้ามชัด</option><option value="slim">ผอมเพรียว</option><option value="soft">หุ่นนุ่ม</option></select></label>
     <label>สีผิว<select name="skin_tone"><option value="">ทั้งหมด</option><option value="fair">ขาว</option><option value="light">ขาวเหลือง</option><option value="medium">กลาง</option><option value="tan">แทน</option><option value="deep">เข้ม</option></select></label>
     </div></details><progress max="100" value="0" hidden aria-label="ความคืบหน้าการค้นหา"></progress><p data-search-status role="status"></p><div class="bk-api-results"></div><div data-model-selected hidden></div>
-    <a class="bk-api-private" href="https://sigil.mmdbkk.com/sigil/booking?scope=private&mode=booking">จองด้วยแพ็กเกจสมาชิก →</a>`;
+`;
   const panel = form.querySelector('[data-panel="1"]');
   panel.insertBefore(box, panel.querySelector('.bk-actions'));
   const searchButton = box.querySelector('[data-public-search]');
@@ -76,8 +76,7 @@
       if(value(min) && value(max) && Number(value(min)) > Number(value(max))) { searchStatus.textContent = 'ค่าตั้งแต่ต้องไม่มากกว่าค่าไม่เกิน'; return; }
     }
     const version = ++searchVersion;
-    searchButton.disabled = true; progress.hidden = false; progress.value = 10; searchStatus.textContent = 'กำลังค้นหา 10%'; results.replaceChildren();
-    const tick = setInterval(() => {progress.value = Math.min(90,progress.value + 10); searchStatus.textContent = 'กำลังค้นหา ' + progress.value + '%';}, 600);
+    searchButton.disabled = true; progress.hidden = false; progress.removeAttribute('value'); searchStatus.textContent = 'กำลังค้นหา'; results.replaceChildren();
     try {
       const query = new URLSearchParams({scope:'public',search_mode:'booking'});
       if(value('public_model_query')) query.set('q',value('public_model_query'));
@@ -94,7 +93,7 @@
       }
       progress.value = 100; searchStatus.textContent = items.length ? '100% · พบ ' + items.length + ' คน · แตะเพื่อเลือกและดูรูปเพิ่มเติม' : '100% · ยังไม่พบคนที่ตรง ลองลดตัวกรองหรือให้ MMD ช่วยเลือก';
     } catch (_) { searchStatus.textContent = 'ค้นหายังไม่สำเร็จ ลองใหม่ได้ หรือส่งความต้องการให้ MMD ช่วยเลือก'; }
-    finally {clearInterval(tick); searchButton.disabled = false;}
+    finally {searchButton.disabled = false; progress.hidden = true;}
   }
   searchButton.addEventListener('click',search);
   box.querySelector('input[type="search"]').addEventListener('keydown',e => {if(e.key === 'Enter'){e.preventDefault();search();}});
@@ -119,8 +118,7 @@
     if(!form.reportValidity()) return;
     if(!['name','contact','date','time','place'].every(k=>value(k))) {status.textContent='กรอกชื่อ ช่องทางติดต่อ วัน เวลา และสถานที่ก่อนส่ง';return;}
     if(!requestRef) requestRef = 'book_' + crypto.randomUUID();
-    sending = true; send.disabled = true; sendProgress.hidden = false; sendProgress.value = 15; send.textContent = 'กำลังส่ง 15%';
-    const tick = setInterval(()=>{sendProgress.value=Math.min(90,sendProgress.value+10); send.textContent='กำลังส่ง '+sendProgress.value+'%';},600);
+    sending = true; send.disabled = true; sendProgress.hidden = false; sendProgress.removeAttribute('value'); send.textContent = 'กำลังส่งคำขอ';
     try {
       const data = await api('/sigil/api/booking/intake',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload())});
       if(!data.booking_ref) throw new Error('missing_reference');
@@ -128,7 +126,7 @@
       status.textContent = 'ส่งคำขอแล้ว · เลขอ้างอิง ' + requestRef + ' · MMD จะตรวจรายละเอียดและติดต่อกลับก่อนยืนยันงาน';
       form.querySelectorAll('input,select,textarea,button').forEach(n=>n.disabled=true);
     } catch (_) {status.textContent='ยังยืนยันการรับคำขอไม่ได้ กรุณาลองส่งอีกครั้ง ระบบจะใช้เลขอ้างอิงเดิม หรือเลือกติดต่อ MMD ทาง LINE';}
-    finally {clearInterval(tick);sending=false;send.disabled=sent;send.textContent=sent?'ส่งคำขอแล้ว 100%':'ส่งคำขอให้ MMD';}
+    finally {sendProgress.hidden = true;sending=false;send.disabled=sent;send.textContent=sent?'ส่งคำขอแล้ว 100%':'ส่งคำขอให้ MMD';}
   }
   // Capture the existing CTA before the legacy copy/LINE listener runs.
   root.addEventListener('click',e=>{if(e.target.closest('[data-copy]')){e.preventDefault();e.stopImmediatePropagation();submitRequest();}},true);

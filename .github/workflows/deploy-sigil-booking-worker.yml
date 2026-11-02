@@ -1,177 +1,20 @@
-name: Deploy sigil-booking-worker
+name: Legacy SIGIL Booking deployment retired
 
+# Full-source deployment and route synchronization are retired.
+# Use the separately reviewed Booking artifact workflow with explicit owner approval.
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - "shared/posthog-authority-events.mjs"
-      - "sigil-booking-worker/**"
-      - ".github/workflows/deploy-sigil-booking-worker.yml"
-
-concurrency:
-  group: deploy-sigil-booking-worker-production
-  cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
-  deploy-and-smoke:
+  legacy-release-disabled:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ROUTES_API_TOKEN: ${{ secrets.CLOUDFLARE_ROUTES_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: b176eda1172b741fd2e58904cc9d77c5
-      CLOUDFLARE_ZONE_ID: 2d62396174fa2ddadbbcd0e8cf0f3367
-      WORKER_NAME: sigil-booking-worker
-      WORKERS_DEV_HEALTH: https://sigil-booking-worker.malemodel-bkk.workers.dev/health
-      CUSTOM_HOST_BASE: https://sigil.mmdbkk.com
-
+    timeout-minutes: 1
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-
-      - name: Normalize Cloudflare tokens
-        shell: bash
+      - name: Refuse legacy deployment
         run: |
-          set -euo pipefail
-          node <<'NODE'
-          const fs = require("node:fs");
-          const clean = (value) => (value || "").replace(/[\u2028\u2029\r\n]/g, "").trim();
-          const deployToken = clean(process.env.CLOUDFLARE_API_TOKEN);
-          const routesToken = clean(process.env.CLOUDFLARE_ROUTES_API_TOKEN);
-          if (!deployToken) throw new Error("CLOUDFLARE_API_TOKEN missing");
-          if (!routesToken) throw new Error("CLOUDFLARE_ROUTES_API_TOKEN missing");
-          fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_API_TOKEN=${deployToken}\n`);
-          fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_ROUTES_API_TOKEN=${routesToken}\n`);
-          NODE
-
-      - name: Validate source
-        shell: bash
-        run: |
-          set -euo pipefail
-          node --check sigil-booking-worker/src/runtime-index.js
-          node --check sigil-booking-worker/src/index.js
-          node --check sigil-booking-worker/src/customer-search-policy.js
-          node --check sigil-booking-worker/src/model-image-policy-worker.js
-          node --test sigil-booking-worker/customer-search-policy.test.mjs sigil-booking-worker/model-media-search.test.mjs sigil-booking-worker/preview-origin-cors.test.mjs
-          node --check sigil-booking-worker/src/entitlement-runtime-worker.js
-          node --check sigil-booking-worker/src/care-back-trusted-caller.js
-          node --test sigil-booking-worker/src/entitlement-runtime-worker.test.js
-          node --test sigil-booking-worker/test/care-back-trusted-caller.test.mjs
-          node --test sigil-booking-worker/test/private-search-smoke-contract.test.mjs
-          npx --yes wrangler@4 deploy --dry-run --config sigil-booking-worker/wrangler.toml
-
-      - name: Upload worker version
-        shell: bash
-        run: |
-          set -euo pipefail
-          npx --yes wrangler@4 versions upload \
-            --config sigil-booking-worker/wrangler.toml \
-            --keep-vars \
-            --tag "gha-${GITHUB_SHA:0:12}" \
-            --message "GitHub Actions ${GITHUB_SHA}" \
-            2>&1 | tee "$RUNNER_TEMP/sigil-booking-upload.log"
-          version_id="$(sed -n 's/.*Worker Version ID:[[:space:]]*\([0-9a-fA-F-][0-9a-fA-F-]*\).*/\1/p' "$RUNNER_TEMP/sigil-booking-upload.log" | tail -n 1)"
-          test -n "$version_id"
-          echo "SIGIL_BOOKING_VERSION_ID=$version_id" >> "$GITHUB_ENV"
-
-      - name: Deploy uploaded version
-        shell: bash
-        working-directory: sigil-booking-worker
-        run: |
-          set -euo pipefail
-          npx --yes wrangler@4 versions deploy "${SIGIL_BOOKING_VERSION_ID}@100%" -y
-
-      - name: Sync exact production routes
-        shell: bash
-        run: |
-          set -euo pipefail
-          export CLOUDFLARE_API_TOKEN="$CLOUDFLARE_ROUTES_API_TOKEN"
-          node --input-type=module <<'NODE'
-          const token = process.env.CLOUDFLARE_ROUTES_API_TOKEN;
-          const zoneId = process.env.CLOUDFLARE_ZONE_ID;
-          const worker = process.env.WORKER_NAME;
-          const desired = [
-            "models.mmdbkk.com/*",
-            "sigil.mmdbkk.com/sigil/api/client/resolve*",
-            "sigil.mmdbkk.com/sigil/api/models/search*",
-            "sigil.mmdbkk.com/sigil/api/models/media/*",
-            "sigil.mmdbkk.com/sigil/api/booking/intake*",
-            "sigil.mmdbkk.com/__internal/booking/confirm*",
-          ];
-          async function cf(path, options = {}) {
-            const r = await fetch(`https://api.cloudflare.com/client/v4${path}`, {
-              ...options,
-              headers: {
-                Authorization: `Bearer ${token}`,
-                "Content-Type": "application/json",
-                ...(options.headers || {}),
-              },
-            });
-            const body = await r.json();
-            if (!r.ok || body.success !== true) throw new Error(JSON.stringify(body.errors || body));
-            return body.result;
-          }
-          const routePath = `/zones/${zoneId}/workers/routes`;
-          const existing = await cf(routePath);
-          for (const pattern of desired) {
-            const conflict = existing.find((x) => x.pattern === pattern && x.script !== worker);
-            if (conflict) throw new Error(`route conflict ${pattern} -> ${conflict.script || "none"}`);
-          }
-          for (const pattern of desired) {
-            if (existing.some((x) => x.pattern === pattern && x.script === worker)) continue;
-            await cf(routePath, { method: "POST", body: JSON.stringify({ pattern, script: worker }) });
-            console.log(`created ${pattern} -> ${worker}`);
-          }
-          const verified = await cf(routePath);
-          const missing = desired.filter((pattern) => !verified.some((x) => x.pattern === pattern && x.script === worker));
-          if (missing.length) throw new Error(`missing routes: ${missing.join(", ")}`);
-          console.log(`verified ${desired.length}/${desired.length} booking routes`);
-          NODE
-
-      - name: Smoke workers.dev health
-        shell: bash
-        run: |
-          set -euo pipefail
-          body="$(mktemp)"
-          code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$body" -w "%{http_code}" "$WORKERS_DEV_HEALTH")"
-          cat "$body"
-          test "$code" = "200"
-          grep -q '"ok":true' "$body"
-          grep -q 'sigil-booking-worker' "$body"
-
-      - name: Smoke custom-host fail-closed private search
-        shell: bash
-        run: |
-          set -euo pipefail
-          body="$(mktemp)"
-          code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$body" -w "%{http_code}" \
-            -H 'Origin: https://mmdbkk.com' \
-            "$CUSTOM_HOST_BASE/sigil/api/models/search?q=__mmd_smoke_no_match__&scope=private&booking_ref=smoke-entitlement-snapshot")"
-          cat "$body"
-          test "$code" = "200"
-          node sigil-booking-worker/test/private-search-smoke-contract.mjs "$body"
-
-      - name: Verify legacy Model storage paths are closed
-        shell: bash
-        run: |
-          set -euo pipefail
-          for path in 'models/__mmd_privacy_gate_probe__' '%6dodels/__mmd_privacy_gate_probe__' 'MMD%20Public%20Models/__mmd_privacy_gate_probe__'; do
-            headers="$(mktemp)"
-            code="$(curl --path-as-is --retry 3 --retry-delay 2 -sS -I -D "$headers" -o /dev/null -w "%{http_code}" "https://models.mmdbkk.com/$path")"
-            test "$code" = "410"
-            grep -qi 'x-mmd-route-owner: sigil-booking-worker' "$headers"
-          done
-          headers="$(mktemp)"
-          code="$(curl -sS -I -D "$headers" -o /dev/null -w "%{http_code}" "$CUSTOM_HOST_BASE/sigil/api/models/search/public-catalog")"
-          test "$code" = "410"
-          grep -qi 'x-mmd-route-owner: sigil-booking-worker' "$headers"
+          echo 'Legacy SIGIL Booking deployment is disabled. No production changes were made.'
+          echo 'Use deploy-member-booking-artifact.yml only after exact SHA and migration review plus owner approval.'
+          exit 1

@@ -75,3 +75,20 @@ async function read(env, path, qs) {
   return response.json();
 }
 function clean(value) { return String(value ?? "").trim(); }
+
+// Service caller supplies the already verified business identity, never browser fields.
+export async function currentPrivateContext(request, env, memberId, viewerRef) {
+  const denied = { memberRecordId: '', allowedFolders: [], snapshot: null };
+  try {
+    let recordId = /^mmd_rec_(rec[A-Za-z0-9]{14,24})$/.exec(memberId || '')?.[1] || '';
+    if (!recordId) {
+      const qs = new URLSearchParams({ filterByFormula: `{member_id}=${JSON.stringify(String(memberId))}`, maxRecords: '2' });
+      const result = await read(env, env.AIRTABLE_TABLE_MEMBERS_ID || env.AIRTABLE_TABLE_MEMBERS || 'Members', qs);
+      if (!Array.isArray(result.records) || result.records.length !== 1) return denied;
+      recordId = result.records[0].id;
+    }
+    const access = await currentPrivateAccess(request, env, recordId, viewerRef);
+    return access.allowedFolders.length && access.snapshot?.capability_state?.active?.includes('private_premium')
+      ? { ...access, memberRecordId: recordId } : denied;
+  } catch { return denied; }
+}
