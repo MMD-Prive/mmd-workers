@@ -16,6 +16,7 @@ on:
           - renewal-activation
           - promote-existing
           - lv15-artifact
+          - nightline-artifact
           - care-back-november
           - care-back-november-resume
       production_approved:
@@ -62,7 +63,7 @@ concurrency:
 
 jobs:
   production-approval:
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha && (inputs.execution_mode == 'approval_boundary_only' || inputs.execution_mode == 'release' || inputs.execution_mode == 'companion-artifact' || inputs.execution_mode == 'renewal-artifact' || inputs.execution_mode == 'promote-existing' || inputs.execution_mode == 'renewal-activation' || inputs.execution_mode == 'lv15-artifact' || (inputs.execution_mode == 'care-back-november' || inputs.execution_mode == 'care-back-november-resume'))
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha && (inputs.execution_mode == 'approval_boundary_only' || inputs.execution_mode == 'release' || inputs.execution_mode == 'companion-artifact' || inputs.execution_mode == 'renewal-artifact' || inputs.execution_mode == 'promote-existing' || inputs.execution_mode == 'renewal-activation' || inputs.execution_mode == 'lv15-artifact' || inputs.execution_mode == 'nightline-artifact' || (inputs.execution_mode == 'care-back-november' || inputs.execution_mode == 'care-back-november-resume'))
     runs-on: ubuntu-latest
     timeout-minutes: 3
     permissions:
@@ -263,6 +264,45 @@ jobs:
           path: |
             ${{ runner.temp }}/member-pages-lv15-receipt.json
             ${{ runner.temp }}/member-pages-lv15-live-smoke.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+  nightline-release:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha && inputs.execution_mode == 'nightline-artifact' && inputs.expected_version != '' && inputs.expected_deployment != ''
+    needs: [production-approval]
+    environment: member-pages-code-only-owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Verify Nightline skin and owner gate
+        run: node --test scripts/member-pages-nightline-artifact.test.mjs scripts/member-pages-owner-approval.test.mjs
+      - name: Apply exact reversible Nightline delta to approved active artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APPROVAL_REF: ${{ inputs.approval_ref }}
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+          RELEASE_MODE: nightline-artifact
+          PRODUCTION_APPROVED: ${{ inputs.production_approved }}
+          EXPECTED_VERSION: ${{ inputs.expected_version }}
+          EXPECTED_DEPLOYMENT: ${{ inputs.expected_deployment }}
+          CLOUDFLARE_ACCOUNT_ID: b176eda1172b741fd2e58904cc9d77c5
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node scripts/member-pages-nightline-artifact.mjs --execute-approved
+      - name: Save sanitized Nightline release receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: member-pages-nightline-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/member-pages-nightline-receipt.json
           if-no-files-found: ignore
           retention-days: 14
 
