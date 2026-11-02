@@ -52,6 +52,7 @@ async function handleRequest(request, env, identity) {
   if (duplicate) {
     const existingPayload = parsePayload(rawPrior.find((record) => parsePayload(record?.fields?.payload_json)?.request_id === input.data.request_id)?.fields?.payload_json);
     if (requestFingerprint(existingPayload) !== requestFingerprint(input.data)) return fail(409, "REQUEST_ID_REUSE_CONFLICT");
+    if (input.data.request_type === "your_request") await reconcileQuota(env, identity.clientId, monthKeyInBangkok(existingPayload.created_at), input.data.request_id, requestFingerprint(input.data), "committed");
     return json({ ok: true, item: duplicate, idempotent: true, quota: requestQuota(rawPrior) });
   }
   const quota = requestQuota(rawPrior);
@@ -60,6 +61,7 @@ async function handleRequest(request, env, identity) {
   if (evidence === null) return fail(409, "EVIDENCE_UNAVAILABLE");
   const reservation = input.data.request_type === "your_request" ? await reserveQuota(env, identity.clientId, quota.month_key, input.data.request_id, requestFingerprint(input.data), rawPrior.map((record) => parsePayload(record?.fields?.payload_json)).filter((data) => data.request_type === "your_request" && monthKeyInBangkok(data.created_at) === quota.month_key).map((data) => data.request_id)) : { ok: true, reserved: false };
   if (!reservation.ok) return fail(reservation.status || 503, reservation.error || "REQUEST_QUEUE_UNAVAILABLE");
+  if (!reservation.reserved && reservation.result) return json({ ...reservation.result, idempotent: true }, 200);
   const now = new Date().toISOString();
   const payload = {
     schema: "mmd_customer_request_v1",
@@ -89,8 +91,8 @@ async function handleRequest(request, env, identity) {
     if (reservation.reserved) await finalizeQuota(env, identity.clientId, quota.month_key, input.data.request_id, reservation.lease, created.uncertain ? "uncertain" : "release", requestFingerprint(input.data));
     return fail(503, created.uncertain ? "REQUEST_QUEUE_WRITE_UNCERTAIN" : "REQUEST_QUEUE_UNAVAILABLE");
   }
-  if (reservation.reserved) await finalizeQuota(env, identity.clientId, quota.month_key, input.data.request_id, reservation.lease, "commit", requestFingerprint(input.data));
   const item = customerItem(payload);
+  if (reservation.reserved) await finalizeQuota(env, identity.clientId, quota.month_key, input.data.request_id, reservation.lease, "commit", requestFingerprint(input.data), { ok: true, item, idempotent: false, quota: { ...quota, used: quota.used + 1, remaining: Math.max(0, quota.remaining - 1) } });
   return json({ ok: true, item, idempotent: false, quota: { ...quota, used: quota.used + (input.data.request_type === "your_request" ? 1 : 0), remaining: Math.max(0, quota.remaining - (input.data.request_type === "your_request" ? 1 : 0)) } }, 201);
 }
 
@@ -191,13 +193,18 @@ async function reserveQuota(env, clientId, monthKey, requestId, fingerprint, obs
   const response = await env.CUSTOMER_REQUEST_QUOTA.get(id).fetch("https://quota/reserve", { method: "POST", body: JSON.stringify({ action: "reserve", month_key: monthKey, request_id: requestId, fingerprint, observed_request_ids: observedRequestIds }) }).catch(() => null);
   if (!response) return { ok: false, status: 503, error: "REQUEST_QUOTA_UNAVAILABLE" };
   const payload = await response.json().catch(() => null);
-  return response.ok ? { ok: true, reserved: payload?.idempotent !== true, lease: payload?.lease } : { ok: false, status: [409, 429, 503].includes(response.status) ? response.status : 503, error: payload?.error || "REQUEST_QUOTA_UNAVAILABLE" };
+  return response.ok ? { ok: true, reserved: payload?.idempotent !== true, lease: payload?.lease, result: payload?.result } : { ok: false, status: [409, 429, 503].includes(response.status) ? response.status : 503, error: payload?.error || "REQUEST_QUOTA_UNAVAILABLE" };
 }
 
-async function finalizeQuota(env, clientId, monthKey, requestId, lease, action, fingerprint = "") {
+async function finalizeQuota(env, clientId, monthKey, requestId, lease, action, fingerprint = "", result = undefined) {
   if (!env.CUSTOMER_REQUEST_QUOTA?.idFromName || !env.CUSTOMER_REQUEST_QUOTA?.get) return;
   const id = env.CUSTOMER_REQUEST_QUOTA.idFromName(`${clientId}:${monthKey}`);
-  await env.CUSTOMER_REQUEST_QUOTA.get(id).fetch(`https://quota/${action}`, { method: "POST", body: JSON.stringify({ action, month_key: monthKey, request_id: requestId, lease, fingerprint }) }).catch(() => null);
+  await env.CUSTOMER_REQUEST_QUOTA.get(id).fetch(`https://quota/${action}`, { method: "POST", body: JSON.stringify({ action, month_key: monthKey, request_id: requestId, lease, fingerprint, result }) }).catch(() => null);
+}
+async function reconcileQuota(env, clientId, monthKey, requestId, fingerprint, status) {
+  if (!env.CUSTOMER_REQUEST_QUOTA?.idFromName || !env.CUSTOMER_REQUEST_QUOTA?.get) return;
+  const id = env.CUSTOMER_REQUEST_QUOTA.idFromName(`${clientId}:${monthKey}`);
+  await env.CUSTOMER_REQUEST_QUOTA.get(id).fetch("https://quota/reconcile", { method: "POST", body: JSON.stringify({ action: "reconcile", month_key: monthKey, request_id: requestId, fingerprint, status }) }).catch(() => null);
 }
 
 async function validateEvidence(env, clientId, ids) {

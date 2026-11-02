@@ -7,10 +7,12 @@ export class CustomerRequestQuotaCoordinator {
     if (!['reserve','commit','uncertain','release','reconcile'].includes(body.action)) return Response.json({ ok: false, error: 'invalid_action' }, { status: 400 });
     return this.state.blockConcurrencyWhile(async () => {
       const key = `month:${body.month_key}`; const state = normalize(await this.state.storage.get(key)); const existing = state.records[body.request_id];
+      let seeded = false;
       for (const id of Array.isArray(body.observed_request_ids) ? body.observed_request_ids : []) {
-        if (/^req_[A-Za-z0-9_-]{12,80}$/.test(id) && !state.records[id]) state.records[id] = { fingerprint: '', status: 'committed', lease: '' };
+        if (/^req_[A-Za-z0-9_-]{12,80}$/.test(id) && !state.records[id]) { state.records[id] = { fingerprint: '', status: 'committed', lease: '' }; seeded = true; }
       }
-      const fingerprint = typeof body.fingerprint === 'string' ? body.fingerprint.slice(0, 512) : '';
+      if (seeded) await this.state.storage.put(key, state);
+      const fingerprint = typeof body.fingerprint === 'string' ? await digest(body.fingerprint) : '';
       if (existing && fingerprint && existing.fingerprint && existing.fingerprint !== fingerprint) return Response.json({ ok: false, error: 'REQUEST_ID_REUSE_CONFLICT' }, { status: 409 });
       if (body.action === 'reserve') {
         if (!fingerprint) return Response.json({ ok: false, error: 'fingerprint_required' }, { status: 400 });
@@ -25,7 +27,7 @@ export class CustomerRequestQuotaCoordinator {
       }
       if (!existing) return Response.json({ ok: false, error: 'reservation_not_found' }, { status: 404 });
       if (body.action !== 'reconcile' && body.lease !== existing.lease) return Response.json({ ok: false, error: 'reservation_lease_required' }, { status: 409 });
-      if (body.action === 'commit') existing.status = 'committed';
+      if (body.action === 'commit') { existing.status = 'committed'; if (body.result && typeof body.result === 'object') existing.result = body.result; }
       else if (body.action === 'uncertain') existing.status = 'uncertain';
       else if (body.action === 'release') { if (existing.status === 'uncertain' || existing.status === 'committed') return reply(existing, state); delete state.records[body.request_id]; }
       else if (body.action === 'reconcile') { if (!['committed','uncertain'].includes(body.status)) return Response.json({ ok: false, error: 'reconcile_status_required' }, { status: 400 }); existing.status = body.status; }
@@ -35,4 +37,5 @@ export class CustomerRequestQuotaCoordinator {
 }
 function normalize(value) { if (value && value.records && typeof value.records === 'object') return { records: value.records }; const records = {}; for (const id of Array.isArray(value) ? value : []) records[id] = { fingerprint: '', status: 'committed', lease: '' }; return { records }; }
 function countUsed(state) { return Object.values(state.records).filter(r => ['pending','committed','uncertain'].includes(r.status)).length; }
-function reply(record, state) { const used = countUsed(state); return Response.json({ ok: true, idempotent: true, status: record.status, lease: record.lease || undefined, used, remaining: Math.max(0, LIMIT - used) }); }
+function reply(record, state) { const used = countUsed(state); return Response.json({ ok: true, idempotent: true, status: record.status, lease: record.lease || undefined, result: record.result, used, remaining: Math.max(0, LIMIT - used) }); }
+async function digest(value) { const bytes = new TextEncoder().encode(value); const hash = await crypto.subtle.digest('SHA-256', bytes); return [...new Uint8Array(hash)].map(x => x.toString(16).padStart(2, '0')).join(''); }
