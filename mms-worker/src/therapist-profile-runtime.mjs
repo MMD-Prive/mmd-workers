@@ -1,3 +1,4 @@
+import { MMS_MAX_COVERAGE_ZONES } from "../../shared/mms-service-zone-policy.mjs";
 import { linkedServiceZoneCodes, loadMmsServiceZoneIndex } from "./service-zones-runtime.mjs";
 import { isTherapistPhotoContent } from "./therapist-photo-content.mjs";
 
@@ -41,6 +42,12 @@ export async function handleMmsTherapistProfileRequest(request, env = {}) {
   }
 
   const current = await requireCurrentTherapist(request, env);
+  // Optional for existing callers; the work app always binds mutations to its loaded profile.
+  // This is a precondition, never an authority to select another Therapist.
+  const expectedTherapist = request.headers.get("X-MMS-Therapist-Context");
+  if (!["GET", "HEAD"].includes(method) && expectedTherapist !== null && expectedTherapist !== current.therapist_id) {
+    throw profileError(409, "PROFILE_ACCOUNT_CHANGED");
+  }
 
   if (path === PROFILE_PREFIX) {
     if (method === "GET") return getProfile(current, request, env);
@@ -97,6 +104,8 @@ async function getProfile(current, request, env) {
 
 async function updateProfile(current, request, env) {
   const body = await readJson(request);
+  const allowed = new Set(["display_name", "intro", "profile_visibility", "courses", "base_service_zone_code", "coverage_service_zone_codes"]);
+  if (Object.keys(body).some(key => !allowed.has(key))) throw profileError(400, "PROFILE_FIELD_NOT_ALLOWED");
   const manifest = await loadManifest(current.therapist_id, env);
 
   const displayName = body.display_name === undefined ? current.display_name : clean(body.display_name, 120);
@@ -113,13 +122,20 @@ async function updateProfile(current, request, env) {
   if (hasServiceZoneUpdate) {
     if (body.base_service_zone_code === undefined || body.coverage_service_zone_codes === undefined) throw profileError(400, "SERVICE_ZONES_INVALID");
     serviceZoneIndex = await loadMmsServiceZoneIndex(env);
+    if (unresolvedZoneLinks(current, serviceZoneIndex) > 0) throw profileError(409, "SERVICE_ZONE_REVIEW_REQUIRED");
     serviceZoneFields = validateServiceZoneSelection(body.base_service_zone_code, body.coverage_service_zone_codes, serviceZoneIndex);
   }
 
   const airtableFields = {};
   if (displayName !== current.display_name) airtableFields["Display Name"] = displayName;
   if (serviceZoneFields) Object.assign(airtableFields, serviceZoneFields);
-  if (Object.keys(airtableFields).length) await updateTherapist(env, current.record_id, airtableFields);
+  for (const key of ["Base Service Zone", "Coverage Service Zones"]) {
+    if (airtableFields[key] && JSON.stringify([...airtableFields[key]].sort()) === JSON.stringify([...(current.fields[key] || [])].sort())) delete airtableFields[key];
+  }
+  if (Object.keys(airtableFields).length) {
+    try { await updateTherapist(env, current.record_id, airtableFields); }
+    catch { throw profileError(503, "PROFILE_SAVE_UNCONFIRMED"); }
+  }
   if (airtableFields["Display Name"]) current.display_name = displayName;
   if (serviceZoneFields) {
     current.fields["Base Service Zone"] = serviceZoneFields["Base Service Zone"];
@@ -134,7 +150,12 @@ async function updateProfile(current, request, env) {
     courses,
     updated_at: new Date().toISOString(),
   };
-  await saveManifest(current.therapist_id, next, env);
+  const manifestChanged = intro !== manifest.intro || visibility !== manifest.profile_visibility || JSON.stringify(courses) !== JSON.stringify(manifest.courses);
+  try { if (manifestChanged) await saveManifest(current.therapist_id, next, env); }
+  catch (error) {
+    if (Object.keys(airtableFields).length) throw profileError(503, "PROFILE_PARTIALLY_SAVED");
+    throw profileError(503, "PROFILE_SAVE_UNCONFIRMED");
+  }
   if (!serviceZoneIndex) {
     try { serviceZoneIndex = await loadMmsServiceZoneIndex(env); } catch { /* Profile data remains available without zone labels. */ }
   }
@@ -262,6 +283,11 @@ async function requireCurrentTherapist(request, env) {
   };
 }
 
+function unresolvedZoneLinks(current, index) {
+  return ["Base Service Zone", "Coverage Service Zones"].reduce((count, key) => count +
+    (current.fields?.[key] || []).filter(id => !index.byRecordId.has(String(id))).length, 0);
+}
+
 function safeProfile(current, manifest, serviceZoneIndex = null) {
   return {
     therapist_id: current.therapist_id,
@@ -271,13 +297,14 @@ function safeProfile(current, manifest, serviceZoneIndex = null) {
       base_service_zone_code: linkedServiceZoneCodes(current.fields?.["Base Service Zone"], serviceZoneIndex)[0] || "",
       coverage_service_zone_codes: linkedServiceZoneCodes(current.fields?.["Coverage Service Zones"], serviceZoneIndex),
     } : null,
+    service_zone_review_required: serviceZoneIndex ? unresolvedZoneLinks(current, serviceZoneIndex) > 0 : false,
     role: SESSION_ROLE,
     intro: manifest.intro,
     profile_visibility: manifest.profile_visibility,
     courses: manifest.courses,
     public_photo_ids: manifest.public_photo_ids,
     photos: manifest.photos.map((photo) => photoView(current.therapist_id, manifest, photo)),
-    limits: { photos: MAX_PHOTOS, public_photos: MAX_PUBLIC_PHOTOS, courses: MAX_COURSES, photo_bytes: MAX_PHOTO_BYTES },
+    limits: { photos: MAX_PHOTOS, public_photos: MAX_PUBLIC_PHOTOS, courses: MAX_COURSES, coverage_zones: MMS_MAX_COVERAGE_ZONES, photo_bytes: MAX_PHOTO_BYTES },
   };
 }
 
@@ -296,7 +323,7 @@ function photoView(therapistId, manifest, photo) {
 
 function validateServiceZoneSelection(baseValue, coverageValue, index) {
   const baseCode = clean(baseValue, 80);
-  if (!Array.isArray(coverageValue) || coverageValue.length > 30) throw profileError(400, "SERVICE_ZONES_INVALID");
+  if (!Array.isArray(coverageValue) || coverageValue.length > MMS_MAX_COVERAGE_ZONES) throw profileError(400, "SERVICE_ZONES_INVALID");
   const coverageCodes = [...new Set(coverageValue.map((value) => clean(value, 80)).filter(Boolean))];
   if (!baseCode && coverageCodes.length === 0) return { "Base Service Zone": [], "Coverage Service Zones": [] };
   if (!baseCode || coverageCodes.length === 0 || !coverageCodes.includes(baseCode)) throw profileError(400, "SERVICE_ZONES_INVALID");
@@ -481,6 +508,6 @@ function profileError(status, code) { return new TherapistProfileError(status, c
 
 export const therapistProfileContract = Object.freeze({
   prefix: PROFILE_PREFIX,
-  limits: Object.freeze({ photos: MAX_PHOTOS, public_photos: MAX_PUBLIC_PHOTOS, courses: MAX_COURSES, photo_bytes: MAX_PHOTO_BYTES }),
+  limits: Object.freeze({ photos: MAX_PHOTOS, public_photos: MAX_PUBLIC_PHOTOS, courses: MAX_COURSES, coverage_zones: MMS_MAX_COVERAGE_ZONES, photo_bytes: MAX_PHOTO_BYTES }),
   course_duration_minutes: Object.freeze({ min: 30, max: 360, step: 30 }),
 });

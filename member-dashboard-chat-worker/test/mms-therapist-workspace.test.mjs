@@ -147,8 +147,8 @@ class Element {
   querySelector(){return this.submit || null;}
   async click(){if(!this.disabled){if(this.onclick)await this.onclick();if(this.listeners.click)await this.listeners.click();}}
 }
-function clientHarness({access={can_open:true,matching_enabled:true,verified_skills:['Sport'],availability_status:'Available',display_name:'Boss'},failure=null}={}) {
-  const ids=['notice','entry','workspace','line-login','greeting','readiness','availability','save-availability','refresh','retry','offers','jobs','profile','offer-list','job-list','profile-form','display-name','intro','base-zone','coverage-zones','zone-status','visibility','courses','photos','upload','save-photos','add-course','logout','detail'];
+function clientHarness({access={therapist_id:'fixture-A',can_open:true,matching_enabled:true,verified_skills:['Sport'],availability_status:'Available',display_name:'Boss'},failure=null,responses={},graphics=null}={}) {
+  const ids=['notice','entry','workspace','line-login','greeting','readiness','availability','save-availability','refresh','retry','offers','jobs','profile','offer-list','job-list','profile-form','display-name','intro','base-zone','coverage-zones','zone-status','visibility','courses','photos','upload','save-photos','add-course','logout','detail','save-profile','profile-save-status','verified-services','profile-info','profile-courses','profile-zones','profile-photos','zone-search','zone-summary','retry-zones','course-empty'];
   const els=Object.fromEntries(ids.map(id=>[id,new Element()]));els.workspace.hidden=true;
   els['profile-form'].submit=new Element('button');
   const tabs=['offers','jobs','profile'].map(tab=>{const el=new Element('button');el.dataset.tab=tab;return el;});
@@ -156,9 +156,10 @@ function clientHarness({access={can_open:true,matching_enabled:true,verified_ski
   let failed=false;
   const context={document:{getElementById:id=>els[id],createElement:tag=>new Element(tag),querySelector:()=>({dataset:{login:'false'}}),querySelectorAll:selector=>selector==='[data-tab]'?tabs:[]},fetch:async(url,options={})=>{
     calls.push({url,options});let data;
+    const override=responses[url.split('/').at(-1)]; if(override) return await override(url,options);
     if(url.endsWith('/access'))data=access;
     else if(url.endsWith('/availability'))data={...access,availability_status:JSON.parse(options.body).availability_status};
-    else if(url.endsWith('/profile'))data={display_name:'Boss',intro:'',profile_visibility:'hidden',service_zones:{base_service_zone_code:'BKK-PATHUMWAN',coverage_service_zone_codes:['BKK-PATHUMWAN']},courses:[],photos:[]};
+    else if(url.endsWith('/profile'))data={therapist_id:access.therapist_id,display_name:'Boss',intro:'',profile_visibility:'hidden',service_zones:{base_service_zone_code:'BKK-PATHUMWAN',coverage_service_zone_codes:['BKK-PATHUMWAN']},courses:[],photos:[]};
     else if(url.endsWith('/service-zones'))data={zones:[{code:'BKK-PATHUMWAN',label_th:'ปทุมวัน',province_label_th:'กรุงเทพฯ'},{code:'BKK-SILOM',label_th:'สีลม',province_label_th:'กรุงเทพฯ'}]};
     else if(url.endsWith('/offers'))data=[{jobId,state,serviceLabel:'Sport',expiresAt:new Date(Date.now()+60000).toISOString()}];
     else if(url.endsWith('/jobs'))data=state==='OFFERED'?[]:[{jobId,state,serviceLabel:'Sport'}];
@@ -168,9 +169,9 @@ function clientHarness({access={can_open:true,matching_enabled:true,verified_ski
     }else if(url.endsWith(jobId))data={jobId,state,serviceLabel:'Sport',payoutLabel:'1,610 บาท',expiresAt:new Date(Date.now()+60000).toISOString(),disclosure:{locationUnlocked:false}};
     else throw new Error('unmocked '+url);
     return Response.json({ok:true,data});
-  },Response,URLSearchParams,Date,Map,Set,Array,Object,Number,String,JSON,setTimeout,clearTimeout,AbortController,crypto:globalThis.crypto,location:{assign(){},replace(){},pathname:path+'/app',href:origin+path+'/app',hash:''},history:{replaceState(){}},window:{confirm:()=>true}};
-  vm.runInNewContext('('+therapistClient.toString()+')()',context);
-  return {els,tabs,calls,jobId,get state(){return state;}};
+  },Response,URLSearchParams,Date,Map,Set,Array,Object,Number,String,JSON,setTimeout,clearTimeout,AbortController,crypto:globalThis.crypto,location:{assign(){},replace(){},pathname:path+'/app',href:origin+path+'/app',hash:''},history:{replaceState(){}},window:{confirm:()=>true,MmsGraphics:graphics}};
+  vm.runInNewContext('('+therapistClient.toString()+')(45)',context);
+  return {els,tabs,calls,jobId,access,get state(){return state;}};
 }
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
 function findButton(panel,label){return panel.children.find(el=>el.tag==='button'&&el.textContent===label);}
@@ -199,15 +200,15 @@ test('availability self-service sends only the availability field',async()=>{
 test('profile saves service area codes through the authenticated profile API',async()=>{
   const h=clientHarness();await settle();await h.tabs[2].click();
   assert.equal(h.els['base-zone'].value,'BKK-PATHUMWAN');
-  assert.match(h.els['zone-status'].textContent,/สูงสุด 30 เขต/);
-  h.els['base-zone'].value='BKK-SILOM';
+  assert.match(h.els['zone-status'].textContent,/สูงสุด 45 เขต/);
+  h.els['base-zone'].value='BKK-SILOM'; h.els['base-zone'].onchange();
   const checkboxes=h.els['coverage-zones'].querySelectorAll('[data-service-zone]');
   checkboxes.find(check=>check.dataset.serviceZone==='BKK-SILOM').checked=true;
   await h.els['profile-form'].onsubmit({preventDefault(){}}); await settle();
   const call=h.calls.filter(item=>item.url.endsWith('/profile')&&item.options.method==='PUT').at(-1);
   assert.deepEqual(JSON.parse(call.options.body).base_service_zone_code,'BKK-SILOM');
   assert.deepEqual(JSON.parse(call.options.body).coverage_service_zone_codes,['BKK-PATHUMWAN','BKK-SILOM']);
-  assert.match(h.els.notice.textContent,/บันทึกโปรไฟล์และเขตบริการ/);
+  assert.match(h.els.notice.textContent,/บันทึกโปรไฟล์/);
 });
 
 
@@ -219,7 +220,7 @@ test('bare LIFF endpoint and callbacks use native login', async () => {
   }
 });
 function loginHarness({url=origin+path+'/login?invite=test-invite', saved=null, loggedIn=true, token='valid-token', error=null, unavailableStorage=false, initNever=false, fastTimeout=false}={}) {
-  const ids=['notice','entry','workspace','line-login','greeting','readiness','availability','save-availability','refresh','retry','offers','jobs','profile','offer-list','job-list','profile-form','display-name','intro','base-zone','coverage-zones','zone-status','visibility','courses','photos','upload','save-photos','add-course','logout','detail'];
+  const ids=['notice','entry','workspace','line-login','greeting','readiness','availability','save-availability','refresh','retry','offers','jobs','profile','offer-list','job-list','profile-form','display-name','intro','base-zone','coverage-zones','zone-status','visibility','courses','photos','upload','save-photos','add-course','logout','detail','save-profile','profile-save-status','verified-services','profile-info','profile-courses','profile-zones','profile-photos','zone-search','zone-summary','retry-zones','course-empty'];
   const els=Object.fromEntries(ids.map(id=>[id,new Element()]));
   const data=new Map(saved||[]), requests=[], redirects=[];let logouts=0;
   const parsed=new URL(url);
@@ -227,7 +228,7 @@ function loginHarness({url=origin+path+'/login?invite=test-invite', saved=null, 
     fetch:async(url,options={})=>{requests.push({url,options});if(url.endsWith('/me'))return Response.json({ok:false,error:{code:'THERAPIST_SESSION_REQUIRED'}},{status:401});return error?Response.json({ok:false,error:{code:error}},{status:401}):Response.json({ok:true,data:{}});},
     window:{sessionStorage:{getItem(k){if(unavailableStorage)throw Error();return data.get(k)||null;},setItem(k,v){if(unavailableStorage)throw Error();data.set(k,v);},removeItem(k){data.delete(k);}},liff:{async init(){if(initNever)await new Promise(()=>{});},isLoggedIn:()=>loggedIn,getIDToken:()=>token,logout(){logouts++;},login(o){redirects.push(o.redirectUri);}}},
     location:{href:url,hash:parsed.hash,pathname:parsed.pathname,assign(u){redirects.push(u);},replace(u){redirects.push(u);}},history:{replaceState(){}},URL,URLSearchParams,Response,Date,Map,Set,Array,Object,Number,String,JSON,AbortController,setTimeout:fastTimeout?(fn,ms)=>ms===12000?setImmediate(fn):setTimeout(fn,ms):setTimeout,clearTimeout,crypto:globalThis.crypto};
-  vm.runInNewContext('('+therapistClient.toString()+')()',context);
+  vm.runInNewContext('('+therapistClient.toString()+')(45)',context);
   return {els,data,requests,redirects,get logouts(){return logouts;}};
 }
 test('query invite reaches backend and is removed only after success',async()=>{
@@ -302,4 +303,43 @@ test('choosing LINE again after logout never reuses the prior access invite', as
   assert.equal(h.redirects.length,1);
   assert.equal(new URL(h.redirects[0]).hash,'');
   assert.equal(h.requests.length,0);
+});
+
+test('saving courses without changing zones omits zone replacement fields',async()=>{
+ const h=clientHarness();await settle();await h.tabs[2].click();h.els.intro.value='Fixture intro';await h.els['profile-form'].onsubmit({preventDefault(){}});await settle();
+ const body=JSON.parse(h.calls.find(c=>c.url.endsWith('/profile')&&c.options.method==='PUT').options.body);
+ assert.equal(Object.hasOwn(body,'coverage_service_zone_codes'),false);assert.equal(Object.hasOwn(body,'base_service_zone_code'),false);
+});
+test('catalog 503 keeps course editing and original zone links intact with explicit retry',async()=>{
+ let fail=true;const h=clientHarness({responses:{'service-zones':()=>fail?Response.json({ok:false,error:{code:'UNAVAILABLE'}},{status:503}):Response.json({ok:true,data:{zones:[{code:'BKK-PATHUMWAN',label_th:'ปทุมวัน'}]}})}});
+ await settle();await h.tabs[2].click();assert.equal(h.els['save-profile'].disabled,false);assert.equal(h.els['base-zone'].dataset.ready,'false');assert.equal(h.els['retry-zones'].hidden,false);
+ await h.els['profile-form'].onsubmit({preventDefault(){}});await settle();const body=JSON.parse(h.calls.find(c=>c.options.method==='PUT').options.body);assert.equal(Object.hasOwn(body,'coverage_service_zone_codes'),false);
+ fail=false;await h.els['retry-zones'].click();assert.equal(h.els['base-zone'].dataset.ready,'true');
+});
+test('malformed 200 profile stays uneditable instead of becoming empty courses',async()=>{
+ const h=clientHarness({responses:{profile:()=>Response.json({ok:true,data:{display_name:'Fixture'}})}});await settle();await h.tabs[2].click();assert.equal(h.els['save-profile'].disabled,true);assert.equal(h.els.notice.className,'error');assert.equal(h.calls.some(c=>c.options.method==='PUT'),false);
+});
+test('profile belonging to a different account clears private state',async()=>{
+ const h=clientHarness({access:{therapist_id:'fixture-A',can_open:true,matching_enabled:false},responses:{profile:()=>Response.json({ok:true,data:{therapist_id:'fixture-B',display_name:'Private B',courses:[],photos:[]}})}});
+ await settle();await h.tabs[2].click();assert.equal(h.els.workspace.hidden,true);assert.equal(h.els['display-name'].value,'');assert.equal(h.els['base-zone'].dataset.ready,'false');assert.equal(h.els['save-profile'].disabled,true);assert.equal(h.els.greeting.textContent,'');
+});
+test('old delayed catalog cannot repopulate profile after logout',async()=>{
+ let release;const wait=new Promise(resolve=>release=resolve);
+ const h=clientHarness({responses:{'service-zones':()=>wait,logout:()=>new Response(null,{status:204})}});await settle();const loading=h.tabs[2].click();await settle();await h.els.logout.click();
+ release(Response.json({ok:true,data:{zones:[{code:'BKK-PATHUMWAN',label_th:'Old account zone'}]}}));await loading;await settle();
+ assert.equal(h.els['coverage-zones'].children.length,0);assert.equal(h.els['base-zone'].children.length,0);assert.equal(h.els['display-name'].value,'');assert.equal(h.els.workspace.hidden,true);
+});
+test('uncertain save retains draft and requests readback without claiming unchanged backend',async()=>{
+ const h=clientHarness({responses:{profile:(url,opt)=>opt.method==='PUT'?Response.json({ok:false,error:{code:'PROFILE_PARTIALLY_SAVED'}},{status:503}):Response.json({ok:true,data:{therapist_id:'fixture-A',display_name:'Fixture',courses:[],photos:[],service_zones:null}})}});
+ await settle();await h.tabs[2].click();h.els.intro.value='Unsaved fixture';await h.els['profile-form'].onsubmit({preventDefault(){}});await settle();assert.equal(h.els.intro.value,'Unsaved fixture');assert.match(h.els['profile-save-status'].textContent,/บางส่วน.*รีเฟรช/);assert.doesNotMatch(h.els.notice.textContent,/ข้อมูลเดิมยังอยู่|บันทึกโปรไฟล์แล้ว/);
+});
+test('course entry precedes the collapsed zone picker and has direct section controls',()=>{
+ const html=renderTherapistWorkspace();assert.ok(html.indexOf('id="profile-courses"')<html.indexOf('id="coverage-zones"'));assert.match(html,/<details id="zone-picker">/);assert.match(html,/data-profile-tab="courses"/);assert.match(html,/id="zone-search" type="search"/);assert.match(html,/id="upload" type="file"/);
+});
+
+
+test('malformed profile does not advance progress to ready before schema validation',async()=>{
+ let ready=0,failed=0;
+ const h=clientHarness({graphics:{begin(){return 1;},received(){},ready(){ready++;},fail(){failed++;},failCurrent(){}},responses:{profile:()=>Response.json({ok:true,data:{display_name:'Incomplete fixture'}})}});
+ await settle();const before=ready;await h.tabs[2].click();assert.equal(ready,before);assert.equal(failed,1);assert.equal(h.els['save-profile'].disabled,true);
 });
