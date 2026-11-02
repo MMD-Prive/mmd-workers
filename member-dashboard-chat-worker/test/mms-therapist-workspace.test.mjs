@@ -147,7 +147,7 @@ class Element {
   querySelector(){return this.submit || null;}
   async click(){if(!this.disabled){if(this.onclick)await this.onclick();if(this.listeners.click)await this.listeners.click();}}
 }
-function clientHarness({access={therapist_id:'fixture-A',can_open:true,matching_enabled:true,verified_skills:['Sport'],availability_status:'Available',display_name:'Boss'},failure=null,responses={}}={}) {
+function clientHarness({access={therapist_id:'fixture-A',can_open:true,matching_enabled:true,verified_skills:['Sport'],availability_status:'Available',display_name:'Boss'},failure=null,responses={},graphics=null}={}) {
   const ids=['notice','entry','workspace','line-login','greeting','readiness','availability','save-availability','refresh','retry','offers','jobs','profile','offer-list','job-list','profile-form','display-name','intro','base-zone','coverage-zones','zone-status','visibility','courses','photos','upload','save-photos','add-course','logout','detail','save-profile','profile-save-status','verified-services','profile-info','profile-courses','profile-zones','profile-photos','zone-search','zone-summary','retry-zones','course-empty'];
   const els=Object.fromEntries(ids.map(id=>[id,new Element()]));els.workspace.hidden=true;
   els['profile-form'].submit=new Element('button');
@@ -169,7 +169,7 @@ function clientHarness({access={therapist_id:'fixture-A',can_open:true,matching_
     }else if(url.endsWith(jobId))data={jobId,state,serviceLabel:'Sport',payoutLabel:'1,610 บาท',expiresAt:new Date(Date.now()+60000).toISOString(),disclosure:{locationUnlocked:false}};
     else throw new Error('unmocked '+url);
     return Response.json({ok:true,data});
-  },Response,URLSearchParams,Date,Map,Set,Array,Object,Number,String,JSON,setTimeout,clearTimeout,AbortController,crypto:globalThis.crypto,location:{assign(){},replace(){},pathname:path+'/app',href:origin+path+'/app',hash:''},history:{replaceState(){}},window:{confirm:()=>true}};
+  },Response,URLSearchParams,Date,Map,Set,Array,Object,Number,String,JSON,setTimeout,clearTimeout,AbortController,crypto:globalThis.crypto,location:{assign(){},replace(){},pathname:path+'/app',href:origin+path+'/app',hash:''},history:{replaceState(){}},window:{confirm:()=>true,MmsGraphics:graphics}};
   vm.runInNewContext('('+therapistClient.toString()+')(45)',context);
   return {els,tabs,calls,jobId,access,get state(){return state;}};
 }
@@ -335,4 +335,11 @@ test('uncertain save retains draft and requests readback without claiming unchan
 });
 test('course entry precedes the collapsed zone picker and has direct section controls',()=>{
  const html=renderTherapistWorkspace();assert.ok(html.indexOf('id="profile-courses"')<html.indexOf('id="coverage-zones"'));assert.match(html,/<details id="zone-picker">/);assert.match(html,/data-profile-tab="courses"/);assert.match(html,/id="zone-search" type="search"/);assert.match(html,/id="upload" type="file"/);
+});
+
+
+test('malformed profile does not advance progress to ready before schema validation',async()=>{
+ let ready=0,failed=0;
+ const h=clientHarness({graphics:{begin(){return 1;},received(){},ready(){ready++;},fail(){failed++;},failCurrent(){}},responses:{profile:()=>Response.json({ok:true,data:{display_name:'Incomplete fixture'}})}});
+ await settle();const before=ready;await h.tabs[2].click();assert.equal(ready,before);assert.equal(failed,1);assert.equal(h.els['save-profile'].disabled,true);
 });

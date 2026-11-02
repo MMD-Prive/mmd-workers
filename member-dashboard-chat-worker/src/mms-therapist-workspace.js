@@ -147,6 +147,12 @@ export function therapistClient(maxCoverageZones = 0) {
         throw e;
       }
       if (body.data === undefined || body.data === null) throw Object.assign(new Error("PROFILE_INVALID_RESPONSE"), { code: "PROFILE_INVALID_RESPONSE" });
+      if (path === P + "/api/auth/profile" && (typeof body.data.display_name !== "string" || !Array.isArray(body.data.courses) || !Array.isArray(body.data.photos))) {
+        throw Object.assign(new Error("PROFILE_INVALID_RESPONSE"), { code: "PROFILE_INVALID_RESPONSE" });
+      }
+      if (path === A + "/service-zones" && (!Array.isArray(body.data.zones) || body.data.zones.length === 0)) {
+        throw Object.assign(new Error("SERVICE_ZONE_CATALOG_INVALID"), { code: "SERVICE_ZONE_CATALOG_INVALID" });
+      }
       progress?.ready(step); return body.data;
     } catch (error) {
       if (epoch === accountEpoch) progress?.fail(step, controller.signal.aborted ? "คำขอใช้เวลานานเกินไปครับ ลองตรวจข้อมูลอีกครั้ง" : "ระบบยังไม่ได้ยืนยันผลครับ ลองตรวจข้อมูลอีกครั้ง");
