@@ -1,4 +1,5 @@
 import { linkedServiceZoneCodes, loadMmsServiceZoneIndex } from "./service-zones-runtime.mjs";
+import { isTherapistPhotoContent } from "./therapist-photo-content.mjs";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const PROFILE_PREFIX = "/male-massage/therapists/api/auth/profile";
@@ -155,6 +156,7 @@ async function uploadPhoto(current, request, env) {
   catch { throw profileError(400, "PHOTO_READ_FAILED"); }
   if (!bytes.byteLength) throw profileError(400, "PHOTO_EMPTY");
   if (bytes.byteLength > MAX_PHOTO_BYTES) throw profileError(413, "PHOTO_TOO_LARGE");
+  if (!isTherapistPhotoContent(bytes, contentType)) throw profileError(415, "PHOTO_CONTENT_INVALID");
 
   const photoId = `ph_${crypto.randomUUID().replace(/-/g, "")}`;
   const key = photoKey(current.therapist_id, photoId);
