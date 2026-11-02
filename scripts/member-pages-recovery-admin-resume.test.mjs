@@ -20,7 +20,7 @@ function fixture() {
     originalMemberVersion: async () => ({ id: RELEASE.memberOriginalVersion, resources: { script: {}, script_runtime: { migration_tag: 'v3-remembered-login-device' }, bindings: [] } }),
     verifyUploaded: async () => {},
     deploy: async (worker, meta) => { calls.push(worker); assert.equal(worker, 'admin-worker'); assert.equal(meta.migrations, undefined); },
-    verifyDeployed: async () => ({ version: { id: 'new-admin' }, deployment: { id: 'new-deploy', versions: [{ percentage: 100 }] } }),
+    verifyDeployed: async () => ({ latest_version: 'new-admin', version: { id: 'new-admin', resources: {script_runtime: {migration_tag: 'v1'}} }, deployment: { id: 'new-deploy', versions: [{ percentage: 100 }] } }),
   };
   return { io, calls, receipts, make, plan: { adminBytes: bytes, adminDeployment } };
 }
@@ -73,5 +73,12 @@ test('member namespace or mutable settings drift blocks admin PUT', async () => 
     const f = fixture(); let n = 0;
     f.io.snapshot = async worker => { const s = f.make(worker === 'member-pages-worker'); if (worker === 'member-pages-worker') { n++; if (kind === 'namespace') s.version.resources.bindings[0].namespace_id = 'wrong'; if (kind === 'settings' && n === 2) s.settings.observability.enabled = false; } return s; };
     await assert.rejects(executeAdminOnlyResume(f.io, f.plan)); assert.deepEqual(f.calls, []);
+  }
+});
+
+test('admin post-PUT migration or latest-version drift is not reported complete', async () => {
+  for (const kind of ['migration', 'latest']) {
+    const f = fixture(); const original = f.io.verifyDeployed; f.io.verifyDeployed = async () => {const result = await original(); if(kind === 'migration') result.version.resources.script_runtime.migration_tag = 'unexpected'; else result.latest_version = 'newer'; return result;};
+    await assert.rejects(executeAdminOnlyResume(f.io,f.plan)); assert.deepEqual(f.calls,['admin-worker']); assert.equal(f.receipts.at(-1).phase,'partial-or-unknown-admin-deployment');
   }
 });
