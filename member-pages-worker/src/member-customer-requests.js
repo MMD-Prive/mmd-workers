@@ -83,7 +83,9 @@ async function handleRequest(request, env, identity) {
   const created = await createInbox(env, {
     inbox_id: `customer_${input.data.request_id}`,
     source: "line",
-    intent: input.data.request_type,
+    // Console Inbox's live intent select uses note_only; the customer-facing
+    // request kind remains authoritative inside payload_json.request_type.
+    intent: "note_only",
     member_name: safeText(identity.memberProfile?.display_name, 120),
     line_user_id: identity.lineUserId,
     line_id: input.data.request_id,
@@ -247,7 +249,7 @@ async function listInbox(env, lineUserId) {
   const records = []; let offset = "";
   for (let page = 0; page < 20; page += 1) {
     const url = new URL(`${API}/${encodeURIComponent(base)}/${encodeURIComponent(table)}`);
-    url.searchParams.set("filterByFormula", `AND({line_user_id}=${formula(lineUserId)},OR({source}='my_mmd_liff',{source}='line'),OR({intent}='your_request',{intent}='saved_model',{intent}='profile_update'))`);
+    url.searchParams.set("filterByFormula", `AND({line_user_id}=${formula(lineUserId)},OR({source}='my_mmd_liff',{source}='line'),OR({intent}='note_only',{intent}='your_request',{intent}='saved_model',{intent}='profile_update'))`);
     url.searchParams.set("maxRecords", String(MAX_LIST)); url.searchParams.set("pageSize", String(MAX_LIST)); if (offset) url.searchParams.set("offset", offset);
     const response = await airtableFetch(env, url, { headers: { authorization: `Bearer ${key}`, accept: "application/json" } });
     const payload = await response.json().catch(() => null); if (!response.ok || !Array.isArray(payload?.records)) return null;

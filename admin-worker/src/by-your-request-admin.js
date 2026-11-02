@@ -35,7 +35,7 @@ async function mutateRequest(request, env, actor) {
   try {
     const record = await airtableGet(env, body.record_id); const item = recordToItem(record); if (!item) return json({ ok: false, error: 'REQUEST_NOT_FOUND' }, 404);
     const payload = parse(record.fields?.payload_json); const patch = {};
-    if (body.status !== undefined) { const status = clean(body.status, 40); if (!STATES.has(status)) return json({ ok: false, error: 'INVALID_STATUS' }, 400); payload.status = status; patch.status = status; }
+    if (body.status !== undefined) { const status = clean(body.status, 40); if (!STATES.has(status)) return json({ ok: false, error: 'INVALID_STATUS' }, 400); if (!(body.identity_note !== undefined && status === 'received' && payload.status !== 'received')) { payload.status = status; patch.status = status === 'closed' ? 'done' : 'processing'; } }
     const mutationId = crypto.randomUUID();
     if (body.identity_note !== undefined) {
       const note = validateIdentityNote(body.identity_note); if (!note.ok) return json({ ok: false, error: note.error }, 400);
@@ -52,7 +52,9 @@ async function mutateRequest(request, env, actor) {
       // Another admin changed the same immutable JSON envelope. Merge the
       // latest envelope with this mutation and verify once more; never claim
       // success while our evidence/status is absent from Airtable.
-      const merged = { ...readbackPayload, ...payload, identity_evidence: [...(Array.isArray(readbackPayload.identity_evidence) ? readbackPayload.identity_evidence : []), ...(Array.isArray(payload.identity_evidence) ? payload.identity_evidence.filter(note => note.mutation_id === mutationId) : [])].slice(-20), last_mutation_id: mutationId };
+      const merged = { ...readbackPayload, last_mutation_id: mutationId };
+      if (body.status !== undefined && !(body.identity_note !== undefined && clean(body.status, 40) === 'received' && readbackPayload.status !== 'received')) merged.status = payload.status;
+      if (body.identity_note !== undefined) merged.identity_evidence = [...(Array.isArray(readbackPayload.identity_evidence) ? readbackPayload.identity_evidence : []), ...(Array.isArray(payload.identity_evidence) ? payload.identity_evidence.filter(note => note.mutation_id === mutationId) : [])].slice(-20);
       updated = await airtablePatch(env, record.id, { ...patch, payload_json: JSON.stringify(merged) });
       const confirmed = await airtableGet(env, record.id);
       if (parse(confirmed.fields?.payload_json).last_mutation_id !== mutationId) return json({ ok: false, error: 'REQUEST_CONCURRENT_UPDATE' }, 409);
