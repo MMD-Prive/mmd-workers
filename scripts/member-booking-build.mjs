@@ -20,5 +20,11 @@ export function buildSigilBooking({directory=root,esbuild,run=execFileSync}={}){
  const buildDirectory=mkdtempSync(join(tmpdir(),'booking-release-build-')),output=join(buildDirectory,'runtime-index.js');
  run(esbuild,['src/runtime-index.js','--bundle','--format=esm','--target=es2022','--keep-names','--sourcemap','--outfile='+output,'--log-level=error'],{cwd:join(directory,'sigil-booking-worker'),stdio:'pipe',env:{...process.env,CLOUDFLARE_API_TOKEN:'',CLOUDFLARE_API_KEY:'',WRANGLER_SEND_METRICS:'false'}});
  const modules=[{name:'runtime-index.js',bytes:readFileSync(output)},{name:'runtime-index.js.map',bytes:normalizeSigilMap(JSON.parse(readFileSync(output+'.map','utf8')),buildDirectory,directory)}];
- for(const m of modules)assert.equal(digest(m.bytes),contract.sigil.candidate_modules[m.name],'compiled candidate drift: '+m.name);return modules;
+ for(const m of modules)assert.equal(digest(m.bytes),contract.sigil.local_debug_artifacts[m.name],'compiled audit artifact drift: '+m.name);
+ assert.equal(contract.sigil.source_map_policy,'local-evidence-only-not-uploaded');
+ const trailer=Buffer.from('//# sourceMappingURL=runtime-index.js.map\n');
+ assert.ok(modules[0].bytes.subarray(-trailer.length).equals(trailer),'unexpected map trailer');
+ const runtime={name:'runtime-index.js',bytes:modules[0].bytes.subarray(0,-trailer.length)};
+ assert.equal(digest(runtime.bytes),contract.sigil.candidate_modules[runtime.name],'runtime candidate drift');
+ return [runtime];
 }
