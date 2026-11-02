@@ -345,7 +345,7 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
   <section id="profile" class="profile hidden" aria-label="Member profile">
     <div class="section-rail">
     <section id="home" class="panel digital-home" aria-label="Home" data-active="true">
-    <header class="digital-top">${renderCustomerBrand()}<div><span class="digital-session" id="digital-session">${customerIcon("icon-check")} LINE VERIFIED</span> <button id="member-logout" class="digital-signout" type="button">ออกจากระบบ</button></div></header>
+    <header class="digital-top">${renderCustomerBrand()}<div><span class="digital-session" id="digital-session">${customerIcon("icon-check")} กำลังตรวจสอบบัญชี</span> <button id="member-logout" class="digital-signout" type="button">ออกจากระบบ</button></div></header>
     <svg class="digital-bangkok-trace" viewBox="0 0 520 34" preserveAspectRatio="none" fill="none" aria-hidden="true" focusable="false" role="presentation">
       <path d="M9 28H511M61 28V17h24v11M82 17V9h11v19M132 28V14h18V5h25v23M182 28V19h27V12h13v16M254 28V11h20V2h18v26M291 28V21h34V15h15v13M385 28V20h18V9h29v19M441 28V18h25v10" stroke="currentColor" stroke-width="1" stroke-linejoin="round"/>
       <path d="M8 8H96M420 6h94M24 13h21M476 15h36M10 32h500" stroke="currentColor" stroke-width=".8" opacity=".55"/>
@@ -558,7 +558,7 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 4500);
     try {
-      const response = await fetch(CONFIG.welcomeContextEndpoint, {
+      const response = await memberApiFetch(CONFIG.welcomeContextEndpoint, {
         method: "GET",
         credentials: "same-origin",
         redirect: "error",
@@ -588,7 +588,7 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
       const body = { id_token: idToken, liff_intent: CONFIG.intent };
       if (CONFIG.promoCode) body.promo_code = CONFIG.promoCode;
       if (CONFIG.campaign) body.campaign = CONFIG.campaign;
-      const response = await fetch(CONFIG.startEndpoint, {
+      const response = await memberApiFetch(CONFIG.startEndpoint, {
         method: "POST",
         credentials: "same-origin",
         headers: { "content-type": "application/json", accept: "application/json" },
@@ -901,7 +901,7 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
   async function call(endpoint, body) {
     let response;
     try {
-      response = await fetch(endpoint, {
+      response = await (endpoint === CONFIG.startEndpoint ? memberApiFetch : fetch)(endpoint, {
         method: "POST",
         credentials: "same-origin",
         headers: { "content-type": "application/json", "accept": "application/json" },
@@ -1044,8 +1044,12 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
     const run = memberApiChain.then(async () => {
       if (!valid()) throw Object.assign(new Error("member_request_stale"), {code:"member_request_not_started"});
       const controller = new AbortController();
+      const abort = () => controller.abort();
+      if (init.signal?.aborted) abort();
+      init.signal?.addEventListener("abort", abort, { once: true });
       const timer = setTimeout(() => controller.abort(), 10000);
       try {
+        if (controller.signal.aborted) throw new Error("member_request_aborted");
         const response = await fetch(url, { ...init, signal: controller.signal });
         const reader = response.body?.getReader();
         if (!reader) return response;
@@ -1062,7 +1066,10 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
         const bytes = new Uint8Array(size); let offset = 0;
         for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
         return new Response(bytes, { status: response.status, statusText: response.statusText, headers: response.headers });
-      } finally { clearTimeout(timer); }
+      } finally {
+        clearTimeout(timer);
+        init.signal?.removeEventListener("abort", abort);
+      }
     });
     memberApiChain = run.then(() => undefined, () => undefined);
     return run;
@@ -1152,6 +1159,8 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
     accountUI.reset();
     if (typeof customerLoading !== "undefined") customerLoading.reset({ memberOnly:true });
     profileReady = false;
+    const sessionLabel = document.getElementById("digital-session");
+    if (sessionLabel) sessionLabel.textContent = "กำลังตรวจสอบบัญชี";
     currentMemberRef = "";
     secondaryReads.clear();
     profile.classList.add("hidden");
@@ -1775,6 +1784,8 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
     if (appStatus) appStatus.dataset.mmdStatusKind = "ready";
     secondaryReads.clear();
     profileReady = true;
+    const sessionLabel = document.getElementById("digital-session");
+    if (sessionLabel) sessionLabel.textContent = "LINE VERIFIED";
     // Only after the existing authenticated profile read succeeds. The album
     // endpoint independently rechecks account and media permission on arrival.
     if (CONFIG.returnTo === "/my-mmd/ems" || CONFIG.returnTo.startsWith("/my-mmd/ems/")) { window.location.replace(CONFIG.returnTo); return; }
