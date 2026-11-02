@@ -22,6 +22,12 @@ export const CODE_ONLY_GRAPHICS_SOURCE_SHA = 'a53571bc9d572755dff65599767d09a240
 export const CODE_ONLY_STARTUP_BASE_SHA = 'ebf5236b6d9a3e9bea28c89db1f6c2e18b8ddebc';
 export const CODE_ONLY_SOURCE_SHA = 'fe5f9d98876b600421c5614efc049ffc890b8adb';
 export const CODE_ONLY_MY_MMD_SOURCE_SHA = '871d99cd9eb1c8d53e1d473160119030dca01d4c';
+export const RECOVERY_SOURCE_SHA = 'd82c284fb48943c7c8a8cc5a970107f799186ee3';
+export const RECOVERY_BASE_SOURCE_SHA = CODE_ONLY_MY_MMD_SOURCE_SHA;
+export const RECOVERY_RUNTIME_PATHS = [
+  'member-pages-worker/src/liff-identity-foundation.js',
+  'member-pages-worker/src/member-email-recovery.js',
+].sort();
 export const CODE_ONLY_SOURCE_CONFIG_BLOB = 'e26a9d3436140f381f5d6f55311c43c81e7deb40';
 // #2843 is an isolated candidate scope. The active d81d1bad version was
 // uploaded from an earlier Worker artifact with six in-bundle edits, so this
@@ -199,6 +205,27 @@ export function validateMyMmdSourceHistory(sha, isAncestor) {
     ...CODE_ONLY_MY_MMD_INCLUDED_PULL_REQUESTS.map(pr => pr.merge_sha)]) {
     assert.equal(isAncestor(ancestor, sha), true, 'reviewed MY MMD release commit missing from source history');
   }
+}
+
+export function inspectRecoveryReleaseCheckout(releaseSha, sourceDirectory, {
+  recoverySha = RECOVERY_SOURCE_SHA,
+  baseSha = RECOVERY_BASE_SOURCE_SHA,
+  releaseDirectory = process.cwd(),
+  git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding:'utf8', stdio:['ignore','pipe','ignore'] }).trim(),
+} = {}) {
+  assert.match(releaseSha || '', /^[a-f0-9]{40}$/);
+  assert.equal(resolve(git(sourceDirectory, 'rev-parse', '--show-toplevel')), resolve(sourceDirectory));
+  assert.equal(git(sourceDirectory, 'rev-parse', 'HEAD'), baseSha, 'recovery baseline checkout drift');
+  const changed = git(sourceDirectory, 'status', '--porcelain', '--untracked-files=all')
+    .split('\n').filter(Boolean).map(line => line.slice(3)).sort();
+  assert.deepEqual(changed, RECOVERY_RUNTIME_PATHS, 'recovery source overlay escaped runtime scope');
+  for (const path of RECOVERY_RUNTIME_PATHS) {
+    assert.equal(git(sourceDirectory, 'rev-parse', 'HEAD:'+path), git(sourceDirectory, 'rev-parse', recoverySha+':'+path),
+      'recovery overlay blob drift: '+path);
+  }
+  assert.equal(git(releaseDirectory, 'rev-parse', 'HEAD'), releaseSha, 'release tooling checkout drift');
+  assert.equal(git(releaseDirectory, 'status', '--porcelain', '--untracked-files=all'), '', 'dirty release tooling checkout');
+  return {method:'baseline-plus-reviewed-recovery-overlay', base_sha:baseSha, recovery_sha:recoverySha, paths:RECOVERY_RUNTIME_PATHS};
 }
 
 export function validatePostStartupSourcePaths(paths) {
@@ -403,10 +430,11 @@ export async function releaseMemberPagesCodeOnly(io) {
     await io.approve(diagnostics.mark);
     diagnostics.mark('RELEASE_SOURCE_PIN');
     const renewalMode=io.mode==='renewal-artifact';
+    const recoveryMode=io.mode==='recovery-artifact';
     const artifactMode=io.mode==='companion-artifact'||renewalMode;
     const artifactContract=renewalMode ? {baseVersion:RENEWAL.baselineVersion,baseDeployment:RENEWAL.baselineDeployment,sourceSha:RENEWAL.sourceSha,baselineHash:RENEWAL.baselineSha256,candidateHash:RENEWAL.candidateSha256,mainModule:RENEWAL.mainModule,wrapperHash:RENEWAL.wrapperSha256,decode:decodeRenewalBaseline,build:buildReviewedRenewalModules,verify:verifyUploadedRenewalModules} : {baseVersion:COMPANION_BASE_VERSION,baseDeployment:COMPANION_BASE_DEPLOYMENT,sourceSha:COMPANION_DELTA_SOURCE_SHA,baselineHash:ACTIVE_ARTIFACT_SHA256,candidateHash:COMPANION_CANDIDATE_SHA256,mainModule:COMPANION_MAIN_MODULE,wrapperHash:COMPANION_WRAPPER_SHA256,decode:decodeBaselineModule,build:buildReviewedCompanionModules,verify:verifyUploadedCompanionModules};
-    assert.ok(io.mode===undefined || artifactMode,'unsupported release mode');
-    assert.equal(io.sha, artifactMode ? artifactContract.sourceSha : CODE_ONLY_MY_MMD_SOURCE_SHA, 'release source must be the exact reviewed merge');
+    assert.ok(io.mode===undefined || artifactMode || recoveryMode,'unsupported release mode');
+    assert.equal(io.sha, artifactMode ? artifactContract.sourceSha : recoveryMode ? RECOVERY_SOURCE_SHA : CODE_ONLY_MY_MMD_SOURCE_SHA, 'release source must be the exact reviewed merge');
     if(artifactMode){
       assert.equal(io.expectedVersion,artifactContract.baseVersion);
       assert.equal(io.expectedDeployment,artifactContract.baseDeployment);
@@ -440,6 +468,10 @@ export async function releaseMemberPagesCodeOnly(io) {
     }
     diagnostics.mark('CF_CONFIG_CHECK');
     const config = versionConfiguration(baseline);
+    if (recoveryMode) {
+      assert.ok(config.bindings.some(binding => binding.name === 'CUSTOMER_REQUEST_MUTATION'),
+        'recovery release requires the existing CUSTOMER_REQUEST_MUTATION binding');
+    }
     const metadata = uploadMetadata(baseline, io.sha);
     if(artifactMode){
       metadata.main_module=artifactContract.mainModule;
@@ -609,26 +641,28 @@ async function main() {
   const releaseSha = process.env.GITHUB_SHA;
   const sourceDirectory = process.env.SOURCE_DIRECTORY;
   const renewalMode=process.env.RELEASE_MODE==='renewal-artifact';
+  const recoveryMode=process.env.RELEASE_MODE==='recovery-artifact';
   const artifactMode=process.env.RELEASE_MODE==='companion-artifact'||renewalMode;
-  assert.ok(process.env.RELEASE_MODE===undefined || ['release','companion-artifact','renewal-artifact'].includes(process.env.RELEASE_MODE),'unsupported release mode');
+  assert.ok(process.env.RELEASE_MODE===undefined || ['release','companion-artifact','renewal-artifact','recovery-artifact'].includes(process.env.RELEASE_MODE),'unsupported release mode');
   const approve = async diagnostic => {
     await verifyOwnerApproval(process.env, fetch, {diagnostic});
     if(renewalMode) inspectRenewalReleaseCheckout(releaseSha);
     else if(artifactMode) inspectCompanionReleaseCheckout(releaseSha);
+    else if(recoveryMode) inspectRecoveryReleaseCheckout(releaseSha, sourceDirectory);
     else inspectCodeOnlyCheckouts(releaseSha, sourceDirectory,
       {diagnostic, targetSourceSha:CODE_ONLY_MY_MMD_SOURCE_SHA});
   };
   const dir = mkdtempSync(join(tmpdir(),'mmd-member-pages-code-only-'));
   const journal = resolve(process.env.RUNNER_TEMP || dir,'member-pages-code-only-receipt.json');
   await releaseMemberPagesCodeOnly({
-    sha:renewalMode ? RENEWAL.sourceSha : artifactMode ? COMPANION_DELTA_SOURCE_SHA : CODE_ONLY_MY_MMD_SOURCE_SHA,
-    ...(artifactMode ? {mode:process.env.RELEASE_MODE} : {}),
+    sha:renewalMode ? RENEWAL.sourceSha : artifactMode ? COMPANION_DELTA_SOURCE_SHA : recoveryMode ? RECOVERY_SOURCE_SHA : CODE_ONLY_MY_MMD_SOURCE_SHA,
+    ...((artifactMode || recoveryMode) ? {mode:process.env.RELEASE_MODE} : {}),
     releaseSha,
     expectedVersion: process.env.EXPECTED_VERSION,
     expectedDeployment: process.env.EXPECTED_DEPLOYMENT,
     approve,
     call: createTransport(process.env.CLOUDFLARE_API_TOKEN),
-    sourceCheck: async (diagnostic, baselineSourceSha) => renewalMode ? inspectRenewalReleaseCheckout(releaseSha) : artifactMode ? inspectCompanionReleaseCheckout(releaseSha) : inspectCodeOnlyCheckouts(releaseSha, sourceDirectory,
+    sourceCheck: async (diagnostic, baselineSourceSha) => renewalMode ? inspectRenewalReleaseCheckout(releaseSha) : artifactMode ? inspectCompanionReleaseCheckout(releaseSha) : recoveryMode ? inspectRecoveryReleaseCheckout(releaseSha, sourceDirectory) : inspectCodeOnlyCheckouts(releaseSha, sourceDirectory,
       {diagnostic, targetSourceSha:CODE_ONLY_MY_MMD_SOURCE_SHA, baselineSourceSha}),
     bundle: async () => buildMemberPagesBundle(dir, sourceDirectory),
     save: value => writeFileSync(journal,JSON.stringify(value,null,2),{mode:0o600}),

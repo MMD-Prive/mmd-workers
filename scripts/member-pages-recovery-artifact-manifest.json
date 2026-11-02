@@ -1,0 +1,41 @@
+{
+  "method": "active-worker-byte-overlay",
+  "baseline_sha256": "9e1e7eb7b425af0e08789f9aca2a65b467cfd234d50fbac90927aec574122849",
+  "candidate_sha256": "3cb754442de491c63bcbe3992055c76feefb667853f0172ea6c482d77af4d628",
+  "recovery_source_sha": "d82c284fb48943c7c8a8cc5a970107f799186ee3",
+  "unchanged_prefix_suffix": true,
+  "overlays": [
+    {
+      "kind": "recovery-handler-bundle",
+      "source": "member-pages-worker/src/member-email-recovery.js"
+    },
+    {
+      "kind": "identity-start-bundle",
+      "source": "member-pages-worker/src/liff-identity-foundation.js"
+    },
+    {
+      "kind": "member-owner-rpc-bundle",
+      "source": "member-pages-worker/src/owner-my-mmd-recovery-diagnostic.js"
+    },
+    {
+      "kind": "durable-object-class-bundle",
+      "source": "member-pages-worker/src/customer-request-mutation-durable-object.js"
+    },
+    {
+      "kind": "export",
+      "name": "CustomerRequestMutationCoordinator"
+    }
+  ],
+  "migration": {
+    "old_tag": "v3-remembered-login-device",
+    "new_tag": "v5-customer-request-mutation",
+    "new_sqlite_classes": [
+      "CustomerRequestMutationCoordinator"
+    ],
+    "binding": {
+      "name": "CUSTOMER_REQUEST_MUTATION",
+      "type": "durable_object_namespace",
+      "class_name": "CustomerRequestMutationCoordinator"
+    }
+  }
+}

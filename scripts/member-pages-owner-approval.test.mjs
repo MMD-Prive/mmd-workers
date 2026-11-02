@@ -45,7 +45,7 @@ test('shared gate allows owner self-review but keeps admin bypass disabled',()=>
 test('only scoped release imports owner policy; approval repeats at write boundaries',()=>{
  const release=readFileSync(new URL('./member-pages-code-only-release.mjs',import.meta.url),'utf8');
  assert.match(release,/import \{ verifyOwnerApproval, createSafePreflightDiagnostics \} from '.\/member-pages-owner-approval.mjs'/);
- assert.match(release,/await verifyOwnerApproval\(process.env, fetch, \{diagnostic\}\);\s+if\(renewalMode\) inspectRenewalReleaseCheckout\(releaseSha\);\s+else if\(artifactMode\) inspectCompanionReleaseCheckout\(releaseSha\);\s+else inspectCodeOnlyCheckouts/);
+ assert.match(release,/await verifyOwnerApproval\(process.env, fetch, \{diagnostic\}\);\s+if\(renewalMode\) inspectRenewalReleaseCheckout\(releaseSha\);\s+else if\(artifactMode\) inspectCompanionReleaseCheckout\(releaseSha\);\s+else if\(recoveryMode\) inspectRecoveryReleaseCheckout\(releaseSha, sourceDirectory\);\s+else inspectCodeOnlyCheckouts/);
  assert.doesNotMatch(release,/inspectEnvironment|verifyProductionApproval/);
  const workflow=readFileSync(new URL('../.github/workflows/deploy-member-pages-worker-code-only.yml',import.meta.url),'utf8');
  assert.match(workflow,/environment: member-pages-code-only-owner/);
@@ -153,7 +153,7 @@ test('approval-only execution surface has no write credential, release command, 
  assert.deepEqual([...job.matchAll(/^          ([A-Z_]+):/gm)].map(match=>match[1]),['GH_TOKEN','APPROVAL_REF','APPROVED_SHA']);
  const header=workflow.split('\njobs:')[0];
  assert.doesNotMatch(header,/secrets\.|^env:|: write|id-token/);
- assert.equal((workflow.match(/secrets\./g)||[]).length,6);
+ assert.equal((workflow.match(/secrets\./g)||[]).length,8);
  assert.ok(workflowJobs.get('release').includes('secrets.CLOUDFLARE_API_TOKEN'));
 });
 
