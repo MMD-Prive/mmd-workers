@@ -42,7 +42,7 @@ export async function handleMemberCustomerRequest(request, env = {}) {
 async function handleAdminMutationLease(request, env) {
   if (!internalAuthorized(request) || !env.CUSTOMER_REQUEST_MUTATION?.idFromName || !env.CUSTOMER_REQUEST_MUTATION?.get) return fail(404, "NOT_FOUND");
   const body = await request.json().catch(() => null); const recordId = safeText(body?.record_id, 40); const operationId = safeText(body?.operation_id, 100);
-  if (!/^rec[A-Za-z0-9]{10,32}$/.test(recordId) || (body?.action !== "inspect" && !operationId) || !["begin", "prepare", "finish", "inspect", "reconcile"].includes(body?.action)) return fail(400, "INVALID_REQUEST");
+  if (!/^rec[A-Za-z0-9]{10,32}$/.test(recordId) || (body?.action !== "inspect" && !operationId) || !["begin", "prepare", "write_started", "finish", "inspect", "reconcile"].includes(body?.action)) return fail(400, "INVALID_REQUEST");
   const id = env.CUSTOMER_REQUEST_MUTATION.idFromName(recordId);
   const response = await env.CUSTOMER_REQUEST_MUTATION.get(id).fetch("https://mutation/" + body.action, { method: "POST", body: JSON.stringify({ action: body.action, operation_id: operationId, status: body.status, mutation_fingerprint: body.mutation_fingerprint, readback_verified: body.readback_verified === true }) }).catch(() => null);
   if (!response) return fail(503, "REQUEST_MUTATION_UNAVAILABLE");
@@ -138,6 +138,7 @@ async function appendEvidenceToRequest(body, env, identity) {
     mutationFingerprint = await hash(JSON.stringify({ request_id: payload.request_id, evidence_ids: payload.evidence_ids, updated_at: payload.updated_at }));
     payload.mutation_fingerprint = mutationFingerprint;
     if (!await prepareRequestMutation(env, record.id, mutation.operation_id, mutationFingerprint)) return fail(409, "REQUEST_MUTATION_LEASE_LOST");
+    if (!await markRequestMutationWriteStarted(env, record.id, mutation.operation_id, mutationFingerprint)) return fail(409, "REQUEST_MUTATION_LEASE_LOST");
     outcome = "uncertain";
     const updated = await updateInbox(env, record.id, { payload_json: JSON.stringify(payload), admin_note: adminNote(payload) });
     if (!updated) return fail(503, "REQUEST_QUEUE_WRITE_UNCERTAIN");
@@ -151,6 +152,7 @@ async function appendEvidenceToRequest(body, env, identity) {
 }
 async function beginRequestMutation(env, recordId) { if (!env.CUSTOMER_REQUEST_MUTATION?.idFromName || !env.CUSTOMER_REQUEST_MUTATION?.get) return { ok: false, status: 503, error: "REQUEST_MUTATION_UNAVAILABLE" }; const operation_id = crypto.randomUUID(); const id = env.CUSTOMER_REQUEST_MUTATION.idFromName(recordId); const response = await env.CUSTOMER_REQUEST_MUTATION.get(id).fetch("https://mutation/begin", { method: "POST", body: JSON.stringify({ action: "begin", operation_id }) }).catch(() => null); const body = await response?.json().catch(() => null); return response?.ok ? { ok: true, operation_id } : { ok: false, status: response?.status || 503, error: body?.error || "REQUEST_MUTATION_UNAVAILABLE" }; }
 async function prepareRequestMutation(env, recordId, operation_id, mutation_fingerprint) { const id = env.CUSTOMER_REQUEST_MUTATION.idFromName(recordId); const response = await env.CUSTOMER_REQUEST_MUTATION.get(id).fetch("https://mutation/prepare", { method: "POST", body: JSON.stringify({ action: "prepare", operation_id, mutation_fingerprint }) }).catch(() => null); return response?.ok === true; }
+async function markRequestMutationWriteStarted(env, recordId, operation_id, mutation_fingerprint) { const id = env.CUSTOMER_REQUEST_MUTATION.idFromName(recordId); const response = await env.CUSTOMER_REQUEST_MUTATION.get(id).fetch("https://mutation/write_started", { method: "POST", body: JSON.stringify({ action: "write_started", operation_id, mutation_fingerprint }) }).catch(() => null); return response?.ok === true; }
 async function finishRequestMutation(env, recordId, operation_id, status = "committed", mutation_fingerprint = "") { const id = env.CUSTOMER_REQUEST_MUTATION.idFromName(recordId); await env.CUSTOMER_REQUEST_MUTATION.get(id).fetch("https://mutation/finish", { method: "POST", body: JSON.stringify({ action: "finish", operation_id, status, mutation_fingerprint }) }).catch(() => null); }
 
 async function handleEvidenceUpload(request, env, identity) {

@@ -14,13 +14,17 @@ export class CustomerRequestMutationCoordinator {
       }
       if (body.action === 'prepare') {
         if (!current || current.operation_id !== body.operation_id || current.status === 'uncertain' || !body.mutation_fingerprint) return Response.json({ ok: false, error: 'REQUEST_MUTATION_LEASE_LOST' }, { status: 409 });
-        current.mutation_fingerprint = String(body.mutation_fingerprint); await this.state.storage.put('lease', current); return Response.json({ ok: true, prepared: true });
+        current.mutation_fingerprint = String(body.mutation_fingerprint); current.stage = 'prepared'; await this.state.storage.put('lease', current); return Response.json({ ok: true, prepared: true });
+      }
+      if (body.action === 'write_started') {
+        if (!current || current.operation_id !== body.operation_id || current.stage !== 'prepared' || current.mutation_fingerprint !== body.mutation_fingerprint) return Response.json({ ok: false, error: 'REQUEST_MUTATION_LEASE_LOST' }, { status: 409 });
+        current.status = 'writing'; current.stage = 'write_started'; await this.state.storage.put('lease', current); return Response.json({ ok: true, write_started: true });
       }
       if (body.action === 'finish') {
         if (!current || current.operation_id !== body.operation_id) return Response.json({ ok: false, error: 'REQUEST_MUTATION_LEASE_LOST' }, { status: 409 });
         if (body.mutation_fingerprint && current.mutation_fingerprint !== body.mutation_fingerprint) return Response.json({ ok: false, error: 'REQUEST_MUTATION_FINGERPRINT_MISMATCH' }, { status: 409 });
         if (body.status === 'uncertain') { current.status = 'uncertain'; await this.state.storage.put('lease', current); return Response.json({ ok: true, completed: 'uncertain' }); }
-        if (body.status === 'aborted') { await this.state.storage.delete('lease'); return Response.json({ ok: true, completed: 'aborted' }); }
+        if (body.status === 'aborted') { if (current.stage === 'write_started' || current.status === 'writing') return Response.json({ ok: false, error: 'REQUEST_MUTATION_RECONCILE_REQUIRED' }, { status: 409 }); await this.state.storage.delete('lease'); return Response.json({ ok: true, completed: 'aborted' }); }
         if (current.status === 'uncertain') return Response.json({ ok: false, error: 'REQUEST_MUTATION_RECONCILE_REQUIRED' }, { status: 409 });
         await this.state.storage.delete('lease'); return Response.json({ ok: true, completed: 'committed' });
       }
