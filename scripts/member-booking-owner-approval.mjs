@@ -5,7 +5,8 @@ const owner=user=>user?.login==='mmdprive'&&user.id===216427112;
 export async function verifyBookingOwnerApproval(env, request = fetch, {preflight = false, diagnostic = () => {}} = {}) {
   diagnostic('OWNER_INPUT');
   assert.equal(env.APPROVED_RELEASE_SCOPE,'booking-artifact-with-migration');
-  assert.equal(env.APPROVED_MIGRATION_TAG,'v4-member-booking-coordinator-20261102');
+  assert.equal(env.APPROVED_MIGRATION_TAG,'v6-member-booking-coordinator-20261102');
+  assert.equal(env.APPROVED_SOURCE_MAP_POLICY,'local-evidence-only-not-uploaded');
   assert.equal(env.GITHUB_EVENT_NAME, 'workflow_dispatch');
   assert.equal(env.GITHUB_REF, 'refs/heads/main');
   assert.equal(env.GITHUB_REPOSITORY?.toLowerCase(), 'mmd-prive/mmd-workers');

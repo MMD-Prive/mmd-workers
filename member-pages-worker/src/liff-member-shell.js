@@ -2292,7 +2292,10 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
           show("เปิดใน LINE ด้วยปุ่มด้านล่างเพื่อยืนยันตัวตนและสมัครสมาชิกครับ");
           return;
         }
-        window.liff.login({ redirectUri: window.location.href });
+        const loginReturn = new URL(window.location.href);
+        loginReturn.protocol = "https:";
+        loginReturn.host = "mmdbkk.com";
+        window.liff.login({ redirectUri: loginReturn.href });
         return;
       }
       signupLineEntry?.classList.add("hidden");

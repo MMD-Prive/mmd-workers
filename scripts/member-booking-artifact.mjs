@@ -5,7 +5,7 @@ import {createHash} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {dirname,join} from 'node:path';
 const root=join(dirname(fileURLToPath(import.meta.url)),'..');
-export const BASE_HASH='9bbe9bf7ad95ed49de8f64cd485883507e2fd142d47df2e5ae0ac28bfb34f523';
+export const BASE_HASH='1f0946a8af1891def0e4030568b5b0070790b5eb2471f413c496bb190871e310';
 export const hash=x=>createHash('sha256').update(x).digest('hex');
 const contract=JSON.parse(fs.readFileSync(new URL('./member-booking-release-contract.json',import.meta.url),'utf8'));
 const manifest={hashes:contract.source_hashes};
@@ -31,12 +31,13 @@ export function transformBookingArtifact(baseline){
  replace('login-return-keys','["intent", "liff_intent", "campaign", "view", "lang"]','["intent", "liff_intent", "campaign", "view", "lang", "booking_model", "booking_scope"]');
  replace('login-return-selector','    // Browser-controlled world/audience hints are never identity or entitlement.','    bookingScope: url2.searchParams.get("booking_scope") === "private" ? "private" : "public",\n    bookingModel: /^rec[A-Za-z0-9]{14,24}$/.test(url2.searchParams.get("booking_model") || "") ? url2.searchParams.get("booking_model") : "",\n    // Browser-controlled world/audience hints are never identity or entitlement.');
  replace('booking-queued-guard','  function memberApiFetch(url, init = {}) {\n    const run = memberApiChain.then(async () => {\n','  function memberApiFetch(url, init = {}) {\n    const valid = arguments[2] || (() => true);\n    const run = memberApiChain.then(async () => {\n      if (!valid()) throw Object.assign(new Error("member_request_stale"), {code:"member_request_not_started"});\n');
- replace('booking-style','${MY_MMD_LIFF_LV15_CSS}\n</style>','${MY_MMD_LIFF_LV15_CSS}\n${__memberBookingExtension.MEMBER_BOOKING_CSS}\n</style>');
+ replace('booking-style','${MY_MMD_LIFF_LV15_CSS}\n','${MY_MMD_LIFF_LV15_CSS}\n${__memberBookingExtension.MEMBER_BOOKING_CSS}\n');
  replace('booking-jobs-view','    <section id="jobs" class="panel digital-view" aria-label="Jobs">','    <section id="jobs" class="panel digital-view" aria-label="Jobs">\n      ${__memberBookingExtension.renderMemberBooking()}');
  replace('booking-ui','  const personalMainUI =','  const memberBookingUI = (${__memberBookingExtension.createMemberBookingUI.toString()})(document.getElementById("member-booking"), memberApiFetch, () => profileReady ? currentMemberRef : "", CONFIG.bookingModel, CONFIG.bookingScope);\n  const personalMainUI =');
  replace('booking-leave','    const target = document.getElementById(targetId) || document.getElementById("home");','    const target = document.getElementById(targetId) || document.getElementById("home");\n    if (target.id !== "jobs") memberBookingUI.leave();');
  replace('booking-reader','    const readers = {','    const readers = {\n      jobs: () => memberBookingUI.load(),');
  replace('booking-clear','    accountUI.reset();','    memberBookingUI.reset();\n    accountUI.reset();');
+ replace('login-oauth-host','window.liff.login({ redirectUri: window.location.href });','const loginReturn = new URL(window.location.href);\n        loginReturn.protocol = "https:";\n        loginReturn.host = "mmdbkk.com";\n        window.liff.login({ redirectUri: loginReturn.href });');
  const bytes=Buffer.from(text);verifyPreservation(baseline,bytes,edits);
  return {bytes,edits,sha256:hash(bytes),activeHelpers:['readBoundedJsonObject','readMemberAppSession','resolveCanonicalClientForLine'].map(name=>{const pattern=new RegExp('^(?:async )?function '+name+'\\b','m');const start=baseline.toString().search(pattern);assert.ok(start>=0);const end=baseline.toString().indexOf('__name('+name+',',start);assert.ok(end>start);const part=baseline.toString().slice(start,end);assert.ok(text.includes(part),'active helper changed');return {name,sha256:hash(part)};})};
 }
