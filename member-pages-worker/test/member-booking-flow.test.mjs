@@ -127,3 +127,12 @@ test('exact active request is reconciled even outside latest list, still requiri
  const other=await (await handleMemberBooking(request('b','requests?request_id='+input().request_id),env,deps)).json();assert.equal(other.items.length,0);
  }finally{globalThis.fetch=fixtureFetch;}
 }));
+
+test('past dates and blank areas are definite pre-write failures and corrected requests may submit',async()=>fixture(async({env,deps,writes,calls})=>{
+ for(const bad of [{date:'2000-01-01'},{area:'   '}]){
+  const response=await handleMemberBooking(request('a','requests',{...input(),...bad}),env,deps);
+  assert.equal(response.status,400);assert.deepEqual(await response.json(),{ok:false,error:'invalid_request',outcome:'not_started'});
+ }
+ assert.equal(writes.length,0);assert.equal(calls.length,0);
+ const corrected=await handleMemberBooking(request('a','requests',input()),env,deps);assert.equal(corrected.status,201);assert.equal(writes.length,1);
+}));

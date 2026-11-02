@@ -51,7 +51,7 @@ export async function handleMemberBooking(request, env, deps = {}) {
     const allowed = ['request_id','model_id','date','time','area','note','scope'];
     if (!input || !['public','private'].includes(input.scope || 'public') || Array.isArray(input) || Object.keys(input).some(k=>!allowed.includes(k)) || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(input.request_id || '')
       || !/^rec[A-Za-z0-9]{14,24}$/.test(input.model_id || '') || !validDate(input.date) || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(input.time || '')
-      || typeof input.area !== 'string' || !input.area.trim() || input.area.length>120 || input.note != null && (typeof input.note!=='string'||input.note.length>700)) return reply({ok:false,error:'invalid_request'},400);
+      || typeof input.area !== 'string' || !input.area.trim() || input.area.length>120 || input.note != null && (typeof input.note!=='string'||input.note.length>700)) return reply({ok:false,error:'invalid_request',outcome:'not_started'},400);
     // A stable key is opaque correlation only. The account comes from the session.
     const payload={model_id:input.model_id,date:input.date,time:input.time,area:input.area.trim(),note:input.note || '',scope:input.scope || 'public'};
     const reference='mmdreq_'+await digest(owner+':'+input.request_id);
