@@ -36,6 +36,22 @@ root.dataset.payoutOnlyReady='1';
 const endpoint=root.dataset.currentEndpoint||'/v1/model/session/current';
 const actionEndpoint=root.dataset.actionEndpoint||'/v1/model/session/action';
 const sessionToken=new URLSearchParams(location.search).get('t')||'';
+const expectedSession=new URLSearchParams(location.search).get('session_id');
+let read=0;
+// Decision locks outlive recreated cards and BFCache restores. Recovery stores IDs only.
+const operationKey='mmd_console_extension_operations_v1',operations=new Map();
+try{const saved=JSON.parse(sessionStorage.getItem(operationKey)||'[]');if(Array.isArray(saved))for(const x of saved)if(Array.isArray(x)&&x.length===3&&typeof x[0]==='string'&&typeof x[1]==='string'&&['pending','unknown','resolved'].includes(x[2]))operations.set(JSON.stringify([x[0],x[1]]),x[2]==='resolved'?'resolved':'unknown')}catch{}
+const operationId=(sessionId,requestId)=>JSON.stringify([sessionId,requestId]);
+function persistOperations(){try{sessionStorage.setItem(operationKey,JSON.stringify([...operations].map(([key,value])=>[...JSON.parse(key),value==='pending'?'pending':value==='resolved'?'resolved':'unknown'])))}catch{}}
+function hasResolvedMarker(sessionId,requestId){const key=operationId(sessionId,requestId);if(operations.get(key)==='resolved')return true;try{const saved=JSON.parse(sessionStorage.getItem(operationKey)||'[]');return Array.isArray(saved)&&saved.some(x=>Array.isArray(x)&&x.length===3&&x[0]===sessionId&&x[1]===requestId&&x[2]==='resolved')}catch{return false}}
+function remember(sessionId,requestId,state){if(hasResolvedMarker(sessionId,requestId))return;operations.set(operationId(sessionId,requestId),state);persistOperations()}
+function reconcileOperation(session,extension){
+ if(typeof session?.session_id!=='string'||!session.session_id.trim()||!extension||Array.isArray(extension)||typeof extension.request_id!=='string'||!extension.request_id.trim()||!['model_approved','model_declined'].includes(extension.status))return;
+ const key=operationId(session.session_id,extension.request_id);
+ if(operations.has(key)||hasResolvedMarker(session.session_id,extension.request_id)){operations.set(key,'resolved');persistOperations()}
+}
+function decisionStatus(card,state){card.querySelectorAll('button').forEach(x=>x.disabled=!!state);card.querySelector('p:last-of-type').textContent=state==='pending'?'กำลังส่งคำตอบ กรุณารอ':state?'ยังยืนยันผลการส่งคำตอบไม่ได้ กรุณาติดต่อเปอร์เพื่อตรวจสอบก่อนทำรายการอีกครั้ง':''}
+
 const money=n=>new Intl.NumberFormat('th-TH',{maximumFractionDigits:0}).format(n)+' THB';
 const statusText=s=>({expected:'ยอดที่ตกลง',pending:'รอดำเนินการ',pending_review:'กำลังตรวจสอบ',verified:'ยืนยันแล้ว',paid:'ชำระแล้ว',hold:'พักรายการ',checking:'กำลังตรวจสอบ'})[String(s||'').toLowerCase()]||'กำลังตรวจสอบ';
 function remove(){root.querySelector('[data-model-payout-card]')?.remove()}
@@ -97,45 +113,61 @@ function render(session){
 function removeExtension(){root.querySelector('[data-model-extension-request]')?.remove()}
 function extensionEnd(value){const d=new Date(String(value||''));return Number.isNaN(d.getTime())?String(value||'—'):new Intl.DateTimeFormat('th-TH',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',timeZone:'Asia/Bangkok'}).format(d)}
 async function decideExtension(action,requestId,sessionId,card){
- const buttons=[...card.querySelectorAll('button')];buttons.forEach(x=>x.disabled=true);
+ const key=operationId(sessionId,requestId),generation=read;
+ if((operations.has(key)&&operations.get(key)!=='resolved')||root.querySelector('[data-model-extension-request]')!==card)return;
+ remember(sessionId,requestId,'pending');decisionStatus(card,'pending');
+ const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),12000);
  try{
   const res=await fetch(new URL(actionEndpoint,location.origin),{
-   method:'POST',credentials:'include',cache:'no-store',
+   method:'POST',credentials:'include',cache:'no-store',signal:controller.signal,
    headers:{'content-type':'application/json',accept:'application/json'},
    body:JSON.stringify({t:sessionToken,action,session_id:sessionId,extension_request_id:requestId})
   });
   const data=await res.json().catch(()=>null);
-  if(!res.ok||!data||data.ok!==true)throw new Error(String(data&&data.error||'extension_decision_failed'));
-  await load();
- }catch(e){
-  card.querySelector('p:last-of-type').textContent='ตอนนี้ยังบันทึกคำตอบไม่ได้ กรุณาลองอีกครั้ง';
-  buttons.forEach(x=>x.disabled=false);
- }
+  if(!res.ok||!data||data.ok!==true)throw new Error('extension_decision_unknown');
+  if(operations.has(key))remember(sessionId,requestId,'unknown');
+  const current=root.querySelector('[data-model-extension-request]');if(current?.dataset.operationId===key)decisionStatus(current,operations.get(key));
+  if(generation===read&&root.querySelector('[data-model-extension-request]')===card)await load();
+ }catch{
+  if(operations.has(key))remember(sessionId,requestId,'unknown');
+  const current=root.querySelector('[data-model-extension-request]');if(current?.dataset.operationId===key)decisionStatus(current,operations.get(key));
+ }finally{clearTimeout(timeout)}
 }
 function renderExtension(extension,sessionId){
  removeExtension();
  if(typeof sessionId!=='string'||!sessionId.trim()||!extension||extension.status!=='requested'||!extension.request_id)return;
+ if(hasResolvedMarker(sessionId,extension.request_id))return;
  const summary=root.querySelector('.smcv3-summary');if(!summary)return;
  const card=document.createElement('section');card.className='smcv3-extension-request';card.setAttribute('data-model-extension-request','');
  const minutes=Number(extension.requested_minutes)||0;
  card.innerHTML='<span class="smcv3-extension-request__label">CUSTOMER EXTENSION REQUEST</span><h3>ลูกค้าขอต่อเวลา '+minutes+' นาที</h3><p>'+extensionEnd(extension.original_end_at)+' → <strong>'+extensionEnd(extension.requested_end_at)+'</strong></p><span class="smcv3-extension-request__amount">คุณได้รับเพิ่ม '+moneyShort(extension.model_payout_thb)+'</span><p>กดรับเฉพาะเมื่อคุณสะดวก เวลาจะยังไม่เปลี่ยนจนกว่าลูกค้าชำระและ MMD ยืนยัน</p><div class="smcv3-extension-request__actions"><button type="button" data-ext-approve>APPROVE EXTENSION</button><button type="button" data-ext-decline>DECLINE</button></div><p></p>';
  card.querySelector('[data-ext-approve]').addEventListener('click',()=>decideExtension('approve_extension',extension.request_id,sessionId,card));
  card.querySelector('[data-ext-decline]').addEventListener('click',()=>decideExtension('decline_extension',extension.request_id,sessionId,card));
+ card.dataset.operationId=operationId(sessionId,extension.request_id);
+ decisionStatus(card,operations.get(card.dataset.operationId)==='resolved'?undefined:operations.get(card.dataset.operationId));
  const payout=root.querySelector('[data-model-payout-card]');
  (payout||summary).insertAdjacentElement('afterend',card);
 }
 async function load(){
+ const id=++read;
+ remove();removeAlert();removeExtension();
  try{
   const res=await fetch(new URL(endpoint,location.origin),{credentials:'include',cache:'no-store',headers:{accept:'application/json'}});
   const data=await res.json();
+  if(id!==read)return;
   if(!res.ok||data.ok===false)throw new Error('not_available');
   const session=data.session||(data.data&&data.data.session);
+  if(expectedSession&&session?.session_id!==expectedSession)throw new Error('session_context_changed');
   if(!session){remove();removeExtension();return}
+  const extension=data.extension_request||(data.data&&data.data.extension_request);
+  if(data.ok===true)reconcileOperation(session,extension);
   render(session);
   renderAlert(session);
-  renderExtension(data.extension_request||(data.data&&data.data.extension_request),session.session_id);
- }catch(e){remove();removeAlert();removeExtension()}
+  renderExtension(extension,session.session_id);
+ }catch(e){if(id===read){remove();removeAlert();removeExtension()}}
 }
+window.addEventListener('pagehide',()=>{read++;remove();removeAlert();removeExtension()});
+window.addEventListener('pageshow',event=>{if(event.persisted)load()});
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',load,{once:true});else load();
 root.querySelectorAll('[data-refresh]').forEach(x=>x.addEventListener('click',()=>setTimeout(load,250)));
 })();

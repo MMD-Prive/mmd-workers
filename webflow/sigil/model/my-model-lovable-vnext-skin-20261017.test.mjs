@@ -3,11 +3,28 @@ import {createHash} from 'node:crypto';
 import vm from 'node:vm';
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {JSDOM} from 'jsdom';
 import {buildBundle} from '../../../scripts/build-my-model-workspace-bundle.mjs';
 import {buildLovableSkinEmbed,validateAtelierAssets} from '../../../scripts/build-my-model-lovable-skin-embed.mjs';
 const source=fs.readFileSync(new URL('./my-model-lovable-vnext-skin-20261017.js',import.meta.url),'utf8');
 const css=fs.readFileSync(new URL('./my-model-lovable-vnext-skin-20261017.css',import.meta.url),'utf8');
 const bundle=buildBundle(), skin=buildLovableSkinEmbed();
+test('Console dock follows the original job link on initial load, A to B and no-job without requests',async()=>{
+ const html=fs.readFileSync(new URL('./my-model-workspace-20261016.html',import.meta.url),'utf8');
+ const dom=new JSDOM(html,{url:'https://fixture.invalid/sigil/model/dashboard',runScripts:'outside-only'});
+ try{
+  dom.window.fetch=()=>{throw Error('skin must not read or mutate backend state');};
+  const orig=dom.window.document.querySelector('[data-mm-console]');
+  orig.href='/sigil/model/console?session_id=sess_A';dom.window.eval(source);
+  const dock=dom.window.document.querySelector('[data-mm-lv-nav="console"]');
+  assert.equal(dock.href,orig.href);
+  const captured=dock.href;
+  for(const target of ['/sigil/model/console?session_id=sess_B','/sigil/model/console']){
+   orig.href=target;await new Promise(setImmediate);assert.equal(dock.href,orig.href);
+  }
+  assert.equal(new URL(captured).searchParams.get('session_id'),'sess_A');
+ }finally{dom.window.close();}
+});
 test('V3 build rejects oversized UTF-8 vectors, wrong dimensions and embedded content',()=>{
  const assets=Object.fromEntries(['current-job-etching','no-current-job','media-review-motif','icons'].map(name=>[name,fs.readFileSync(new URL('./atelier/'+name+'.svg',import.meta.url),'utf8').trim()]));
  assert.doesNotThrow(()=>validateAtelierAssets(assets));

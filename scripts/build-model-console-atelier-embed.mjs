@@ -13,6 +13,16 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const source = path.join(root, 'webflow/sigil/model');
 const assets = path.join(source, 'console-atelier');
 const names = { session: 'console-session-etching.svg', travel: 'console-travel-arc.svg', empty: 'console-no-session.svg', after: 'console-after-job.svg' };
+export function consoleStyleSource(css) {
+  // Lossless storage only: decoded CSS is byte-for-byte identical. Keep the
+  // existing style owner and embed order; make room for the session guard.
+  const tokens = [['$r', '#sigil-model-console-v3[data-console-atelier]'], ['$c', '.smcv3-'], ['$v', 'var(--ca-']];
+  if (tokens.some(([token]) => css.includes(token))) throw new Error('Console CSS token collision');
+  let packed = css;
+  for (const [token, value] of tokens) packed = packed.replaceAll(value, token);
+  const decoded = tokens.reduce((code, [token, value]) => code + `.replaceAll(${JSON.stringify(token)},${JSON.stringify(value)})`, JSON.stringify(packed));
+  return `if(!document.getElementById('mmd-console-lv9-css')){const s=document.createElement('style');s.id='mmd-console-lv9-css';s.textContent=${decoded};document.head.append(s);}`;
+}
 export function buildConsoleEmbed() {
   const illustrations = Object.fromEntries(Object.entries(names).map(([key, file]) => [key, fs.readFileSync(path.join(assets, file), 'utf8').trim()]));
   const sprite = fs.readFileSync(path.join(assets, 'icons.svg'), 'utf8');
@@ -22,11 +32,7 @@ export function buildConsoleEmbed() {
   const runtime = fs.readFileSync(path.join(source, 'model-console-v3-i18n.js'), 'utf8');
   const compactCss = new CleanCSS({ level: 2 }).minify(css + travelClientCss);
   if (compactCss.errors.length) throw new Error(compactCss.errors.join('; '));
-  // Store repeated selectors once without changing their specificity or using
-  // CSS nesting unsupported by older LIFF webviews. One guarded style owner.
-  const prefix = '#sigil-model-console-v3[data-console-atelier]';
-  const cssTemplate = compactCss.styles.replaceAll(prefix, '$ROOT$');
-  const style = `if(!document.getElementById('mmd-console-lv9-css')){const s=document.createElement('style');s.id='mmd-console-lv9-css';s.textContent=${JSON.stringify(cssTemplate)}.replaceAll('$ROOT$',${JSON.stringify(prefix)});document.head.append(s);}`;
+  const style = consoleStyleSource(compactCss.styles);
   const js = '(()=>{' + style + 'const consoleAtelierAssets=' + JSON.stringify(illustrations) + ';\n' + skin + '\n' + travelClientBundle() + '\n' + runtime + '\n})();';
   const compact = minify_sync(js, { compress: { passes: 2 }, mangle: { reserved: ['consoleAtelierAssets', 'renderConsoleAtelier'], properties: { regex: /^_tr/ } }, format: { comments: false, ascii_only: false } }).code;
   const embed = '<!-- MY MODEL LV9 travel + Console V3 -->\n<script>' + compact + '</script>';
