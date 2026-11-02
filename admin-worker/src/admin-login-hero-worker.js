@@ -79,6 +79,7 @@ import {
   isClientProfilePhotoSyncRequest,
 } from "./client-profile-photo-history.js";
 import { handleByYourRequestAdmin, isByYourRequestAdminApi, isByYourRequestAdminPage } from "./by-your-request-admin.js";
+import { handleHistoricalImport, isHistoricalImportRequest } from "./by-your-request-historical-import.js";
 
 import {
   handleModelJobBoardHandoff,
@@ -313,6 +314,13 @@ const adminLoginHeroWorker = {
       if (gate.response) return gate.response;
       const actor = await readCredentialBoundAdminActor(gate.request || request, runtimeEnv);
       return handleByYourRequestAdmin(gate.request || request, runtimeEnv, actor);
+    }
+
+    if (isHistoricalImportRequest(normalizedPath, method)) {
+      const gate = await applyCredentialBoundAdminGate(request, runtimeEnv, normalizedPath, method);
+      if (gate.response) return gate.response;
+      const actor = await readCredentialBoundAdminActor(gate.request || request, runtimeEnv);
+      return handleHistoricalImport(gate.request || request, runtimeEnv, actor);
     }
 
     if (isOwnerJobEditRequest(normalizedPath)) return handleOwnerJobEdit(request, runtimeEnv);

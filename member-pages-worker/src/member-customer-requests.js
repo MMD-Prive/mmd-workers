@@ -62,7 +62,10 @@ async function handleRequest(request, env, identity) {
   if (evidence === null) return fail(409, "EVIDENCE_UNAVAILABLE");
   const reservation = input.data.request_type === "your_request" ? await reserveQuota(env, identity.clientId, quota.month_key, input.data.request_id, requestFingerprint(input.data), rawPrior.map((record) => parsePayload(record?.fields?.payload_json)).filter((data) => data.request_type === "your_request" && monthKeyInBangkok(data.created_at) === quota.month_key).map((data) => data.request_id)) : { ok: true, reserved: false };
   if (!reservation.ok) return fail(reservation.status || 503, reservation.error || "REQUEST_QUEUE_UNAVAILABLE");
-  if (!reservation.reserved && reservation.result) return json({ ...reservation.result, idempotent: true }, 200);
+  if (input.data.request_type === "your_request" && !reservation.reserved) {
+    if (reservation.result) return json({ ...reservation.result, idempotent: true }, 200);
+    return fail(503, "REQUEST_RESULT_UNAVAILABLE");
+  }
   const now = new Date().toISOString();
   const payload = {
     schema: "mmd_customer_request_v1",
@@ -79,7 +82,7 @@ async function handleRequest(request, env, identity) {
   };
   const created = await createInbox(env, {
     inbox_id: `customer_${input.data.request_id}`,
-    source: "my_mmd_liff",
+    source: "line",
     intent: input.data.request_type,
     member_name: safeText(identity.memberProfile?.display_name, 120),
     line_user_id: identity.lineUserId,
@@ -105,7 +108,8 @@ async function appendEvidenceToRequest(body, env, identity) {
   const payload = parsePayload(record.fields?.payload_json); if (payload.canonical_client_id !== identity.clientId) return fail(404, "REQUEST_NOT_FOUND");
   const checked = await validateEvidence(env, identity.clientId, evidenceIds); if (checked === null) return fail(409, "EVIDENCE_UNAVAILABLE");
   const before = unique(array(payload.evidence_ids).filter(safeEvidenceId));
-  const next = unique([...before, ...checked.map(item => item.evidence_id)]).slice(0, MAX_EVIDENCE);
+  const next = unique([...before, ...checked.map(item => item.evidence_id)]);
+  if (next.length > MAX_EVIDENCE) return fail(409, "EVIDENCE_LIMIT_REACHED");
   payload.evidence_ids = next; payload.updated_at = new Date().toISOString();
   const updated = await updateInbox(env, record.id, { payload_json: JSON.stringify(payload), admin_note: adminNote(payload) });
   if (!updated) return fail(503, "REQUEST_QUEUE_UNAVAILABLE");
@@ -200,7 +204,9 @@ function requestQuota(records) {
 }
 
 function requestFingerprint(data) {
-  return JSON.stringify({ request_type: data?.request_type || "", model: data?.model || {}, customer: data?.customer || {}, evidence_ids: data?.evidence_ids || [] });
+  // Evidence is append-only mutable state. The one-person idempotency key is
+  // the request intent, never the current attachment set.
+  return JSON.stringify({ request_type: data?.request_type || "", model: data?.model || {}, customer: data?.customer || {} });
 }
 
 async function reserveQuota(env, clientId, monthKey, requestId, fingerprint, observedRequestIds = []) {
@@ -241,7 +247,7 @@ async function listInbox(env, lineUserId) {
   const records = []; let offset = "";
   for (let page = 0; page < 20; page += 1) {
     const url = new URL(`${API}/${encodeURIComponent(base)}/${encodeURIComponent(table)}`);
-    url.searchParams.set("filterByFormula", `AND({line_user_id}=${formula(lineUserId)},{source}='my_mmd_liff',OR({intent}='your_request',{intent}='saved_model',{intent}='profile_update'))`);
+    url.searchParams.set("filterByFormula", `AND({line_user_id}=${formula(lineUserId)},OR({source}='my_mmd_liff',{source}='line'),OR({intent}='your_request',{intent}='saved_model',{intent}='profile_update'))`);
     url.searchParams.set("maxRecords", String(MAX_LIST)); url.searchParams.set("pageSize", String(MAX_LIST)); if (offset) url.searchParams.set("offset", offset);
     const response = await airtableFetch(env, url, { headers: { authorization: `Bearer ${key}`, accept: "application/json" } });
     const payload = await response.json().catch(() => null); if (!response.ok || !Array.isArray(payload?.records)) return null;
@@ -300,7 +306,7 @@ function monthKeyInBangkok(value) {
   const parts = new Intl.DateTimeFormat("en-CA", { timeZone: MONTH_TIME_ZONE, year: "numeric", month: "2-digit" }).formatToParts(date);
   return `${parts.find((part) => part.type === "year")?.value}-${parts.find((part) => part.type === "month")?.value}`;
 }
-function parsePayload(value) { try { const data = JSON.parse(safeText(value, 20000)); return plain(data) ? data : {}; } catch { return {}; } }
+function parsePayload(value) { try { const text = typeof value === "string" ? value.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "").slice(0, 120000) : ""; const data = JSON.parse(text); return plain(data) ? data : {}; } catch { return {}; } }
 function formula(value) { return `'${String(value).replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`; }
 function unique(values) { return [...new Set(values)]; }
 async function hash(value) { const bytes = new TextEncoder().encode(String(value)); const digest = await crypto.subtle.digest("SHA-256", bytes); return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("").slice(0, 32); }
