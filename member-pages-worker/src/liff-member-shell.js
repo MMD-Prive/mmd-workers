@@ -450,7 +450,7 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
       </details>
       <details class="card details digital-request-block">
         <summary><span><small>YOUR REQUEST</small><strong>อยากให้ MMD ตามหาใคร</strong></span></summary>
-        <div class="digital-request-body"><p class="form-note">อัปโหลดรูปที่คุณมีได้สูงสุด 3 รูป (JPG, PNG หรือ WebP) เพื่อให้ทีมตามหาเป็นการภายใน รูปจะไม่ขึ้นหน้า Public หรือโปรไฟล์โมเดลโดยอัตโนมัติ</p>
+        <div class="digital-request-body"><p class="form-note">อัปโหลดรูปที่คุณมีได้สูงสุด 3 รูป (JPG, PNG หรือ WebP) เพื่อให้ทีมตามหาเป็นการภายใน รูปจะไม่ขึ้นหน้า Public หรือโปรไฟล์โมเดลโดยอัตโนมัติ</p><p id="your-request-quota" class="form-note">โควตาเดือนนี้: กำลังตรวจสอบ…</p>
           <form id="your-request-form" class="form-stack"><label>ชื่อนายแบบ<input id="requested-model-name" type="text" maxlength="120" required></label><label>ลิงก์โซเชียล (ได้สูงสุด 3 ลิงก์)<textarea id="requested-model-social" maxlength="500" placeholder="https://..."></textarea></label><label>สนใจงานแบบไหน<select id="requested-model-audience"><option value="public">งานทั่วไป (Public)</option><option value="private">งาน Private</option></select></label><label>ทำไมอยากให้ MMD ตามหา<textarea id="requested-model-reason" maxlength="1800" required></textarea></label><label>รูปอ้างอิง (ไม่บังคับ)<input id="requested-model-evidence" type="file" accept="image/jpeg,image/png,image/webp" multiple></label><button type="submit">ส่ง Your Request</button></form>
           <div id="your-request-status" class="form-note" role="status" aria-live="polite"></div>
         </div>
@@ -1244,6 +1244,9 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
       const payload = await response.json().catch(() => null);
       if (generation !== profileGeneration) return false;
       if (!response.ok || payload?.ok !== true || !Array.isArray(payload.items)) throw new Error("unavailable");
+      const quota = payload.quota || {};
+      const quotaNode = document.getElementById("your-request-quota");
+      if (quotaNode) quotaNode.textContent = "โควตาเดือนนี้: เหลือ " + (Number.isFinite(quota.remaining) ? quota.remaining : "—") + " / " + (Number.isFinite(quota.limit) ? quota.limit : 4) + " คน";
       renderCustomerRequests(payload.items);
       return true;
     } catch {
@@ -1314,10 +1317,10 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
       evidenceState = await uploadRequestEvidence(document.getElementById("requested-model-evidence").files);
       const request_id = pendingRequestId("your_request");
       const { response, payload } = await requestJson({ request_id, request_type:"your_request", model_name:document.getElementById("requested-model-name").value, model_social:document.getElementById("requested-model-social").value, audience:document.getElementById("requested-model-audience").value, reason:document.getElementById("requested-model-reason").value, evidence_ids:evidenceState.ids });
-      if (!response.ok || payload?.ok !== true) { if (terminalClientError(response)) { clearPendingRequest("your_request"); clearEvidenceState(evidenceState.storageKeys); } throw new Error("request_failed"); }
+      if (!response.ok || payload?.ok !== true) { if (terminalClientError(response)) { clearPendingRequest("your_request"); clearEvidenceState(evidenceState.storageKeys); } throw Object.assign(new Error("request_failed"), { status: response.status, code: payload?.error?.code }); }
       clearPendingRequest("your_request"); clearEvidenceState(evidenceState.storageKeys);
       yourRequestForm.reset(); yourRequestStatus.textContent = "MMD รับคำขอแล้วครับ ทีมจะตรวจสอบเป็นการภายใน"; await readCustomerRequests();
-    } catch { yourRequestStatus.textContent = "ตอนนี้ยังส่งคำขอไม่ได้ครับ กรุณาลองใหม่อีกครั้ง"; }
+    } catch (error) { yourRequestStatus.textContent = error?.status === 429 ? "ครบโควตา 4 คนของเดือนนี้แล้วครับ" : "ตอนนี้ยังส่งคำขอไม่ได้ครับ กรุณาลองใหม่อีกครั้ง"; }
     finally { button.disabled = false; }
   });
 

@@ -14,6 +14,8 @@ const MAX_FILE_BYTES = 8 * 1024 * 1024;
 const ALLOWED_MEDIA = new Set(["image/jpeg", "image/png", "image/webp"]);
 const BLOCKED_STATES = new Set(["blocked", "suspended", "revoked", "pending_review", "under_review"]);
 const REQUEST_STATES = new Set(["received", "searching", "needs_more_info", "reviewing", "closed"]);
+const MONTHLY_PERSON_LIMIT = 4;
+const MONTH_TIME_ZONE = "Asia/Bangkok";
 
 export function isMemberCustomerRequestPath(input) {
   try {
@@ -36,16 +38,24 @@ export async function handleMemberCustomerRequest(request, env = {}) {
 
 async function handleRequest(request, env, identity) {
   if (request.method === "GET" || request.method === "HEAD") {
-    const response = json({ ok: true, authority: "mmd.customer_request_intake.v1", items: await listRequests(env, identity.lineUserId) });
+    const raw = await listInbox(env, identity.lineUserId);
+    const response = json({ ok: true, authority: "mmd.customer_request_intake.v1", items: raw.map((record) => customerItem(parsePayload(record?.fields?.payload_json))).filter(Boolean).slice(0, MAX_LIST), quota: requestQuota(raw) });
     return request.method === "HEAD" ? new Response(null, { status: response.status, headers: response.headers }) : response;
   }
   if (request.method !== "POST") return fail(405, "METHOD_NOT_ALLOWED", { allow: "GET, HEAD, POST" });
   const body = await request.json().catch(() => null);
   const input = validateRequest(body);
   if (!input.ok) return fail(400, input.code);
-  const prior = await listRequests(env, identity.lineUserId);
+  const rawPrior = await listInbox(env, identity.lineUserId);
+  const prior = rawPrior.map((record) => customerItem(parsePayload(record?.fields?.payload_json))).filter(Boolean);
   const duplicate = prior.find((item) => item.request_id === input.data.request_id);
-  if (duplicate) return json({ ok: true, item: duplicate, idempotent: true });
+  if (duplicate) {
+    const existingPayload = parsePayload(rawPrior.find((record) => parsePayload(record?.fields?.payload_json)?.request_id === input.data.request_id)?.fields?.payload_json);
+    if (requestFingerprint(existingPayload) !== requestFingerprint(input.data)) return fail(409, "REQUEST_ID_REUSE_CONFLICT");
+    return json({ ok: true, item: duplicate, idempotent: true, quota: requestQuota(rawPrior) });
+  }
+  const quota = requestQuota(rawPrior);
+  if (input.data.request_type === "your_request" && quota.remaining <= 0) return fail(429, "YOUR_REQUEST_MONTHLY_LIMIT", { "retry-after": "3600" });
   const evidence = input.data.evidence_ids.length ? await validateEvidence(env, identity.clientId, input.data.evidence_ids) : [];
   if (evidence === null) return fail(409, "EVIDENCE_UNAVAILABLE");
   const now = new Date().toISOString();
@@ -75,7 +85,7 @@ async function handleRequest(request, env, identity) {
   });
   if (!created) return fail(503, "REQUEST_QUEUE_UNAVAILABLE");
   const item = customerItem(payload);
-  return json({ ok: true, item, idempotent: false }, 201);
+  return json({ ok: true, item, idempotent: false, quota: { ...quota, used: quota.used + (input.data.request_type === "your_request" ? 1 : 0), remaining: Math.max(0, quota.remaining - (input.data.request_type === "your_request" ? 1 : 0)) } }, 201);
 }
 
 async function handleEvidenceUpload(request, env, identity) {
@@ -158,6 +168,16 @@ function customerItem(data) {
   };
 }
 
+function requestQuota(records) {
+  const month = monthKeyInBangkok(new Date());
+  const ids = new Set(records.map((record) => parsePayload(record?.fields?.payload_json)).filter((data) => data.schema === "mmd_customer_request_v1" && data.request_type === "your_request" && monthKeyInBangkok(data.created_at) === month).map((data) => data.request_id).filter(Boolean));
+  return { month_key: month, limit: MONTHLY_PERSON_LIMIT, used: ids.size, remaining: Math.max(0, MONTHLY_PERSON_LIMIT - ids.size) };
+}
+
+function requestFingerprint(data) {
+  return JSON.stringify({ request_type: data?.request_type || "", model: data?.model || {}, customer: data?.customer || {}, evidence_ids: data?.evidence_ids || [] });
+}
+
 async function validateEvidence(env, clientId, ids) {
   if (!env.CUSTOMER_REQUEST_EVIDENCE?.head) return null;
   const out = [];
@@ -173,10 +193,16 @@ async function evidenceObject(env, clientId, evidenceId) {
 async function listInbox(env, lineUserId) {
   const key = safeText(env.AIRTABLE_API_KEY, 2000); const base = safeText(env.AIRTABLE_BASE_ID, 100); const table = safeText(env.AIRTABLE_TABLE_CONSOLE_INBOX, 180) || INBOX_TABLE;
   if (!key || !base) return [];
-  const url = new URL(`${API}/${encodeURIComponent(base)}/${encodeURIComponent(table)}`);
-  url.searchParams.set("filterByFormula", `AND({line_user_id}=${formula(lineUserId)},{source}='my_mmd_liff',OR({intent}='your_request',{intent}='saved_model',{intent}='profile_update'))`); url.searchParams.set("maxRecords", String(MAX_LIST));
-  const response = await airtableFetch(env, url, { headers: { authorization: `Bearer ${key}`, accept: "application/json" } });
-  const payload = await response.json().catch(() => null); return response.ok && Array.isArray(payload?.records) ? payload.records : [];
+  const records = []; let offset = "";
+  for (let page = 0; page < 20; page += 1) {
+    const url = new URL(`${API}/${encodeURIComponent(base)}/${encodeURIComponent(table)}`);
+    url.searchParams.set("filterByFormula", `AND({line_user_id}=${formula(lineUserId)},{source}='my_mmd_liff',OR({intent}='your_request',{intent}='saved_model',{intent}='profile_update'))`);
+    url.searchParams.set("maxRecords", String(MAX_LIST)); url.searchParams.set("pageSize", String(MAX_LIST)); if (offset) url.searchParams.set("offset", offset);
+    const response = await airtableFetch(env, url, { headers: { authorization: `Bearer ${key}`, accept: "application/json" } });
+    const payload = await response.json().catch(() => null); if (!response.ok || !Array.isArray(payload?.records)) return [];
+    records.push(...payload.records); offset = payload.offset || ""; if (!offset) break;
+  }
+  return records;
 }
 async function createInbox(env, fields) {
   const key = safeText(env.AIRTABLE_API_KEY, 2000); const base = safeText(env.AIRTABLE_BASE_ID, 100); const table = safeText(env.AIRTABLE_TABLE_CONSOLE_INBOX, 180) || INBOX_TABLE;
@@ -216,6 +242,12 @@ function safeSocial(value) {
   return normalized.every(Boolean) ? unique(normalized).join("\n") : "";
 }
 function safeTimestamp(value) { const text = safeText(value, 80); return Number.isFinite(Date.parse(text)) ? new Date(text).toISOString() : null; }
+function monthKeyInBangkok(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: MONTH_TIME_ZONE, year: "numeric", month: "2-digit" }).formatToParts(date);
+  return `${parts.find((part) => part.type === "year")?.value}-${parts.find((part) => part.type === "month")?.value}`;
+}
 function parsePayload(value) { try { const data = JSON.parse(safeText(value, 20000)); return plain(data) ? data : {}; } catch { return {}; } }
 function formula(value) { return `'${String(value).replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`; }
 function unique(values) { return [...new Set(values)]; }

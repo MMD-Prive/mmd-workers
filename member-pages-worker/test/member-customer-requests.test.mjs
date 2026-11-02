@@ -104,6 +104,20 @@ test("Your Request queues private metadata once and returns a customer-safe proj
   assert.equal(records.length, 1);
 });
 
+test("Your Request enforces four distinct request IDs per Bangkok calendar month and rejects conflicting retries", async () => {
+  const { env, records } = await runtime();
+  for (const suffix of ["a", "b", "c", "d"]) {
+    const response = await handleMemberCustomerRequest(await request("POST", { request_id:`req_quota_${suffix}123456`, request_type:"your_request", model_name:`Model ${suffix}`, reason:"ช่วยตามหา" }), env);
+    assert.equal(response.status, 201);
+  }
+  const fifth = await handleMemberCustomerRequest(await request("POST", { request_id:"req_quota_e123456", request_type:"your_request", model_name:"Model e", reason:"ช่วยตามหา" }), env);
+  assert.equal(fifth.status, 429);
+  const conflict = await handleMemberCustomerRequest(await request("POST", { request_id:"req_quota_a123456", request_type:"your_request", model_name:"Different person", reason:"เปลี่ยนคน" }), env);
+  assert.equal(conflict.status, 409);
+  assert.equal((await (await handleMemberCustomerRequest(await request("GET", null, { origin:null }), env)).json()).quota.used, 4);
+  assert.equal(records.length, 4);
+});
+
 test("profile updates are review requests and reject empty writes", async () => {
   const { env, records } = await runtime();
   const empty = await handleMemberCustomerRequest(await request("POST", { request_id:"req_abcdefghijkm", request_type:"profile_update" }), env);
