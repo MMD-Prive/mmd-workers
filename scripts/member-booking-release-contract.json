@@ -11,7 +11,7 @@
     "baseline_modules": {
       "worker.js": "9bbe9bf7ad95ed49de8f64cd485883507e2fd142d47df2e5ae0ac28bfb34f523"
     },
-    "candidate_sha256": "59d8a7a068c09f8f3103d3d0be637caed000b063829f779e9d6f99478054f30c",
+    "candidate_sha256": "36661f7c693e08c2173e06aa2b3d879d47764b399d861d4c25a50922d8056150",
     "old_migration_tag": "v3-remembered-login-device",
     "new_migration_tag": "v4-member-booking-coordinator-20261102",
     "binding": "MEMBER_BOOKING_COORDINATOR",
@@ -27,8 +27,8 @@
       "runtime-index.js.map": "e7a9d2b55c0d7fd1950fcb620e2a2767a3dbc736db1a890c6e6f7a4e70f98baf"
     },
     "candidate_modules": {
-      "runtime-index.js": "b89a92cbd2fa5f90877b3402f72e8b2d361fcd44b330de07708c23756aac4715",
-      "runtime-index.js.map": "dc2115da5da0d177d913fc5dfe6772f90645c60cf85460235d94050af06925ee"
+      "runtime-index.js": "dde2ed44772f47d5b54eb39196ca9f3d692a1a38589b5a8dc1f07791053e4d44",
+      "runtime-index.js.map": "ddb3097cd7129c83682b35a0b15028ed982b64efe87acfbb12585ad4e128ff6f"
     },
     "source_paths": [
       "sigil-booking-worker/src/customer-discovery-policy.js",
@@ -51,13 +51,13 @@
   },
   "source_hashes": {
     "auth-worker/src/member-entitlement-resolver.js": "2e06992fcd9b40d8b375d6bae5aaeddef6e6b001f59c6e29dac254e051d0628d",
-    "member-pages-worker/src/liff-member-booking.js": "5ac3760376ca4c6c783fdd499e15dcce68641bcfb3a78947dc85985f71509159",
+    "member-pages-worker/src/liff-member-booking.js": "3b7cb31650c64c17ec6ab91b01b64ed123ecbfac5f8af271372ea53cfff54847",
     "member-pages-worker/src/member-booking-coordinator.js": "dcead648cf7c45ccca1711a62d6fec14d9723aa25f0df1d18ab5b51bd9e5d93c",
     "member-pages-worker/src/member-booking-flow.js": "5ecfee0b44dc6ec2f05aff6bf05280295ec42c9f9aed451007cd7168c3eb0ed4",
     "member-pages-worker/src/runtime-index.js": "ece4ad5ec2631610c4be3f157658bbfb961b33e437a15bb81e25718b42b11d2b",
     "member-pages-worker/test/liff-member-booking-return.test.mjs": "3f3f57bef45d6d24fbb37f638586dc2aae5e62a4f1a8f3d14f59c3219e7e3000",
-    "member-pages-worker/test/liff-member-booking.test.mjs": "38c2a4c0523a2bbb6cb4b18a0c9d6bd78fa6543e7e4bc482f550c4f908ab9609",
-    "member-pages-worker/test/member-booking-flow.test.mjs": "d544e2a76ad2b1e9b3d465e51ee92156159af5027b9b740cc7983f8c4508097d",
+    "member-pages-worker/test/liff-member-booking.test.mjs": "66ca308f197e13719f8c0127a08617ec744c9957cdb83f665a323fb801af4880",
+    "member-pages-worker/test/member-booking-flow.test.mjs": "05c6497fb4c3c4b15317182f6598825fd33132939a59d8904515b93918fb0420",
     "shared/model-sales-control-v1.mjs": "bcb695fdcdba9f27c6cdac33cfe9695e18e2572fc3d73c3aea9c1b0c777e2dde",
     "shared/posthog-authority-events.mjs": "b70417d03e721ea0ae4aec50428e1563a548760c83123ffd1bf05ae8d3c804c6",
     "shared/private-model-work-capabilities.mjs": "4548e870fcc117a95d2ec4aa8b0e5c8502e33279b6618469e4781e8e439a562f",
@@ -69,7 +69,7 @@
     "sigil-booking-worker/src/entitlement-runtime-worker.js": "43d68063a0f9389d227ec292a16b0b0f899a8dd59f2c2305a5bfe3e61faa01d5",
     "sigil-booking-worker/src/index.js": "16930df33a6166e8d6a915bbee899583e68b43f9c2104a03ba4bccdfa562d196",
     "sigil-booking-worker/src/legacy-media-retirement.js": "33e98bebb35217810e7e07652114ff7402815e319f6de3e18b566fdceaca9a60",
-    "sigil-booking-worker/src/member-booking-service.js": "3cf2434b78e598fa41e8dff59be602649700272a0db373bef8c1d419218286d3",
+    "sigil-booking-worker/src/member-booking-service.js": "ede7ce028819603be890569a3b97e8d4ee9f39b397e84dac3787cc3d29c72400",
     "sigil-booking-worker/src/model-image-policy-worker.js": "d8c85eef64df21e5a261b65c4432160d8cb1613fef0ffb104915df0b5a9bb11e",
     "sigil-booking-worker/src/public-profiles-catalog.js": "3486565cec0cf2737b3dbce7a6ec20309d0c719d0ed64f878a73cd5dc0682ef4",
     "sigil-booking-worker/src/runtime-index.js": "c2832fedd8d58b3ad10034691a1fd29d381d0df865d00c75c46c9c76780974ad",

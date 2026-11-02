@@ -77,6 +77,7 @@ test('service delegates actual SIGIL search/media policy and actual intake with 
   const search=await call('search');assert.equal(search.status,200);assert.equal((await search.json()).items[0]?.model_id,model);
   const submit=await call('submit');assert.equal(submit.status,201,JSON.stringify(await submit.clone().json()));assert.equal(writes,1);
   assert.equal(JSON.parse(rows[0].fields.resolver_payload_json).my_mmd_owner.owner,owner);
+  assert.equal(rows[0].fields['Client Notes'],'พื้นที่: Bangkok\nfixture');
   const list=await call('list');assert.equal((await list.json()).items[0].request_ref,reference);
   await call('submit');assert.equal(writes,1);
  }finally{globalThis.fetch=native;}

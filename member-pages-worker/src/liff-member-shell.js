@@ -1042,7 +1042,7 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
   function memberApiFetch(url, init = {}) {
     const valid = arguments[2] || (() => true);
     const run = memberApiChain.then(async () => {
-      if (!valid()) throw new Error("member_request_stale");
+      if (!valid()) throw Object.assign(new Error("member_request_stale"), {code:"member_request_not_started"});
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 10000);
       try {

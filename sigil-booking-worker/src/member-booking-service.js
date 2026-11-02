@@ -66,7 +66,7 @@ export async function handleMemberBookingService(request,env,delegate){
     booking_ref:input.reference,source:'my_mmd_member_booking',source_path:'/member/liff',lane:scope,model_scope:scope,
     selected_model_id:model.model_id,resolved_model_key:model.model_id,selected_model_name:model.display_name,
     preferred_date:input.payload.date,preferred_time:input.payload.time,city:input.payload.area,
-    client_notes:input.payload.note,search_mode:'booking',line_or_member_id:input.member_id
+    client_notes:['พื้นที่: '+input.payload.area,input.payload.note].filter(Boolean).join('\n'),search_mode:'booking',line_or_member_id:input.member_id
    })
   }),{...context,ownerMetadata:meta});
   const body=await res.json().catch(()=>null);

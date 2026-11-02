@@ -75,3 +75,26 @@ test('Private selector comes only from backend context and disappears when acces
  let allowed=true;const f=fixture(async path=>Response.json(path.includes('/context')?{ok:true,scopes:allowed?['public','private']:['public']}:{ok:true,items:[]}));
  try{assert.equal(f.d.querySelector('option[value=private]'),null);await f.ui.load();assert.ok(f.d.querySelector('option[value=private]'));const scope=f.d.querySelector('select[name=scope]');scope.value='private';scope.dispatchEvent(new f.dom.window.Event('change'));assert.match(f.d.querySelector('[data-booking-scope-copy]').textContent,/^SĪGIL Models/);allowed=false;await f.ui.load();assert.equal(f.d.querySelector('option[value=private]'),null);assert.equal(f.d.querySelector('[data-booking-scope]').hidden,true);assert.match(f.d.querySelector('[data-booking-scope-copy]').textContent,/^Public Models/);f.ui.reset();assert.match(f.d.querySelector('[data-booking-scope-copy]').textContent,/^Public Models/);}finally{f.dom.window.close();}
 });
+
+test('definite queued cancellation clears only its own stored attempt and allows booking after return',async()=>{
+ let rejectPost,posts=0;const f=fixture(async(path,init={})=>{
+  if(path.includes('/search'))return Response.json({ok:true,items:[{model_id:model,display_name:'Fixture'}]});
+  if(init.method==='POST'){posts++;return new Promise((_,reject)=>rejectPost=reject);}
+  return Response.json({ok:true,scopes:['public'],items:[]});
+ });
+ try{
+  f.d.querySelector('[data-booking-search]').dispatchEvent(new f.dom.window.Event('submit',{cancelable:true}));await tick();f.d.querySelector('[data-booking-results] button').click();
+  const form=f.d.querySelector('[data-booking-details]');form.elements.date.value='2099-01-01';form.elements.time.value='18:00';form.elements.area.value='Bangkok';form.dispatchEvent(new f.dom.window.Event('submit',{cancelable:true}));
+  assert.equal(Object.keys(f.storage()).length,1);f.ui.leave();rejectPost(Object.assign(Error('stale'),{code:'member_request_not_started'}));await tick();
+  assert.deepEqual(f.storage(),{});await f.ui.load();assert.equal(form.querySelector('button[type=submit]').disabled,false);assert.equal(posts,1);
+  form.dispatchEvent(new f.dom.window.Event('submit',{cancelable:true}));assert.equal(posts,2);rejectPost(Object.assign(Error('stale'),{code:'member_request_not_started'}));await tick();
+ }finally{f.dom.window.close();}
+});
+test('cancelled old account attempt cannot clear a newer account token',async()=>{
+ let rejectPost;const f=fixture(async(path,init={})=>{if(path.includes('/search'))return Response.json({ok:true,items:[{model_id:model,display_name:'Fixture'}]});if(init.method==='POST')return new Promise((_,reject)=>rejectPost=reject);return Response.json({ok:true,scopes:['public'],items:[]});});
+ try{
+  f.d.querySelector('[data-booking-search]').dispatchEvent(new f.dom.window.Event('submit',{cancelable:true}));await tick();f.d.querySelector('[data-booking-results] button').click();const form=f.d.querySelector('[data-booking-details]');form.elements.date.value='2099-01-01';form.elements.time.value='18:00';form.elements.area.value='Bangkok';form.dispatchEvent(new f.dom.window.Event('submit',{cancelable:true}));
+  f.switchAccount();f.dom.window.sessionStorage.setItem('mmd-booking-request:account_b','bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');rejectPost(Object.assign(Error('stale'),{code:'member_request_not_started'}));await tick();
+  assert.deepEqual(f.storage(),{'mmd-booking-request:account_b':'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'});assert.equal(form.hidden,true);
+ }finally{f.dom.window.close();}
+});

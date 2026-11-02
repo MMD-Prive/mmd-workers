@@ -54,11 +54,11 @@ export function createMemberBookingUI(root,api,getBinding,returnModel="",returnS
  details.addEventListener('submit',async e=>{
   e.preventDefault();if(sending||pending||!selected||!details.reportValidity())return;
   const g=generation,b=getBinding();if(!b)return;sending=true;const button=details.querySelector('button[type="submit"]');button.disabled=true;
-  message.textContent='กำลังส่งคำขอ';const model=selected;
-  try{const res=await api('/member/api/liff/booking/requests',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({request_id:token(),model_id:model.model_id,date:details.elements.date.value,time:details.elements.time.value,area:details.elements.area.value,note:details.elements.note.value,scope:model.scope||'public'})},()=>current(g,b));const body=await res.json();if(!current(g,b))return;
+  message.textContent='กำลังส่งคำขอ';const model=selected,attemptId=token(),attemptKey=key();
+  try{const res=await api('/member/api/liff/booking/requests',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({request_id:attemptId,model_id:model.model_id,date:details.elements.date.value,time:details.elements.time.value,area:details.elements.area.value,note:details.elements.note.value,scope:model.scope||'public'})},()=>current(g,b));const body=await res.json();if(!current(g,b))return;
    if(!res.ok||body?.ok!==true){if(body?.outcome==='not_started'){clearAttempt();message.textContent=body.error==='booking_submission_not_ready'?'กำลังเตรียมระบบส่งคำขอ กรุณาติดต่อเปอร์ก่อนครับ':'ยังไม่ได้ส่งคำขอ กรุณาตรวจการเลือกแล้วลองใหม่';return;}pending=true;throw Error();}
    pending=true;ackRef=body.request_ref;root.querySelector('[data-booking-new]').hidden=false;message.textContent='รับคำขอแล้ว · '+refLabel(body.request_ref)+' · รอ MMD ตรวจสอบ ยังไม่ใช่การยืนยันงาน';details.hidden=true;await load();
-  }catch{if(current(g,b)){pending=true;message.textContent='ยังยืนยันผลการส่งไม่ได้ กรุณาตรวจสถานะหรือติดต่อเปอร์ก่อนส่งใหม่';}}
+  }catch(error){if(error?.code==='member_request_not_started'){try{if(sessionStorage.getItem(attemptKey)===attemptId)sessionStorage.removeItem(attemptKey);}catch{}if(getBinding()===b&&requestId===attemptId){requestId='';pending=false;sending=false;button.disabled=false;message.textContent='ยังไม่ได้ส่งคำขอ เลือกแล้วส่งใหม่ได้ครับ';}return;}if(current(g,b)){pending=true;message.textContent='ยังยืนยันผลการส่งไม่ได้ กรุณาตรวจสถานะหรือติดต่อเปอร์ก่อนส่งใหม่';}}
   finally{if(current(g,b)){sending=false;button.disabled=pending;}}
  });
  root.querySelector('[data-booking-change]').addEventListener('click',()=>{if(!sending&&!pending){selected=null;details.hidden=true;}});
