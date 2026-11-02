@@ -7,6 +7,7 @@ const REQUEST_PATH = "/member/api/liff/customer-requests";
 const EVIDENCE_PATH = "/member/api/liff/customer-request-evidence";
 const ADMIN_PATH = "/__internal/admin/my-mmd/customer-requests";
 const ADMIN_EVIDENCE_PATH = "/__internal/admin/my-mmd/customer-request-evidence";
+const ADMIN_MUTATION_PATH = "/__internal/admin/my-mmd/customer-request-mutation";
 const SERVICE_HOST = "member-pages-worker.internal";
 const MAX_LIST = 50;
 const MAX_EVIDENCE = 3;
@@ -20,12 +21,13 @@ const MONTH_TIME_ZONE = "Asia/Bangkok";
 export function isMemberCustomerRequestPath(input) {
   try {
     const path = new URL(input instanceof Request ? input.url : String(input)).pathname.replace(/\/+$/, "") || "/";
-    return path === REQUEST_PATH || path === EVIDENCE_PATH || path === ADMIN_PATH || path === ADMIN_EVIDENCE_PATH;
+  return path === REQUEST_PATH || path === EVIDENCE_PATH || path === ADMIN_PATH || path === ADMIN_EVIDENCE_PATH || path === ADMIN_MUTATION_PATH;
   } catch { return false; }
 }
 
 export async function handleMemberCustomerRequest(request, env = {}) {
   const path = new URL(request.url).pathname.replace(/\/+$/, "") || "/";
+  if (path === ADMIN_MUTATION_PATH) return handleAdminMutationLease(request, env);
   if (path === ADMIN_PATH || path === ADMIN_EVIDENCE_PATH) return handleAdmin(request, env, path);
   if (!browserOriginAllowed(request)) return fail(403, "SAME_ORIGIN_REQUIRED");
   if (new URL(request.url).search) return fail(400, "BROWSER_AUTHORITY_REJECTED");
@@ -34,6 +36,16 @@ export async function handleMemberCustomerRequest(request, env = {}) {
   if (path === REQUEST_PATH) return handleRequest(request, env, identity);
   if (path === EVIDENCE_PATH) return handleEvidenceUpload(request, env, identity);
   return fail(404, "NOT_FOUND");
+}
+
+async function handleAdminMutationLease(request, env) {
+  if (!internalAuthorized(request) || !env.CUSTOMER_REQUEST_MUTATION?.idFromName || !env.CUSTOMER_REQUEST_MUTATION?.get) return fail(404, "NOT_FOUND");
+  const body = await request.json().catch(() => null); const recordId = safeText(body?.record_id, 40); const operationId = safeText(body?.operation_id, 100);
+  if (!/^rec[A-Za-z0-9]{10,32}$/.test(recordId) || !operationId || !["begin", "finish"].includes(body?.action)) return fail(400, "INVALID_REQUEST");
+  const id = env.CUSTOMER_REQUEST_MUTATION.idFromName(recordId);
+  const response = await env.CUSTOMER_REQUEST_MUTATION.get(id).fetch("https://mutation/" + body.action, { method: "POST", body: JSON.stringify({ action: body.action, operation_id: operationId, status: body.status }) }).catch(() => null);
+  if (!response) return fail(503, "REQUEST_MUTATION_UNAVAILABLE");
+  return new Response(response.body, { status: response.status, headers: response.headers });
 }
 
 async function handleRequest(request, env, identity) {
@@ -107,6 +119,7 @@ async function appendEvidenceToRequest(body, env, identity) {
   if (!requestId || !evidenceIds.length || evidenceIds.length > MAX_EVIDENCE) return fail(400, "EVIDENCE_INVALID");
   const records = await listInbox(env, identity.lineUserId); if (records === null) return fail(503, "REQUEST_QUEUE_UNAVAILABLE");
   const record = records.find(row => parsePayload(row?.fields?.payload_json)?.request_id === requestId); if (!record) return fail(404, "REQUEST_NOT_FOUND");
+  const mutation = await beginRequestMutation(env, record.id); if (!mutation.ok) return fail(mutation.status || 503, mutation.error || "REQUEST_MUTATION_UNAVAILABLE");
   const payload = parsePayload(record.fields?.payload_json); if (payload.canonical_client_id !== identity.clientId) return fail(404, "REQUEST_NOT_FOUND");
   const checked = await validateEvidence(env, identity.clientId, evidenceIds); if (checked === null) return fail(409, "EVIDENCE_UNAVAILABLE");
   const before = unique(array(payload.evidence_ids).filter(safeEvidenceId));
@@ -114,9 +127,12 @@ async function appendEvidenceToRequest(body, env, identity) {
   if (next.length > MAX_EVIDENCE) return fail(409, "EVIDENCE_LIMIT_REACHED");
   payload.evidence_ids = next; payload.updated_at = new Date().toISOString();
   const updated = await updateInbox(env, record.id, { payload_json: JSON.stringify(payload), admin_note: adminNote(payload) });
+  await finishRequestMutation(env, record.id, mutation.operation_id);
   if (!updated) return fail(503, "REQUEST_QUEUE_UNAVAILABLE");
   return json({ ok: true, item: customerItem(payload), evidence_ids: next, idempotent: next.length === before.length });
 }
+async function beginRequestMutation(env, recordId) { if (!env.CUSTOMER_REQUEST_MUTATION?.idFromName || !env.CUSTOMER_REQUEST_MUTATION?.get) return { ok: false, status: 503, error: "REQUEST_MUTATION_UNAVAILABLE" }; const operation_id = crypto.randomUUID(); const id = env.CUSTOMER_REQUEST_MUTATION.idFromName(recordId); const response = await env.CUSTOMER_REQUEST_MUTATION.get(id).fetch("https://mutation/begin", { method: "POST", body: JSON.stringify({ action: "begin", operation_id }) }).catch(() => null); const body = await response?.json().catch(() => null); return response?.ok ? { ok: true, operation_id } : { ok: false, status: response?.status || 503, error: body?.error || "REQUEST_MUTATION_UNAVAILABLE" }; }
+async function finishRequestMutation(env, recordId, operation_id) { const id = env.CUSTOMER_REQUEST_MUTATION.idFromName(recordId); await env.CUSTOMER_REQUEST_MUTATION.get(id).fetch("https://mutation/finish", { method: "POST", body: JSON.stringify({ action: "finish", operation_id, status: "committed" }) }).catch(() => null); }
 
 async function handleEvidenceUpload(request, env, identity) {
   if (request.method !== "POST") return fail(405, "METHOD_NOT_ALLOWED", { allow: "POST" });
