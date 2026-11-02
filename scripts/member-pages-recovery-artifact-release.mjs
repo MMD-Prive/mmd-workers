@@ -255,7 +255,10 @@ export function createCloudflareRecoveryAdapter({ token, request = fetch, accoun
       assert.equal(exact?.resources?.script_runtime?.migration_tag, manifest.migration?.new_tag, `${worker} migration readback mismatch`);
     }
     for (const key of ['observability', 'tail_consumers', 'tags', 'logpush']) {
-      if (metadata[key] !== undefined) assert.deepEqual(exact?.[key] ?? exact?.resources?.script?.[key], metadata[key], `${worker} ${key} changed`);
+      const actual = exact?.[key] ?? exact?.resources?.script?.[key];
+      // Some Cloudflare version responses omit script-level settings; those
+      // are verified through the fresh script-settings snapshot by the caller.
+      if (metadata[key] !== undefined && actual !== undefined) assert.deepEqual(actual, metadata[key], `${worker} ${key} changed`);
     }
     return exact;
   };
