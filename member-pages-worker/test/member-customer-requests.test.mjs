@@ -173,3 +173,9 @@ test("missing private evidence fails closed without creating an inbox record", a
   assert.equal((await response.json()).error.code, "EVIDENCE_UNAVAILABLE");
   assert.equal(records.length, 0);
 });
+test("admin mutation gateway forwards item key and readback proof to the Durable Object", async () => {
+  const { env } = await runtime(); let forwarded;
+  env.CUSTOMER_REQUEST_MUTATION = { idFromName() { return "mutation-id"; }, get() { return { async fetch(_url, init) { forwarded = JSON.parse(init.body); return Response.json({ ok: true, inspected: true }); } }; } };
+  const response = await handleMemberCustomerRequest(new Request("https://member-pages-worker.internal/__internal/admin/my-mmd/customer-request-mutation", { method: "POST", headers: { "x-mmd-internal-call": "true", "x-mmd-service-binding": "admin-worker", "content-type": "application/json" }, body: JSON.stringify({ action: "reconcile_item", record_id: "recInbox123456", operation_id: "op-1", mutation_fingerprint: "manifest-1", item_key: "lineoa:item-3", readback_verified: true }) }), env);
+  assert.equal(response.status, 200); assert.equal(forwarded.item_key, "lineoa:item-3"); assert.equal(forwarded.readback_verified, true); assert.equal(forwarded.mutation_fingerprint, "manifest-1");
+});
