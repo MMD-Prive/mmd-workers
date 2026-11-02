@@ -55,6 +55,10 @@ jobs:
           ref: ${{ github.sha }}
           path: release-tools
           persist-credentials: false
+      - name: Initialize no-write preflight receipt
+        run: |
+          printf '%s\n' '{"scope":"recovery-admin-only-resume","phase":"preflight-not-completed","member_writes":0,"admin_attempt":"not_started","note":"If no later receipt exists, inspect setup/build/approval step; no admin PUT was started by executor."}' > "$RUNNER_TEMP/recovery-admin-only-receipt.json"
+          chmod 600 "$RUNNER_TEMP/recovery-admin-only-receipt.json"
       - uses: actions/checkout@v5
         with:
           ref: d82c284fb48943c7c8a8cc5a970107f799186ee3
