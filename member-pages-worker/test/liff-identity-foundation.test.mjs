@@ -1440,6 +1440,7 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
       duration_days: 730, points_after_verification: 0, requires_manual_review: false,
     });
     const started = await start(runtime, { id_token: "new-private-member", liff_intent: "signup" });
+    assert.match(started.payload.data.recovery_binding, /^[A-Za-z0-9._~-]{32,}$/);
     const selected = await request("/member/api/liff/package", {
       cookie: cookiePair(findCookie(started.response, "__Host-mmd_liff_session")),
       body: { requested_package_code: "premium" },
