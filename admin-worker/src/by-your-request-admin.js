@@ -32,7 +32,7 @@ async function listRequests(request, env) {
 
 async function mutateRequest(request, env, actor) {
   const body = await request.json().catch(() => null); if (!body || !clean(body.record_id, 40)) return json({ ok: false, error: 'INVALID_REQUEST' }, 400);
-  const operationId = crypto.randomUUID(); const lease = await mutationLease(env, body.record_id, operationId, 'begin'); if (!lease.ok) return json({ ok: false, error: lease.error || 'REQUEST_MUTATION_UNAVAILABLE' }, lease.status || 503);
+  const operationId = crypto.randomUUID(); let mutationStatus = 'committed'; const lease = await mutationLease(env, body.record_id, operationId, 'begin'); if (!lease.ok) return json({ ok: false, error: lease.error || 'REQUEST_MUTATION_UNAVAILABLE' }, lease.status || 503);
   try {
     const record = await airtableGet(env, body.record_id); const item = recordToItem(record); if (!item) return json({ ok: false, error: 'REQUEST_NOT_FOUND' }, 404);
     const payload = parse(record.fields?.payload_json); const patch = {};
@@ -61,13 +61,13 @@ async function mutateRequest(request, env, actor) {
       if (parse(confirmed.fields?.payload_json).last_mutation_id !== mutationId) return json({ ok: false, error: 'REQUEST_CONCURRENT_UPDATE' }, 409);
     }
     return json({ ok: true, item: recordToItem(updated), identity_evidence: payload.identity_evidence || [] });
-  } catch (error) { return json({ ok: false, error: error.code || 'REQUEST_QUEUE_UNAVAILABLE' }, error.status || 503); }
-  finally { await mutationLease(env, body.record_id, operationId, 'finish'); }
+  } catch (error) { mutationStatus = 'uncertain'; return json({ ok: false, error: error.code || 'REQUEST_QUEUE_UNAVAILABLE' }, error.status || 503); }
+  finally { await mutationLease(env, body.record_id, operationId, 'finish', mutationStatus); }
 }
 
-async function mutationLease(env, recordId, operationId, action) {
+async function mutationLease(env, recordId, operationId, action, status = 'committed') {
   const binding = env.MEMBER_PAGES_REQUESTS; if (!binding?.fetch) return { ok: false, status: 503, error: 'REQUEST_MUTATION_UNAVAILABLE' };
-  const response = await binding.fetch(new Request('https://member-pages-worker.internal/__internal/admin/my-mmd/customer-request-mutation', { method: 'POST', headers: { origin: 'https://member-pages-worker.internal', 'content-type': 'application/json', 'x-mmd-internal-call': 'true', 'x-mmd-service-binding': 'admin-worker' }, body: JSON.stringify({ action, record_id: recordId, operation_id: operationId }) })).catch(() => null);
+  const response = await binding.fetch(new Request('https://member-pages-worker.internal/__internal/admin/my-mmd/customer-request-mutation', { method: 'POST', headers: { origin: 'https://member-pages-worker.internal', 'content-type': 'application/json', 'x-mmd-internal-call': 'true', 'x-mmd-service-binding': 'admin-worker' }, body: JSON.stringify({ action, record_id: recordId, operation_id: operationId, status }) })).catch(() => null);
   const payload = await response?.json().catch(() => null); return response?.ok ? { ok: true } : { ok: false, status: response?.status || 503, error: payload?.error?.code || payload?.error || 'REQUEST_MUTATION_UNAVAILABLE' };
 }
 
