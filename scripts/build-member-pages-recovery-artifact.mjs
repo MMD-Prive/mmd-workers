@@ -12,7 +12,7 @@ export const DO_BINDING = 'CUSTOMER_REQUEST_MUTATION';
 export const OLD_MIGRATION_TAG = 'v3-remembered-login-device';
 export const NEW_MIGRATION_TAG = 'v5-customer-request-mutation';
 export const EXPECTED_MEMBER_CANDIDATE_SHA256 = 'e0dcf07e9dbc8c1d74e1c2b5b8afe7db4b2e6f34ae5a69cc308142d89e00ec58';
-export const EXPECTED_ADMIN_CANDIDATE_SHA256 = 'dfccb9dc54c98662a99e596c3765dec19a2c70c183ef5182fa0ad3984a070164';
+export const EXPECTED_ADMIN_CANDIDATE_SHA256 = 'ebd12d214c1526374019338b2f720c30f08811b76f9142a7c57eeade9a2ac180';
 
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const esbuild = process.env.ESBUILD || 'esbuild';
