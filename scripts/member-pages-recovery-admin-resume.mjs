@@ -8,6 +8,7 @@ export const RELEASE = Object.freeze({
   run: '41409338588',
   memberVersion: 'd15ddc16-b1ff-459d-a0a0-00dc4866a690',
   memberDeployment: 'e6f81629-ad4e-469b-a638-bf0f59fdcd8e',
+  memberNamespace: 'd04ab9ebe84c47c1b2b6aad6b546c237',
   memberOriginalVersion: '990d2605-69af-4e79-85c3-c08c56b1ae29',
   memberHash: 'e0dcf07e9dbc8c1d74e1c2b5b8afe7db4b2e6f34ae5a69cc308142d89e00ec58',
   adminVersion: '966612cf-caf2-447e-8a08-db2f97f1b110',
@@ -37,10 +38,15 @@ export function adminOnlyTransport(request = fetch) {
 export async function executeAdminOnlyResume(io, plan) {
   const receipt = { scope: 'recovery-admin-only-resume', source_run: RELEASE.run, phase: 'preflight', member_writes: 0, admin_attempt: 'not_started' };
   const save = () => io.save(structuredClone(receipt));
+  let initialMemberSettings;
   const verifyMember = async () => {
     const member = await io.snapshot(MEMBER_WORKER);
     verifyServingBaseline(member, memberExpected, MEMBER_WORKER);
     assert.equal(member.latest_version, RELEASE.memberVersion, 'member latest version drift');
+    const mutation = member.version.resources.bindings.find(b => b.name === 'CUSTOMER_REQUEST_MUTATION');
+    assert.equal(mutation?.namespace_id, RELEASE.memberNamespace, 'member mutation namespace drift');
+    if (initialMemberSettings === undefined) initialMemberSettings = structuredClone(member.settings);
+    else assert.deepEqual(member.settings, initialMemberSettings, 'member settings drift during resume');
     const original = await io.originalMemberVersion();
     assert.equal(original.id, RELEASE.memberOriginalVersion);
     assert.equal(original.resources.script_runtime.migration_tag, 'v3-remembered-login-device');
