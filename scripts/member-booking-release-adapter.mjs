@@ -6,6 +6,14 @@ import {contract,verifyBookingSources,buildSigilBooking} from './member-booking-
 import {prepareBookingRelease,executeBookingRelease} from './member-booking-release.mjs';
 import {verifyBookingOwnerApproval} from './member-booking-owner-approval.mjs';
 const root=name=>`/accounts/${contract.account}/workers/scripts/${name}`;
+export function normalizeBookingRoutes(routes){
+ assert.ok(Array.isArray(routes),'incomplete route inventory');const ids=new Set();
+ for(const row of routes){
+  assert.ok(row&&typeof row==='object'&&!Array.isArray(row)&&typeof row.id==='string'&&row.id.length>0&&row.id.length<=32&&typeof row.pattern==='string'&&row.pattern.length>0&&(row.script==null||typeof row.script==='string'),'incomplete/truncated route inventory');
+  assert.ok(!ids.has(row.id),'duplicate route ID');ids.add(row.id);
+ }
+ return routes.slice().sort((a,b)=>a.id.localeCompare(b.id));
+}
 export function bookingRequestAllowed(path,method='GET'){
  const names=[contract.member.name,contract.sigil.name];
  if(method==='GET')return path===`/zones/${contract.zone}/workers/routes`||names.some(name=>[root(name)+'/deployments',root(name)+'/versions',root(name)+'/settings',root(name)+'/schedules',root(name)+'/subdomain'].includes(path)||new RegExp('^'+root(name)+'/versions/[a-f0-9-]{36}$').test(path)||new RegExp(`^/accounts/${contract.account}/workers/workers/${name}/versions/[a-f0-9-]{36}\\?include=modules$`).test(path));
@@ -25,7 +33,7 @@ export function createBookingReleaseAdapter({env=process.env,directory,esbuild,r
   inspectCheckout:sha=>assertCleanBookingCheckout(directory,sha),verifySources:()=>verifyBookingSources(directory),buildSigil:()=>buildSigilBooking({directory,esbuild}),
   async approve(stage){capability='';assert.ok(['sigil-upload','sigil-promote','member-atomic-deploy'].includes(stage));assert.equal(env.PRODUCTION_APPROVED,'true');const receipt=await verifyBookingOwnerApproval(env,request);capability=stage;return receipt;},
   version,
-  async snapshot(name){assert.ok([contract.member.name,contract.sigil.name].includes(name));const [deployments,versions,settings,schedules,subdomain,routes]=await Promise.all([call(root(name)+'/deployments'),call(root(name)+'/versions'),call(root(name)+'/settings'),call(root(name)+'/schedules'),call(root(name)+'/subdomain'),call(`/zones/${contract.zone}/workers/routes`)]);const deployment=deployments.deployments[0];assert.equal(deployment.versions.length,1);return {deployment,latestVersion:versions.items[0].id,version:await version(name,deployment.versions[0].version_id),settings,boundary:{schedules,subdomain,routes}};},
+  async snapshot(name){assert.ok([contract.member.name,contract.sigil.name].includes(name));const [deployments,versions,settings,schedules,subdomain,routes]=await Promise.all([call(root(name)+'/deployments'),call(root(name)+'/versions'),call(root(name)+'/settings'),call(root(name)+'/schedules'),call(root(name)+'/subdomain'),call(`/zones/${contract.zone}/workers/routes`)]);const deployment=deployments.deployments[0];assert.equal(deployment.versions.length,1);return {deployment,latestVersion:versions.items[0].id,version:await version(name,deployment.versions[0].version_id),settings,boundary:{schedules,subdomain,routes:normalizeBookingRoutes(routes)}};},
   async modules(name,id){assert.ok([contract.member.name,contract.sigil.name].includes(name));assert.match(id,/^[a-f0-9-]{36}$/);const r=await call(`/accounts/${contract.account}/workers/workers/${name}/versions/${id}?include=modules`);assert.equal(r.id,id);assert.ok(Array.isArray(r.modules));assert.equal(r.main_module,name===contract.member.name?'worker.js':'runtime-index.js');return r.modules.map(m=>{assert.match(m.content_base64||'',/^[A-Za-z0-9+/]+={0,2}$/);const bytes=Buffer.from(m.content_base64,'base64');assert.equal(bytes.toString('base64'),m.content_base64);return {name:m.name,bytes};});},
   async uploadSigil(metadata,modules){consume('sigil-upload');assert.ok(!metadata.migrations&&!metadata.exports,'SIGIL lifecycle mutation forbidden');return call(root(contract.sigil.name)+'/versions?bindings_inherit=strict',{method:'POST',body:form(metadata,modules)});},
   async promoteSigil(id){consume('sigil-promote');assert.match(id,/^[a-f0-9-]{36}$/);return call(root(contract.sigil.name)+'/deployments',{method:'POST',body:JSON.stringify({strategy:'percentage',versions:[{version_id:id,percentage:100}]})});},

@@ -66,7 +66,7 @@ jobs:
         with:
           node-version: '22'
       - name: Run offline Booking and release guard regressions
-        run: node --test member-pages-worker/test/liff-member-oauth-host-return.test.mjs scripts/member-booking-release.test.mjs scripts/member-booking-owner-approval.test.mjs scripts/member-booking-workflow.test.mjs member-pages-worker/test/liff-member-booking-return.test.mjs
+        run: node --test member-pages-worker/test/liff-member-oauth-host-return.test.mjs scripts/member-booking-release.test.mjs scripts/member-booking-owner-approval.test.mjs scripts/member-booking-workflow.test.mjs member-pages-worker/test/liff-member-booking-return.test.mjs scripts/member-booking-route-inventory.test.mjs
       - name: Install pinned build tool outside the checkout
         run: npm install --prefix "$RUNNER_TEMP/booking-build-tools" --ignore-scripts --no-audit --no-fund esbuild@0.27.3
       - name: Verify pinned runtime bytes offline
@@ -107,7 +107,7 @@ jobs:
       - name: Install pinned build tool outside the checkout
         run: npm install --prefix "$RUNNER_TEMP/booking-build-tools" --ignore-scripts --no-audit --no-fund esbuild@0.27.3
       - name: Run targeted release guard regressions
-        run: node --test member-pages-worker/test/liff-member-oauth-host-return.test.mjs scripts/member-booking-release.test.mjs scripts/member-booking-owner-approval.test.mjs scripts/member-booking-workflow.test.mjs member-pages-worker/test/liff-member-booking-return.test.mjs
+        run: node --test member-pages-worker/test/liff-member-oauth-host-return.test.mjs scripts/member-booking-release.test.mjs scripts/member-booking-owner-approval.test.mjs scripts/member-booking-workflow.test.mjs member-pages-worker/test/liff-member-booking-return.test.mjs scripts/member-booking-route-inventory.test.mjs
       - name: Release supporting handler then atomic Member migration
         env:
           GH_TOKEN: ${{ github.token }}
