@@ -8,6 +8,7 @@ export const CLIENT_SOURCE = String.raw`(function client() {
   const returnBooking=stage==='published' && (params.get('return_to') || stateParams.get('return_to'))==='booking';
   const base = '/api/mms/app/membership/';
   let config, account, initialized = false, editing = false, busy = false;
+  let byYourRequestIdempotencyKey = null;
   const messages = {
     MMS_SESSION_REQUIRED: 'การเข้าสู่ระบบหมดอายุแล้ว กรุณาเข้าสู่ระบบด้วย LINE อีกครั้ง',
     MMS_LINE_TOKEN_INVALID: 'ยืนยัน LINE ไม่สำเร็จ กรุณาปิดแล้วเปิด MY MMS ผ่าน LINE อีกครั้ง',
@@ -17,9 +18,9 @@ export const CLIENT_SOURCE = String.raw`(function client() {
     MMS_EMAIL_INVALID: 'กรุณาตรวจรูปแบบอีเมล',
     MMS_ACCOUNT_CONSENT_REQUIRED: 'กรุณารับทราบการใช้ข้อมูลก่อนสมัครบัญชี',
   };
-  async function api(action, method = 'GET', body) {
+  async function api(action, method = 'GET', body, idempotencyKey = '') {
     const response = await fetch(base + action + '?stage=' + encodeURIComponent(stage), {
-      method, credentials: 'same-origin', headers: body ? { 'content-type': 'application/json' } : {},
+      method, credentials: 'same-origin', headers: { ...(body ? { 'content-type': 'application/json' } : {}), ...(idempotencyKey ? { 'idempotency-key': idempotencyKey } : {}) },
       body: body ? JSON.stringify(body) : undefined, cache: 'no-store', signal: AbortSignal.timeout(15000),
     });
     const result = await response.json();
@@ -49,8 +50,17 @@ export const CLIENT_SOURCE = String.raw`(function client() {
     $('emailview').textContent = p.email || 'ยังไม่ระบุ';
     $('since').textContent = new Date(p.created_at).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', year: 'numeric' });
     show('account');
+    loadByYourRequests();
     if(returnBooking) location.replace('/male-massage/member/mms-booking');
   }
+  function renderByYourRequests(data) {
+    if (!data) return;
+    const q = data.quota || {};
+    $('byrQuota').textContent = String(q.remaining ?? '—') + ' / ' + String(q.limit ?? 4) + ' คนที่ยังส่งได้';
+    const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    $('byrList').innerHTML = (data.records || []).map(item => '<div class="row"><span>' + esc(item.requested_person_label || item.requested_person_key) + '<br><small>' + esc(item.review_status) + ' · ' + esc(item.media_status) + '</small></span><span>' + esc(item.inquiry_text) + '</span></div>').join('') || '<p class="fine">ยังไม่มีคำขอ</p>';
+  }
+  async function loadByYourRequests() { try { renderByYourRequests(await api('by-your-requests')); } catch (_) { $('byrQuota').textContent = 'ยังโหลดไม่ได้'; } }
   function fillForm() {
     const p = account?.profile || {};
     $('name').value = p.display_name || account?.line_display_name || '';
@@ -117,6 +127,18 @@ export const CLIENT_SOURCE = String.raw`(function client() {
       render(await api(editing ? 'profile' : 'register', editing ? 'PUT' : 'POST', body));
       $('notice').textContent = editing ? 'บันทึกข้อมูลแล้ว' : 'สมัครบัญชีเรียบร้อยแล้ว';
     } catch (e) { error(e); } finally { busy = false; $('save').disabled = false; }
+  };
+  $('byrForm').onsubmit = async event => {
+    event.preventDefault(); if (busy) return;
+    busy = true; $('byrSubmit').disabled = true; $('byrStatus').textContent = 'กำลังบันทึก…';
+    try {
+      const links = $('byrLinks').value.trim().split(/\s+/).filter(Boolean);
+      byYourRequestIdempotencyKey ||= crypto.randomUUID();
+      const result = await api('by-your-request', 'POST', { requested_person_key: $('byrPersonKey').value, requested_person_label: $('byrPersonLabel').value, inquiry_text: $('byrInquiry').value, social_links: links, identity_unknown: $('byrUnknown').checked, media: [], media_status: 'not_provided' }, byYourRequestIdempotencyKey);
+      $('byrStatus').textContent = result.duplicate ? 'บันทึกนี้มีอยู่แล้ว' : 'บันทึก By Your Request แล้ว';
+      $('byrForm').reset(); byYourRequestIdempotencyKey = null; await loadByYourRequests();
+    } catch (e) { $('byrStatus').textContent = e.code === 'BY_YOUR_REQUEST_MONTHLY_LIMIT' ? 'ครบโควตา 4 คนของเดือนนี้แล้ว' : 'ยังบันทึกไม่ได้ กรุณาลองอีกครั้ง'; }
+    finally { busy = false; $('byrSubmit').disabled = false; }
   };
   start();
 })();`;

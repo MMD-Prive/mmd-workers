@@ -1,4 +1,5 @@
 import { memberPage, privacyPage } from './member-page.mjs';
+import { normalizeMediaReferences } from '../../admin-worker/src/by-your-request.js';
 
 export const STAGES = Object.freeze({
   developing: { channel: '2011388355', liff: '2011388355-vspjKK62' },
@@ -30,7 +31,7 @@ export async function handleMemberRequest(request, env = {}) {
     const stage = url.searchParams.get('stage') || 'published';
     if (!Object.hasOwn(STAGES, stage)) fail(400, 'MMS_STAGE_INVALID');
     const action = path.slice(BASE.length + 1);
-    const methods = { config: 'GET', line: 'POST', me: 'GET', register: 'POST', profile: 'PUT', logout: 'POST' };
+    const methods = { config: 'GET', line: 'POST', me: 'GET', register: 'POST', profile: 'PUT', logout: 'POST', 'by-your-request': 'POST', 'by-your-requests': 'GET' };
     if (!Object.hasOwn(methods, action)) fail(404, 'NOT_FOUND');
     if (request.method !== methods[action]) return json({ ok: false, error: { code: 'METHOD_NOT_ALLOWED' } }, 405, { allow: methods[action] });
     if (request.method !== 'GET') requireOrigin(request);
@@ -62,7 +63,30 @@ export async function handleMemberRequest(request, env = {}) {
       if (!data) fail(401, 'MMS_SESSION_REQUIRED');
       return json({ ok: true, data });
     }
+    if (action === 'by-your-requests') {
+      const data = await session.stub.listByYourRequests(session.digest, Date.now());
+      if (data?.error) fail(409, data.error);
+      return json({ ok: true, data });
+    }
     const body = await readJson(request);
+    if (action === 'by-your-request') {
+      onlyKeys(body, ['requested_person_key', 'requested_person_label', 'inquiry_text', 'social_links', 'media', 'media_status', 'identity_unknown']);
+      if (body.identity_unknown !== true && (!body.requested_person_key || typeof body.requested_person_key !== 'string')) fail(400, 'BY_YOUR_REQUEST_PERSON_REQUIRED');
+      if (body.social_links !== undefined && (!Array.isArray(body.social_links) || body.social_links.some((value) => typeof value !== 'string'))) fail(400, 'BY_YOUR_REQUEST_LINKS_INVALID');
+      try { normalizeMediaReferences(body.media); } catch { fail(400, 'BY_YOUR_REQUEST_MEDIA_INVALID'); }
+      const data = await session.stub.createByYourRequest(session.digest, {
+        requestedPersonKey: body.requested_person_key,
+        requestedPersonLabel: body.requested_person_label,
+        inquiryText: body.inquiry_text,
+        socialLinks: body.social_links,
+        media: body.media,
+        mediaStatus: body.media_status,
+        identityUnknown: body.identity_unknown === true,
+        sourceId: request.headers.get('idempotency-key') ? `mymmd:${request.headers.get('idempotency-key').slice(0, 160)}` : undefined,
+      }, Date.now());
+      if (data?.error) fail(data.error === 'BY_YOUR_REQUEST_MONTHLY_LIMIT' ? 429 : 409, data.error);
+      return json({ ok: true, data }, 201);
+    }
     onlyKeys(body, ['display_name', 'phone', 'email', 'language', 'marketing_consent', 'notice_version', 'account_consent']);
     if (action === 'register' && (body.account_consent !== true || body.notice_version !== NOTICE_VERSION)) fail(400, 'MMS_ACCOUNT_CONSENT_REQUIRED');
     const profile = validateProfile(body);

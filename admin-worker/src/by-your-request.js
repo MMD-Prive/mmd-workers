@@ -60,12 +60,19 @@ export function canonicalCustomerIdentity({ clientId, lineUserId, customerKey, c
 export function countMonthlyPeople(records, customerIdentity, monthKey) {
   const people = new Set();
   for (const record of records || []) {
-    if (record.archival_import === true) continue;
-    if (record.customer_identity !== customerIdentity || record.month_key !== monthKey) continue;
-    const personKey = clean(record.requested_person_key, 240);
+    if (isArchival(record)) continue;
+    if (clean(record.customer_identity || record["Customer Identity"], 160) !== customerIdentity || clean(record.month_key || record["Month Key"], 20) !== monthKey) continue;
+    const personKey = clean(record.requested_person_key || record["Requested Person Key"], 240);
     if (personKey) people.add(personKey);
   }
   return people.size;
+}
+
+export async function customerScopedPersonKey(customerIdentity, explicitGrouping) {
+  const value = clean(explicitGrouping, 240);
+  if (!value) throw new Error("requested_person_key_required");
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`byr-person-v1:${customerIdentity}:${value.toLowerCase()}`));
+  return `person_${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
 }
 
 export function enforceMonthlyQuota({ existingRecords = [], customerIdentity, requestedPersonKey, at = new Date(), archivalImport = false } = {}) {
@@ -101,6 +108,7 @@ export function buildByYourRequestFields(input = {}) {
   if (!MEDIA_STATUSES.includes(mediaStatus)) throw new Error("invalid_media_status");
   const reviewStatus = clean(input.reviewStatus || "new", 40);
   if (!REVIEW_STATUSES.includes(reviewStatus)) throw new Error("invalid_review_status");
+  const media = normalizeMediaReferences(input.media);
   return {
     Schema: BY_YOUR_REQUEST_SCHEMA,
     "Request ID": clean(input.requestId, 240),
@@ -116,16 +124,39 @@ export function buildByYourRequestFields(input = {}) {
     "Submitted Social Links": Array.isArray(input.socialLinks) ? input.socialLinks.filter((url) => typeof url === "string").map((url) => url.trim()).filter(Boolean).slice(0, 20).join("\n") : "",
     "Social Handles Verified": input.socialHandlesVerified === true ? "yes" : "no",
     "Media Status": mediaStatus,
-    "Media References": JSON.stringify(Array.isArray(input.media) ? input.media : []),
+    "Media References": JSON.stringify(media),
     "Review Status": reviewStatus,
     "Archival Import": archivalImport ? "yes" : "no",
     "Privacy Level": "private",
     "Unknown Identity Explicit": input.identityUnknown === true ? "yes" : "no",
+    "Identity Evidence Note": clean(input.identityEvidenceNote, 4000),
+    "Identity Evidence At": clean(input.identityEvidenceAt, 80),
+    "Identity Evidence Source": clean(input.identityEvidenceSource, 240),
+    "Identity Confidence": clean(input.identityConfidence || (input.identityUnknown === true ? "unknown" : "unreviewed"), 40),
     "No Automatic Identification": "yes",
   };
 }
 
+export function normalizeMediaReferences(media) {
+  if (media === undefined) return [];
+  if (!Array.isArray(media) || media.length > 20) throw new Error("invalid_media_references");
+  return media.map((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) throw new Error("invalid_media_reference");
+    const key = clean(item.key, 500);
+    const type = clean(item.type || item.content_type, 100);
+    const bytes = Number(item.bytes);
+    const sha256 = clean(item.sha256, 128).toLowerCase();
+    if (!key || /^https?:\/\//i.test(key) || !key.startsWith("by-your-request/")) throw new Error("invalid_media_reference");
+    if (!/^[-a-z0-9_.]+\/[a-z0-9.+-]+$/i.test(type) || !Number.isSafeInteger(bytes) || bytes < 1 || bytes > 25 * 1024 * 1024 || !/^[a-f0-9]{64}$/.test(sha256)) throw new Error("invalid_media_reference");
+    return { key, type, bytes, sha256, status: "received" };
+  });
+}
+
 function clean(value, max) {
   return typeof value === "string" ? value.replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, max) : "";
+}
+
+function isArchival(record) {
+  return record.archival_import === true || record["Archival Import"] === "yes";
 }
 
