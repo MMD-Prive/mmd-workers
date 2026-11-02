@@ -2,6 +2,13 @@
 export function restrictedReplyCategories(env = {}) {
   return env.KENJI_LINE_REPLY_CATEGORY_MODE === 'approved_qa_promo';
 }
+// Routing only: category-turn still owns intake, identity and runtime guards.
+export function isExplicitCategoryCommand(event = {}, env = {}) {
+  if (!restrictedReplyCategories(env) || event.type !== 'message' ||
+      event.message?.type !== 'text' || event.source?.type !== 'user') return false;
+  const command = String(event.message.text || '').normalize('NFKC').trim().toLowerCase();
+  return /^(checkpts|package|regis|apply)$/.test(command);
+}
 export const CATEGORY_REPLY_GRANT = Symbol('kenji-approved-reply');
 export function categoryReplyTransportAllowed(env, token, text, button = null, extras = []) {
   if (env?.KENJI_LINE_REPLY_CATEGORY_MODE !== 'approved_qa_promo') return true;

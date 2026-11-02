@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import {runApprovedCategoryTurn} from '../src/kenji-category-turn.mjs';
-import {categoryReplyTransportAllowed} from '../src/kenji-reply-category-gate.mjs';
+import {categoryReplyTransportAllowed, isExplicitCategoryCommand} from '../src/kenji-reply-category-gate.mjs';
 import {handleKenjiSeedLineRequest} from '../src/kenji-seed-line-runtime.mjs';
 import {createLineSignature} from '../src/index.js';
 import {deliverLinePublicMenu} from '../src/index.js';
@@ -10,7 +11,36 @@ import {KENJI_SVIP_PHOTO_REVEAL_INTERNALS} from '../src/kenji-svip-photo-reveal.
 const env={KENJI_LINE_REPLY_CATEGORY_MODE:'approved_qa_promo',KENJI_LINE_APPROVED_QA_ENABLED:'true',KENJI_LINE_APPROVED_PROMO_ENABLED:'true',LINE_AUTO_REPLY_ENABLED:'true',LINE_KENJI_AI_ENABLED:'true'};
 const runtime={ok:true,controls:{model_keyword_auto_reply:true}};
 const event=text=>({type:'message',mode:'active',timestamp:Date.now(),replyToken:'fixture',source:{type:'user',userId:'U'+'1'.repeat(32)},message:{type:'text',text}});
+test('outer wrapper excludes exact category commands before operational early return',()=>{
+  const source=readFileSync(new URL('../src/kenji-line-redelivery-recovery.mjs',import.meta.url),'utf8');
+  assert.match(source,/const publicCategory = restrictedReplyCategories\(env\) && events.length === 1 &&\s*\(isExplicitCategoryCommand\(events\[0\], env\) \|\|/);
+  const guard=source.indexOf('&& !publicCategory)');
+  assert.ok(guard>0 && guard<source.indexOf('const operational = await tryHandleKenjiLv5LineOperationalRequest'));
+  assert.match(source.slice(guard),/handleKenjiSeedLineRequest\(request, seedEnv, ctx, legacyWorker\)/);
+});
+test('only current exact commands bypass operational routing in category mode',()=>{
+  for(const text of ['checkpts','package','regis','apply',' CHECKPTS ','ＰＡＣＫＡＧＥ']) {
+    assert.equal(isExplicitCategoryCommand(event(text),env),true);
+    assert.equal(isExplicitCategoryCommand(event(text),{}),false);
+  }
+  for(const text of ['checkpts ของผม','apply now','สวัสดี','Hiro','จอง',''])
+    assert.equal(isExplicitCategoryCommand(event(text),env),false);
+  assert.equal(isExplicitCategoryCommand({...event('apply'),source:{type:'group'}},env),false);
+  assert.equal(isExplicitCategoryCommand({...event('apply'),message:{type:'image'}},env),false);
+});
 function io(overrides={}){const sent=[];return {sent,continuity:async()=>({available:true}),runtime:async()=>runtime,owner:async()=>({ok:true,active:false}),send:async(e,t,s)=>{assert(categoryReplyTransportAllowed(e,t,s));sent.push(s);return {ok:true,status:200}},...overrides};}
+for(const command of ['checkpts','package','regis','apply'])test(`old Hiro draft cannot replace category reply or bypass pause: ${command}`,async()=>{
+  const continuity=async()=>({available:true,matrix:{payload_json:{booking_draft_v1:{status:'collecting',model_name:'Hiro',missing_fields:['date']}}}});
+  const x=io({continuity});
+  const r=await runApprovedCategoryTurn({...env,LINE_KENJI_MODEL_ENABLED:'false'},event(command),runtime,x);
+  assert.equal(r.delivered,true);assert.equal(r.decision.reply_source,`category_${command}`);
+  assert.doesNotMatch(r.decision.text,/รับ Hiro|ต้องการวันไหน/);
+  for(const controls of [{line_oa_auto_reply:true},{all_kenji_mutations:true}]) {
+    const blocked=io({continuity});
+    assert.equal((await runApprovedCategoryTurn(env,event(command),{ok:true,controls},blocked)).attempted,false);
+    assert.equal(blocked.sent.length,0);
+  }
+});
 for(const command of ['checkpts','package','regis','apply'])test(`exact command replies with model disabled: ${command}`,async()=>{
   const x=io();const r=await runApprovedCategoryTurn({...env,LINE_KENJI_MODEL_ENABLED:'false'},event(command),runtime,x);
   assert.equal(r.delivered,true);assert.equal(x.sent.length,1);assert.equal(r.decision.reply_source,`category_${command}`);
