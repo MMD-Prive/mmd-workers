@@ -1,4 +1,4 @@
-import {approvedCategoryReply, withCategoryReplyGrant} from './kenji-reply-category-gate.mjs';
+import {approvedCategoryReply, withCategoryReplyGrant, membershipUriButton} from './kenji-reply-category-gate.mjs';
 import {careBackOctoberReply} from './kenji-care-back-october.mjs';
 import {lineIntakeCommand, readLineIntakeCatalog, resolveLineIntakeReply} from './kenji-line-intake-commands.mjs';
 import {resolveKenjiLineLiveTruth} from './kenji-line-live-truth.mjs';
@@ -49,7 +49,8 @@ export async function runApprovedCategoryTurn(env, event, initialRuntime, io) {
         if (runtime?.ok === true && runtime.controls?.all_kenji_mutations !== true && runtime.controls?.line_oa_auto_reply !== true &&
             continuity?.available === true && owner?.ok === true && owner.active !== true) {
           attempted = true;
-          result = await io.send(withCategoryReplyGrant(env,token,decision),token,decision.text);
+          const button = membershipUriButton(decision);
+          result = await io.send(withCategoryReplyGrant(env,token,decision),token,decision.text,button);
         }
       } catch { /* Fail closed; no alternate reply or model fallback. */ }
     }

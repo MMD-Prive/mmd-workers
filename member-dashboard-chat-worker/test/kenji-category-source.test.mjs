@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {runApprovedCategoryTurn} from '../src/kenji-category-turn.mjs';
-import {categoryReplyTransportAllowed, isExplicitCategoryCommand} from '../src/kenji-reply-category-gate.mjs';
+import {categoryReplyTransportAllowed, isExplicitCategoryCommand, withCategoryReplyGrant, membershipUriButton} from '../src/kenji-reply-category-gate.mjs';
 import {handleKenjiSeedLineRequest} from '../src/kenji-seed-line-runtime.mjs';
 import {createLineSignature} from '../src/index.js';
 import {deliverLinePublicMenu} from '../src/index.js';
@@ -28,7 +28,23 @@ test('only current exact commands bypass operational routing in category mode',(
   assert.equal(isExplicitCategoryCommand({...event('apply'),source:{type:'group'}},env),false);
   assert.equal(isExplicitCategoryCommand({...event('apply'),message:{type:'image'}},env),false);
 });
-function io(overrides={}){const sent=[];return {sent,continuity:async()=>({available:true}),runtime:async()=>runtime,owner:async()=>({ok:true,active:false}),send:async(e,t,s)=>{assert(categoryReplyTransportAllowed(e,t,s));sent.push(s);return {ok:true,status:200}},...overrides};}
+function io(overrides={}){const sent=[];return {sent,continuity:async()=>({available:true}),runtime:async()=>runtime,owner:async()=>({ok:true,active:false}),send:async(e,t,s,b)=>{assert(categoryReplyTransportAllowed(e,t,s,b));sent.push(s);return {ok:true,status:200}},...overrides};}
+
+test('membership URI grant binds exact command, text, token and canonical destination',()=>{
+ for(const suffix of ['status&view=overview','renew&view=package']){
+  const uri='https://miniapp.line.me/2010862595-yT4DCEMc/?intent='+suffix;
+  const d={intent:'approved_command',reply_source:'category_checkpts',cta_route:uri,text:'เปิด My MMD → '+uri};
+  const env=withCategoryReplyGrant({KENJI_LINE_REPLY_CATEGORY_MODE:'approved_qa_promo'},'fixture',d);
+  const b=membershipUriButton(d);
+  assert.equal(b.label,'เปิด My MMD');
+  assert.equal(categoryReplyTransportAllowed(env,'fixture',d.text,b),true);
+  for(const bad of [null,{...b,uri:'https://evil.example/'},{...b,label:'other'},{...b,extra:true}])assert.equal(categoryReplyTransportAllowed(env,'fixture',d.text,bad),false);
+  assert.equal(categoryReplyTransportAllowed(env,'other',d.text,b),false);
+  assert.equal(categoryReplyTransportAllowed(env,'fixture',d.text+' changed',b),false);
+  assert.equal(membershipUriButton({...d,reply_source:'category_package'}),null);
+  assert.equal(membershipUriButton({...d,cta_route:uri+'&next=evil'}),null);
+ }
+});
 for(const command of ['checkpts','package','regis','apply'])test(`old Hiro draft cannot replace category reply or bypass pause: ${command}`,async()=>{
   const continuity=async()=>({available:true,matrix:{payload_json:{booking_draft_v1:{status:'collecting',model_name:'Hiro',missing_fields:['date']}}}});
   const x=io({continuity});
