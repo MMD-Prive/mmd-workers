@@ -18,7 +18,15 @@ export async function handleByYourRequestAdmin(request, env, actor) {
   if (path === PAGE) return renderPage(request);
   if (path === EVIDENCE_PATH) return proxyEvidence(request, env);
   if (request.method === 'GET') return listRequests(request, env);
+  if (request.method === 'POST') { const probe = await request.clone().json().catch(() => null); if (probe?.action === 'reconcile') return reconcileMutation(request, env, probe); }
   return mutateRequest(request, env, actor);
+}
+
+async function reconcileMutation(request, env, body) {
+  if (!clean(body.record_id, 40) || !clean(body.operation_id, 100)) return json({ ok: false, error: 'INVALID_REQUEST' }, 400);
+  const record = await airtableGet(env, body.record_id).catch(() => null); const payload = parse(record?.fields?.payload_json);
+  if (!record?.id || payload.schema !== 'mmd_customer_request_v1' || payload.request_id !== body.request_id) return json({ ok: false, error: 'READBACK_NOT_VERIFIED' }, 409);
+  const result = await mutationLease(env, body.record_id, body.operation_id, 'reconcile', 'reconciled', true); return result.ok ? json({ ok: true, reconciled: true }) : json({ ok: false, error: result.error }, result.status || 409);
 }
 
 async function listRequests(request, env) {
@@ -32,7 +40,7 @@ async function listRequests(request, env) {
 
 async function mutateRequest(request, env, actor) {
   const body = await request.json().catch(() => null); if (!body || !clean(body.record_id, 40)) return json({ ok: false, error: 'INVALID_REQUEST' }, 400);
-  const operationId = crypto.randomUUID(); let mutationStatus = 'committed'; let writeAttempted = false; const lease = await mutationLease(env, body.record_id, operationId, 'begin'); if (!lease.ok) return json({ ok: false, error: lease.error || 'REQUEST_MUTATION_UNAVAILABLE' }, lease.status || 503);
+  const operationId = crypto.randomUUID(); let mutationStatus = 'aborted'; let writeAttempted = false; const lease = await mutationLease(env, body.record_id, operationId, 'begin'); if (!lease.ok) return json({ ok: false, error: lease.error || 'REQUEST_MUTATION_UNAVAILABLE' }, lease.status || 503);
   try {
     const record = await airtableGet(env, body.record_id); const item = recordToItem(record); if (!item) return json({ ok: false, error: 'REQUEST_NOT_FOUND' }, 404);
     const payload = parse(record.fields?.payload_json); const patch = {};
@@ -46,7 +54,7 @@ async function mutateRequest(request, env, actor) {
     if (!Object.keys(patch).length && body.identity_note === undefined) return json({ ok: false, error: 'NO_MUTATION' }, 400);
     patch.payload_json = JSON.stringify(payload); if (patch.payload_json.length > 100000) return json({ ok: false, error: 'REQUEST_TOO_LARGE' }, 413); patch.admin_note = adminNote(payload);
     payload.last_mutation_id = mutationId; patch.payload_json = JSON.stringify(payload);
-    writeAttempted = true; let updated = await airtablePatch(env, record.id, patch);
+    writeAttempted = true; mutationStatus = 'uncertain'; let updated = await airtablePatch(env, record.id, patch);
     const readback = await airtableGet(env, record.id);
     const readbackPayload = parse(readback.fields?.payload_json);
     if (readbackPayload.last_mutation_id !== mutationId) {
@@ -60,14 +68,14 @@ async function mutateRequest(request, env, actor) {
       const confirmed = await airtableGet(env, record.id);
       if (parse(confirmed.fields?.payload_json).last_mutation_id !== mutationId) return json({ ok: false, error: 'REQUEST_CONCURRENT_UPDATE' }, 409);
     }
-    return json({ ok: true, item: recordToItem(updated), identity_evidence: payload.identity_evidence || [] });
+    mutationStatus = 'committed'; return json({ ok: true, item: recordToItem(updated), identity_evidence: payload.identity_evidence || [] });
   } catch (error) { mutationStatus = writeAttempted ? 'uncertain' : 'aborted'; return json({ ok: false, error: error.code || 'REQUEST_QUEUE_UNAVAILABLE' }, error.status || 503); }
   finally { await mutationLease(env, body.record_id, operationId, 'finish', mutationStatus); }
 }
 
-async function mutationLease(env, recordId, operationId, action, status = 'committed') {
+async function mutationLease(env, recordId, operationId, action, status = 'committed', readbackVerified = false) {
   const binding = env.MEMBER_PAGES_REQUESTS; if (!binding?.fetch) return { ok: false, status: 503, error: 'REQUEST_MUTATION_UNAVAILABLE' };
-  const response = await binding.fetch(new Request('https://member-pages-worker.internal/__internal/admin/my-mmd/customer-request-mutation', { method: 'POST', headers: { origin: 'https://member-pages-worker.internal', 'content-type': 'application/json', 'x-mmd-internal-call': 'true', 'x-mmd-service-binding': 'admin-worker' }, body: JSON.stringify({ action, record_id: recordId, operation_id: operationId, status }) })).catch(() => null);
+  const response = await binding.fetch(new Request('https://member-pages-worker.internal/__internal/admin/my-mmd/customer-request-mutation', { method: 'POST', headers: { origin: 'https://member-pages-worker.internal', 'content-type': 'application/json', 'x-mmd-internal-call': 'true', 'x-mmd-service-binding': 'admin-worker' }, body: JSON.stringify({ action, record_id: recordId, operation_id: operationId, status, readback_verified: readbackVerified }) })).catch(() => null);
   const payload = await response?.json().catch(() => null); return response?.ok ? { ok: true } : { ok: false, status: response?.status || 503, error: payload?.error?.code || payload?.error || 'REQUEST_MUTATION_UNAVAILABLE' };
 }
 
