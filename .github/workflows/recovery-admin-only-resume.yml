@@ -1,0 +1,106 @@
+name: Resume recovery admin only
+on:
+  workflow_dispatch:
+    inputs:
+      production_approved:
+        type: boolean
+        required: true
+        default: false
+      approval_ref:
+        type: string
+        required: true
+      approved_sha:
+        type: string
+        required: true
+      admin_deployment:
+        description: Fresh verified admin baseline deployment UUID (version is pinned)
+        type: string
+        required: true
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: deploy-member-pages-worker-production
+  cancel-in-progress: false
+jobs:
+  production-approval:
+    if: github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Verify existing protected owner environment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APPROVAL_REF: ${{ inputs.approval_ref }}
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+        run: node scripts/member-pages-owner-approval.mjs --preflight
+  admin-only:
+    needs: production-approval
+    if: github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha
+    environment: member-pages-code-only-owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: release-tools
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          path: release-tools
+          persist-credentials: false
+      - uses: actions/checkout@v5
+        with:
+          ref: d82c284fb48943c7c8a8cc5a970107f799186ee3
+          path: recovery-source
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Verify actual owner approval and scoped tests
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APPROVAL_REF: ${{ inputs.approval_ref }}
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+        run: |
+          node scripts/member-pages-owner-approval.mjs
+          node --test scripts/member-pages-recovery-admin-resume.test.mjs scripts/member-pages-recovery-artifact-release.test.mjs
+      - name: Install pinned builder
+        run: npm install --prefix "$RUNNER_TEMP/recovery-build-tools" --ignore-scripts --no-audit --no-fund esbuild@0.27.3
+      - name: Fetch verified admin baseline only and rebuild pinned candidate
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ADMIN_DEPLOYMENT: ${{ inputs.admin_deployment }}
+          ESBUILD: ${{ runner.temp }}/recovery-build-tools/node_modules/.bin/esbuild
+        run: |
+          mkdir -p "$RUNNER_TEMP/recovery-artifacts"
+          node --input-type=module <<'NODE'
+          import { fetchActiveWorkerArtifact } from './scripts/fetch-member-pages-recovery-baseline.mjs';
+          import { writeFileSync } from 'node:fs';
+          const result = await fetchActiveWorkerArtifact({ worker: 'admin-worker', expectedVersion: '966612cf-caf2-447e-8a08-db2f97f1b110', expectedDeployment: process.env.ADMIN_DEPLOYMENT, token: process.env.CLOUDFLARE_API_TOKEN });
+          writeFileSync(process.env.RUNNER_TEMP + '/recovery-artifacts/admin-active.js', result.bytes, { mode: 0o600 });
+          NODE
+          node scripts/build-member-pages-recovery-artifact.mjs admin "$RUNNER_TEMP/recovery-artifacts/admin-active.js" "$GITHUB_WORKSPACE/recovery-source" "$RUNNER_TEMP/recovery-artifacts/admin-worker-recovery-candidate.js" "$RUNNER_TEMP/recovery-artifacts/admin-recovery-artifact-manifest.json"
+      - name: Resume admin only; member access is read-only
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          MMD_RECOVERY_APPROVAL: approved
+          MMD_RECOVERY_APPROVAL_REF: ${{ inputs.approval_ref }}
+          MMD_RECOVERY_APPROVED_SHA: ${{ inputs.approved_sha }}
+          MMD_RECOVERY_ADMIN_DEPLOYMENT: ${{ inputs.admin_deployment }}
+          MMD_RECOVERY_ADMIN_CANDIDATE: ${{ runner.temp }}/recovery-artifacts/admin-worker-recovery-candidate.js
+          MMD_RECOVERY_RECEIPT_PATH: ${{ runner.temp }}/recovery-admin-only-receipt.json
+        run: node scripts/member-pages-recovery-admin-resume.mjs --execute-admin-only
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: recovery-admin-only-${{ github.run_id }}
+          path: ${{ runner.temp }}/recovery-admin-only-receipt.json
+          if-no-files-found: ignore
+          retention-days: 14
