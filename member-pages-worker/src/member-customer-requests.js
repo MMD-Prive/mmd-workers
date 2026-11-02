@@ -17,6 +17,7 @@ const BLOCKED_STATES = new Set(["blocked", "suspended", "revoked", "pending_revi
 const REQUEST_STATES = new Set(["received", "searching", "needs_more_info", "reviewing", "closed"]);
 const MONTHLY_PERSON_LIMIT = 4;
 const MONTH_TIME_ZONE = "Asia/Bangkok";
+const CANONICAL_CLIENT_FIELD = "fld9gMhvFWegM345O";
 
 export function isMemberCustomerRequestPath(input) {
   try {
@@ -50,8 +51,9 @@ async function handleAdminMutationLease(request, env) {
 
 async function handleRequest(request, env, identity) {
   if (request.method === "GET" || request.method === "HEAD") {
-    const raw = await listInbox(env, identity.lineUserId); if (raw === null) return fail(503, "REQUEST_QUEUE_UNAVAILABLE");
-    const response = json({ ok: true, authority: "mmd.customer_request_intake.v1", items: raw.map((record) => customerItem(parsePayload(record?.fields?.payload_json))).filter(Boolean).slice(0, MAX_LIST), quota: requestQuota(raw) });
+    const raw = await listInbox(env, identity.lineUserId, identity.clientId); if (raw === null) return fail(503, "REQUEST_QUEUE_UNAVAILABLE");
+    const owned = raw.filter(record => { const data = parsePayload(record?.fields?.payload_json); return data.line_user_id === identity.lineUserId || data.canonical_client_id === identity.clientId; });
+    const response = json({ ok: true, authority: "mmd.customer_request_intake.v1", items: owned.map((record) => customerItem(parsePayload(record?.fields?.payload_json))).filter(Boolean).slice(0, MAX_LIST), quota: requestQuota(owned) });
     return request.method === "HEAD" ? new Response(null, { status: response.status, headers: response.headers }) : response;
   }
   if (request.method !== "POST") return fail(405, "METHOD_NOT_ALLOWED", { allow: "GET, HEAD, POST" });
@@ -59,7 +61,8 @@ async function handleRequest(request, env, identity) {
   if (body?.action === "append_evidence") return appendEvidenceToRequest(body, env, identity);
   const input = validateRequest(body);
   if (!input.ok) return fail(400, input.code);
-  const rawPrior = await listInbox(env, identity.lineUserId); if (rawPrior === null) return fail(503, "REQUEST_QUEUE_UNAVAILABLE");
+  const rawPrior = await listInbox(env, identity.lineUserId, identity.clientId); if (rawPrior === null) return fail(503, "REQUEST_QUEUE_UNAVAILABLE");
+  const ownedPrior = rawPrior.filter(record => { const data = parsePayload(record?.fields?.payload_json); return data.line_user_id === identity.lineUserId || data.canonical_client_id === identity.clientId; });
   const prior = rawPrior.map((record) => customerItem(parsePayload(record?.fields?.payload_json))).filter(Boolean);
   const duplicate = prior.find((item) => item.request_id === input.data.request_id);
   if (duplicate) {
@@ -68,11 +71,11 @@ async function handleRequest(request, env, identity) {
     if (input.data.request_type === "your_request") await reconcileQuota(env, identity.clientId, monthKeyInBangkok(existingPayload.created_at), input.data.request_id, requestFingerprint(input.data), "committed");
     return json({ ok: true, item: duplicate, idempotent: true, quota: requestQuota(rawPrior) });
   }
-  const quota = requestQuota(rawPrior);
+  const quota = requestQuota(ownedPrior);
   if (input.data.request_type === "your_request" && quota.remaining <= 0) return fail(429, "YOUR_REQUEST_MONTHLY_LIMIT", { "retry-after": "3600" });
   const evidence = input.data.evidence_ids.length ? await validateEvidence(env, identity.clientId, input.data.evidence_ids) : [];
   if (evidence === null) return fail(409, "EVIDENCE_UNAVAILABLE");
-  const reservation = input.data.request_type === "your_request" ? await reserveQuota(env, identity.clientId, quota.month_key, input.data.request_id, requestFingerprint(input.data), rawPrior.map((record) => parsePayload(record?.fields?.payload_json)).filter((data) => data.request_type === "your_request" && data.archival !== true && data.quota_exempt !== true && monthKeyInBangkok(data.created_at) === quota.month_key).map((data) => data.request_id)) : { ok: true, reserved: false };
+  const reservation = input.data.request_type === "your_request" ? await reserveQuota(env, identity.clientId, quota.month_key, input.data.request_id, requestFingerprint(input.data), ownedPrior.map((record) => parsePayload(record?.fields?.payload_json)).filter((data) => data.request_type === "your_request" && data.archival !== true && data.quota_exempt !== true && monthKeyInBangkok(data.created_at) === quota.month_key).map((data) => data.request_id)) : { ok: true, reserved: false };
   if (!reservation.ok) return fail(reservation.status || 503, reservation.error || "REQUEST_QUEUE_UNAVAILABLE");
   if (input.data.request_type === "your_request" && !reservation.reserved) {
     if (reservation.result) return json({ ...reservation.result, idempotent: true }, 200);
@@ -85,6 +88,7 @@ async function handleRequest(request, env, identity) {
     request_type: input.data.request_type,
     canonical_client_id: identity.clientId,
     line_user_id: identity.lineUserId,
+    [CANONICAL_CLIENT_FIELD]: [identity.clientId],
     created_at: now,
     status: input.data.request_type === "your_request" ? "received" : "reviewing",
     customer: input.data.customer,
@@ -117,7 +121,7 @@ async function handleRequest(request, env, identity) {
 async function appendEvidenceToRequest(body, env, identity) {
   const requestId = safeRequestId(body.request_id); const evidenceIds = unique(array(body.evidence_ids).map(safeEvidenceId).filter(Boolean));
   if (!requestId || !evidenceIds.length || evidenceIds.length > MAX_EVIDENCE) return fail(400, "EVIDENCE_INVALID");
-  const records = await listInbox(env, identity.lineUserId); if (records === null) return fail(503, "REQUEST_QUEUE_UNAVAILABLE");
+  const records = await listInbox(env, identity.lineUserId, identity.clientId); if (records === null) return fail(503, "REQUEST_QUEUE_UNAVAILABLE");
   const record = records.find(row => parsePayload(row?.fields?.payload_json)?.request_id === requestId); if (!record) return fail(404, "REQUEST_NOT_FOUND");
   const mutation = await beginRequestMutation(env, record.id); if (!mutation.ok) return fail(mutation.status || 503, mutation.error || "REQUEST_MUTATION_UNAVAILABLE");
   const lockedRecords = await listInbox(env, identity.lineUserId); const lockedRecord = lockedRecords?.find(row => row.id === record.id); if (!lockedRecord) { await finishRequestMutation(env, record.id, mutation.operation_id, "aborted"); return fail(503, "REQUEST_QUEUE_UNAVAILABLE"); }
@@ -260,13 +264,14 @@ async function evidenceObject(env, clientId, evidenceId) {
   for (const ext of ["jpg", "png", "webp"]) { const object = await env.CUSTOMER_REQUEST_EVIDENCE.get(prefix + ext); if (object?.customMetadata?.evidence_id === evidenceId) return object; }
   return null;
 }
-async function listInbox(env, lineUserId) {
+async function listInbox(env, lineUserId, canonicalClientId = "") {
   const key = safeText(env.AIRTABLE_API_KEY, 2000); const base = safeText(env.AIRTABLE_BASE_ID, 100); const table = safeText(env.AIRTABLE_TABLE_CONSOLE_INBOX, 180) || INBOX_TABLE;
   if (!key || !base) return null;
   const records = []; let offset = "";
   for (let page = 0; page < 1000; page += 1) {
     const url = new URL(`${API}/${encodeURIComponent(base)}/${encodeURIComponent(table)}`);
-    url.searchParams.set("filterByFormula", `AND({line_user_id}=${formula(lineUserId)},OR({source}='my_mmd_liff',{source}='line'),OR({intent}='note_only',{intent}='your_request',{intent}='saved_model',{intent}='profile_update'))`);
+    const ownerFormula = canonicalClientId ? `OR({line_user_id}=${formula(lineUserId)},FIND(${formula(canonicalClientId)},ARRAYJOIN({${CANONICAL_CLIENT_FIELD}}))>0)` : `{line_user_id}=${formula(lineUserId)}`;
+    url.searchParams.set("filterByFormula", `AND(${ownerFormula},OR({source}='my_mmd_liff',{source}='line'),OR({intent}='note_only',{intent}='your_request',{intent}='saved_model',{intent}='profile_update'))`);
     url.searchParams.set("pageSize", "100"); if (offset) url.searchParams.set("offset", offset);
     const response = await airtableFetch(env, url, { headers: { authorization: `Bearer ${key}`, accept: "application/json" } });
     const payload = await response.json().catch(() => null); if (!response.ok || !Array.isArray(payload?.records)) return null;
