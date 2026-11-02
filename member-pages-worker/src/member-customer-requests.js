@@ -56,6 +56,8 @@ async function handleRequest(request, env, identity) {
   }
   const quota = requestQuota(rawPrior);
   if (input.data.request_type === "your_request" && quota.remaining <= 0) return fail(429, "YOUR_REQUEST_MONTHLY_LIMIT", { "retry-after": "3600" });
+  const reservation = input.data.request_type === "your_request" ? await reserveQuota(env, identity.clientId, quota.month_key, input.data.request_id) : { ok: true, reserved: false };
+  if (!reservation.ok) return fail(reservation.status || 503, reservation.error || "REQUEST_QUEUE_UNAVAILABLE");
   const evidence = input.data.evidence_ids.length ? await validateEvidence(env, identity.clientId, input.data.evidence_ids) : [];
   if (evidence === null) return fail(409, "EVIDENCE_UNAVAILABLE");
   const now = new Date().toISOString();
@@ -83,7 +85,7 @@ async function handleRequest(request, env, identity) {
     payload_json: JSON.stringify(payload),
     status: "new",
   });
-  if (!created) return fail(503, "REQUEST_QUEUE_UNAVAILABLE");
+  if (!created) { if (reservation.reserved) await releaseQuota(env, identity.clientId, quota.month_key, input.data.request_id); return fail(503, "REQUEST_QUEUE_UNAVAILABLE"); }
   const item = customerItem(payload);
   return json({ ok: true, item, idempotent: false, quota: { ...quota, used: quota.used + (input.data.request_type === "your_request" ? 1 : 0), remaining: Math.max(0, quota.remaining - (input.data.request_type === "your_request" ? 1 : 0)) } }, 201);
 }
@@ -177,6 +179,21 @@ function requestQuota(records) {
 
 function requestFingerprint(data) {
   return JSON.stringify({ request_type: data?.request_type || "", model: data?.model || {}, customer: data?.customer || {}, evidence_ids: data?.evidence_ids || [] });
+}
+
+async function reserveQuota(env, clientId, monthKey, requestId) {
+  if (!env.CUSTOMER_REQUEST_QUOTA?.idFromName || !env.CUSTOMER_REQUEST_QUOTA?.get) return { ok: false, status: 503, error: "REQUEST_QUOTA_UNAVAILABLE" };
+  const id = env.CUSTOMER_REQUEST_QUOTA.idFromName(`${clientId}:${monthKey}`);
+  const response = await env.CUSTOMER_REQUEST_QUOTA.get(id).fetch("https://quota/reserve", { method: "POST", body: JSON.stringify({ action: "reserve", month_key: monthKey, request_id: requestId }) }).catch(() => null);
+  if (!response) return { ok: false, status: 503, error: "REQUEST_QUOTA_UNAVAILABLE" };
+  const payload = await response.json().catch(() => null);
+  return response.ok ? { ok: true, reserved: payload?.idempotent !== true } : { ok: false, status: response.status === 429 ? 429 : 503, error: payload?.error || "REQUEST_QUOTA_UNAVAILABLE" };
+}
+
+async function releaseQuota(env, clientId, monthKey, requestId) {
+  if (!env.CUSTOMER_REQUEST_QUOTA?.idFromName || !env.CUSTOMER_REQUEST_QUOTA?.get) return;
+  const id = env.CUSTOMER_REQUEST_QUOTA.idFromName(`${clientId}:${monthKey}`);
+  await env.CUSTOMER_REQUEST_QUOTA.get(id).fetch("https://quota/release", { method: "POST", body: JSON.stringify({ action: "release", month_key: monthKey, request_id: requestId }) }).catch(() => null);
 }
 
 async function validateEvidence(env, clientId, ids) {

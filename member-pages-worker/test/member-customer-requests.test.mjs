@@ -25,12 +25,14 @@ async function request(method, body, { origin = "https://mmdbkk.com", url = "htt
 async function runtime() {
   const sessionKey = await digest(SECRET, `session:${TOKEN}`);
   const records = [];
+  const quotaSlots = new Map();
   const airtableQueries = [];
   return {
     env: {
       LIFF_SESSION_SECRET: SECRET,
       LIFF_IDENTITY_KV: new MemoryKv([[`liff:session:${sessionKey}`, JSON.stringify({ line_user_id:LINE_ID, member_exists:true, member_id:"member-1", member_profile:{ display_name:"Tester", membership_status:"active" }, expires_at:Date.now() + 60_000 })]]),
       AIRTABLE_API_KEY:"pat-test", AIRTABLE_BASE_ID:"app-test",
+      CUSTOMER_REQUEST_QUOTA: { idFromName(name) { return name; }, get(name) { return { async fetch(_url, init) { const body = JSON.parse(init.body); const slots = quotaSlots.get(name) || new Set(); if (body.action === "release") { slots.delete(body.request_id); quotaSlots.set(name, slots); return Response.json({ ok:true }); } if (slots.has(body.request_id)) return Response.json({ ok:true, idempotent:true }); if (slots.size >= 4) return Response.json({ ok:false, error:"YOUR_REQUEST_MONTHLY_LIMIT" }, { status:429 }); slots.add(body.request_id); quotaSlots.set(name, slots); return Response.json({ ok:true, idempotent:false }); } }; } },
       AIRTABLE_HTTP: { async fetch(input) {
         const req = input instanceof Request ? input : new Request(input);
         airtableQueries.push(new URL(req.url));
@@ -116,6 +118,13 @@ test("Your Request enforces four distinct request IDs per Bangkok calendar month
   assert.equal(conflict.status, 409);
   assert.equal((await (await handleMemberCustomerRequest(await request("GET", null, { origin:null }), env)).json()).quota.used, 4);
   assert.equal(records.length, 4);
+});
+
+test("Your Request fails closed when the atomic quota coordinator is unavailable", async () => {
+  const { env } = await runtime(); delete env.CUSTOMER_REQUEST_QUOTA;
+  const response = await handleMemberCustomerRequest(await request("POST", { request_id:"req_missingcoord123", request_type:"your_request", model_name:"Model", reason:"ช่วยตามหา" }), env);
+  assert.equal(response.status, 503);
+  assert.equal((await response.json()).error.code, "REQUEST_QUOTA_UNAVAILABLE");
 });
 
 test("profile updates are review requests and reject empty writes", async () => {

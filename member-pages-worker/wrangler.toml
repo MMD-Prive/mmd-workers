@@ -84,9 +84,17 @@ service = "sigil-booking-worker"
 name = "CARE_BACK_WISH_COORDINATOR"
 class_name = "CareBackBirthdayWishCoordinator"
 
+[[durable_objects.bindings]]
+name = "CUSTOMER_REQUEST_QUOTA"
+class_name = "CustomerRequestQuotaCoordinator"
+
 [[migrations]]
 tag = "v1-care-back-birthday-wish"
 new_sqlite_classes = ["CareBackBirthdayWishCoordinator"]
+
+[[migrations]]
+tag = "v4-customer-request-quota"
+new_sqlite_classes = ["CustomerRequestQuotaCoordinator"]
 
 [[r2_buckets]]
 binding = "MMD_MODEL_ASSETS"
