@@ -1,3 +1,4 @@
+import { isBookingTherapistEligible } from './booking-therapist-eligibility.mjs';
 import { DurableObject } from "cloudflare:workers";
 import {
   applicationAirtableFields,
@@ -453,7 +454,7 @@ async function handleMatching(request, env, cors, requestId) {
   const unknown = Object.keys(body).filter((key) => !allowed.has(key));
   if (unknown.length) throw validationError([`unsupported fields: ${unknown.join(", ")}`]);
   const records = await airtableListAll(env, tableId(env, "THERAPISTS"));
-  const result = matchTherapists(records, body);
+  const result = matchTherapists(records.filter(isBookingTherapistEligible), body);
   return json({ ok: true, data: result }, 200, cors, requestId);
 }
 
