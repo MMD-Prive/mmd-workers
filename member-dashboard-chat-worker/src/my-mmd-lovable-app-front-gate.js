@@ -658,6 +658,14 @@ export default {
     if (/^\/my-mmd\/(?:points\/?|[^/]+\.(?:png|webp|jpg|jpeg|gif|svg|ico|js|css))$/.test(path)) return proxyLovablePage(request);
     if (path === "/my-mmd/payments" || path === "/my-mmd/payments/") return proxyLovablePage(request);
     if (/^\/my-mmd\/(menu\/?|albums\/ems\/[^/]+\/?)$/.test(path)) return proxyLovablePage(request);
+    // Home links from Verify must enter the same Worker app as direct LIFF.
+    // This navigation grants no identity or entitlement; the shell validates both.
+    if ((path === "/my-mmd" || path === "/my-mmd/") && !new URL(request.url).searchParams.has("session_id") && !/(?:^|;\s*)mmd_care_back_wish_link=/.test(request.headers.get("cookie") || "")) {
+      if (!["GET", "HEAD"].includes(request.method)) return new Response(null, { status: 405, headers: { allow: "GET, HEAD", "cache-control": "no-store" } });
+      const destination = new URL("/member/liff", request.url);
+      destination.searchParams.set("intent", "status");
+      return new Response(null, { status: 307, headers: { location: destination.pathname + destination.search, "cache-control": "private, no-store", "x-mmd-home-entry": "nightline" } });
+    }
     if (isMyMmdUiPath(path)) return myMmdWebflowPage(request);
 
     // Identity, session, points, membership, entitlement, coupons, history,
