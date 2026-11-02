@@ -144,12 +144,18 @@ export async function executeRecoveryFullScriptDeploy(io, plan) {
     receipt.phase = 'member-deploy-attempted-outcome-unknown'; receipt.deploy_attempts.member = { state: 'started' }; await save(receipt);
     const memberResult = await io.deploy(MEMBER_WORKER, memberMeta, plan.memberBytes);
     receipt.deploy_attempts.member = { state: 'returned' }; await save(receipt);
-    const memberAfter = await io.verifyDeployed(MEMBER_WORKER, member.version.id, plan.memberManifest.candidate_sha256, member.settings);
+    const memberAfter = await io.verifyDeployed(MEMBER_WORKER, member.version.id, plan.memberManifest.candidate_sha256, member.settings, memberMeta, plan.memberManifest);
     receipt.deployed = { member: { version_id: memberAfter.version.id, deployment_id: memberAfter.deployment.id } }; await save(receipt);
     receipt.phase = 'admin-deploy-attempted-outcome-unknown'; receipt.deploy_attempts.admin = { state: 'started' }; await save(receipt);
-    const adminResult = await io.deploy(ADMIN_WORKER, adminMeta, plan.adminBytes);
+    // The member migration is an immediate deployment. Re-read the admin
+    // baseline after it completes so a concurrent admin change cannot be
+    // silently overwritten by the second PUT.
+    const adminFresh = await io.snapshot(ADMIN_WORKER);
+    verifyBaseline(adminFresh, plan.admin, ADMIN_WORKER);
+    const adminFreshMeta = metadataFor(adminFresh.version, plan.adminManifest, ADMIN_WORKER, adminFresh.settings);
+    const adminResult = await io.deploy(ADMIN_WORKER, adminFreshMeta, plan.adminBytes);
     receipt.deploy_attempts.admin = { state: 'returned' }; await save(receipt);
-    const adminAfter = await io.verifyDeployed(ADMIN_WORKER, admin.version.id, plan.adminManifest.candidate_sha256, admin.settings);
+    const adminAfter = await io.verifyDeployed(ADMIN_WORKER, adminFresh.version.id, plan.adminManifest.candidate_sha256, adminFresh.settings, adminFreshMeta, plan.adminManifest);
     receipt.deployed.admin = { version_id: adminAfter.version.id, deployment_id: adminAfter.deployment.id };
     receipt.provider_results = { member: Boolean(memberResult), admin: Boolean(adminResult) };
     receipt.phase = 'complete'; await save(receipt); return receipt;
@@ -223,6 +229,12 @@ export function createCloudflareRecoveryAdapter({ token, request = fetch, accoun
     assert.ok(uuid(versionId), `${worker} uploaded version id invalid`);
     const exact = await call(workerRoot(worker) + '/versions/' + versionId);
     assert.equal(exact?.id, versionId, `${worker} uploaded version identity mismatch`);
+    verifyVersionMetadata(exact, metadata, manifest, worker);
+    const artifact = await call(versionRoot(worker) + '/' + versionId + '?include=modules');
+    assert.equal(hash(moduleBytes(artifact)), manifest.candidate_sha256, `${worker} uploaded module hash mismatch`);
+    return exact;
+  };
+  const verifyVersionMetadata = (exact, metadata, manifest, worker) => {
     const actualBindings = exact?.resources?.bindings || [];
     const actualByName = new Map(actualBindings.map(binding => [binding.name, binding]));
     for (const binding of metadata.__expected_bindings || []) {
@@ -242,8 +254,9 @@ export function createCloudflareRecoveryAdapter({ token, request = fetch, accoun
     if (worker === MEMBER_WORKER) {
       assert.equal(exact?.resources?.script_runtime?.migration_tag, manifest.migration?.new_tag, `${worker} migration readback mismatch`);
     }
-    const artifact = await call(versionRoot(worker) + '/' + versionId + '?include=modules');
-    assert.equal(hash(moduleBytes(artifact)), manifest.candidate_sha256, `${worker} uploaded module hash mismatch`);
+    for (const key of ['observability', 'tail_consumers', 'tags', 'logpush']) {
+      if (metadata[key] !== undefined) assert.deepEqual(exact?.[key] ?? exact?.resources?.script?.[key], metadata[key], `${worker} ${key} changed`);
+    }
     return exact;
   };
   const promote = async (worker, versionId) => {
@@ -259,13 +272,17 @@ export function createCloudflareRecoveryAdapter({ token, request = fetch, accoun
     form.set('worker.js', new Blob([bytes], { type: 'application/javascript+module' }), 'worker.js');
     return call(workerRoot(worker) + '?bindings_inherit=strict', { method: 'PUT', body: form });
   };
-  const verifyDeployed = async (worker, baselineVersionId, candidateSha256, baselineSettings) => {
+  const verifyDeployed = async (worker, baselineVersionId, candidateSha256, baselineSettings, metadata, manifest) => {
     const current = await snapshot(worker);
     assert.notEqual(current.version.id, baselineVersionId, `${worker} deployment did not create a new version`);
     assert.equal(current.deployment.versions?.length, 1, `${worker} deployment split traffic`);
     assert.equal(current.deployment.versions[0].version_id, current.version.id, `${worker} deployment serving mismatch`);
     assert.equal(hash(current.module_bytes), candidateSha256, `${worker} deployed module hash mismatch`);
     assert.equal(jsonHash(current.settings), jsonHash(baselineSettings), `${worker} settings changed during deployment`);
+    if (metadata && manifest) {
+      verifyVersionMetadata(current.version, metadata, manifest, worker);
+      assert.equal(current.version.resources?.script_runtime?.migration_tag, manifest.migration?.new_tag || current.version.resources?.script_runtime?.migration_tag, `${worker} migration readback mismatch`);
+    }
     return current;
   };
   const verifyPromoted = async (worker, versionId, baselineSettings) => {
