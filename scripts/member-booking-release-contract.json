@@ -11,7 +11,7 @@
     "baseline_modules": {
       "worker.js": "9bbe9bf7ad95ed49de8f64cd485883507e2fd142d47df2e5ae0ac28bfb34f523"
     },
-    "candidate_sha256": "832ee64af6979470294a079f81cec67ed2a4585e6b189e36640d38156777cccb",
+    "candidate_sha256": "59d8a7a068c09f8f3103d3d0be637caed000b063829f779e9d6f99478054f30c",
     "old_migration_tag": "v3-remembered-login-device",
     "new_migration_tag": "v4-member-booking-coordinator-20261102",
     "binding": "MEMBER_BOOKING_COORDINATOR",
@@ -55,7 +55,7 @@
     "member-pages-worker/src/member-booking-coordinator.js": "dcead648cf7c45ccca1711a62d6fec14d9723aa25f0df1d18ab5b51bd9e5d93c",
     "member-pages-worker/src/member-booking-flow.js": "5ecfee0b44dc6ec2f05aff6bf05280295ec42c9f9aed451007cd7168c3eb0ed4",
     "member-pages-worker/src/runtime-index.js": "ece4ad5ec2631610c4be3f157658bbfb961b33e437a15bb81e25718b42b11d2b",
-    "member-pages-worker/test/liff-member-booking-return.test.mjs": "74a7d84edcdbcae91bde019a9212bdca946d212e0444f843640aecb1e2f92cee",
+    "member-pages-worker/test/liff-member-booking-return.test.mjs": "3f3f57bef45d6d24fbb37f638586dc2aae5e62a4f1a8f3d14f59c3219e7e3000",
     "member-pages-worker/test/liff-member-booking.test.mjs": "38c2a4c0523a2bbb6cb4b18a0c9d6bd78fa6543e7e4bc482f550c4f908ab9609",
     "member-pages-worker/test/member-booking-flow.test.mjs": "d544e2a76ad2b1e9b3d465e51ee92156159af5027b9b740cc7983f8c4508097d",
     "shared/model-sales-control-v1.mjs": "bcb695fdcdba9f27c6cdac33cfe9695e18e2572fc3d73c3aea9c1b0c777e2dde",

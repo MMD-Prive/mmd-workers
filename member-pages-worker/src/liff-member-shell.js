@@ -1040,7 +1040,9 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
   // Keep the credential lane locked through headers AND body. A timeout aborts
   // the actual request; it must never release a second read alongside a live one.
   function memberApiFetch(url, init = {}) {
+    const valid = arguments[2] || (() => true);
     const run = memberApiChain.then(async () => {
+      if (!valid()) throw new Error("member_request_stale");
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 10000);
       try {
