@@ -599,6 +599,7 @@ export async function handleStart(request, env = {}) {
     route_after_liff: null,
     next_screen_key: liffIntent === "unknown" ? "start_intent" : nextScreenForIntent(liffIntent, memberState.exists),
     continuity,
+    recovery_binding: intent === "signup" || liffIntent === "signup" ? randomToken(24) : null,
   });
   let remembered;
   try {
@@ -2169,6 +2170,7 @@ async function safeSessionView(gatewayStore, session) {
     screen,
     route_after_liff: session.route_after_liff || null,
     ...(session.payment_binding_status ? { payment_binding_status: session.payment_binding_status } : {}),
+    ...(session.recovery_binding ? { recovery_binding: session.recovery_binding } : {}),
     expires_in: SESSION_TTL_SECONDS,
     grants: noGrants(),
   };
@@ -2258,7 +2260,7 @@ function normalizePaymentStage(value) { const stage = String(value || "").trim()
 function singleIdToken(body) { if (body.id_token && body.line_id_token) return ""; return exactToken(body.id_token || body.line_id_token); }
 function requiresAudience(intent) { return intent === "signup" || intent === "promo" || intent === "hall"; }
 function isVisibleHallMode(mode) { return mode === "show_female_profiles" || mode === "show_lgbt_profiles"; }
-function normalizeIntent(value) { const intent = String(value || "member_status").trim().toLowerCase(); return new Set(["member_status", "dashboard", "booking_request", "public_access", "hall"]).has(intent) ? intent : "member_status"; }
+function normalizeIntent(value) { const intent = String(value || "member_status").trim().toLowerCase(); return new Set(["member_status", "dashboard", "booking_request", "public_access", "hall", "signup"]).has(intent) ? intent : "member_status"; }
 function cleanContinuity(value) { const token = String(value || "").trim(); return token && token.length <= 2048 && /^[A-Za-z0-9._~-]+$/.test(token) ? token : null; }
 function exactToken(value) { const token = String(value || "").trim(); return token && token.length <= 8192 && /^[A-Za-z0-9._~-]+$/.test(token) ? token : ""; }
 function noGrants() { return { membership: false, points: false, payment_status: false, private_access: false }; }

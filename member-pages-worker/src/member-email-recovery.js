@@ -12,7 +12,7 @@ const APPROVED_ORIGINS = new Set([
   "https://mmdprive.webflow.io",
   "https://mmdprive.com",
 ]);
-const BODY_KEYS = new Set(["email", "member_id_candidate", "phone", "telegram_username", "nickname"]);
+const BODY_KEYS = new Set(["email", "member_id_candidate", "phone", "telegram_username", "nickname", "recovery_binding"]);
 const BROWSER_IDENTITY_FIELDS = new Set([
   "line_user_id",
   "lineUserId",
@@ -87,6 +87,10 @@ export async function handleMemberEmailRecovery(request, env = {}) {
 
   const auth = await authenticateAndRotate(request, env);
   if (!auth.ok) return auth.response;
+  const recoveryBinding = exactToken(parsed.body.recovery_binding, 256);
+  if (!recoveryBinding || !auth.session.recovery_binding || recoveryBinding !== auth.session.recovery_binding) {
+    return commitError(env, auth, "RECOVERY_SESSION_BINDING_MISMATCH", "LINE session changed; please reconnect LINE and try again.", 409);
+  }
   if (auth.session.member_exists === true && auth.session.member_id) {
     return commitJson(env, auth, {
       ok: true,
@@ -306,17 +310,32 @@ export async function inspectRecoveryEvidence(env = {}, { lineUserId, email = ""
   };
 }
 
-async function persistMergeRequest(env, { lineUserId, email, memberIdCandidate, phone = "", telegramUsername = "", nickname = "", result, sessionRecordId = "" }) {
+export async function persistMergeRequest(env, { lineUserId, email, memberIdCandidate, phone = "", telegramUsername = "", nickname = "", result, sessionRecordId = "" }) {
   const table = tableName(env.AIRTABLE_TABLE_IDENTITY_MERGE_REQUESTS, TABLES.mergeRequests);
   const idempotencyKey = await keyedDigest(env, `identity-recovery:${lineUserId}:${email || "-"}:${memberIdCandidate || "-"}:${phone || "-"}:${telegramUsername || "-"}:${nickname || "-"}`);
   const mergeRequestId = `IMR-${idempotencyKey.slice(0, 20).toUpperCase()}`;
   const lease = await beginMergeRequestLease(env, idempotencyKey);
-  if (!lease.ok) throw new Error(lease.error || "merge_request_in_flight");
-  const existing = await airtableList(env, table, {
-    filterByFormula: `{idempotency_key}=${formulaString(idempotencyKey)}`,
-    maxRecords: 2,
-  });
-  if (existing.length > 1) throw new Error("merge_request_ambiguous");
+  if (!lease.ok) {
+    const recovered = lease.error === "REQUEST_MUTATION_UNCERTAIN"
+      ? await recoverMergeRequestAfterLostResponse(env, table, idempotencyKey, lease)
+      : null;
+    if (recovered) return recovered;
+    throw new Error(lease.error || "merge_request_in_flight");
+  }
+  let existing;
+  try {
+    existing = await airtableList(env, table, {
+      filterByFormula: `{idempotency_key}=${formulaString(idempotencyKey)}`,
+      maxRecords: 2,
+    });
+  } catch (error) {
+    await finishMergeRequestLease(env, lease, "aborted");
+    throw error;
+  }
+  if (existing.length > 1) {
+    await finishMergeRequestLease(env, lease, "aborted");
+    throw new Error("merge_request_ambiguous");
+  }
   if (existing.length === 1) {
     await finishMergeRequestLease(env, lease, "committed");
     return { merge_request_id: String(existing[0]?.fields?.merge_request_id || mergeRequestId), record_id: existing[0].id, resumed: true };
@@ -362,6 +381,7 @@ async function persistMergeRequest(env, { lineUserId, email, memberIdCandidate, 
   if (result.candidateMemberIds.length) fields["Candidate Member"] = result.candidateMemberIds;
 
   try {
+    await markMergeRequestWriteStarted(env, lease);
     const created = await airtableCreate(env, table, fields);
     await finishMergeRequestLease(env, lease, "committed");
     return { merge_request_id: mergeRequestId, record_id: created.id, resumed: false };
@@ -377,14 +397,39 @@ async function beginMergeRequestLease(env, idempotencyKey) {
   const operation_id = crypto.randomUUID();
   const mutation_fingerprint = `identity-recovery:${idempotencyKey}`;
   const id = binding.idFromName(`identity-recovery:${idempotencyKey}`);
-  const response = await binding.get(id).fetch("https://identity-recovery/begin", { method: "POST", body: JSON.stringify({ action: "begin", operation_id }) }).catch(() => null);
+  const response = await binding.get(id).fetch("https://identity-recovery/begin", { method: "POST", body: JSON.stringify({ action: "begin", operation_id, mutation_fingerprint }) }).catch(() => null);
   const body = await response?.json().catch(() => null);
-  if (!response?.ok) return { ok: false, error: body?.error || "merge_request_in_flight" };
-  for (const action of ["prepare", "write_started"]) {
+  if (!response?.ok) {
+    const inspected = await binding.get(id).fetch("https://identity-recovery/inspect", { method: "POST", body: JSON.stringify({ action: "inspect" }) }).then((item) => item.json()).catch(() => null);
+    const uncertain = inspected?.lease?.status === "uncertain" || inspected?.lease?.status === "writing";
+    const inspectedOperation = String(inspected?.lease?.operation_id || "");
+    const inspectedFingerprint = String(inspected?.lease?.mutation_fingerprint || "");
+    return { ok: false, error: uncertain ? "REQUEST_MUTATION_UNCERTAIN" : (body?.error || "merge_request_in_flight"), id, operation_id: inspectedOperation || operation_id, mutation_fingerprint: inspectedFingerprint || mutation_fingerprint };
+  }
+  for (const action of ["prepare"]) {
     const next = await binding.get(id).fetch(`https://identity-recovery/${action}`, { method: "POST", body: JSON.stringify({ action, operation_id, mutation_fingerprint }) }).catch(() => null);
     if (!next?.ok) return { ok: false, error: `${action}_failed` };
   }
   return { ok: true, operation_id, mutation_fingerprint };
+}
+
+async function recoverMergeRequestAfterLostResponse(env, table, idempotencyKey, lease) {
+  const rows = await airtableList(env, table, { filterByFormula: `{idempotency_key}=${formulaString(idempotencyKey)}`, maxRecords: 2 });
+  if (rows.length > 1) throw new Error("merge_request_ambiguous");
+  if (rows.length !== 1 || !lease.id || !lease.operation_id || !lease.mutation_fingerprint) throw new Error("REQUEST_MUTATION_UNCERTAIN");
+  const binding = env.CUSTOMER_REQUEST_MUTATION;
+  const response = await binding.get(lease.id).fetch("https://identity-recovery/reconcile", { method: "POST", body: JSON.stringify({ action: "reconcile", operation_id: lease.operation_id, readback_verified: true, mutation_fingerprint: lease.mutation_fingerprint }) }).catch(() => null);
+  if (!response?.ok) throw new Error("REQUEST_MUTATION_RECONCILE_REQUIRED");
+  return { merge_request_id: String(rows[0]?.fields?.merge_request_id || ""), record_id: rows[0].id, resumed: true };
+}
+
+async function markMergeRequestWriteStarted(env, lease) {
+  const binding = env.CUSTOMER_REQUEST_MUTATION;
+  if (!lease?.operation_id || !binding?.idFromName || !binding?.get) throw new Error("merge_request_mutation_unavailable");
+  const key = lease.mutation_fingerprint?.replace(/^identity-recovery:/, "") || "";
+  const id = binding.idFromName(`identity-recovery:${key}`);
+  const response = await binding.get(id).fetch("https://identity-recovery/write_started", { method: "POST", body: JSON.stringify({ action: "write_started", operation_id: lease.operation_id, mutation_fingerprint: lease.mutation_fingerprint }) }).catch(() => null);
+  if (!response?.ok) throw new Error("write_started_failed");
 }
 
 async function finishMergeRequestLease(env, lease, status) {
