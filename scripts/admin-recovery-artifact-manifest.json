@@ -1,0 +1,13 @@
+{
+  "method": "active-worker-byte-overlay",
+  "baseline_sha256": "70e0a9e6f541ef9c71425be84d54f11c124004219ebb9c6c7062b57da950160e",
+  "candidate_sha256": "dfccb9dc54c98662a99e596c3765dec19a2c70c183ef5182fa0ad3984a070164",
+  "recovery_source_sha": "d82c284fb48943c7c8a8cc5a970107f799186ee3",
+  "overlays": [
+    {
+      "kind": "owner-recovery-admin-bundle",
+      "source": "admin-worker/src/owner-my-mmd-recovery-diagnostic.js"
+    }
+  ],
+  "unchanged_prefix_suffix": true
+}

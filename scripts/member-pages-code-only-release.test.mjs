@@ -8,8 +8,29 @@ import { verifyOwnerApproval, environmentName } from './member-pages-owner-appro
 import {
   ACCOUNT, ROOT, VERSION_ROOT, ZONE, CODE_ONLY_BASE_SHA, CODE_ONLY_SOURCE_SHA, CODE_ONLY_GRAPHICS_SOURCE_SHA, CODE_ONLY_STARTUP_BASE_SHA, CODE_ONLY_STARTUP_PATHS, CODE_ONLY_STARTUP_BRIDGE_BLOBS, CODE_ONLY_PREVIOUS_SOURCE_SHA, CODE_ONLY_GRAPHICS_BASE_SHA, CODE_ONLY_GRAPHICS_PATHS, CODE_ONLY_RUNTIME_BOUNDARIES, CODE_ONLY_INCLUDED_PULL_REQUESTS, CODE_ONLY_EXCLUDED_CHANGE, CODE_ONLY_PATHS, CODE_ONLY_MY_MMD_SOURCE_SHA, CODE_ONLY_MY_MMD_INCLUDED_PULL_REQUESTS, CODE_ONLY_POST_STARTUP_PATHS, CODE_ONLY_SOURCE_CONFIG_BLOB, validateMyMmdSourceHistory, validatePostStartupSourcePaths, activeVersion, createTransport, inspectCodeOnlyCheckouts, releaseMemberPagesCodeOnly,
   buildMemberPagesBundle, uploadMetadata, validateBundleFiles, validateCodeOnlySourcePaths, validateStartupBridge, validateGraphicsSourcePaths, validateCodeOnlySourceHistory, validateBundleSourceMap, versionAnnotations, versionConfiguration,
-  COMPANION_DELTA_BASE_SHA, COMPANION_DELTA_SOURCE_SHA, COMPANION_DELTA_BLOBS, validateCompanionDelta,
+  COMPANION_DELTA_BASE_SHA, COMPANION_DELTA_SOURCE_SHA, COMPANION_DELTA_BLOBS, validateCompanionDelta, inspectRecoveryReleaseCheckout, RECOVERY_RUNTIME_PATHS, RECOVERY_SOURCE_SHA, RECOVERY_BASE_SOURCE_SHA,
 } from './member-pages-code-only-release.mjs';
+
+test('recovery artifact accepts only the reviewed two-file overlay on the old worker baseline', () => {
+  const blobs = Object.fromEntries(RECOVERY_RUNTIME_PATHS.map((path, i) => [path, String(i).repeat(40)]));
+  const git = (cwd, ...args) => {
+    const command = args.join(' ');
+    if (args[0] === 'rev-parse' && args[1] === '--show-toplevel') return cwd;
+    if (command === 'rev-parse HEAD') return cwd === '/source' ? RECOVERY_BASE_SOURCE_SHA : 'a'.repeat(40);
+    if (command === 'status --porcelain --untracked-files=all') return cwd === '/source' ? RECOVERY_RUNTIME_PATHS.map(path => ` M ${path}`).join('\n') : '';
+    if (args[0] === 'rev-parse' && args[1].startsWith('HEAD:')) return blobs[args[1].slice(5)];
+    if (args[0] === 'rev-parse' && args[1].startsWith(RECOVERY_SOURCE_SHA+':')) return blobs[args[1].slice(41)];
+    throw new Error(`unexpected git fixture command: ${command}`);
+  };
+  assert.deepEqual(inspectRecoveryReleaseCheckout('a'.repeat(40), '/source', {releaseDirectory:'/release', git}), {
+    method:'baseline-plus-reviewed-recovery-overlay', base_sha:RECOVERY_BASE_SOURCE_SHA,
+    recovery_sha:RECOVERY_SOURCE_SHA, paths:RECOVERY_RUNTIME_PATHS,
+  });
+  assert.throws(() => inspectRecoveryReleaseCheckout('a'.repeat(40), '/source', {releaseDirectory:'/release', git:(cwd,...args) => {
+    if (args[0] === 'status') return ` M ${RECOVERY_RUNTIME_PATHS[0]}\n M unexpected.js`;
+    return git(cwd,...args);
+  }}));
+});
 
 test('Companion #2843 candidate permits only its six exact reviewed blobs', () => {
   // History verification belongs to the release checkout guard (fetch-depth: 0).
@@ -561,7 +582,7 @@ test('release workflow is manual, exact-SHA and protected with no data-service c
   assert.match(source, /node --test [^\n]*member-pages-worker\/test\/points-display-source-guard.test.mjs/);
   assert.match(source, /node --test [^\n]*member-pages-worker\/test\/kenji-line-member-truth.test.mjs/);
   assert.match(source, /ref: fe5f9d98876b600421c5614efc049ffc890b8adb\s+fetch-depth: 0\s+path: release-source/);
-  assert.match(source, /if: inputs.execution_mode == 'release'\s+uses: actions\/checkout@v5\s+with:\s+ref: 871d99cd9eb1c8d53e1d473160119030dca01d4c/);
+  assert.match(source, /if: inputs.execution_mode == 'release' \|\| inputs.execution_mode == 'recovery-artifact'\s+uses: actions\/checkout@v5\s+with:\s+ref: 871d99cd9eb1c8d53e1d473160119030dca01d4c/);
   assert.match(source, /if: inputs.execution_mode == 'promote-existing'\s+uses: actions\/checkout@v5\s+with:\s+ref: fe5f9d98876b600421c5614efc049ffc890b8adb/);
   assert.match(source, /ref: \$\{\{ github.sha \}\}\s+fetch-depth: 0\s+path: release-tools/);
   assert.match(source, /SOURCE_DIRECTORY: \$\{\{ github.workspace \}\}\/release-source/);
