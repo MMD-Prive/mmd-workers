@@ -44,6 +44,7 @@ async function handleRequest(request, env, identity) {
   }
   if (request.method !== "POST") return fail(405, "METHOD_NOT_ALLOWED", { allow: "GET, HEAD, POST" });
   const body = await request.json().catch(() => null);
+  if (body?.action === "append_evidence") return appendEvidenceToRequest(body, env, identity);
   const input = validateRequest(body);
   if (!input.ok) return fail(400, input.code);
   const rawPrior = await listInbox(env, identity.lineUserId); if (rawPrior === null) return fail(503, "REQUEST_QUEUE_UNAVAILABLE");
@@ -94,6 +95,21 @@ async function handleRequest(request, env, identity) {
   const item = customerItem(payload);
   if (reservation.reserved) await finalizeQuota(env, identity.clientId, quota.month_key, input.data.request_id, reservation.lease, "commit", requestFingerprint(input.data), { ok: true, item, idempotent: false, quota: { ...quota, used: quota.used + 1, remaining: Math.max(0, quota.remaining - 1) } });
   return json({ ok: true, item, idempotent: false, quota: { ...quota, used: quota.used + (input.data.request_type === "your_request" ? 1 : 0), remaining: Math.max(0, quota.remaining - (input.data.request_type === "your_request" ? 1 : 0)) } }, 201);
+}
+
+async function appendEvidenceToRequest(body, env, identity) {
+  const requestId = safeRequestId(body.request_id); const evidenceIds = unique(array(body.evidence_ids).map(safeEvidenceId).filter(Boolean));
+  if (!requestId || !evidenceIds.length || evidenceIds.length > MAX_EVIDENCE) return fail(400, "EVIDENCE_INVALID");
+  const records = await listInbox(env, identity.lineUserId); if (records === null) return fail(503, "REQUEST_QUEUE_UNAVAILABLE");
+  const record = records.find(row => parsePayload(row?.fields?.payload_json)?.request_id === requestId); if (!record) return fail(404, "REQUEST_NOT_FOUND");
+  const payload = parsePayload(record.fields?.payload_json); if (payload.canonical_client_id !== identity.clientId) return fail(404, "REQUEST_NOT_FOUND");
+  const checked = await validateEvidence(env, identity.clientId, evidenceIds); if (checked === null) return fail(409, "EVIDENCE_UNAVAILABLE");
+  const before = unique(array(payload.evidence_ids).filter(safeEvidenceId));
+  const next = unique([...before, ...checked.map(item => item.evidence_id)]).slice(0, MAX_EVIDENCE);
+  payload.evidence_ids = next; payload.updated_at = new Date().toISOString();
+  const updated = await updateInbox(env, record.id, { payload_json: JSON.stringify(payload), admin_note: adminNote(payload) });
+  if (!updated) return fail(503, "REQUEST_QUEUE_UNAVAILABLE");
+  return json({ ok: true, item: customerItem(payload), evidence_ids: next, idempotent: next.length === before.length });
 }
 
 async function handleEvidenceUpload(request, env, identity) {
@@ -240,6 +256,11 @@ async function createInbox(env, fields) {
     const response = await airtableFetch(env, `${API}/${encodeURIComponent(base)}/${encodeURIComponent(table)}`, { method: "POST", headers: { authorization: `Bearer ${key}`, "content-type": "application/json" }, body: JSON.stringify({ fields }) });
     return { ok: response.ok, uncertain: response.status >= 500 };
   } catch { return { ok: false, uncertain: true }; }
+}
+async function updateInbox(env, recordId, fields) {
+  const key = safeText(env.AIRTABLE_API_KEY, 2000); const base = safeText(env.AIRTABLE_BASE_ID, 100); const table = safeText(env.AIRTABLE_TABLE_CONSOLE_INBOX, 180) || INBOX_TABLE;
+  if (!key || !base || !/^rec[A-Za-z0-9]{10,32}$/.test(recordId || "")) return false;
+  try { const response = await airtableFetch(env, `${API}/${encodeURIComponent(base)}/${encodeURIComponent(table)}/${encodeURIComponent(recordId)}`, { method: "PATCH", headers: { authorization: `Bearer ${key}`, "content-type": "application/json" }, body: JSON.stringify({ fields }) }); return response.ok; } catch { return false; }
 }
 function internalAuthorized(request) { const url = new URL(request.url); return request.method === "POST" && url.hostname === SERVICE_HOST && token(request.headers.get("x-mmd-internal-call")) === "true" && safeText(request.headers.get("x-mmd-service-binding"), 80) === "admin-worker"; }
 async function airtableFetch(env, url, init = {}) { return env.AIRTABLE_HTTP?.fetch ? env.AIRTABLE_HTTP.fetch(new Request(url, init)) : fetch(url, init); }
