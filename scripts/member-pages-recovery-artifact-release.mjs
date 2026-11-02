@@ -248,7 +248,14 @@ export function createCloudflareRecoveryAdapter({ token, request = fetch, accoun
       assert.equal(mutation.class_name, DO_CLASS, `${worker} mutation binding class changed`);
     }
     const runtime = exact?.resources?.script_runtime || {};
-    for (const key of ['compatibility_date', 'compatibility_flags', 'usage_model', 'limits']) if (metadata[key] !== undefined) assert.deepEqual(runtime[key], metadata[key], `${worker} runtime metadata changed: ${key}`);
+    for (const key of ['compatibility_date', 'compatibility_flags', 'usage_model', 'limits']) {
+      if (metadata[key] === undefined) continue;
+      // The Versions endpoint omits an empty compatibility_flags array on
+      // some full-script PUT responses. Treat that omission as the API's
+      // canonical empty value, while still rejecting any non-empty drift.
+      const actual = key === 'compatibility_flags' && runtime[key] === undefined ? [] : runtime[key];
+      assert.deepEqual(actual, metadata[key], `${worker} runtime metadata changed: ${key}`);
+    }
     if (metadata.placement !== undefined) assert.deepEqual(exact?.resources?.script?.placement || exact?.placement, metadata.placement, `${worker} placement changed`);
     if (metadata.cache_options !== undefined) assert.deepEqual(exact.cache_options, metadata.cache_options, `${worker} cache options changed`);
     if (worker === MEMBER_WORKER) {
