@@ -326,7 +326,7 @@ test("My MMD presentation remains read-only while behavior stays on /api/member/
   assert.equal(api.headers.get("x-mmd-upstream-service"), "member-pages-worker");
 });
 
-test("direct status LIFF keeps Digital Home while bridging to Webflow after session confirmation", async () => {
+test("direct status LIFF keeps Digital Home without a second home bridge", async () => {
   const runtime = {
     MEMBER_PAGES_WORKER: {
       fetch: async () => new Response(
@@ -340,12 +340,13 @@ test("direct status LIFF keeps Digital Home while bridging to Webflow after sess
   const html = await response.text();
 
   assert.equal(response.status, 200);
-  assert.equal(response.headers.get("x-mmd-liff-return-target"), "/my-mmd/");
-  assert.equal(response.headers.get("x-mmd-liff-ui-mode"), null);
+  assert.equal(response.headers.get("x-mmd-liff-return-target"), null);
+  assert.equal(response.headers.get("x-mmd-liff-ui-mode"), "native-home");
   assert.match(html, /MMD Privé · LIFF Digital Home/);
   assert.match(html, /CANONICAL_POINTS_PATH = "\/my-mmd\/points"/);
   assert.match(html, /view === "history" \? "history-panel" : view/);
   assert.doesNotMatch(html, /mmd-status-bridge-veil/);
+  assert.doesNotMatch(html, /mmd-ems-login-return/);
 });
 
 test("private_teaser LIFF verifies the member then returns only to the allowlisted MY MMD teaser model", async () => {

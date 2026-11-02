@@ -585,13 +585,13 @@ async function rewriteStatusReturnTarget(request, response) {
   const html = await response.text();
   const headers = new Headers(response.headers);
   for (const name of ["content-length", "content-encoding", "etag", "last-modified", "content-md5"]) headers.delete(name);
-  // Nightline is the member home itself. Keep its existing session bootstrap
-  // instead of injecting a second home redirect back to the Webflow surface.
+  // LIFF renders the member home itself. Keep its existing session bootstrap
+  // in every skin: /my-mmd/ redirects here, so a return bridge creates a loop.
   // Album/payment return targets continue through their existing gates below.
-  if (target === "/my-mmd/" && /<body\b[^>]*\bdata-mmd-skin=["']nightline["']/i.test(html)) {
+  if (target === "/my-mmd/") {
     headers.set("cache-control", "private, no-store");
     headers.delete("x-mmd-liff-return-target");
-    headers.set("x-mmd-liff-ui-mode", "nightline-home");
+    headers.set("x-mmd-liff-ui-mode", /<body\b[^>]*\bdata-mmd-skin=["']nightline["']/i.test(html) ? "nightline-home" : "native-home");
     return new Response(html, { status: response.status, statusText: response.statusText, headers });
   }
   // The current LIFF shell renders Digital Home, not the legacy target constant.
