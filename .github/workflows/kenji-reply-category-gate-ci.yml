@@ -21,6 +21,8 @@ jobs:
       - name: Focused mocked category and canonical contract tests
         run: >-
           node --experimental-global-webcrypto --test
+          member-dashboard-chat-worker/test/kenji-truth-diagnostics.test.mjs
+          member-dashboard-chat-worker/test/kenji-line-live-truth.test.mjs
           member-dashboard-chat-worker/test/kenji-category-source.test.mjs
           member-dashboard-chat-worker/test/kenji-category-promotion-cta.test.mjs
           member-dashboard-chat-worker/test/kenji-care-back-november.test.mjs
