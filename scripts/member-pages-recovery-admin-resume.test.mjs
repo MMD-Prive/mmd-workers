@@ -14,7 +14,7 @@ const { executeAdminOnlyResume } = await import('data:text/javascript;base64,' +
 const adminDeployment = '00000000-0000-4000-8000-000000000001';
 function fixture() {
   const calls = [], receipts = [];
-  const make = (member) => ({ version: { id: member ? RELEASE.memberVersion : RELEASE.adminVersion, resources: { script: {}, script_runtime: { migration_tag: member ? 'v5-customer-request-mutation' : 'v1', compatibility_date: '2026-01-01' }, bindings: [] } }, deployment: { id: member ? RELEASE.memberDeployment : adminDeployment, versions: [{ version_id: member ? RELEASE.memberVersion : RELEASE.adminVersion, percentage: 100 }] }, module_bytes: bytes, latest_version: member ? RELEASE.memberVersion : RELEASE.adminVersion, settings: { observability: { enabled: true } } });
+  const make = (member) => ({ version: { id: member ? RELEASE.memberVersion : RELEASE.adminVersion, resources: { script: {}, script_runtime: { migration_tag: member ? 'v5-customer-request-mutation' : 'v1', compatibility_date: '2026-01-01' }, bindings: member ? [{name:'CUSTOMER_REQUEST_MUTATION', namespace_id:RELEASE.memberNamespace}] : [] } }, deployment: { id: member ? RELEASE.memberDeployment : adminDeployment, versions: [{ version_id: member ? RELEASE.memberVersion : RELEASE.adminVersion, percentage: 100 }] }, module_bytes: bytes, latest_version: member ? RELEASE.memberVersion : RELEASE.adminVersion, settings: { observability: { enabled: true } } });
   const io = {
     approve: async () => {}, save: async r => receipts.push(r), snapshot: async worker => make(worker === 'member-pages-worker'),
     originalMemberVersion: async () => ({ id: RELEASE.memberOriginalVersion, resources: { script: {}, script_runtime: { migration_tag: 'v3-remembered-login-device' }, bindings: [] } }),
@@ -66,4 +66,12 @@ test('real adapter accepts omitted empty flags but rejects nonempty drift', asyn
   const io = createAdminResumeAdapter({ token: 'synthetic', request });
   const run = () => io.verifyDeployed('admin-worker', 'old', digest, {}, metadata, {});
   await run(); flags = ['nodejs_compat']; await assert.rejects(run());
+});
+
+test('member namespace or mutable settings drift blocks admin PUT', async () => {
+  for (const kind of ['namespace', 'settings']) {
+    const f = fixture(); let n = 0;
+    f.io.snapshot = async worker => { const s = f.make(worker === 'member-pages-worker'); if (worker === 'member-pages-worker') { n++; if (kind === 'namespace') s.version.resources.bindings[0].namespace_id = 'wrong'; if (kind === 'settings' && n === 2) s.settings.observability.enabled = false; } return s; };
+    await assert.rejects(executeAdminOnlyResume(f.io, f.plan)); assert.deepEqual(f.calls, []);
+  }
 });
