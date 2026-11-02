@@ -76,6 +76,8 @@ export async function executeAdminOnlyResume(io, plan) {
     receipt.admin_attempt = 'returned'; await save();
     const after = await io.verifyDeployed(ADMIN_WORKER, RELEASE.adminVersion, RELEASE.adminCandidateHash, fresh.settings, metadata, manifest);
     assert.equal(after.deployment.versions[0].percentage, 100, 'admin must serve 100 percent');
+    assert.equal(after.latest_version, after.version.id, 'admin latest version drift after PUT');
+    assert.equal(after.version.resources.script_runtime.migration_tag, fresh.version.resources.script_runtime.migration_tag, 'admin migration tag changed');
     // Read-only final member check; never try to roll it back on failure.
     await verifyMember();
     receipt.admin = { version: after.version.id, deployment: after.deployment.id, sha256: RELEASE.adminCandidateHash };
