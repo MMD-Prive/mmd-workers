@@ -13,6 +13,7 @@ export function isByYourRequestAdminApi(path, method = 'GET') { const m = String
 
 export async function handleByYourRequestAdmin(request, env, actor) {
   if (!actor?.id) return new Response(JSON.stringify({ ok: false, error: 'UNAUTHORIZED' }), { status: 401, headers: { 'content-type': 'application/json' } });
+  if (request.method === 'POST' && !sameOriginJson(request)) return json({ ok: false, error: 'CSRF_ORIGIN_REQUIRED' }, 403);
   const path = new URL(request.url).pathname.replace(/\/+$/, '') || '/';
   if (path === PAGE) return renderPage(request);
   if (path === EVIDENCE_PATH) return proxyEvidence(request, env);
@@ -35,14 +36,27 @@ async function mutateRequest(request, env, actor) {
     const record = await airtableGet(env, body.record_id); const item = recordToItem(record); if (!item) return json({ ok: false, error: 'REQUEST_NOT_FOUND' }, 404);
     const payload = parse(record.fields?.payload_json); const patch = {};
     if (body.status !== undefined) { const status = clean(body.status, 40); if (!STATES.has(status)) return json({ ok: false, error: 'INVALID_STATUS' }, 400); payload.status = status; patch.status = status; }
+    const mutationId = crypto.randomUUID();
     if (body.identity_note !== undefined) {
       const note = validateIdentityNote(body.identity_note); if (!note.ok) return json({ ok: false, error: note.error }, 400);
       const next = Array.isArray(payload.identity_evidence) ? payload.identity_evidence.slice(-19) : [];
-      next.push({ ...note.value, noted_at: new Date().toISOString(), noted_by: clean(actor.id, 120) }); payload.identity_evidence = next;
+      next.push({ ...note.value, noted_at: new Date().toISOString(), noted_by: clean(actor.id, 120), mutation_id: mutationId }); payload.identity_evidence = next;
     }
     if (!Object.keys(patch).length && body.identity_note === undefined) return json({ ok: false, error: 'NO_MUTATION' }, 400);
     patch.payload_json = JSON.stringify(payload); if (patch.payload_json.length > 100000) return json({ ok: false, error: 'REQUEST_TOO_LARGE' }, 413); patch.admin_note = adminNote(payload);
-    const updated = await airtablePatch(env, record.id, patch);
+    payload.last_mutation_id = mutationId; patch.payload_json = JSON.stringify(payload);
+    let updated = await airtablePatch(env, record.id, patch);
+    const readback = await airtableGet(env, record.id);
+    const readbackPayload = parse(readback.fields?.payload_json);
+    if (readbackPayload.last_mutation_id !== mutationId) {
+      // Another admin changed the same immutable JSON envelope. Merge the
+      // latest envelope with this mutation and verify once more; never claim
+      // success while our evidence/status is absent from Airtable.
+      const merged = { ...readbackPayload, ...payload, identity_evidence: [...(Array.isArray(readbackPayload.identity_evidence) ? readbackPayload.identity_evidence : []), ...(Array.isArray(payload.identity_evidence) ? payload.identity_evidence.filter(note => note.mutation_id === mutationId) : [])].slice(-20), last_mutation_id: mutationId };
+      updated = await airtablePatch(env, record.id, { ...patch, payload_json: JSON.stringify(merged) });
+      const confirmed = await airtableGet(env, record.id);
+      if (parse(confirmed.fields?.payload_json).last_mutation_id !== mutationId) return json({ ok: false, error: 'REQUEST_CONCURRENT_UPDATE' }, 409);
+    }
     return json({ ok: true, item: recordToItem(updated), identity_evidence: payload.identity_evidence || [] });
   } catch (error) { return json({ ok: false, error: error.code || 'REQUEST_QUEUE_UNAVAILABLE' }, error.status || 503); }
 }
@@ -64,7 +78,7 @@ function validateIdentityNote(input) {
 }
 
 function recordToItem(record) { const payload = parse(record?.fields?.payload_json); if (!record?.id || payload.schema !== 'mmd_customer_request_v1' || payload.source === 'mms' || payload.request_type !== INTENT) return null; return { record_id: record.id, request_id: clean(payload.request_id, 100), line_user_id: clean(payload.line_user_id, 80), canonical_client_id: clean(payload.canonical_client_id, 80) || null, created_at: clean(payload.created_at, 80) || null, status: STATES.has(payload.status) ? payload.status : 'reviewing', model_name: clean(payload.model?.display_name, 160) || null, model_social: clean(payload.model?.social, 600) || null, reason: clean(payload.model?.reason, 1800) || null, audience: clean(payload.model?.audience, 20) || null, evidence_ids: Array.isArray(payload.evidence_ids) ? payload.evidence_ids.filter(x => /^evidence_[a-f0-9]{32}$/.test(x)).slice(0, 3) : [], identity_evidence: Array.isArray(payload.identity_evidence) ? payload.identity_evidence.slice(-20) : [], source: clean(payload.source, 80) || SOURCE, missing_original: payload.missing_original === true }; }
-async function listInbox(env) { const out = []; let offset = ''; for (let page = 0; page < 100; page++) { const params = new URLSearchParams({ pageSize: '100', maxRecords: '100', filterByFormula: `AND(OR({source}='${SOURCE}',{source}='my_mmd_liff',{source}='line'),{intent}='${INTENT}')` }); if (offset) params.set('offset', offset); const data = await airtable(env, '', `?${params}`); out.push(...(data.records || [])); offset = data.offset || ''; if (!offset) break; } return out; }
+async function listInbox(env) { const out = []; let offset = ''; for (let page = 0; page < 100; page++) { const params = new URLSearchParams({ pageSize: '100', maxRecords: '100', filterByFormula: `AND(OR({source}='${SOURCE}',{source}='my_mmd_liff',{source}='line'),OR({intent}='${INTENT}',{intent}='note_only'))` }); if (offset) params.set('offset', offset); const data = await airtable(env, '', `?${params}`); out.push(...(data.records || [])); offset = data.offset || ''; if (!offset) break; } return out; }
 async function airtableGet(env, id) { return airtable(env, `/${encodeURIComponent(id)}`); }
 async function airtablePatch(env, id, fields) { return airtable(env, `/${encodeURIComponent(id)}`, '?', { method: 'PATCH', body: JSON.stringify({ fields, typecast: false }) }); }
 async function airtable(env, suffix = '', query = '', init = {}) { const key = clean(env.AIRTABLE_API_KEY, 2000); const base = clean(env.AIRTABLE_BASE_ID, 100); const table = clean(env.AIRTABLE_TABLE_CONSOLE_INBOX, 180) || TABLE_DEFAULT; if (!key || !base) throw Object.assign(new Error('airtable_not_configured'), { code: 'REQUEST_QUEUE_UNAVAILABLE', status: 503 }); const fetcher = env.AIRTABLE_HTTP?.fetch ? env.AIRTABLE_HTTP.fetch.bind(env.AIRTABLE_HTTP) : fetch; const response = await fetcher(`${API}/${encodeURIComponent(base)}/${encodeURIComponent(table)}${suffix}${query}`, { ...init, headers: { authorization: `Bearer ${key}`, accept: 'application/json', ...(init.headers || {}) } }).catch(() => null); if (!response) throw Object.assign(new Error('airtable_unreachable'), { code: 'REQUEST_QUEUE_UNAVAILABLE', status: 503 }); const data = await response.json().catch(() => null); if (!response.ok) throw Object.assign(new Error('airtable_failed'), { code: response.status >= 500 ? 'REQUEST_QUEUE_UNAVAILABLE' : 'REQUEST_FAILED', status: response.status >= 500 ? 503 : response.status }); return data || {}; }
@@ -81,3 +95,4 @@ function adminNote(payload) { return `Your Request · ${clean(payload.model?.dis
 function parse(value) { try { const x = JSON.parse(String(value || '')); return x && typeof x === 'object' && !Array.isArray(x) ? x : {}; } catch { return {}; } }
 function clean(value, max = 240) { return typeof value === 'string' ? value.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max) : ''; }
 function json(data, status = 200) { return Response.json(data, { status, headers: { 'cache-control': 'no-store, private' } }); }
+function sameOriginJson(request) { const url = new URL(request.url); return request.headers.get('origin') === url.origin && /^application\/json(?:\s*;|$)/i.test(request.headers.get('content-type') || ''); }
