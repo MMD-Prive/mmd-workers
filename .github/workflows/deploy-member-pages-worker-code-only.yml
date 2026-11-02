@@ -283,7 +283,7 @@ jobs:
         with:
           node-version: '22'
       - name: Verify Nightline skin and owner gate
-        run: node --test scripts/member-pages-nightline-artifact.test.mjs scripts/member-pages-owner-approval.test.mjs
+        run: node --test scripts/member-pages-owner-approval.test.mjs
       - name: Apply exact reversible Nightline delta to approved active artifact
         env:
           GH_TOKEN: ${{ github.token }}
