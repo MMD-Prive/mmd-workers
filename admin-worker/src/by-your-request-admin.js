@@ -111,7 +111,8 @@ function renderLegacyPage(request) {
   return new Response(request.method === 'HEAD' ? null : html, { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store, private', 'x-mmd-admin-surface': 'by-your-request' } });
 }
 function adminNote(payload) { return `Your Request · ${clean(payload.model?.display_name, 160) || 'unknown'} · ${clean(payload.status, 40) || 'reviewing'}`; }
-async function fingerprintPayload(payload) { const copy = { ...payload }; delete copy.last_mutation_id; delete copy.mutation_fingerprint; const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(copy))); return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join(''); }
+async function fingerprintPayload(payload) { const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(stableStringify(payload, new Set(['last_mutation_id', 'mutation_fingerprint'])))); return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join(''); }
+function stableStringify(value, omit = new Set()) { if (Array.isArray(value)) return `[${value.map(item => stableStringify(item, omit)).join(',')}]`; if (value && typeof value === 'object') return `{${Object.keys(value).filter(key => !omit.has(key)).sort().map(key => `${JSON.stringify(key)}:${stableStringify(value[key], omit)}`).join(',')}}`; return JSON.stringify(value); }
 function parse(value) { try { const x = JSON.parse(String(value || '')); return x && typeof x === 'object' && !Array.isArray(x) ? x : {}; } catch { return {}; } }
 function clean(value, max = 240) { return typeof value === 'string' ? value.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max) : ''; }
 function json(data, status = 200) { return Response.json(data, { status, headers: { 'cache-control': 'no-store, private' } }); }

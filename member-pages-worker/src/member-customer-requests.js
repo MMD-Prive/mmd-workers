@@ -42,7 +42,7 @@ export async function handleMemberCustomerRequest(request, env = {}) {
 async function handleAdminMutationLease(request, env) {
   if (!internalAuthorized(request) || !env.CUSTOMER_REQUEST_MUTATION?.idFromName || !env.CUSTOMER_REQUEST_MUTATION?.get) return fail(404, "NOT_FOUND");
   const body = await request.json().catch(() => null); const recordId = safeText(body?.record_id, 40); const operationId = safeText(body?.operation_id, 100);
-  if (!/^rec[A-Za-z0-9]{10,32}$/.test(recordId) || (body?.action !== "inspect" && !operationId) || !["begin", "prepare", "write_started", "finish", "inspect", "reconcile"].includes(body?.action)) return fail(400, "INVALID_REQUEST");
+  if (!/^rec[A-Za-z0-9]{10,32}$/.test(recordId) || (body?.action !== "inspect" && !operationId) || !["begin", "prepare", "write_started", "mark_item", "finish", "inspect", "reconcile"].includes(body?.action)) return fail(400, "INVALID_REQUEST");
   const id = env.CUSTOMER_REQUEST_MUTATION.idFromName(recordId);
   const response = await env.CUSTOMER_REQUEST_MUTATION.get(id).fetch("https://mutation/" + body.action, { method: "POST", body: JSON.stringify({ action: body.action, operation_id: operationId, status: body.status, mutation_fingerprint: body.mutation_fingerprint, readback_verified: body.readback_verified === true }) }).catch(() => null);
   if (!response) return fail(503, "REQUEST_MUTATION_UNAVAILABLE");
@@ -135,7 +135,7 @@ async function appendEvidenceToRequest(body, env, identity) {
     const next = unique([...before, ...checked.map(item => item.evidence_id)]);
     if (next.length > MAX_EVIDENCE) return fail(409, "EVIDENCE_LIMIT_REACHED");
     payload.evidence_ids = next; payload.updated_at = new Date().toISOString(); payload.last_mutation_id = mutation.operation_id;
-    mutationFingerprint = await hash(JSON.stringify({ request_id: payload.request_id, evidence_ids: payload.evidence_ids, updated_at: payload.updated_at }));
+    mutationFingerprint = await fullHash(stableStringify(payload, new Set(["last_mutation_id", "mutation_fingerprint"])));
     payload.mutation_fingerprint = mutationFingerprint;
     if (!await prepareRequestMutation(env, record.id, mutation.operation_id, mutationFingerprint)) return fail(409, "REQUEST_MUTATION_LEASE_LOST");
     if (!await markRequestMutationWriteStarted(env, record.id, mutation.operation_id, mutationFingerprint)) return fail(409, "REQUEST_MUTATION_LEASE_LOST");
@@ -357,3 +357,5 @@ function parsePayload(value) { try { const text = typeof value === "string" ? va
 function formula(value) { return `'${String(value).replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`; }
 function unique(values) { return [...new Set(values)]; }
 async function hash(value) { const bytes = new TextEncoder().encode(String(value)); const digest = await crypto.subtle.digest("SHA-256", bytes); return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("").slice(0, 32); }
+async function fullHash(value) { const bytes = new TextEncoder().encode(String(value)); const digest = await crypto.subtle.digest("SHA-256", bytes); return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join(""); }
+function stableStringify(value, omit = new Set()) { if (Array.isArray(value)) return `[${value.map(item => stableStringify(item, omit)).join(",")}]`; if (value && typeof value === "object") return `{${Object.keys(value).filter(key => !omit.has(key)).sort().map(key => `${JSON.stringify(key)}:${stableStringify(value[key], omit)}`).join(",")}}`; return JSON.stringify(value); }

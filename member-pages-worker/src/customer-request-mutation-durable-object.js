@@ -20,6 +20,10 @@ export class CustomerRequestMutationCoordinator {
         if (!current || current.operation_id !== body.operation_id || current.stage !== 'prepared' || current.mutation_fingerprint !== body.mutation_fingerprint) return Response.json({ ok: false, error: 'REQUEST_MUTATION_LEASE_LOST' }, { status: 409 });
         current.status = 'writing'; current.stage = 'write_started'; await this.state.storage.put('lease', current); return Response.json({ ok: true, write_started: true });
       }
+      if (body.action === 'mark_item') {
+        if (!current || current.operation_id !== body.operation_id || current.status !== 'writing' || current.mutation_fingerprint !== body.mutation_fingerprint || !body.item_key) return Response.json({ ok: false, error: 'REQUEST_MUTATION_LEASE_LOST' }, { status: 409 });
+        current.completed_keys = [...new Set([...(current.completed_keys || []), String(body.item_key)])]; await this.state.storage.put('lease', current); return Response.json({ ok: true, completed_keys: current.completed_keys });
+      }
       if (body.action === 'finish') {
         if (!current || current.operation_id !== body.operation_id) return Response.json({ ok: false, error: 'REQUEST_MUTATION_LEASE_LOST' }, { status: 409 });
         if (body.mutation_fingerprint && current.mutation_fingerprint !== body.mutation_fingerprint) return Response.json({ ok: false, error: 'REQUEST_MUTATION_FINGERPRINT_MISMATCH' }, { status: 409 });
@@ -28,7 +32,7 @@ export class CustomerRequestMutationCoordinator {
         if (current.status === 'uncertain') return Response.json({ ok: false, error: 'REQUEST_MUTATION_RECONCILE_REQUIRED' }, { status: 409 });
         await this.state.storage.delete('lease'); return Response.json({ ok: true, completed: 'committed' });
       }
-      if (body.action === 'reconcile' && (current?.status === 'uncertain' || current?.status === 'pending') && current.operation_id === body.operation_id && body.readback_verified === true && body.mutation_fingerprint && current.mutation_fingerprint === body.mutation_fingerprint) { await this.state.storage.delete('lease'); return Response.json({ ok: true, reconciled: true }); }
+      if (body.action === 'reconcile' && current?.stage === 'write_started' && (current.status === 'writing' || current.status === 'uncertain') && current.operation_id === body.operation_id && body.readback_verified === true && body.mutation_fingerprint && current.mutation_fingerprint === body.mutation_fingerprint) { await this.state.storage.delete('lease'); return Response.json({ ok: true, reconciled: true }); }
       return Response.json({ ok: false, error: 'invalid_action' }, { status: 400 });
     });
   }
