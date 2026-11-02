@@ -11,7 +11,7 @@ export const DO_CLASS = 'CustomerRequestMutationCoordinator';
 export const DO_BINDING = 'CUSTOMER_REQUEST_MUTATION';
 export const OLD_MIGRATION_TAG = 'v3-remembered-login-device';
 export const NEW_MIGRATION_TAG = 'v5-customer-request-mutation';
-export const EXPECTED_MEMBER_CANDIDATE_SHA256 = '3cb754442de491c63bcbe3992055c76feefb667853f0172ea6c482d77af4d628';
+export const EXPECTED_MEMBER_CANDIDATE_SHA256 = 'e0dcf07e9dbc8c1d74e1c2b5b8afe7db4b2e6f34ae5a69cc308142d89e00ec58';
 export const EXPECTED_ADMIN_CANDIDATE_SHA256 = 'dfccb9dc54c98662a99e596c3765dec19a2c70c183ef5182fa0ad3984a070164';
 
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
