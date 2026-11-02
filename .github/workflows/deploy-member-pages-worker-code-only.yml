@@ -127,7 +127,7 @@ jobs:
           path: release-tools
           persist-credentials: false
       - name: Check out exact reviewed MY MMD PR 2652 application source
-        if: inputs.execution_mode == 'release' || inputs.execution_mode == 'recovery-artifact'
+        if: inputs.execution_mode == 'release'
         uses: actions/checkout@v5
         with:
           ref: 871d99cd9eb1c8d53e1d473160119030dca01d4c
@@ -142,11 +142,11 @@ jobs:
           fetch-depth: 0
           path: recovery-source
           persist-credentials: false
-      - name: Overlay only reviewed recovery runtime files
+      - name: Verify scoped recovery release runner without production writes
         if: inputs.execution_mode == 'recovery-artifact'
         run: |
-          cp ../recovery-source/member-pages-worker/src/liff-identity-foundation.js ../release-source/member-pages-worker/src/liff-identity-foundation.js
-          cp ../recovery-source/member-pages-worker/src/member-email-recovery.js ../release-source/member-pages-worker/src/member-email-recovery.js
+          node --test scripts/member-pages-recovery-artifact.test.mjs scripts/member-pages-recovery-artifact-release.test.mjs
+          node scripts/member-pages-recovery-artifact-release.mjs --plan-only
       - name: Check out original startup source for promotion-only recovery
         if: inputs.execution_mode == 'promote-existing'
         uses: actions/checkout@v5
@@ -162,7 +162,7 @@ jobs:
         run: |
           node --test scripts/member-pages-owner-approval.test.mjs scripts/member-pages-artifact-delta.test.mjs scripts/member-pages-code-only-release.test.mjs scripts/member-pages-uploaded-recovery.test.mjs scripts/member-pages-promotion-only-recovery.test.mjs scripts/member-pages-recovery-adapter.test.mjs scripts/member-pages-renewal-artifact.test.mjs scripts/member-pages-renewal-activation.test.mjs
       - name: Verify MY MMD release source behavior
-        if: inputs.execution_mode == 'release' || inputs.execution_mode == 'recovery-artifact'
+        if: inputs.execution_mode == 'release'
         run: |
           node --test ../release-source/member-pages-worker/test/liff-member-shell.test.mjs ../release-source/member-pages-worker/test/liff-member-compact-v4.test.mjs ../release-source/member-pages-worker/test/liff-quick-membership.test.mjs ../release-source/member-pages-worker/test/member-history-preview.test.mjs ../release-source/member-pages-worker/test/points-display-source-guard.test.mjs ../release-source/member-pages-worker/test/kenji-line-member-truth.test.mjs ../release-source/member-pages-worker/test/liff-account-view.test.mjs ../release-source/member-pages-worker/test/liff-identity-foundation.test.mjs ../release-source/member-pages-worker/test/member-app-api.runtime.test.mjs
           node --check ../release-source/member-pages-worker/src/liff-member-shell.js
