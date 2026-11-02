@@ -177,7 +177,10 @@ function safeNonce(html) {
 export function stabilizeStatusShell(html, request) {
   if (!isStatusLiffShellRequest(request)) return String(html || "");
   const target = statusReturnTarget(request);
-  if (!target) return String(html || "");
+  // The default destination already redirects back to this LIFF home. Let the
+  // shell finish its own authenticated profile render instead of bouncing out.
+  // Explicit allowlisted destinations still use the auth bridge below.
+  if (!target || target === DEFAULT_STATUS_RETURN_TARGET) return String(html || "");
   const targetJson = JSON.stringify(target);
   let output = String(html || "");
   output = output.replace(
@@ -254,7 +257,11 @@ async function rewriteLiffHtml(request, response) {
   for (const name of ["content-length", "content-encoding", "etag", "last-modified", "content-md5"]) headers.delete(name);
   headers.set("cache-control", "no-store, no-cache, must-revalidate, max-age=0");
   headers.set("x-mmd-liff-stability", "real-line-v1");
-  if (isStatusLiffShellRequest(request)) headers.set("x-mmd-liff-return-target", statusReturnTarget(request));
+  if (isStatusLiffShellRequest(request)) {
+    const target = statusReturnTarget(request);
+    if (target && target !== DEFAULT_STATUS_RETURN_TARGET) headers.set("x-mmd-liff-return-target", target);
+    else if (target === DEFAULT_STATUS_RETURN_TARGET) headers.delete("x-mmd-liff-return-target");
+  }
   return new Response(html, { status: response.status, statusText: response.statusText, headers });
 }
 
