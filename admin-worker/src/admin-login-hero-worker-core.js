@@ -126,6 +126,7 @@ const ALLOWED_NEXT_PATHS = [
   "/internal/admin",
   "/internal/admin/control-room",
   "/internal/admin/customer-data",
+  "/internal/admin/my-mmd/your-request",
   "/internal/admin/dashboard",
   "/internal/admin/calendar",
   "/internal/admin/applications",

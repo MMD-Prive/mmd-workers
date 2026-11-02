@@ -84,6 +84,14 @@ service = "sigil-booking-worker"
 name = "CARE_BACK_WISH_COORDINATOR"
 class_name = "CareBackBirthdayWishCoordinator"
 
+[[durable_objects.bindings]]
+name = "CUSTOMER_REQUEST_QUOTA"
+class_name = "CustomerRequestQuotaCoordinator"
+
+[[durable_objects.bindings]]
+name = "CUSTOMER_REQUEST_MUTATION"
+class_name = "CustomerRequestMutationCoordinator"
+
 [[migrations]]
 tag = "v1-care-back-birthday-wish"
 new_sqlite_classes = ["CareBackBirthdayWishCoordinator"]
@@ -125,6 +133,14 @@ new_sqlite_classes = ["PrivatePreviewGate"]
 [[migrations]]
 tag = "v3-remembered-login-device"
 new_sqlite_classes = ["RememberedLoginDevice"]
+
+[[migrations]]
+tag = "v4-customer-request-quota"
+new_sqlite_classes = ["CustomerRequestQuotaCoordinator"]
+
+[[migrations]]
+tag = "v5-customer-request-mutation"
+new_sqlite_classes = ["CustomerRequestMutationCoordinator"]
 
 # Required before deployment:
 # - secret LINE_LOGIN_CHANNEL_ID (existing CARE BACK channel audience)

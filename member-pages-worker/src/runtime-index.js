@@ -76,6 +76,8 @@ import { handleMemberReplySnapshot, isMemberReplySnapshotPath, scheduleMemberRep
 
 export * from "./legacy-member-pages.js";
 export { CareBackBirthdayWishCoordinator } from "./care-back-birthday-wish-durable-object.js";
+export { CustomerRequestQuotaCoordinator } from "./customer-request-quota-durable-object.js";
+export { CustomerRequestMutationCoordinator } from "./customer-request-mutation-durable-object.js";
 export { RememberedLoginDevice } from "./liff-remembered-login-device.js";
 export { PrivatePreviewGate };
 export { MemberResolverDiagnosticEntrypoint };
