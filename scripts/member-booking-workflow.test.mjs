@@ -7,3 +7,11 @@ test('reviewed release path has pinned external build tool, regression checks an
 test('CLI refuses missing/unknown flags and wrong release mode before invoking provider',async()=>{await assert.rejects(bookingReleaseMain([],{}));await assert.rejects(bookingReleaseMain(['--deploy'],{}));await assert.rejects(bookingReleaseMain(['--execute-approved'],{RELEASE_MODE:'code-only',PRODUCTION_APPROVED:'true'}));});
 
 test('workflow preserves runner-provided GitHub identity variables',()=>{assert.doesNotMatch(workflow,/^\s+GITHUB_[A-Z_]+:/m);});
+
+test('retired SIGIL workflow cannot deploy on main or mutate production even if manually dispatched',()=>{
+ const legacy=readFileSync(new URL('../.github/workflows/deploy-sigil-booking-worker.yml',import.meta.url),'utf8');
+ const events=legacy.match(/^on:\n([\s\S]*?)^permissions:/m)?.[1];assert.ok(events);
+ assert.deepEqual([...events.matchAll(/^  ([a-z_]+):/gm)].map(m=>m[1]),['workflow_dispatch']);
+ assert.doesNotMatch(legacy,/secrets\.|CLOUDFLARE_|wrangler|actions\/checkout|method:\s*['"]?(POST|PUT|PATCH|DELETE)/);
+ assert.match(legacy,/exit 1/);assert.match(legacy,/deploy-member-booking-artifact\.yml/);
+});
