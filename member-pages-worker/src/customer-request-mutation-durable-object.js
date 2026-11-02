@@ -20,6 +20,10 @@ export class CustomerRequestMutationCoordinator {
         if (!current || current.operation_id !== body.operation_id || current.stage !== 'prepared' || current.mutation_fingerprint !== body.mutation_fingerprint) return Response.json({ ok: false, error: 'REQUEST_MUTATION_LEASE_LOST' }, { status: 409 });
         current.status = 'writing'; current.stage = 'write_started'; await this.state.storage.put('lease', current); return Response.json({ ok: true, write_started: true });
       }
+      if (body.action === 'resume') {
+        if (!current || current.operation_id !== body.operation_id || (current.status !== 'uncertain' && current.status !== 'writing') || current.stage !== 'write_started' || current.current_item || current.mutation_fingerprint !== body.mutation_fingerprint) return Response.json({ ok: false, error: 'REQUEST_MUTATION_RESUME_BLOCKED' }, { status: 409 });
+        current.status = 'writing'; await this.state.storage.put('lease', current); return Response.json({ ok: true, resumed: true, completed_keys: current.completed_keys || [] });
+      }
       if (body.action === 'item_started') {
         if (!current || current.operation_id !== body.operation_id || current.status !== 'writing' || current.mutation_fingerprint !== body.mutation_fingerprint || !body.item_key || current.current_item) return Response.json({ ok: false, error: 'REQUEST_MUTATION_ITEM_IN_FLIGHT' }, { status: 409 });
         current.current_item = String(body.item_key); current.item_started_at = Date.now(); await this.state.storage.put('lease', current); return Response.json({ ok: true, item_started: current.current_item });

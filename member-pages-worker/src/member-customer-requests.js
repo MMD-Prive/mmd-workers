@@ -42,7 +42,7 @@ export async function handleMemberCustomerRequest(request, env = {}) {
 async function handleAdminMutationLease(request, env) {
   if (!internalAuthorized(request) || !env.CUSTOMER_REQUEST_MUTATION?.idFromName || !env.CUSTOMER_REQUEST_MUTATION?.get) return fail(404, "NOT_FOUND");
   const body = await request.json().catch(() => null); const recordId = safeText(body?.record_id, 40); const operationId = safeText(body?.operation_id, 100);
-  if (!/^rec[A-Za-z0-9]{10,32}$/.test(recordId) || (body?.action !== "inspect" && !operationId) || !["begin", "prepare", "write_started", "item_started", "mark_item", "finish", "inspect", "reconcile"].includes(body?.action)) return fail(400, "INVALID_REQUEST");
+  if (!/^rec[A-Za-z0-9]{10,32}$/.test(recordId) || (body?.action !== "inspect" && !operationId) || !["begin", "prepare", "write_started", "resume", "item_started", "mark_item", "finish", "inspect", "reconcile"].includes(body?.action)) return fail(400, "INVALID_REQUEST");
   const id = env.CUSTOMER_REQUEST_MUTATION.idFromName(recordId);
   const response = await env.CUSTOMER_REQUEST_MUTATION.get(id).fetch("https://mutation/" + body.action, { method: "POST", body: JSON.stringify({ action: body.action, operation_id: operationId, status: body.status, mutation_fingerprint: body.mutation_fingerprint, readback_verified: body.readback_verified === true }) }).catch(() => null);
   if (!response) return fail(503, "REQUEST_MUTATION_UNAVAILABLE");
