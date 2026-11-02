@@ -59,7 +59,8 @@ test("authorized existing LINE members can bypass redundant ENTER without auto L
   assert.doesNotMatch(html.slice(start,stop),/liff\.login\(/);
   // Manual visitor ENTER remains possible and may run the existing LIFF handshake.
   assert.match(html,/introContinue\?\.addEventListener\("click", enterApp\)/);
-  assert.match(html,/window\.liff\.login\(\{ redirectUri: window\.location\.href \}\)/);
+  // Manual login uses the registered host; destination preservation has dedicated coverage.
+  assert.match(html,/window\.liff\.login\(\{ redirectUri: loginReturn\.href \}\)/);
 });
 
 test("opening progress remains indeterminate until the real entry decision completes",async()=>{
