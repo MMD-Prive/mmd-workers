@@ -1,6 +1,6 @@
 import { createLineSignature, extractKenjiModelLookupQuery, inferLineIntent, requestKenjiRuntimeStatus, resolveLineCardCampaignTrigger, verifyLineSignature } from "./index.js";
 import { ownerContextTestAllowed, ownerContextTestRequested } from "./kenji-owner-context-test.mjs";
-import { restrictedReplyCategories, approvedCategoryReply } from './kenji-reply-category-gate.mjs';
+import { restrictedReplyCategories, approvedCategoryReply, isExplicitCategoryCommand } from './kenji-reply-category-gate.mjs';
 import { approvedPublicQa } from './kenji-approved-public-qa.mjs';
 import { careBackOctoberReply } from './kenji-care-back-october.mjs';
 import {
@@ -292,7 +292,8 @@ export async function handleKenjiSeedLineRequestWithRedeliveryRecovery(
     ? await hasCardCampaignContext(env, events[0])
     : false;
   const publicCategory = restrictedReplyCategories(env) && events.length === 1 &&
-    approvedCategoryReply(events[0], env, {ownerFaq:approvedPublicQa,careBackOctoberReply});
+    (isExplicitCategoryCommand(events[0], env) ||
+      approvedCategoryReply(events[0], env, {ownerFaq:approvedPublicQa,careBackOctoberReply}));
   if (redeliveryIndexes.length === 0 && membershipStatusIndexes.length === 0 && !hasCardCampaignAction && !hasPendingCardCampaign && !publicCategory) {
     const operationalRequest = new Request(request.url, {
       method: "POST",
