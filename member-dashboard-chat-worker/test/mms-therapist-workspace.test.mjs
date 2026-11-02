@@ -280,3 +280,26 @@ test('Webflow failed LINE authentication keeps invite and bounds fresh login',as
   const h=webflowHarness({error:'LINE_ID_TOKEN_INVALID'});await h.button.click();assert.ok(h.values.has('mms-therapist-invite-v1'));assert.equal(new URLSearchParams(new URL(h.redirects[0]).hash.slice(1)).get('invite'),'webflow-invite');
   await h.button.click();assert.equal(h.redirects.length,1);assert.match(h.state.textContent,/ติดต่อพี่เปอร์/);
 });
+
+
+test('explicit Therapist logout clears cached LINE auth without automatically signing back in', async () => {
+  const h=loginHarness({url:origin+path+'/login?logout=1', saved:[['mms-therapist-invite-v1',JSON.stringify({token:'old-invite',until:Date.now()+60000})]], loggedIn:true});
+  await settle();
+  assert.equal(h.logouts,1);
+  assert.equal(h.requests.length,0);
+  assert.equal(h.redirects.length,0);
+  assert.equal(h.data.has('mms-therapist-invite-v1'),false);
+  assert.equal(h.els['line-login'].disabled,false);
+  assert.match(h.els.notice.textContent,/ออกจากบัญชีแล้ว/);
+});
+
+
+test('choosing LINE again after logout never reuses the prior access invite', async () => {
+  const h=loginHarness({url:origin+path+'/login?logout=1', saved:[['mms-therapist-invite-v1',JSON.stringify({token:'old-invite',until:Date.now()+60000})]], loggedIn:false});
+  await settle();
+  assert.equal(h.redirects.length,0);
+  await h.els['line-login'].click();
+  assert.equal(h.redirects.length,1);
+  assert.equal(new URL(h.redirects[0]).hash,'');
+  assert.equal(h.requests.length,0);
+});
