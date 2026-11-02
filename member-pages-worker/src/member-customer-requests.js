@@ -72,7 +72,7 @@ async function handleRequest(request, env, identity) {
   if (input.data.request_type === "your_request" && quota.remaining <= 0) return fail(429, "YOUR_REQUEST_MONTHLY_LIMIT", { "retry-after": "3600" });
   const evidence = input.data.evidence_ids.length ? await validateEvidence(env, identity.clientId, input.data.evidence_ids) : [];
   if (evidence === null) return fail(409, "EVIDENCE_UNAVAILABLE");
-  const reservation = input.data.request_type === "your_request" ? await reserveQuota(env, identity.clientId, quota.month_key, input.data.request_id, requestFingerprint(input.data), rawPrior.map((record) => parsePayload(record?.fields?.payload_json)).filter((data) => data.request_type === "your_request" && monthKeyInBangkok(data.created_at) === quota.month_key).map((data) => data.request_id)) : { ok: true, reserved: false };
+  const reservation = input.data.request_type === "your_request" ? await reserveQuota(env, identity.clientId, quota.month_key, input.data.request_id, requestFingerprint(input.data), rawPrior.map((record) => parsePayload(record?.fields?.payload_json)).filter((data) => data.request_type === "your_request" && data.archival !== true && data.quota_exempt !== true && monthKeyInBangkok(data.created_at) === quota.month_key).map((data) => data.request_id)) : { ok: true, reserved: false };
   if (!reservation.ok) return fail(reservation.status || 503, reservation.error || "REQUEST_QUEUE_UNAVAILABLE");
   if (input.data.request_type === "your_request" && !reservation.reserved) {
     if (reservation.result) return json({ ...reservation.result, idempotent: true }, 200);
@@ -120,19 +120,20 @@ async function appendEvidenceToRequest(body, env, identity) {
   const records = await listInbox(env, identity.lineUserId); if (records === null) return fail(503, "REQUEST_QUEUE_UNAVAILABLE");
   const record = records.find(row => parsePayload(row?.fields?.payload_json)?.request_id === requestId); if (!record) return fail(404, "REQUEST_NOT_FOUND");
   const mutation = await beginRequestMutation(env, record.id); if (!mutation.ok) return fail(mutation.status || 503, mutation.error || "REQUEST_MUTATION_UNAVAILABLE");
-  const payload = parsePayload(record.fields?.payload_json); if (payload.canonical_client_id !== identity.clientId) return fail(404, "REQUEST_NOT_FOUND");
+  const lockedRecords = await listInbox(env, identity.lineUserId); const lockedRecord = lockedRecords?.find(row => row.id === record.id); if (!lockedRecord) { await finishRequestMutation(env, record.id, mutation.operation_id, "uncertain"); return fail(503, "REQUEST_QUEUE_UNAVAILABLE"); }
+  const payload = parsePayload(lockedRecord.fields?.payload_json); if (payload.canonical_client_id !== identity.clientId) { await finishRequestMutation(env, record.id, mutation.operation_id, "uncertain"); return fail(404, "REQUEST_NOT_FOUND"); }
   const checked = await validateEvidence(env, identity.clientId, evidenceIds); if (checked === null) return fail(409, "EVIDENCE_UNAVAILABLE");
   const before = unique(array(payload.evidence_ids).filter(safeEvidenceId));
   const next = unique([...before, ...checked.map(item => item.evidence_id)]);
   if (next.length > MAX_EVIDENCE) return fail(409, "EVIDENCE_LIMIT_REACHED");
   payload.evidence_ids = next; payload.updated_at = new Date().toISOString();
   const updated = await updateInbox(env, record.id, { payload_json: JSON.stringify(payload), admin_note: adminNote(payload) });
-  await finishRequestMutation(env, record.id, mutation.operation_id);
-  if (!updated) return fail(503, "REQUEST_QUEUE_UNAVAILABLE");
+  await finishRequestMutation(env, record.id, mutation.operation_id, updated ? "committed" : "uncertain");
+  if (!updated) return fail(503, "REQUEST_QUEUE_WRITE_UNCERTAIN");
   return json({ ok: true, item: customerItem(payload), evidence_ids: next, idempotent: next.length === before.length });
 }
 async function beginRequestMutation(env, recordId) { if (!env.CUSTOMER_REQUEST_MUTATION?.idFromName || !env.CUSTOMER_REQUEST_MUTATION?.get) return { ok: false, status: 503, error: "REQUEST_MUTATION_UNAVAILABLE" }; const operation_id = crypto.randomUUID(); const id = env.CUSTOMER_REQUEST_MUTATION.idFromName(recordId); const response = await env.CUSTOMER_REQUEST_MUTATION.get(id).fetch("https://mutation/begin", { method: "POST", body: JSON.stringify({ action: "begin", operation_id }) }).catch(() => null); const body = await response?.json().catch(() => null); return response?.ok ? { ok: true, operation_id } : { ok: false, status: response?.status || 503, error: body?.error || "REQUEST_MUTATION_UNAVAILABLE" }; }
-async function finishRequestMutation(env, recordId, operation_id) { const id = env.CUSTOMER_REQUEST_MUTATION.idFromName(recordId); await env.CUSTOMER_REQUEST_MUTATION.get(id).fetch("https://mutation/finish", { method: "POST", body: JSON.stringify({ action: "finish", operation_id, status: "committed" }) }).catch(() => null); }
+async function finishRequestMutation(env, recordId, operation_id, status = "committed") { const id = env.CUSTOMER_REQUEST_MUTATION.idFromName(recordId); await env.CUSTOMER_REQUEST_MUTATION.get(id).fetch("https://mutation/finish", { method: "POST", body: JSON.stringify({ action: "finish", operation_id, status }) }).catch(() => null); }
 
 async function handleEvidenceUpload(request, env, identity) {
   if (request.method !== "POST") return fail(405, "METHOD_NOT_ALLOWED", { allow: "POST" });
@@ -217,7 +218,7 @@ function customerItem(data) {
 
 function requestQuota(records) {
   const month = monthKeyInBangkok(new Date());
-  const ids = new Set(records.map((record) => parsePayload(record?.fields?.payload_json)).filter((data) => data.schema === "mmd_customer_request_v1" && data.request_type === "your_request" && monthKeyInBangkok(data.created_at) === month).map((data) => data.request_id).filter(Boolean));
+  const ids = new Set(records.map((record) => parsePayload(record?.fields?.payload_json)).filter((data) => data.schema === "mmd_customer_request_v1" && data.request_type === "your_request" && data.archival !== true && data.quota_exempt !== true && monthKeyInBangkok(data.created_at) === month).map((data) => data.request_id).filter(Boolean));
   return { month_key: month, limit: MONTHLY_PERSON_LIMIT, used: ids.size, remaining: Math.max(0, MONTHLY_PERSON_LIMIT - ids.size) };
 }
 
