@@ -1,3 +1,4 @@
+import { MMS_MAX_COVERAGE_ZONES } from "../../shared/mms-service-zone-policy.mjs";
 import { MMS_GRAPHICS_CSS, MMS_GRAPHICS_LOGO, mmsGraphicIcon } from "./mms-graphics-v2.mjs";
 import { mmsGraphicRuntime } from "./mms-graphic-progress.mjs";
 import { MMS_LOGO_SHA256, mmsLogoResponse } from "../../admin-worker/src/mms-internal-logo-asset.mjs";
@@ -75,24 +76,31 @@ export function renderTherapistWorkspace(login = false) {
   const loginEntry = login ? `<section id="entry" class="auth-card" aria-labelledby="auth-card-title"><div class="auth-card-top"><span class="auth-step">01 / เข้า MY THERAPIST</span><span class="auth-lock">เฉพาะบัญชีที่เชื่อมแล้ว</span></div><h2 id="auth-card-title">ยืนยันผ่าน LINE</h2><p class="auth-card-copy">ใช้ LINE ที่เชื่อมกับโปรไฟล์ MMS ของคุณ เพื่อเข้าพื้นที่ทำงานครับ</p><button id="line-login" class="auth-primary" type="button"><span>ยืนยันผ่าน LINE</span><span aria-hidden="true">↗</span></button><p id="notice" role="status" aria-live="polite">กำลังเชื่อมต่อ LINE ครับ</p><div class="auth-actions"><button id="retry" class="alt" type="button" hidden>ลองอีกครั้ง</button><a href="https://liff.line.me/2011425652-YqK1F6y8">เปิดใน LINE Mini App ↗</a></div><p class="auth-help">ยังไม่ได้เชื่อมบัญชี? ใช้ลิงก์เปิดสิทธิ์ที่ได้รับก่อนครับ</p></section></div><footer class="auth-footer"><span>MMS · MALE MASSAGE</span> / พื้นที่สำหรับ Therapist ที่ได้รับสิทธิ์</footer>` : `<section id="entry" class="card" hidden><h2>เข้าพื้นที่ Therapist</h2><p>ใช้ LINE ที่เชื่อมกับโปรไฟล์ MMS ของคุณครับ</p><button id="line-login" type="button">ยืนยันผ่าน LINE</button><p><a href="https://liff.line.me/2011425652-YqK1F6y8">เปิดใน LINE Mini App ↗</a></p><p class="muted">หากยังไม่ได้เชื่อมบัญชี ให้ใช้ลิงก์เปิดสิทธิ์จากพี่เปอร์</p></section>`;
   return `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>MY THERAPIST · MMS</title><style>
   *{box-sizing:border-box}body{margin:0;background:#f4f5ef;color:#20392b;font:16px/1.6 system-ui,-apple-system,sans-serif}main{max-width:760px;margin:auto;padding:20px 18px calc(28px + env(safe-area-inset-bottom))}header{display:flex;align-items:center;justify-content:space-between;gap:16px}h1{font-size:25px;margin:6px 0}h2{font-size:20px;margin:0 0 12px}h3{font-size:17px;margin:0}p{margin:8px 0}.muted{color:#5c6d60;font-size:14px}.card{background:#fff;border:1px solid #dce2d6;border-radius:18px;padding:18px;margin:14px 0}.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}button,.button{border:0;border-radius:12px;min-height:48px;padding:10px 16px;font:inherit;cursor:pointer;background:#24563c;color:#fff;text-decoration:none;display:inline-flex;align-items:center;justify-content:center}button.alt,.button.alt{background:#e9eee4;color:#24563c}button:disabled{opacity:.5;cursor:wait}input,textarea,select{width:100%;font:inherit;border:1px solid #c8d3c4;border-radius:10px;padding:10px;margin:4px 0 12px;background:white;color:#20392b}label{display:block;font-size:14px}nav{display:flex;gap:8px;margin:20px 0;overflow:auto}nav button{white-space:nowrap;background:#e9eee4;color:#24563c}nav button[aria-selected=true]{background:#24563c;color:white}#notice{min-height:26px}#notice.error{color:#8f2f20}.badge{font-size:13px;padding:4px 10px;border-radius:30px;background:#e9eee4}a{color:#24563c}img{width:100px;height:120px;object-fit:cover;border-radius:10px}section[hidden],[hidden]{display:none!important}.course{border-top:1px solid #ddd;padding-top:12px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}#detail{white-space:normal}.address{white-space:pre-line}#coverage-zones{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0 14px}.zone-choice{display:flex;align-items:center;gap:8px;padding:10px;border:1px solid #dce2d6;border-radius:10px;background:#fbfcf9}.zone-choice input{width:20px;height:20px;margin:0;flex:none}.area-note{padding:12px;border-radius:12px;background:#f1f5eb}@media(max-width:480px){#coverage-zones{grid-template-columns:1fr}}button:focus-visible,a:focus-visible{outline:3px solid #ad8544;outline-offset:3px}@media(max-width:480px){main{padding:16px 14px 28px}.grid{grid-template-columns:1fr}}
+  .profile-nav{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));overflow:visible;gap:6px}.profile-nav button{white-space:normal;min-width:0;padding:10px 6px;font-weight:700}.profile-nav button[aria-pressed=true]{background:#24563c;color:#fff}#profile h2{font-size:22px}#profile label{font-size:16px;font-weight:600}#zone-picker summary{cursor:pointer;min-height:48px;padding:12px 0;font-weight:700}#zone-picker{max-width:100%}#profile button,#profile input{overflow-wrap:anywhere}#profile-save-status{color:#8f2f20}.zone-choice span{overflow-wrap:anywhere}main{padding-left:max(18px,env(safe-area-inset-left));padding-right:max(18px,env(safe-area-inset-right));padding-bottom:max(28px,env(safe-area-inset-bottom))}@media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
   ${loginStyles}
 ${MMS_GRAPHICS_CSS}</style></head><body data-mms-graphics="therapist-v2" class="${login ? "auth-page" : ""}"><main class="${login ? "auth-shell" : ""}" data-mms-shell="native-workspace-v1" data-login="${login}">${loginHeader}${loginEntry}<div id="graphic-progress" hidden></div>
   <div id="workspace" hidden><section class="card">${mmsGraphicIcon("online")}<h2 id="greeting"></h2><p id="readiness"></p><label>สถานะรับงาน<select id="availability"><option value="Available">Online · รับงานที่ตรงพื้นที่</option><option value="Unavailable">Offline · งดรับงาน</option><option value="Paused">พักรับงานชั่วคราว</option></select></label><p class="muted">เมื่อ Online คุณจะเห็นงานที่ตรงกับเขตบริการและคอร์สที่ยืนยันแล้ว เลือกดูรายละเอียดก่อนตอบรับได้ครับ</p><button id="save-availability">บันทึกสถานะ</button><button class="alt" id="refresh">รีเฟรช</button></section>
   <nav aria-label="พื้นที่ทำงาน"><button data-tab="offers" aria-selected="true">${mmsGraphicIcon("offers")}งานเสนอให้คุณ</button><button data-tab="jobs" aria-selected="false">${mmsGraphicIcon("booking")}งานของฉัน</button><button data-tab="profile" aria-selected="false">${mmsGraphicIcon("profile")}โปรไฟล์และคอร์ส</button><a class="button alt" href="/male-massage/therapists/app/chat">แชตกับลูกค้า</a></nav>
   <section id="offers"><div id="offer-list"></div></section><section id="jobs" hidden><div id="job-list"></div></section>
-  <section id="profile" hidden><form id="profile-form" class="card"><h2>โปรไฟล์ของคุณ</h2><label>ชื่อที่แสดง<input id="display-name" required maxlength="120"></label><label>แนะนำตัว<textarea id="intro" maxlength="600"></textarea></label><div class="area-note"><h3>เขตที่สะดวกรับงาน</h3><p class="muted">เลือกพื้นที่หลักและพื้นที่ที่รับงานได้ ไม่ต้องระบุที่อยู่บ้านหรือเปิด GPS ครับ</p><label>เขตหลัก<select id="base-zone"><option value="">ยังไม่เลือกเขตหลัก</option></select></label><div id="coverage-zones" aria-label="เขตที่รับงานได้"></div><p id="zone-status" class="muted" role="status">กำลังโหลดเขตบริการครับ</p></div><label>การแสดงโปรไฟล์<select id="visibility"><option value="hidden">เก็บไว้ส่วนตัว</option><option value="public">แสดงโปรไฟล์</option></select></label><h3>คอร์สบริการ</h3><p class="muted">ราคาคอร์สยังไม่รวมค่าเดินทาง ยอดงานจริงต้องได้รับการสรุปก่อนครับ</p><div id="courses"></div><button type="button" class="alt" id="add-course">เพิ่มคอร์ส</button><button type="submit">บันทึกโปรไฟล์</button></form><section class="card"><h2>รูปโปรไฟล์</h2><p class="muted">เลือกได้ไม่เกิน 6 รูปสำหรับแสดงในโปรไฟล์ เก็บรูปทั้งหมดได้ไม่เกิน 12 รูป</p><div id="photos" class="row"></div><label>เพิ่มรูป JPEG / PNG / WebP ไม่เกิน 10 MB<input id="upload" type="file" accept="image/jpeg,image/png,image/webp"></label><button id="save-photos">บันทึกรูปที่แสดง</button></section></section>
+  <section id="profile" hidden><nav aria-label="จัดการโปรไฟล์" class="profile-nav"><button type="button" data-profile-tab="courses" aria-pressed="true">คอร์สและราคา</button><button type="button" data-profile-tab="info" aria-pressed="false">ข้อมูลและรูป</button><button type="button" data-profile-tab="zones" aria-pressed="false">เขตบริการ</button></nav><form id="profile-form" class="card" novalidate><section id="profile-info" hidden><h2 tabindex="-1">ข้อมูลของคุณ</h2><label>ชื่อที่แสดง<input id="display-name" required maxlength="120"></label><label>แนะนำตัว<textarea id="intro" maxlength="600"></textarea></label><label>การแสดงโปรไฟล์<select id="visibility"><option value="hidden">เก็บไว้ส่วนตัว</option><option value="public">แสดงโปรไฟล์</option></select></label></section><section id="profile-courses"><h2 tabindex="-1">คอร์สและราคา</h2><p>บริการที่ยืนยันแล้ว: <strong id="verified-services">กำลังตรวจสอบ</strong></p><p class="muted">เพิ่มรายละเอียดคอร์สได้ แต่ไม่ใช่การอนุมัติบริการหรือเปิดรับงาน ราคานี้ยังไม่รวมค่าเดินทาง ยอดงานจริงต้องได้รับการสรุปก่อนครับ</p><div id="courses"></div><p id="course-empty" hidden>ยังไม่มีคอร์ส กดเพิ่มคอร์สเพื่อใส่ชื่อ ระยะเวลา และราคาครับ</p><button type="button" class="alt" id="add-course">เพิ่มคอร์ส</button></section><section id="profile-zones" hidden><h2 tabindex="-1">เขตบริการ</h2><p id="zone-summary" role="status">กำลังตรวจเขตบริการ</p><div class="area-note"><p class="muted">เลือกพื้นที่หลักและพื้นที่ที่รับงานได้ ไม่ต้องระบุที่อยู่บ้านหรือเปิด GPS ครับ</p><label>เขตหลัก<select id="base-zone"><option value="">ยังไม่เลือกเขตหลัก</option></select></label><details id="zone-picker"><summary>เปิดเลือกเขตที่รับงาน</summary><label>ค้นหาเขตหรือจังหวัด<input id="zone-search" type="search" autocomplete="off"></label><div id="coverage-zones" aria-label="เขตที่รับงานได้"></div></details><p id="zone-status" class="muted" role="status">กำลังโหลดเขตบริการครับ</p><button type="button" id="retry-zones" class="alt" hidden>ลองโหลดเขตอีกครั้ง</button></div></section><p id="profile-save-status" role="status" aria-live="polite"></p><button type="submit" id="save-profile" disabled>บันทึกโปรไฟล์</button></form><section id="profile-photos" class="card" hidden><h2>รูปโปรไฟล์</h2><p class="muted">เลือกได้ไม่เกิน 6 รูปสำหรับแสดงในโปรไฟล์ เก็บรูปทั้งหมดได้ไม่เกิน 12 รูป</p><div id="photos" class="row"></div><label>เพิ่มรูป JPEG / PNG / WebP ไม่เกิน 10 MB<input id="upload" type="file" accept="image/jpeg,image/png,image/webp"></label><button id="save-photos">บันทึกรูปที่แสดง</button></section></section>
   <section id="detail" class="card" hidden></section><div class="row"><button id="logout" class="alt">ออกจากบัญชี</button></div></div></main>
-  ${login ? '<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>' : ''}<script>const __name = (target, value) => Object.defineProperty(target, "name", { value, configurable: true });(${mmsGraphicRuntime.toString()})();(${therapistClient.toString()})();</script></body></html>`;
+  ${login ? '<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>' : ''}<script>const __name = (target, value) => Object.defineProperty(target, "name", { value, configurable: true });(${mmsGraphicRuntime.toString()})();(${therapistClient.toString()})(${MMS_MAX_COVERAGE_ZONES});</script></body></html>`;
 }
 
-export function therapistClient() {
+export function therapistClient(maxCoverageZones = 0) {
   const P = "/male-massage/therapists";
   const A = P + "/api/app";
   const $ = (id) => document.getElementById(id);
   let access = null, profile = null, tab = "offers", refreshing = false;
+  let profileRequest = 0, zonesDirty = false, zoneLimit = maxCoverageZones;
   const actionKeys = new Map();
   const controllers = new Set(); let accountEpoch = 0;
   function clearPrivate() {
+    profileRequest += 1; zonesDirty = false;
+    $("base-zone").replaceChildren(); $("base-zone").value = ""; $("base-zone").dataset.ready = "false";
+    $("visibility").value = "hidden"; $("save-profile").disabled = true; $("profile-save-status").textContent = "";
+    $("zone-summary").textContent = ""; $("verified-services").textContent = "";
+    $("greeting").textContent = ""; $("readiness").textContent = ""; $("availability").value = "Unavailable";
     accountEpoch += 1; window.MmsGraphics?.cancel(); for (const controller of controllers) controller.abort();
     for (const id of ["offer-list", "job-list", "detail", "courses", "photos", "coverage-zones"]) $(id).replaceChildren();
     for (const id of ["display-name", "intro", "upload"]) $(id).value = "";
@@ -106,17 +114,27 @@ export function therapistClient() {
     THERAPIST_LINK_REQUIRED: "LINE นี้ยังไม่เชื่อมกับ Therapist ครับ ใช้ลิงก์เปิดสิทธิ์จากพี่เปอร์ก่อน",
     THERAPIST_ACCESS_DENIED: "บัญชี Therapist ยังไม่พร้อมใช้งานครับ ติดต่อพี่เปอร์เพื่อตรวจสถานะ",
     MY_MMS_ACCESS_REQUIRED: "กำลังรออนุมัติสิทธิ์แอปจากพี่เปอร์ครับ",
+    PROFILE_ACCOUNT_CHANGED: "บัญชีเปลี่ยนแล้ว กรุณายืนยันบัญชีและโหลดโปรไฟล์ใหม่ก่อนบันทึกครับ",
+    PROFILE_PARTIALLY_SAVED: "ข้อมูลบางส่วนบันทึกแล้ว แต่ยังบันทึกไม่ครบ กรุณารีเฟรชตรวจผลก่อนลองใหม่ครับ",
+    PROFILE_SAVE_UNCONFIRMED: "ยังยืนยันผลบันทึกไม่ได้ กรุณารีเฟรชตรวจข้อมูลก่อนลองใหม่ครับ",
+    SERVICE_ZONE_REVIEW_REQUIRED: "มีเขตเดิมที่ระบบยังยืนยันไม่ได้ กรุณาให้พี่เปอร์ตรวจเขตก่อนเปลี่ยนครับ",
+    PROFILE_INVALID_RESPONSE: "ข้อมูลโปรไฟล์ยังไม่ครบ กรุณาลองโหลดใหม่ครับ",
     EXPIRED: "งานหมดเวลารับแล้วครับ", TAKEN: "งานนี้มีคนรับแล้วครับ",
     INVALID_JOB_TRANSITION: "สถานะงานเปลี่ยนไปแล้วครับ กดรีเฟรชเพื่อตรวจอีกครั้ง",
   };
   function notice(text, error = false) { $("notice").textContent = text; $("notice").className = error ? "error" : ""; if (document.querySelector("main").dataset.login === "true") $("retry").hidden = !error; }
   function node(tag, text, className) { const el = document.createElement(tag); if (text != null) el.textContent = text; if (className) el.className = className; return el; }
   function button(text, callback, alt = false) { const el = node("button", text, alt ? "alt" : ""); el.type = "button"; el.addEventListener("click", () => busy(el, callback)); return el; }
-  async function busy(el, fn) { if (el.disabled) return; el.disabled = true; try { await fn(); } catch (e) { if (e.code === "STALE_RESPONSE") return; window.MmsGraphics?.failCurrent(messages[e.code] || "ยังทำรายการไม่สำเร็จครับ"); notice(messages[e.code] || "ยังทำรายการไม่สำเร็จครับ ลองอีกครั้งได้ ข้อมูลเดิมยังอยู่", true); } finally { el.disabled = false; } }
+  async function busy(el, fn) { if (el.disabled) return; el.disabled = true; try { await fn(); } catch (e) { if (e.code === "STALE_RESPONSE") return; window.MmsGraphics?.failCurrent(messages[e.code] || "ยังทำรายการไม่สำเร็จครับ"); notice(messages[e.code] || "ยังยืนยันผลรายการไม่ได้ครับ กรุณาตรวจข้อมูลก่อนลองอีกครั้ง", true); } finally { el.disabled = false; } }
   async function api(path, options = {}) {
     const epoch = accountEpoch; const progress = window.MmsGraphics; const step = progress?.begin();
     const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 15000); controllers.add(controller);
     try {
+      const mutation = path.startsWith(P + "/api/auth/profile") && !["GET", "HEAD"].includes(options.method || "GET");
+      if (mutation) {
+        if (!profile?.therapist_id || profile.therapist_id !== access?.therapist_id) throw Object.assign(new Error("PROFILE_ACCOUNT_CHANGED"), { code: "PROFILE_ACCOUNT_CHANGED" });
+        options = { ...options, headers: { ...(options.headers || {}), "X-MMS-Therapist-Context": profile.therapist_id } };
+      }
       const response = await fetch(path, { credentials: "same-origin", cache: "no-store", ...options, signal: controller.signal });
       if (epoch !== accountEpoch) throw Object.assign(new Error("STALE_RESPONSE"), { code: "STALE_RESPONSE" });
       progress?.received(step);
@@ -125,9 +143,10 @@ export function therapistClient() {
       if (epoch !== accountEpoch) throw Object.assign(new Error("STALE_RESPONSE"), { code: "STALE_RESPONSE" });
       if (!response.ok || body.ok !== true) {
         const e = new Error(body?.error?.code || "UNAVAILABLE"); e.code = body?.error?.code; e.status = response.status;
-        if (response.status === 401) { clearPrivate(); $("workspace").hidden = true; $("entry").hidden = false; $("line-login").onclick = () => location.assign(P + "/login"); }
+        if (response.status === 401 || e.code === "PROFILE_ACCOUNT_CHANGED") { clearPrivate(); $("workspace").hidden = true; $("entry").hidden = false; $("line-login").onclick = () => location.assign(P + "/login"); }
         throw e;
       }
+      if (body.data === undefined || body.data === null) throw Object.assign(new Error("PROFILE_INVALID_RESPONSE"), { code: "PROFILE_INVALID_RESPONSE" });
       progress?.ready(step); return body.data;
     } catch (error) {
       if (epoch === accountEpoch) progress?.fail(step, controller.signal.aborted ? "คำขอใช้เวลานานเกินไปครับ ลองตรวจข้อมูลอีกครั้ง" : "ระบบยังไม่ได้ยืนยันผลครับ ลองตรวจข้อมูลอีกครั้ง");
@@ -212,13 +231,22 @@ export function therapistClient() {
     }
     row.append(button("ลบคอร์ส", () => row.remove(), true)); $("courses").append(row);
   }
-  async function loadServiceZones() {
+  function zoneSummary() {
+    const checks = Array.from($("coverage-zones").querySelectorAll("[data-service-zone]"));
+    const count = checks.filter(check => check.checked).length;
+    const base = $("base-zone");
+    const label = Array.from(base.children).find(option => option.value === base.value)?.textContent || "ยังไม่เลือก";
+    $("zone-summary").textContent = "เขตหลัก: " + label + " · เลือก " + count + " เขต";
+  }
+  async function loadServiceZones(snapshot = profile, requestId = profileRequest, epoch = accountEpoch) {
     const base = $("base-zone"); const coverage = $("coverage-zones"); const status = $("zone-status");
     base.replaceChildren(node("option", "ยังไม่เลือกเขตหลัก")); base.children[0].value = "";
     coverage.replaceChildren(); base.dataset.ready = "false";
     try {
       const catalog = await api(A + "/service-zones");
+      if (epoch !== accountEpoch || requestId !== profileRequest) throw Object.assign(new Error("STALE_RESPONSE"), { code: "STALE_RESPONSE" });
       const zones = Array.isArray(catalog.zones) ? catalog.zones : [];
+      zoneLimit = snapshot?.limits?.coverage_zones || catalog.limits?.coverage_zones || maxCoverageZones;
       if (!zones.length) throw new Error("SERVICE_ZONE_CATALOG_EMPTY");
       for (const zone of zones) {
         const option = node("option", zone.label_th + (zone.province_label_th ? " · " + zone.province_label_th : ""));
@@ -226,49 +254,89 @@ export function therapistClient() {
         const label = node("label", null, "zone-choice"); const check = node("input"); check.type = "checkbox"; check.dataset.serviceZone = zone.code;
         label.append(check, node("span", zone.label_th + (zone.province_label_th ? " · " + zone.province_label_th : ""))); coverage.append(label);
       }
-      const saved = profile?.service_zones || {};
+      const saved = snapshot?.service_zones || {};
       base.value = saved.base_service_zone_code || "";
       const selected = new Set(saved.coverage_service_zone_codes || []);
       for (const label of coverage.children) {
         const check = label.children[0]; check.checked = selected.has(check.dataset.serviceZone);
       }
-      base.dataset.ready = "true";
-      status.textContent = "เลือกได้สูงสุด 30 เขต · ระบบเสนอเฉพาะงานในเขตที่เลือกครับ";
-    } catch (_) {
-      status.textContent = "ตอนนี้โหลดรายชื่อเขตไม่ได้ โปรไฟล์ส่วนอื่นยังบันทึกได้ครับ";
+      base.dataset.ready = snapshot?.service_zones && !snapshot.service_zone_review_required ? "true" : "false";
+      status.textContent = snapshot?.service_zone_review_required ? "มีเขตเดิมที่ไม่อยู่ในรายการเปิดใช้งาน ให้พี่เปอร์ตรวจเขตก่อนเปลี่ยนครับ ข้อมูลและคอร์สยังบันทึกได้" : "เลือกได้สูงสุด " + zoneLimit + " เขต · ระบบเสนอเฉพาะงานในเขตที่เลือกครับ";
+      $("retry-zones").hidden = true; zoneSummary();
+    } catch (error) {
+      if (error.code === "STALE_RESPONSE" || epoch !== accountEpoch || requestId !== profileRequest) throw error;
+      status.textContent = "ตอนนี้โหลดรายชื่อเขตไม่ได้ เขตเดิมจะไม่ถูกเปลี่ยน ข้อมูลและคอร์สยังบันทึกได้ครับ";
+      $("retry-zones").hidden = false;
     }
   }
   async function loadProfile() {
-    profile = await api(P + "/api/auth/profile");
+    const requestId = ++profileRequest, epoch = accountEpoch;
+    $("save-profile").disabled = true;
+    const snapshot = await api(P + "/api/auth/profile");
+    if (epoch !== accountEpoch || requestId !== profileRequest) return;
+    if (access?.therapist_id && snapshot.therapist_id !== access.therapist_id) { clearPrivate(); throw Object.assign(new Error("THERAPIST_SESSION_INVALID"), { code: "THERAPIST_SESSION_INVALID" }); }
+    if (!Array.isArray(snapshot.courses) || !Array.isArray(snapshot.photos) || typeof snapshot.display_name !== "string") throw Object.assign(new Error("PROFILE_INVALID_RESPONSE"), { code: "PROFILE_INVALID_RESPONSE" });
+    profile = snapshot; zonesDirty = false;
+    $("verified-services").textContent = access?.verified_skills?.join(" / ") || "รอยืนยันบริการจาก MMS";
     $("display-name").value = profile.display_name || ""; $("intro").value = profile.intro || ""; $("visibility").value = profile.profile_visibility || "hidden";
-    await loadServiceZones();
     $("courses").replaceChildren(); for (const course of profile.courses || []) courseRow(course);
+    $("course-empty").hidden = profile.courses.length > 0;
+    $("save-profile").disabled = false;
+    await loadServiceZones(snapshot, requestId, epoch);
+    if (epoch !== accountEpoch || requestId !== profileRequest) return;
     $("photos").replaceChildren(); for (const photo of profile.photos || []) {
       const wrap = node("label"); const image = node("img"); image.alt = photo.file_name || "รูปโปรไฟล์"; image.src = photo.preview_url;
       const check = node("input"); check.type = "checkbox"; check.dataset.photo = photo.id; check.checked = photo.selected_public === true;
       wrap.append(image, check, node("span", "แสดงรูปนี้"), button("ลบรูป", async () => { if (window.confirm("ลบรูปนี้ครับ?")) { await api(P + "/api/auth/profile/photos/" + photo.id, { method: "DELETE" }); await loadProfile(); } }, true)); $("photos").append(wrap);
     }
   }
+  for (const el of document.querySelectorAll("[data-profile-tab]")) el.onclick = () => {
+    const target = el.dataset.profileTab;
+    for (const name of ["info", "courses", "zones"]) $("profile-" + name).hidden = name !== target;
+    $("profile-photos").hidden = target !== "info";
+    for (const other of document.querySelectorAll("[data-profile-tab]")) other.setAttribute("aria-pressed", String(other === el));
+    $("profile-" + target).querySelector("h2")?.focus();
+  };
+  $("zone-search").oninput = () => {
+    const query = $("zone-search").value.trim().toLocaleLowerCase();
+    for (const label of $("coverage-zones").children) label.hidden = !label.textContent.toLocaleLowerCase().includes(query);
+  };
+  $("base-zone").onchange = () => { zonesDirty = true; zoneSummary(); };
+  $("coverage-zones").onchange = () => { zonesDirty = true; zoneSummary(); };
+  $("retry-zones").onclick = () => busy($("retry-zones"), () => loadServiceZones());
   for (const el of document.querySelectorAll("[data-tab]")) el.onclick = () => busy(el, async () => {
     tab = el.dataset.tab; for (const name of ["offers", "jobs", "profile"]) $(name).hidden = name !== tab;
     for (const other of document.querySelectorAll("[data-tab]")) other.setAttribute("aria-selected", String(other === el)); await loadTab();
+    if (tab === "profile") $("profile").scrollIntoView({ block: "start", behavior: "auto" });
   });
   $("save-availability").onclick = () => busy($("save-availability"), async () => { setAccess(await api(A + "/availability", json("PUT", { availability_status: $("availability").value }))); notice("บันทึกสถานะรับงานแล้วครับ"); });
   $("refresh").onclick = () => busy($("refresh"), refresh);
   $("retry").onclick = () => busy($("retry"), async () => { if (document.querySelector("main").dataset.login === "true") await login(); else await refresh(); });
-  $("add-course").onclick = () => { if ($("courses").children.length < 8) courseRow(); else notice("เพิ่มคอร์สได้ไม่เกิน 8 คอร์สครับ", true); };
+  $("add-course").onclick = () => { if ($("courses").children.length < 8) { courseRow(); $("course-empty").hidden = true; } else notice("เพิ่มคอร์สได้ไม่เกิน 8 คอร์สครับ", true); };
   $("profile-form").onsubmit = (event) => { event.preventDefault(); const submit = $("profile-form").querySelector('[type="submit"]'); busy(submit, async () => {
+    if (!profile) return;
+    $("profile-save-status").textContent = "";
     const courses = Array.from($("courses").children).map((row) => Object.fromEntries(Array.from(row.querySelectorAll("[data-field]")).map((input) => [input.dataset.field, input.type === "number" ? Number(input.value) : input.value])));
     const payload = { display_name: $("display-name").value, intro: $("intro").value, profile_visibility: $("visibility").value, courses };
-    if ($("base-zone").dataset.ready === "true") {
+    if (zonesDirty && $("base-zone").dataset.ready === "true") {
       const base = $("base-zone").value;
       const selected = Array.from($("coverage-zones").querySelectorAll("[data-service-zone]")).filter((check) => check.checked).map((check) => check.dataset.serviceZone);
       if (base && !selected.includes(base)) selected.push(base);
       if ((base && !selected.length) || (!base && selected.length)) { notice("เลือกเขตหลักและเขตที่รับงานให้สอดคล้องกันครับ", true); return; }
+      if (selected.length > zoneLimit) { notice("เลือกเขตได้ไม่เกิน " + zoneLimit + " เขตครับ", true); return; }
       payload.base_service_zone_code = base;
       payload.coverage_service_zone_codes = selected;
     }
-    await api(P + "/api/auth/profile", json("PUT", payload)); await loadProfile(); notice("บันทึกโปรไฟล์และเขตบริการแล้วครับ");
+    if (zonesDirty && $("base-zone").dataset.ready !== "true") { notice("ยังยืนยันเขตไม่ได้ กรุณาโหลดเขตอีกครั้งก่อนบันทึกครับ", true); return; }
+    try {
+      const saved = await api(P + "/api/auth/profile", json("PUT", payload));
+      if (access?.therapist_id && saved.therapist_id !== access.therapist_id) { clearPrivate(); throw Object.assign(new Error("THERAPIST_SESSION_INVALID"), { code: "THERAPIST_SESSION_INVALID" }); }
+      profile = saved;
+    } catch (error) {
+      if (error.code !== "STALE_RESPONSE") $("profile-save-status").textContent = messages[error.code] || "ยังยืนยันผลบันทึกไม่ได้ ร่างยังอยู่หน้านี้ กรุณาตรวจผลก่อนลองใหม่ครับ";
+      throw error;
+    }
+    zonesDirty = false; notice("บันทึกโปรไฟล์แล้วครับ"); $("profile-save-status").textContent = "บันทึกโปรไฟล์แล้วครับ";
   }); };
   $("upload").onchange = () => busy($("upload"), async () => {
     const file = $("upload").files?.[0]; if (!file) return;

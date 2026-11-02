@@ -1,9 +1,10 @@
+import { MMS_MAX_COVERAGE_ZONES } from "../../shared/mms-service-zone-policy.mjs";
 import { loadMmsServiceZoneIndex } from "./service-zones-runtime.mjs";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const APPLICATION_PATH = "/mms/api/applications";
 const ZONE_CODE_RE = /^(BKK|NBI|PTE|SPK|SKN|NPT)-[A-Z0-9-]{2,70}$/;
-const MAX_COVERAGE_ZONES = 45;
+const MAX_COVERAGE_ZONES = MMS_MAX_COVERAGE_ZONES;
 
 /**
  * Canonical Province -> Service Zone bridge for the public MMS Therapist form.

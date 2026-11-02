@@ -1,3 +1,4 @@
+import { MMS_MAX_COVERAGE_ZONES } from "../../shared/mms-service-zone-policy.mjs";
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const PUBLIC_PATH = "/mms/api/service-zones";
 const APP_PATH = "/male-massage/therapists/api/app/service-zones";
@@ -43,6 +44,7 @@ export async function maybeHandleMmsServiceZones(request, env = {}) {
       ok: true,
       data: {
         version: CATALOG_VERSION,
+        limits: { coverage_zones: MMS_MAX_COVERAGE_ZONES },
         country_code: "TH",
         metro_label_th: "กรุงเทพฯ และปริมณฑล",
         provinces,
