@@ -7,6 +7,8 @@ on:
       - 'member-dashboard-chat-worker/src/my-mms-customer-app-front-gate.js'
       - 'member-dashboard-chat-worker/test/mms-customer-booking-page.test.mjs'
       - 'member-dashboard-chat-worker/test/mms-booking-account.test.mjs'
+      - 'scripts/mms-booking-catalog-code-only.mjs'
+      - 'scripts/mms-booking-catalog-code-only.test.mjs'
       - '.github/workflows/my-mms-booking-host.yml'
 permissions:
   contents: read
@@ -18,4 +20,4 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: node --test member-dashboard-chat-worker/test/mms-customer-booking-page.test.mjs member-dashboard-chat-worker/test/my-mms-customer-app.test.mjs member-dashboard-chat-worker/test/mms-booking-account.test.mjs
+      - run: node --test scripts/mms-booking-catalog-code-only.test.mjs member-dashboard-chat-worker/test/mms-customer-booking-page.test.mjs member-dashboard-chat-worker/test/my-mms-customer-app.test.mjs member-dashboard-chat-worker/test/mms-booking-account.test.mjs
