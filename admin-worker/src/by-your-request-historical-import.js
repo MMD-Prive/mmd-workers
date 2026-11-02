@@ -3,10 +3,10 @@ export const HISTORICAL_IMPORT_PATH = '/v1/admin/my-mmd/your-request/historical-
 const TABLE = 'MMD — Console Inbox';
 let importQueue = Promise.resolve();
 const EXAMPLES = Object.freeze([
-  { historical_key: 'line:410:324', conversation_date: '2025-07-28T14:36:00+07:00', source_ref: '410_20240214_20260724_เดียร์ 8 สค 68.csv row 324-328', query: 'คนนี้อยู่ในโมนี้มัยคับ' },
-  { historical_key: 'line:26:3485', conversation_date: '2026-05-05T16:53:00+07:00', source_ref: '26_20250808_20261022_สิงโตน้ำ 9 ตค 68.csv rows 3485-3488', query: 'คุณเปอร์รู้จักไหม' },
-  { historical_key: 'line:31:1004', conversation_date: '2025-04-12T16:55:00+07:00', source_ref: '31_20240111_20261021_แท 3 สค 67.csv rows 1004-1006', query: 'คนนี้รับงานไหมค้าบ', social_url: 'https://instagram.com/double.jira' },
-  { historical_key: 'line:47:4268', conversation_date: '2025-09-08T14:55:00+07:00', source_ref: '47_20240103_20261017_ปอง - VIP -.csv row 4268', query: 'ติดต่อได้ไหม', social_url: 'https://tiktok.com/@life_withbank' },
+  { historical_key: 'line:410:324', conversation_date: '2025-07-28T19:36:15+07:00', source_ref: '410_20240214_20260724_เดียร์ 8 สค 68.csv row 324-328', query: 'คนนี้อยู่ในโมนี้มัยคับ' },
+  { historical_key: 'line:26:3485', conversation_date: '2026-05-05T14:53:40+07:00', source_ref: '26_20250808_20261022_สิงโตน้ำ 9 ตค 68.csv rows 3485-3488', query: 'คุณเปอร์รู้จักไหม' },
+  { historical_key: 'line:31:1004', conversation_date: '2025-04-12T14:55:00+07:00', source_ref: '31_20240111_20261021_แท 3 สค 67.csv rows 1004-1006', query: 'คนนี้รับงานไหมค้าบ', social_url: 'https://instagram.com/double.jira' },
+  { historical_key: 'line:47:4268', conversation_date: '2025-09-08T12:55:33+07:00', source_ref: '47_20240103_20261017_ปอง - VIP -.csv row 4268', query: 'ติดต่อได้ไหม', social_url: 'https://tiktok.com/@life_withbank' },
 ]);
 
 export function isHistoricalImportRequest(path, method = 'POST') { return path === HISTORICAL_IMPORT_PATH && String(method).toUpperCase() === 'POST'; }
