@@ -122,7 +122,7 @@ test("canonical My MMD HTML receives the pending Wish bridge without moving coup
   };
 
   try {
-    const response = await worker.fetch(new Request("https://www.mmdbkk.com/my-mmd/"), {});
+    const response = await worker.fetch(new Request("https://www.mmdbkk.com/my-mmd/", { headers: { cookie: "mmd_care_back_wish_link=pw_" + "A".repeat(43) } }), {});
     const html = await response.text();
     assert.equal(response.status, 200);
     assert.equal(response.headers.get("x-mmd-care-back-wish-bridge"), "verified-coupon-v1");

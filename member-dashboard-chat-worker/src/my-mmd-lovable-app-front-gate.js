@@ -660,7 +660,7 @@ export default {
     if (/^\/my-mmd\/(menu\/?|albums\/ems\/[^/]+\/?)$/.test(path)) return proxyLovablePage(request);
     // Home links from Verify must enter the same Worker app as direct LIFF.
     // This navigation grants no identity or entitlement; the shell validates both.
-    if ((path === "/my-mmd" || path === "/my-mmd/") && !new URL(request.url).searchParams.has("session_id")) {
+    if ((path === "/my-mmd" || path === "/my-mmd/") && !new URL(request.url).searchParams.has("session_id") && !/(?:^|;\s*)mmd_care_back_wish_link=/.test(request.headers.get("cookie") || "")) {
       if (!["GET", "HEAD"].includes(request.method)) return new Response(null, { status: 405, headers: { allow: "GET, HEAD", "cache-control": "no-store" } });
       const destination = new URL("/member/liff", request.url);
       destination.searchParams.set("intent", "status");
