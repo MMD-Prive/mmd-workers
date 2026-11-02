@@ -12,6 +12,7 @@ export class CustomerRequestMutationCoordinator {
       if (body.action === 'finish') {
         if (!current || current.operation_id !== body.operation_id) return Response.json({ ok: false, error: 'REQUEST_MUTATION_LEASE_LOST' }, { status: 409 });
         if (body.status === 'uncertain') { current.status = 'uncertain'; await this.state.storage.put('lease', current); return Response.json({ ok: true, completed: 'uncertain' }); }
+        if (body.status === 'aborted') { await this.state.storage.delete('lease'); return Response.json({ ok: true, completed: 'aborted' }); }
         if (current.status === 'uncertain') return Response.json({ ok: false, error: 'REQUEST_MUTATION_RECONCILE_REQUIRED' }, { status: 409 });
         await this.state.storage.delete('lease'); return Response.json({ ok: true, completed: 'committed' });
       }

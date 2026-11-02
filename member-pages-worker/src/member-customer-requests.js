@@ -120,12 +120,12 @@ async function appendEvidenceToRequest(body, env, identity) {
   const records = await listInbox(env, identity.lineUserId); if (records === null) return fail(503, "REQUEST_QUEUE_UNAVAILABLE");
   const record = records.find(row => parsePayload(row?.fields?.payload_json)?.request_id === requestId); if (!record) return fail(404, "REQUEST_NOT_FOUND");
   const mutation = await beginRequestMutation(env, record.id); if (!mutation.ok) return fail(mutation.status || 503, mutation.error || "REQUEST_MUTATION_UNAVAILABLE");
-  const lockedRecords = await listInbox(env, identity.lineUserId); const lockedRecord = lockedRecords?.find(row => row.id === record.id); if (!lockedRecord) { await finishRequestMutation(env, record.id, mutation.operation_id, "uncertain"); return fail(503, "REQUEST_QUEUE_UNAVAILABLE"); }
-  const payload = parsePayload(lockedRecord.fields?.payload_json); if (payload.canonical_client_id !== identity.clientId) { await finishRequestMutation(env, record.id, mutation.operation_id, "uncertain"); return fail(404, "REQUEST_NOT_FOUND"); }
-  const checked = await validateEvidence(env, identity.clientId, evidenceIds); if (checked === null) return fail(409, "EVIDENCE_UNAVAILABLE");
+  const lockedRecords = await listInbox(env, identity.lineUserId); const lockedRecord = lockedRecords?.find(row => row.id === record.id); if (!lockedRecord) { await finishRequestMutation(env, record.id, mutation.operation_id, "aborted"); return fail(503, "REQUEST_QUEUE_UNAVAILABLE"); }
+  const payload = parsePayload(lockedRecord.fields?.payload_json); if (payload.canonical_client_id !== identity.clientId) { await finishRequestMutation(env, record.id, mutation.operation_id, "aborted"); return fail(404, "REQUEST_NOT_FOUND"); }
+  const checked = await validateEvidence(env, identity.clientId, evidenceIds); if (checked === null) { await finishRequestMutation(env, record.id, mutation.operation_id, "aborted"); return fail(409, "EVIDENCE_UNAVAILABLE"); }
   const before = unique(array(payload.evidence_ids).filter(safeEvidenceId));
   const next = unique([...before, ...checked.map(item => item.evidence_id)]);
-  if (next.length > MAX_EVIDENCE) return fail(409, "EVIDENCE_LIMIT_REACHED");
+  if (next.length > MAX_EVIDENCE) { await finishRequestMutation(env, record.id, mutation.operation_id, "aborted"); return fail(409, "EVIDENCE_LIMIT_REACHED"); }
   payload.evidence_ids = next; payload.updated_at = new Date().toISOString();
   const updated = await updateInbox(env, record.id, { payload_json: JSON.stringify(payload), admin_note: adminNote(payload) });
   await finishRequestMutation(env, record.id, mutation.operation_id, updated ? "committed" : "uncertain");
