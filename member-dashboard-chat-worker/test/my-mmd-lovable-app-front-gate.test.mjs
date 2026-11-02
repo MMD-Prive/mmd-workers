@@ -112,7 +112,7 @@ test("Private Teaser is a dedicated MY MMD viewer and never fetches the Lovable 
   assert.doesNotMatch(html, /private_original_key|r2_bucket|signed_url|media_id|localStorage|sessionStorage|indexedDB/);
 });
 
-test("Webflow owns home/profile and Orders recovery keeps its closed state", async () => {
+test("Home enters Nightline while Orders recovery keeps its closed state", async () => {
   globalThis.fetch = async request => new Response(
     new URL(request.url).pathname === "/member/dashboard" ? '<html><body><main id="mymmd-wf">MY MMD</main></body></html>' : "unavailable",
     { status: new URL(request.url).pathname === "/member/dashboard" ? 200 : 404, headers: { "content-type": "text/html" } },
@@ -120,9 +120,9 @@ test("Webflow owns home/profile and Orders recovery keeps its closed state", asy
   for (const path of ["/my-mmd", "/my-mmd/"]) {
     const response = await worker.fetch(new Request(`https://mmdbkk.com${path}`), {});
     const html = await response.text();
-    assert.equal(response.status, 200);
-    assert.equal(response.headers.get("x-mmd-presentation-owner"), "webflow");
-    assert.match(html, /mymmd-wf/);
+    assert.equal(response.status, 307);
+    assert.equal(response.headers.get("location"), "/member/liff?intent=status");
+    assert.equal(html, "");
   }
   const orders = await worker.fetch(new Request("https://mmdbkk.com/my-mmd/orders"), {});
   const ordersHtml = await orders.text();
@@ -517,3 +517,10 @@ for (const view of ['ems_albums','gws_albums']) {
     assert.match(html,/mmd-ems-login-return/);
   });
 }
+
+for(const suffix of ['?from=line_verify','?world=private&tier=SVIP','?audience=public'])test('Verify home enters same-host app without browser audience authority '+suffix,async()=>{
+  globalThis.fetch=async()=>{throw Error('Must not fetch old Webflow home');};
+  const response=await worker.fetch(new Request('https://mmdbkk.com/my-mmd/'+suffix),{});
+  assert.equal(response.status,307);assert.equal(response.headers.get('location'),'/member/liff?intent=status');assert.equal(response.headers.get('cache-control'),'private, no-store');
+});
+test('home navigation does not forward POST into a different action',async()=>{const response=await worker.fetch(new Request('https://mmdbkk.com/my-mmd/',{method:'POST'}),{});assert.equal(response.status,405);});
