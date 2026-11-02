@@ -10,7 +10,7 @@ const BOOKING_CONFIRM_PATH = "/__internal/booking/confirm";
 const MODEL_SEARCH_PATH = "/sigil/api/models/search";
 
 export default {
-  async fetch(request, env, ctx) {
+  async fetch(request, env, ctx, memberContext = null) {
     const url = new URL(request.url);
     const path = normalizePath(url.pathname);
     const method = request.method.toUpperCase();
@@ -20,12 +20,12 @@ export default {
     }
 
     if ((method === "GET" || method === "POST") && path === MODEL_SEARCH_PATH) {
-      return bookingWorker.fetch(request, env, ctx);
+      return bookingWorker.fetch(request, env, ctx, memberContext);
     }
 
     if (method === "POST" && path === CLIENT_RESOLVE_PATH) {
       const body = await request.clone().json().catch(() => ({}));
-      const response = await bookingWorker.fetch(request, env, ctx);
+      const response = await bookingWorker.fetch(request, env, ctx, memberContext);
       if (!response.ok) return response;
       const payload = await response.clone().json().catch(() => null);
       if (!payload?.ok) return response;
@@ -38,19 +38,20 @@ export default {
     }
 
     if (method === "POST" && path === BOOKING_INTAKE_PATH) {
-      return handleCanonicalBookingIntake(request, env, ctx);
+      return handleCanonicalBookingIntake(request, env, ctx, memberContext);
     }
 
-    return bookingWorker.fetch(request, env, ctx);
+    return bookingWorker.fetch(request, env, ctx, memberContext);
   },
 };
 
-async function handleCanonicalBookingIntake(request, env, ctx) {
+async function handleCanonicalBookingIntake(request, env, ctx, memberContext = null) {
   const body = await request.clone().json().catch(() => ({}));
   const bookingRef = clean(body.booking_ref || body.request_id);
   const sessionId = clean(body.session_id);
   const stored = await readBookingRequest(env, { bookingRef, sessionId }).catch(() => null);
   let parsed = parseJson(stored?.fields?.resolver_payload_json);
+  if (memberContext?.memberRecordId) parsed = { ...parsed, access: { ...parsed?.access, member_record_id: memberContext.memberRecordId } };
   let snapshot = parsed?.entitlement_snapshot;
   const privateIntake = clean(body.lane || body.model_scope).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") === "private";
   if (privateIntake) {
@@ -81,7 +82,7 @@ async function handleCanonicalBookingIntake(request, env, ctx) {
   const safeBody = { ...body };
   if (privateIntake) {
     safeBody.client_contact = clean(stored?.fields?.client_contact || stored?.fields?.["Contact Value"]);
-    safeBody.line_or_member_id = clean(stored?.fields?.line_or_member_id);
+    safeBody.line_or_member_id = clean(memberContext?.memberId || stored?.fields?.line_or_member_id);
   }
   if (snapshot?.schema_version === "my_mmd_entitlement_resolver_v1") {
     const access = accessFromSnapshot(snapshot);
@@ -96,11 +97,15 @@ async function handleCanonicalBookingIntake(request, env, ctx) {
     safeBody.private_allowed = false;
   }
 
+  // Only the authenticated service entry may attach a signed request owner.
+  if (memberContext?.ownerMetadata) {
+    safeBody.resolver_payload_json = { ...safeBody.resolver_payload_json, my_mmd_owner: memberContext.ownerMetadata };
+  }
   const safeRequest = new Request(request, {
     body: JSON.stringify(safeBody),
     headers: withJsonContentType(request.headers),
   });
-  return bookingWorker.fetch(safeRequest, env, ctx);
+  return bookingWorker.fetch(safeRequest, env, ctx, memberContext);
 }
 
 async function handleTrustedBookingConfirm(request, env) {

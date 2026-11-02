@@ -1,3 +1,4 @@
+import { renderMemberBooking, createMemberBookingUI, MEMBER_BOOKING_CSS } from './liff-member-booking.js';
 import { renderApprovedEntry, renderApprovedLoader, createHypeLoaderMotion, createEntryPercentMotion, installApprovedEntryLoading } from "./liff-approved-entry.js";
 import { resolveEmsAlbumReturnTarget } from '../../shared/ems-album-navigation.mjs';
 import { createAccountView } from "./liff-account-view.js";
@@ -42,7 +43,7 @@ export function handleLiffMemberShell(request, env = {}) {
   // LINE can deliver the entry query inside liff.state on the first redirect.
   const stateValue = url.searchParams.get("liff.state") || url.searchParams.get("liff_state") || "";
   const state = new URLSearchParams(stateValue.includes("?") ? stateValue.slice(stateValue.indexOf("?") + 1) : stateValue);
-  for (const key of ["intent", "liff_intent", "campaign", "view", "lang"]) {
+  for (const key of ["intent", "liff_intent", "campaign", "view", "lang", "booking_model", "booking_scope"]) {
     if (!url.searchParams.has(key) && state.has(key)) url.searchParams.set(key, state.get(key));
   }
   const config = {
@@ -53,6 +54,8 @@ export function handleLiffMemberShell(request, env = {}) {
     intent: normalizeIntent(url.searchParams.get("intent") || url.searchParams.get("liff_intent")),
     campaign: normalizeCampaign(url.searchParams.get("campaign")),
     view: normalizeView(url.searchParams.get("view")),
+    bookingScope: url.searchParams.get("booking_scope") === "private" ? "private" : "public",
+    bookingModel: /^rec[A-Za-z0-9]{14,24}$/.test(url.searchParams.get("booking_model") || "") ? url.searchParams.get("booking_model") : "",
     // Browser-controlled world/audience hints are never identity or entitlement.
     world: "public",
     language: normalizeLanguage(url.searchParams.get("lang") || url.searchParams.get("locale")),
@@ -305,6 +308,7 @@ ${PERSONAL_MAIN_CSS}
 ${MY_MMD_VERIFICATION_CSS}
 ${MY_MMD_SIGIL_PRIVATE_CSS}
   ${MY_MMD_LIFF_LV15_CSS}
+${MEMBER_BOOKING_CSS}
 </style>
 </head>
 <body class="${config.intent === "signup" ? "signup-mode app-entered " : "context-resolving "}world-${config.world}" data-world="${config.world}" data-mmd-liff-digital="v3" data-mmd-liff-compact="v4" data-mmd-graphics="v6" data-brand-audience="unresolved" data-mmd-liff-level="15">
@@ -410,6 +414,7 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
       <details class="card details"><summary data-copy="packageHistoryLabel">Package history</summary><div id="package-history" class="stack"></div></details>
     </section>
     <section id="jobs" class="panel digital-view" aria-label="Jobs">
+      ${renderMemberBooking()}
       <div class="card"><h2 data-copy="jobsTitle">💼 Jobs</h2><div id="jobs-groups" class="stack"></div></div>
       <details class="card details"><summary data-copy="requestsLabel">Recent requests</summary><div id="requests" class="stack"></div></details>
       <details class="card details"><summary data-copy="mmsLabel">MMS prebookings</summary><div id="mms" class="stack"></div></details>
@@ -483,6 +488,7 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
   const customerBrand = (${createCustomerBrand.toString()})(document.getElementById("customer-brand-v6"));
   const resetCustomerBrand = () => customerBrand.reset();
   const accountUI = (${createAccountView.toString()})(document.getElementById("digital-account"), memberApiFetch, () => currentMemberRef, () => clearMemberProfile());
+  const memberBookingUI = (${createMemberBookingUI.toString()})(document.getElementById("member-booking"), memberApiFetch, () => profileReady ? currentMemberRef : "", CONFIG.bookingModel, CONFIG.bookingScope);
   const personalMainUI = (${createPersonalMainUI.toString()})(document.getElementById("personal-main"), memberApiFetch);
   const logoutButton = document.getElementById("member-logout");
   const actions = document.getElementById("actions");
@@ -720,6 +726,7 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
     }
     const targetId = view === "history" ? "history-panel" : view;
     const target = document.getElementById(targetId) || document.getElementById("home");
+    if (typeof memberBookingUI !== "undefined" && target.id !== "jobs") memberBookingUI.leave();
     for (const panel of document.querySelectorAll(".section-rail > .panel")) panel.setAttribute("data-active", String(panel === target));
     for (const item of document.querySelectorAll("[data-view]")) {
       const active = item.getAttribute("data-view") === (target.id === "history-panel" ? "history" : target.id);
@@ -1010,6 +1017,7 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
 
   async function hydrateMemberHome(view = initialView) {
     const readers = {
+      jobs: () => memberBookingUI.load(),
       coupons: readCouponWallet,
       credits: readCreditWallet,
       history: readCanonicalHistory,
@@ -1138,6 +1146,7 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
   function hideMemberProfile() {
     personalMainUI.reset();
     resetCustomerBrand();
+    if (typeof memberBookingUI !== "undefined") memberBookingUI.reset();
     accountUI.reset();
     if (typeof customerLoading !== "undefined") customerLoading.reset({ memberOnly:true });
     profileReady = false;
