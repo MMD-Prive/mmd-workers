@@ -33,6 +33,10 @@ for (const command of ['checkpts','package','regis','apply','โปร']) test(`
 });
 for (const options of [{owner:true},{kill:true},{globalKill:true},{ownerAfterTruth:true},{killAfterTruth:true}]) test(`restricted checkpts pause: ${JSON.stringify(options)}`,async()=>{
   const {calls}=await run('checkpts',{...options,env:categoryEnv});assert.equal(calls.replies.length,0);
+  const payload=calls.writes.map(w=>w.body.fields?.payload_json).filter(Boolean).map(p=>JSON.parse(p)).find(p=>p.telemetry_version==='kenji_seed_runtime_v1');
+  assert.ok(payload,'existing audit telemetry must retain the bounded guard reason');
+  assert.equal(payload.guard_reason,options.owner||options.ownerAfterTruth?'category_owner_takeover':options.killAfterTruth?'category_fresh_kill_switch':'category_initial_kill_switch');
+  assert.equal(payload.line_delivery_attempted,false);assert.equal(payload.line_delivery_succeeded,false);
 });
 test('restricted native FAQ and unknown messages retain intake without reply or truth lookup',async()=>{
   for(const command of ['มีบริการอะไรบ้าง','GWs คืออะไร','สวัสดี','จอง','checkpts ดูให้เพื่อน']){

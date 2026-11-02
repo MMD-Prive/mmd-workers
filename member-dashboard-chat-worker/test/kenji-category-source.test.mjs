@@ -80,6 +80,73 @@ test('owner takeover after truth blocks delivery',async()=>{
   let ownerReads=0;const x=io({owner:async()=>({ok:true,active:++ownerReads>1})});
   assert.equal((await runApprovedCategoryTurn(env,event('checkpts'),runtime,x)).attempted,false);assert.equal(ownerReads,2);
 });
+test('category diagnostics use fixed reasons for silent gates and failures',async()=>{
+  const cases=[
+    ['fresh continuity unavailable',{continuity:async()=>({available:false})},'category_continuity_unavailable'],
+    ['fresh runtime unavailable',{runtime:async()=>({ok:false})},'category_fresh_runtime_unavailable'],
+    ['fresh kill switch',{runtime:async()=>({ok:true,controls:{all_kenji_mutations:true}})},'category_fresh_kill_switch'],
+    ['owner unavailable',{owner:async()=>({ok:false})},'category_owner_unavailable'],
+    ['owner takeover',{owner:async()=>({ok:true,active:true})},'category_owner_takeover'],
+    ['resolution exception',{continuity:async()=>{throw Error('private raw diagnostic')}} ,'category_resolution_exception'],
+  ];
+  for(const [name,overrides,reason] of cases){
+    const x=io(overrides),r=await runApprovedCategoryTurn(env,event('checkpts'),runtime,x);
+    assert.equal(r.decision.guard_reason,reason,name);assert.equal(r.attempted,false,name);assert.equal(x.sent.length,0,name);
+    assert.doesNotMatch(r.decision.guard_reason,/private|raw|diagnostic|Error/);
+  }
+});
+test('initial category gates have fixed diagnostic reasons',async()=>{
+  for(const [initial,expected] of [
+    [{ok:false},'category_initial_runtime_unavailable'],
+    [{ok:true,controls:{line_oa_auto_reply:true}},'category_initial_kill_switch'],
+  ]){
+    const r=await runApprovedCategoryTurn(env,event('checkpts'),initial,io());
+    assert.equal(r.decision.guard_reason,expected);assert.equal(r.attempted,false);
+  }
+  const off=await runApprovedCategoryTurn({...env,LINE_AUTO_REPLY_ENABLED:'false'},event('checkpts'),runtime,io());
+  assert.equal(off.decision.guard_reason,'category_initial_disabled');
+  const stale=await runApprovedCategoryTurn(env,{...event('checkpts'),deliveryContext:{isRedelivery:true}},runtime,io());
+  assert.equal(stale.decision.guard_reason,'category_event_ineligible');
+});
+test('category transport diagnostics distinguish suppression, failure, unconfigured and exception',async()=>{
+  for(const [name,send,reason] of [
+    ['suppressed',async()=>({ok:false,suppressed:true,error:'reply_category_silent'}),'category_transport_suppressed'],
+    ['failed',async()=>({ok:false,status:502,error:'provider_secret_value'}),'category_transport_failed'],
+    ['unconfigured',async()=>({ok:false,error:'reply_not_configured'}),'category_transport_unconfigured'],
+    ['network',async()=>({ok:false,error:'line_reply_request_failed'}),'category_transport_request_failed'],
+    ['missing result',async()=>undefined,'category_transport_failed'],
+    ['exception',async()=>{throw Error('private raw diagnostic')},'category_transport_exception'],
+  ]){
+    const r=await runApprovedCategoryTurn(env,event('checkpts'),runtime,io({send}));
+    assert.equal(r.decision.guard_reason,reason,name);assert.equal(r.attempted,true,name);assert.equal(r.delivered,false,name);
+    assert.doesNotMatch(r.decision.guard_reason,/private|raw|diagnostic|secret|Error/);
+  }
+});
+test('successful checkpts preserves reply and membership button',async()=>{
+  let args;const x=io({send:async(...values)=>{args=values;return {ok:true,status:200}}});
+  const r=await runApprovedCategoryTurn(env,event('checkpts'),runtime,x);
+  assert.equal(r.delivered,true);assert.equal(r.decision.guard_reason,undefined);
+  assert.equal(args[2],r.decision.text);assert.equal(args[3].label,'เปิด My MMD');
+});
+test('late guards retain bounded reasons without sending the resolved reply',async()=>{
+  for(const [key,value,reason] of [
+    ['continuity',{available:false},'category_continuity_unavailable'],
+    ['runtime',{ok:false},'category_fresh_runtime_unavailable'],
+    ['runtime',{ok:true,controls:{line_oa_auto_reply:true}},'category_fresh_kill_switch'],
+    ['owner',{ok:false},'category_owner_unavailable'],
+    ['owner',{ok:true,active:true},'category_owner_takeover'],
+    ['runtime',null,'category_gate_exception'],
+  ]){
+    const x=io();const original=x[key];let reads=0;
+    x[key]=async(...args)=>{if(++reads===1)return original(...args);if(value===null)throw Error('private');return value;};
+    const r=await runApprovedCategoryTurn(env,event('checkpts'),runtime,x);
+    assert.equal(r.decision.guard_reason,reason);assert.equal(r.attempted,false);assert.equal(r.delivered,false);assert.equal(x.sent.length,0);
+  }
+});
+test('unapproved greeting has a separate bounded silence reason',async()=>{
+  const r=await runApprovedCategoryTurn(env,event('สวัสดี'),runtime,io());
+  assert.equal(r.decision.guard_reason,'category_no_approved_reply');assert.equal(r.attempted,false);
+});
 test('auto reply OFF prevents command truth reads and replies',async()=>{
   const e={...env,LINE_AUTO_REPLY_ENABLED:'false',MEMBER_PAGES_WORKER:{fetch:()=>{throw Error('must not read')}}};
   for(const command of ['checkpts','package','regis','apply','โปร'])assert.equal((await runApprovedCategoryTurn(e,event(command),runtime,io())).attempted,false);
