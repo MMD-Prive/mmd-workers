@@ -41,7 +41,35 @@ export async function handleOwnerMyMmdRecoveryDiagnostic(request, env = {}, acto
     }
   }
   const query = clean(url.searchParams.get("q"), 120);
+  const mergeRequestId = clean(url.searchParams.get("request_id"), 80).toUpperCase();
+  const inbox = url.searchParams.get("inbox") === "1";
   const clientId = recordId(refresh ? body.client_id : url.searchParams.get("client_id"));
+  if (mergeRequestId) {
+    if (!/^IMR-[A-Z0-9]{6,40}$/.test(mergeRequestId)) return json({ ok: false, error: "invalid_request_id" }, 400);
+    const binding = env.MEMBER_PAGES_MEMBER_WALLET;
+    if (!binding?.fetch) return json({ ok: false, state: "unavailable", error: "member_pages_binding_missing" }, 503);
+    const response = await binding.fetch(new Request(`https://member-pages-worker.internal${MEMBER_PAGES_RPC_PATH}`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-mmd-internal-call": "true", "x-mmd-service-binding": "admin-worker" },
+      body: JSON.stringify({ merge_request_id: mergeRequestId }),
+    }));
+    const payload = await response.json().catch(() => null);
+    return json({
+      ok: response.ok && payload?.ok === true,
+      authority: "mmd.owner_my_mmd_recovery_diagnostic.v1",
+      customer: { display_name: "สมาชิก MMD (คำขอ recovery)", canonical_client_id: null, source: "identity_recovery_request" },
+      identity_recovery_request: payload?.identity_recovery_request || { found: false, state: "unavailable" },
+      guardrails: { owner_session_required: true, browser_raw_line_user_id_exposed: false, customer_session_required: false, read_only: true },
+      ...(payload?.error ? { error: payload.error } : {}),
+    }, response.ok ? 200 : (response.status || 503));
+  }
+  if (inbox) {
+    const binding = env.MEMBER_PAGES_MEMBER_WALLET;
+    if (!binding?.fetch) return json({ ok: false, state: "unavailable", error: "member_pages_binding_missing" }, 503);
+    const response = await binding.fetch(new Request(`https://member-pages-worker.internal${MEMBER_PAGES_RPC_PATH}`, { method: "POST", headers: { "content-type": "application/json", "x-mmd-internal-call": "true", "x-mmd-service-binding": "admin-worker" }, body: JSON.stringify({ recovery_inbox: true }) }));
+    const payload = await response.json().catch(() => null);
+    return json({ ok: response.ok && payload?.ok === true, recovery_inbox: payload?.recovery_inbox || { state: "unavailable", items: [] }, guardrails: { owner_session_required: true, browser_raw_line_user_id_exposed: false, customer_session_required: false, read_only: true } }, response.ok ? 200 : (response.status || 503));
+  }
   if (!query && !clientId) return json({ ok: false, error: "query_required" }, 400);
 
   const identity = await resolveLiveCanonicalClient(env, clientId
@@ -109,6 +137,7 @@ export async function handleOwnerMyMmdRecoveryDiagnostic(request, env = {}, acto
     customer: safeCustomer(identity.client),
     membership: payload.membership || null,
     recovery: payload.recovery || null,
+    identity_recovery_request: payload.identity_recovery_request || { found: false, state: "unavailable" },
     points: payload.points || null,
     acceptance: payload.acceptance || null,
     guardrails: {
@@ -164,7 +193,7 @@ h1{font-size:clamp(28px,5vw,48px);line-height:1.04;margin:8px 0 10px}p{color:var
 <h1>MY MMD Recovery Diagnostic</h1>
 <p>ตรวจสถานะสมาชิกจาก canonical truth โดยไม่ใช้ LINE session ของลูกค้า และไม่แสดง LINE User ID ดิบใน browser</p>
 <form class="search" data-form>
-<input name="q" value="${q}" placeholder="เช่น เชน, คุณโจ, Per-name หรือชื่อที่ใช้ใน Canonical Client" autocomplete="off">
+<input name="q" value="${q}" placeholder="ชื่อลูกค้า หรือเลขคำขอ IMR-…" autocomplete="off">
 <button type="submit">ตรวจสถานะ</button>
 </form>
 <div class="note">Read-only · Owner session required · Customer session not required · No raw LINE identity in UI</div>
@@ -187,7 +216,8 @@ h1{font-size:clamp(28px,5vw,48px);line-height:1.04;margin:8px 0 10px}p{color:var
       result.querySelectorAll('[data-client]').forEach(function(btn){btn.addEventListener('click',function(){load('',btn.getAttribute('data-client'))})});
       return;
     }
-    var c=b.customer||{},m=b.membership||{},r=b.recovery||{},p=b.points||{},a=b.acceptance||{};
+    var c=b.customer||{},m=b.membership||{},r=b.recovery||{},i=b.identity_recovery_request||{},p=b.points||{},a=b.acceptance||{};
+    var submitted=i.submitted||{},matching=i.matching||{},line=i.verified_line_identity||{};
     result.className='grid';
     result.innerHTML=''
       +'<article class="card wide"><span>ลูกค้า</span><strong>'+esc(c.display_name||'—')+'</strong><div class="meta">'+esc(c.canonical_client_id||'')+'</div></article>'
@@ -196,12 +226,13 @@ h1{font-size:clamp(28px,5vw,48px);line-height:1.04;margin:8px 0 10px}p{color:var
       +'<article class="card"><span>Recovery</span><strong class="'+stateClass(r.state)+'">'+esc(r.state||'—')+'</strong><div class="meta">terminal: '+esc(r.terminal===true?'yes':'no')+' · review '+esc(r.pending_review_count||0)+'</div></article>'
       +'<article class="card"><span>Points</span><strong>'+esc(p.value==null?'—':p.value)+'</strong><div class="meta">'+esc(p.status||'—')+' · '+esc(p.source||'—')+'</div></article>'
       +'<article class="card wide"><span>Acceptance evidence</span><strong>'+esc(a.evidence_id||'—')+'</strong><div class="meta">'+esc(a.status||'—')+' · '+fmtDate(a.recorded_at)+'</div></article>'
-      +'<article class="card wide"><span>Recovery detail</span><div class="meta">reason: '+esc(r.reason||'—')+' · notes '+esc(r.source_note_count||0)+' · candidates '+esc(r.candidate_count||0)+' · materialized '+esc(r.materialized_count||0)+' · updated '+fmtDate(r.updated_at)+'</div></article>';
+      +'<article class="card wide"><span>Recovery detail</span><div class="meta">reason: '+esc(r.reason||'—')+' · notes '+esc(r.source_note_count||0)+' · candidates '+esc(r.candidate_count||0)+' · materialized '+esc(r.materialized_count||0)+' · updated '+fmtDate(r.updated_at)+'</div></article>'
+      +'<article class="card wide"><span>Identity request</span><strong class="'+(i.unresolved?'warn':'ok')+'">'+esc(i.found?(i.status||'recorded'):'ยังไม่มีคำขอที่บันทึก')+'</strong><div class="meta">ref: '+esc(i.request_id||'—')+' · LINE verified: '+esc(line.verified===true?'yes':'no')+' · tail: '+esc(line.tail||'—')+'</div><div class="meta">email: '+esc(submitted.email||'—')+' · phone: '+esc(submitted.phone||'—')+'</div><div class="meta">claimed name: '+esc(i.claimed_name||'—')+(i.claimed_name_source?' · source: '+esc(i.claimed_name_source):'')+' · match: '+esc(matching.match_type||'—')+' · confidence: '+esc(matching.confidence==null?'—':matching.confidence)+' · state: '+esc(matching.state||'—')+'</div><div class="meta">candidate Members: '+esc((matching.candidate_member_ids||[]).join(', ')||'—')+' · Clients: '+esc((matching.candidate_client_ids||[]).join(', ')||'—')+' · unresolved: '+esc(i.unresolved===true?'yes':'no')+'</div></article>';
   }
   async function load(q,clientId){
     result.className='empty';result.textContent='กำลังอ่าน canonical truth…';
     var u=new URL('/v1/admin/my-mmd/recovery-diagnostic',location.origin);
-    if(clientId)u.searchParams.set('client_id',clientId);else u.searchParams.set('q',q);
+    if(clientId)u.searchParams.set('client_id',clientId);else if(/^IMR-[A-Z0-9]{6,40}$/i.test(q))u.searchParams.set('request_id',q);else u.searchParams.set('q',q);
     try{
       var r=await fetch(u,{credentials:'include',headers:{accept:'application/json'},cache:'no-store'});
       if(r.status===401){location.href='/internal/admin/login?next='+encodeURIComponent(location.pathname+location.search);return}
@@ -209,8 +240,9 @@ h1{font-size:clamp(28px,5vw,48px);line-height:1.04;margin:8px 0 10px}p{color:var
       render(b);
     }catch(e){render({ok:false,error:'network_unavailable'})}
   }
+  async function loadInbox(){result.className='empty';result.textContent='กำลังอ่านคำขอ recovery ล่าสุด…';try{var r=await fetch('/v1/admin/my-mmd/recovery-diagnostic?inbox=1',{credentials:'include',headers:{accept:'application/json'},cache:'no-store'}),b=await r.json();if(!r.ok||b.ok!==true)throw Error();var items=b.recovery_inbox&&Array.isArray(b.recovery_inbox.items)?b.recovery_inbox.items:[];result.className='grid';result.innerHTML=items.length?items.map(function(i){return '<article class="card wide"><span>Identity request</span><strong class="'+(i.unresolved?'warn':'ok')+'"><a href="?request_id='+encodeURIComponent(i.request_id||'')+'">'+esc(i.request_id||'—')+'</a> · '+esc(i.status||'—')+'</strong><div class="meta">email: '+esc(i.submitted&&i.submitted.email||'—')+' · phone: '+esc(i.submitted&&i.submitted.phone||'—')+' · claimed name: '+esc(i.claimed_name||'—')+' · match: '+esc(i.match_type||'—')+' · unresolved: '+esc(i.unresolved?'yes':'no')+'</div></article>'}).join(''):'<div class="empty">ยังไม่มีคำขอ recovery ที่อ่านได้</div>'}catch(e){result.className='empty';result.textContent='ยังอ่านคำขอ recovery ไม่ได้'}}
   form.addEventListener('submit',function(e){e.preventDefault();var q=(new FormData(form).get('q')||'').trim();if(q)load(q,'')});
-  var params=new URL(location.href).searchParams,initial=params.get('q'),client=params.get('client_id');if(client)load('',client);else if(initial)load(initial,'');
+  var params=new URL(location.href).searchParams,initial=params.get('q'),client=params.get('client_id'),requestId=params.get('request_id');if(client)load('',client);else if(requestId)load(requestId,'');else if(initial)load(initial,'');else loadInbox();
 })();
 </script>
 </body>

@@ -9,6 +9,8 @@ const MEMBER_PROFILE_PURPOSE = "liff_member_profile_read";
 const MEMBER_RESOLVER_SECRET_HEADER = "x-mmd-member-resolver-secret";
 const RESOLVER_SCHEMA = "my_mmd_entitlement_resolver_v1";
 const PROFILE_TIMEOUT_MS = 2500;
+const AIRTABLE_API = "https://api.airtable.com/v0";
+const IDENTITY_MERGE_REQUESTS_TABLE = "MMD — Identity Merge Requests";
 
 const CAPABILITY_PRIORITY = Object.freeze([
   "black_card",
@@ -47,18 +49,30 @@ export async function handleOwnerMyMmdRecoveryDiagnosticRpc(request, env = {}, d
   if (!authorized(request)) return json({ ok: false, error: "not_found" }, 404);
 
   const body = await request.json().catch(() => null);
-  if (!plain(body) || Object.keys(body).some((key) => !["line_user_id", "refresh_reviewed"].includes(key)) || (body.refresh_reviewed !== undefined && body.refresh_reviewed !== true)) {
+  if (!plain(body) || Object.keys(body).some((key) => !["line_user_id", "merge_request_id", "recovery_inbox", "refresh_reviewed"].includes(key)) || (body.refresh_reviewed !== undefined && body.refresh_reviewed !== true)) {
     return json({ ok: false, error: "invalid_request" }, 400);
   }
 
-  const lineUserId = canonicalLineId(body.line_user_id);
-  if (!lineUserId) return json({ ok: false, error: "invalid_request" }, 400);
+  if (body.recovery_inbox === true) return json({ ok: true, authority: "mmd.owner_my_mmd_recovery_diagnostic.v1", recovery_inbox: await readIdentityRecoveryInbox(env), guardrails: { read_only: true, owner_only_upstream: true, raw_line_user_id_exposed: false } });
 
-  let [profileResult, recovery, acceptance, activeThroughAnchor] = await Promise.all([
+  const lineUserId = canonicalLineId(body.line_user_id);
+  const mergeRequestId = safeText(body.merge_request_id, 80);
+  if (!lineUserId && !/^IMR-[A-Z0-9]{6,40}$/.test(mergeRequestId)) return json({ ok: false, error: "invalid_request" }, 400);
+  if (!lineUserId && mergeRequestId) {
+    return json({
+      ok: true,
+      authority: "mmd.owner_my_mmd_recovery_diagnostic.v1",
+      identity_recovery_request: await readIdentityRecoveryRequest(env, "", mergeRequestId),
+      guardrails: { read_only: true, owner_only_upstream: true, raw_line_user_id_exposed: false, canonical_truth_only: true },
+    });
+  }
+
+  let [profileResult, recovery, acceptance, activeThroughAnchor, identityRecoveryRequest] = await Promise.all([
     readCanonicalProfile(env, lineUserId),
     readMemberHistoryRecoveryStatus(env, lineUserId),
     readAcceptanceEvidence(env, lineUserId),
     readProtectedActiveThroughAnchor(env, lineUserId),
+    readIdentityRecoveryRequest(env, lineUserId),
   ]);
 
   if (profileResult.status === "ambiguous") {
@@ -113,6 +127,7 @@ export async function handleOwnerMyMmdRecoveryDiagnosticRpc(request, env = {}, d
       tier_source: safeText(acceptance?.tier_source, 100) || null,
       recorded_at: safeTimestamp(acceptance?.recorded_at),
     },
+    identity_recovery_request: identityRecoveryRequest,
     guardrails: {
       read_only: body.refresh_reviewed !== true,
       owner_only_upstream: true,
@@ -123,6 +138,78 @@ export async function handleOwnerMyMmdRecoveryDiagnosticRpc(request, env = {}, d
       member_profile_available: profileAvailable,
     },
   });
+}
+
+async function readIdentityRecoveryRequest(env, lineUserId, mergeRequestId = "") {
+  const apiKey = text(env.AIRTABLE_API_KEY);
+  const baseId = text(env.AIRTABLE_BASE_ID);
+  const table = text(env.AIRTABLE_TABLE_IDENTITY_MERGE_REQUESTS || IDENTITY_MERGE_REQUESTS_TABLE);
+  if (!apiKey || !baseId || (!canonicalLineId(lineUserId) && !/^IMR-[A-Z0-9]{6,40}$/.test(mergeRequestId))) return { found: false, state: "unavailable" };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PROFILE_TIMEOUT_MS);
+  try {
+    const url = new URL(`${AIRTABLE_API}/${encodeURIComponent(baseId)}/${encodeURIComponent(table)}`);
+    const formula = mergeRequestId
+      ? `{merge_request_id}='${mergeRequestId.replace(/'/g, "\\'")}'`
+      : `{line_user_id}='${lineUserId.replace(/'/g, "\\'")}'`;
+    url.searchParams.set("filterByFormula", formula);
+    url.searchParams.set("maxRecords", "3");
+    url.searchParams.set("sort[0][field]", "created_at");
+    url.searchParams.set("sort[0][direction]", "desc");
+    const response = env.AIRTABLE_HTTP?.fetch
+      ? await env.AIRTABLE_HTTP.fetch(new Request(url, { headers: { authorization: `Bearer ${apiKey}`, accept: "application/json" }, signal: controller.signal }))
+      : await fetch(new Request(url, { headers: { authorization: `Bearer ${apiKey}`, accept: "application/json" }, signal: controller.signal }));
+    const payload = await response.json().catch(() => null);
+    const record = response.ok && Array.isArray(payload?.records) ? payload.records[0] : null;
+    if (!record) return { found: false, state: response.ok ? "not_found" : "unavailable" };
+    const fields = plain(record.fields) ? record.fields : {};
+    let detail = {};
+    try { detail = plain(JSON.parse(String(fields.payload_json || "{}"))) ? JSON.parse(String(fields.payload_json || "{}")) : {}; } catch { detail = {}; }
+    const candidateMemberIds = linkedIds(fields["Candidate Member"]);
+    const candidateClientIds = linkedIds(fields["Candidate Client"]);
+    const email = safeContact(fields.identity_email);
+    const phone = safeContact(fields.identity_phone);
+    const nickname = safeText(detail.nickname_hint, 120);
+    return {
+      found: true,
+      request_id: safeText(fields.merge_request_id, 80) || null,
+      status: safeText(fields.status, 80) || "unknown",
+      submitted: { email: email || null, phone: phone || null },
+      verified_line_identity: { verified: Boolean(lineUserId) && canonicalLineId(fields.line_user_id) === lineUserId, tail: canonicalLineId(fields.line_user_id)?.slice(-6) || null },
+      claimed_name: nickname || null,
+      claimed_name_source: nickname ? "customer_submitted_nickname" : null,
+      matching: {
+        state: safeText(detail.state, 80) || safeText(fields.status, 80) || "unresolved",
+        match_type: safeText(fields.match_type, 100) || safeText(detail.match_type, 100) || null,
+        confidence: Number.isFinite(Number(fields.match_confidence)) ? Number(fields.match_confidence) : null,
+        evidence_sources: Array.isArray(detail.evidence_sources) ? detail.evidence_sources.map((item) => safeText(item, 100)).filter(Boolean).slice(0, 20) : [],
+        candidate_member_ids: candidateMemberIds,
+        candidate_client_ids: candidateClientIds,
+      },
+      unresolved: ["review_required", "not_found", "unknown"].includes(safeText(fields.status, 80).toLowerCase()) || candidateMemberIds.length !== 1 && candidateClientIds.length !== 1,
+      source_path: safeText(fields.source_path, 160) || null,
+      created_at: safeTimestamp(fields.created_at),
+      updated_at: safeTimestamp(fields.updated_at),
+    };
+  } catch {
+    return { found: false, state: "unavailable" };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function readIdentityRecoveryInbox(env) {
+  const apiKey = text(env.AIRTABLE_API_KEY), baseId = text(env.AIRTABLE_BASE_ID), table = text(env.AIRTABLE_TABLE_IDENTITY_MERGE_REQUESTS || IDENTITY_MERGE_REQUESTS_TABLE);
+  if (!apiKey || !baseId) return { state: "unavailable", items: [] };
+  const controller = new AbortController(), timer = setTimeout(() => controller.abort(), PROFILE_TIMEOUT_MS);
+  try {
+    const url = new URL(`${AIRTABLE_API}/${encodeURIComponent(baseId)}/${encodeURIComponent(table)}`);
+    url.searchParams.set("maxRecords", "20"); url.searchParams.set("sort[0][field]", "created_at"); url.searchParams.set("sort[0][direction]", "desc");
+    const response = env.AIRTABLE_HTTP?.fetch ? await env.AIRTABLE_HTTP.fetch(new Request(url, { headers: { authorization: `Bearer ${apiKey}`, accept: "application/json" }, signal: controller.signal })) : await fetch(new Request(url, { headers: { authorization: `Bearer ${apiKey}`, accept: "application/json" }, signal: controller.signal }));
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || !Array.isArray(payload?.records)) return { state: "unavailable", items: [] };
+    return { state: "available", items: payload.records.map((record) => { const f = plain(record.fields) ? record.fields : {}; let d = {}; try { d = plain(JSON.parse(String(f.payload_json || "{}"))) ? JSON.parse(String(f.payload_json || "{}")) : {}; } catch {} return { request_id: safeText(f.merge_request_id, 80) || null, status: safeText(f.status, 80) || "unknown", submitted: { email: safeContact(f.identity_email) || null, phone: safeContact(f.identity_phone) || null }, claimed_name: safeText(d.nickname_hint, 120) || null, match_type: safeText(f.match_type, 100) || null, unresolved: ["review_required", "unknown"].includes(safeText(f.status, 80).toLowerCase()), created_at: safeTimestamp(f.created_at) }; }) };
+  } catch { return { state: "unavailable", items: [] }; } finally { clearTimeout(timer); }
 }
 
 async function readCanonicalProfile(env, lineUserId) {
@@ -353,6 +440,17 @@ function nonNegativeInt(value) {
 
 function safeText(value, max = 120) {
   return text(value).replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").slice(0, max);
+}
+
+function safeContact(value) {
+  return safeText(value, 254).replace(/[<>"'`]/g, "");
+}
+
+function linkedIds(value) {
+  return (Array.isArray(value) ? value : [])
+    .map((item) => safeText(typeof item === "object" ? item?.id : item, 80))
+    .filter((item) => /^rec[A-Za-z0-9]{6,32}$/.test(item))
+    .slice(0, 4);
 }
 
 function plain(value) {
