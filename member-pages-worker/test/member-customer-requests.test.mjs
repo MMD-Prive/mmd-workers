@@ -97,7 +97,9 @@ test("Your Request queues private metadata once and returns a customer-safe proj
   assert.equal(firstBody.idempotent, false);
   assert.deepEqual({ ...firstBody.item, created_at:Boolean(firstBody.item.created_at) }, { request_id:"req_abcdefghijkl", request_type:"your_request", status:"received", created_at:true, model_name:"Example model", audience:"private", action:null });
   assert.equal(records.length, 1);
+  assert.deepEqual(records[0].fields.fld9gMhvFWegM345O, [CLIENT_ID]);
   const stored = JSON.parse(records[0].fields.payload_json);
+  assert.equal(stored.fld9gMhvFWegM345O, undefined);
   assert.equal(stored.visibility, "internal_only");
   assert.equal(stored.customer.line_user_id, undefined);
   assert.match(stored.model.social, /instagram/);

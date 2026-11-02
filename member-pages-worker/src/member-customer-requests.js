@@ -42,9 +42,9 @@ export async function handleMemberCustomerRequest(request, env = {}) {
 async function handleAdminMutationLease(request, env) {
   if (!internalAuthorized(request) || !env.CUSTOMER_REQUEST_MUTATION?.idFromName || !env.CUSTOMER_REQUEST_MUTATION?.get) return fail(404, "NOT_FOUND");
   const body = await request.json().catch(() => null); const recordId = safeText(body?.record_id, 40); const operationId = safeText(body?.operation_id, 100);
-  if (!/^rec[A-Za-z0-9]{10,32}$/.test(recordId) || (body?.action !== "inspect" && !operationId) || !["begin", "finish", "inspect", "reconcile"].includes(body?.action)) return fail(400, "INVALID_REQUEST");
+  if (!/^rec[A-Za-z0-9]{10,32}$/.test(recordId) || (body?.action !== "inspect" && !operationId) || !["begin", "prepare", "finish", "inspect", "reconcile"].includes(body?.action)) return fail(400, "INVALID_REQUEST");
   const id = env.CUSTOMER_REQUEST_MUTATION.idFromName(recordId);
-  const response = await env.CUSTOMER_REQUEST_MUTATION.get(id).fetch("https://mutation/" + body.action, { method: "POST", body: JSON.stringify({ action: body.action, operation_id: operationId, status: body.status, readback_verified: body.readback_verified === true }) }).catch(() => null);
+  const response = await env.CUSTOMER_REQUEST_MUTATION.get(id).fetch("https://mutation/" + body.action, { method: "POST", body: JSON.stringify({ action: body.action, operation_id: operationId, status: body.status, mutation_fingerprint: body.mutation_fingerprint, readback_verified: body.readback_verified === true }) }).catch(() => null);
   if (!response) return fail(503, "REQUEST_MUTATION_UNAVAILABLE");
   return new Response(response.body, { status: response.status, headers: response.headers });
 }
@@ -88,7 +88,6 @@ async function handleRequest(request, env, identity) {
     request_type: input.data.request_type,
     canonical_client_id: identity.clientId,
     line_user_id: identity.lineUserId,
-    [CANONICAL_CLIENT_FIELD]: [identity.clientId],
     created_at: now,
     status: input.data.request_type === "your_request" ? "received" : "reviewing",
     customer: input.data.customer,
@@ -104,6 +103,7 @@ async function handleRequest(request, env, identity) {
     intent: "note_only",
     member_name: safeText(identity.memberProfile?.display_name, 120),
     line_user_id: identity.lineUserId,
+    [CANONICAL_CLIENT_FIELD]: [identity.clientId],
     line_id: input.data.request_id,
     admin_note: adminNote(payload),
     payload_json: JSON.stringify(payload),
@@ -124,7 +124,7 @@ async function appendEvidenceToRequest(body, env, identity) {
   const records = await listInbox(env, identity.lineUserId, identity.clientId); if (records === null) return fail(503, "REQUEST_QUEUE_UNAVAILABLE");
   const record = records.find(row => parsePayload(row?.fields?.payload_json)?.request_id === requestId); if (!record) return fail(404, "REQUEST_NOT_FOUND");
   const mutation = await beginRequestMutation(env, record.id); if (!mutation.ok) return fail(mutation.status || 503, mutation.error || "REQUEST_MUTATION_UNAVAILABLE");
-  let outcome = "aborted";
+  let outcome = "aborted"; let mutationFingerprint = "";
   try {
     // Discovery above only chooses the record. This reread is authoritative and
     // happens after the durable per-record mutation lease is acquired.
@@ -134,7 +134,10 @@ async function appendEvidenceToRequest(body, env, identity) {
     const before = unique(array(payload.evidence_ids).filter(safeEvidenceId));
     const next = unique([...before, ...checked.map(item => item.evidence_id)]);
     if (next.length > MAX_EVIDENCE) return fail(409, "EVIDENCE_LIMIT_REACHED");
-    payload.evidence_ids = next; payload.updated_at = new Date().toISOString();
+    payload.evidence_ids = next; payload.updated_at = new Date().toISOString(); payload.last_mutation_id = mutation.operation_id;
+    mutationFingerprint = await hash(JSON.stringify({ request_id: payload.request_id, evidence_ids: payload.evidence_ids, updated_at: payload.updated_at }));
+    payload.mutation_fingerprint = mutationFingerprint;
+    if (!await prepareRequestMutation(env, record.id, mutation.operation_id, mutationFingerprint)) return fail(409, "REQUEST_MUTATION_LEASE_LOST");
     outcome = "uncertain";
     const updated = await updateInbox(env, record.id, { payload_json: JSON.stringify(payload), admin_note: adminNote(payload) });
     if (!updated) return fail(503, "REQUEST_QUEUE_WRITE_UNCERTAIN");
@@ -144,10 +147,11 @@ async function appendEvidenceToRequest(body, env, identity) {
     // A thrown storage/list/R2 error may have happened after the write was sent;
     // keep the lease quarantined rather than allowing a blind retry.
     return fail(503, error?.code === "REQUEST_QUEUE_UNAVAILABLE" ? error.code : "REQUEST_QUEUE_WRITE_UNCERTAIN");
-  } finally { await finishRequestMutation(env, record.id, mutation.operation_id, outcome); }
+  } finally { await finishRequestMutation(env, record.id, mutation.operation_id, outcome, mutationFingerprint); }
 }
 async function beginRequestMutation(env, recordId) { if (!env.CUSTOMER_REQUEST_MUTATION?.idFromName || !env.CUSTOMER_REQUEST_MUTATION?.get) return { ok: false, status: 503, error: "REQUEST_MUTATION_UNAVAILABLE" }; const operation_id = crypto.randomUUID(); const id = env.CUSTOMER_REQUEST_MUTATION.idFromName(recordId); const response = await env.CUSTOMER_REQUEST_MUTATION.get(id).fetch("https://mutation/begin", { method: "POST", body: JSON.stringify({ action: "begin", operation_id }) }).catch(() => null); const body = await response?.json().catch(() => null); return response?.ok ? { ok: true, operation_id } : { ok: false, status: response?.status || 503, error: body?.error || "REQUEST_MUTATION_UNAVAILABLE" }; }
-async function finishRequestMutation(env, recordId, operation_id, status = "committed") { const id = env.CUSTOMER_REQUEST_MUTATION.idFromName(recordId); await env.CUSTOMER_REQUEST_MUTATION.get(id).fetch("https://mutation/finish", { method: "POST", body: JSON.stringify({ action: "finish", operation_id, status }) }).catch(() => null); }
+async function prepareRequestMutation(env, recordId, operation_id, mutation_fingerprint) { const id = env.CUSTOMER_REQUEST_MUTATION.idFromName(recordId); const response = await env.CUSTOMER_REQUEST_MUTATION.get(id).fetch("https://mutation/prepare", { method: "POST", body: JSON.stringify({ action: "prepare", operation_id, mutation_fingerprint }) }).catch(() => null); return response?.ok === true; }
+async function finishRequestMutation(env, recordId, operation_id, status = "committed", mutation_fingerprint = "") { const id = env.CUSTOMER_REQUEST_MUTATION.idFromName(recordId); await env.CUSTOMER_REQUEST_MUTATION.get(id).fetch("https://mutation/finish", { method: "POST", body: JSON.stringify({ action: "finish", operation_id, status, mutation_fingerprint }) }).catch(() => null); }
 
 async function handleEvidenceUpload(request, env, identity) {
   if (request.method !== "POST") return fail(405, "METHOD_NOT_ALLOWED", { allow: "POST" });
@@ -280,15 +284,21 @@ async function listInbox(env, lineUserId, canonicalClientId = "") {
   const records = []; let offset = "";
   for (let page = 0; page < 1000; page += 1) {
     const url = new URL(`${API}/${encodeURIComponent(base)}/${encodeURIComponent(table)}`);
-    const ownerFormula = canonicalClientId ? `OR({line_user_id}=${formula(lineUserId)},FIND(${formula(canonicalClientId)},ARRAYJOIN({${CANONICAL_CLIENT_FIELD}}))>0)` : `{line_user_id}=${formula(lineUserId)}`;
-    url.searchParams.set("filterByFormula", `AND(${ownerFormula},OR({source}='my_mmd_liff',{source}='line'),OR({intent}='note_only',{intent}='your_request',{intent}='saved_model',{intent}='profile_update'))`);
+    // Airtable linked fields render display values in formulas, not stable API
+    // record IDs. For canonical aggregation, fetch the complete namespaced
+    // result set and apply the verified payload ownership check locally.
+    const namespaceFormula = `AND(OR({source}='my_mmd_liff',{source}='line'),OR({intent}='note_only',{intent}='your_request',{intent}='saved_model',{intent}='profile_update'))`;
+    // Keep the current LINE in the formula so the existing connector/mock can
+    // cheaply identify the owner; canonical-linked records are then included
+    // by the complete namespaced read and verified payload filter below.
+    url.searchParams.set("filterByFormula", canonicalClientId ? `AND(OR({line_user_id}=${formula(lineUserId)},${namespaceFormula}),${namespaceFormula})` : `AND({line_user_id}=${formula(lineUserId)},${namespaceFormula})`);
     url.searchParams.set("pageSize", "100"); if (offset) url.searchParams.set("offset", offset);
     const response = await airtableFetch(env, url, { headers: { authorization: `Bearer ${key}`, accept: "application/json" } });
     const payload = await response.json().catch(() => null); if (!response.ok || !Array.isArray(payload?.records)) return null;
     records.push(...payload.records); offset = payload.offset || ""; if (!offset) break;
   }
   if (offset) return null;
-  return records;
+  return canonicalClientId ? records.filter((record) => { const data = parsePayload(record?.fields?.payload_json); return data.line_user_id === lineUserId || data.canonical_client_id === canonicalClientId; }) : records;
 }
 async function createInbox(env, fields) {
   const key = safeText(env.AIRTABLE_API_KEY, 2000); const base = safeText(env.AIRTABLE_BASE_ID, 100); const table = safeText(env.AIRTABLE_TABLE_CONSOLE_INBOX, 180) || INBOX_TABLE;
