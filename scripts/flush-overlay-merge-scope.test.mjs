@@ -1,6 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {isFlushOverlayMerge,isFlushClientOnlyMerge,FLUSH_OVERLAY_PATHS} from './flush-overlay-merge-scope.mjs';
+import {isFlushOverlayMerge,isFlushClientOnlyMerge,isAiOpsDashboardReadMerge,FLUSH_OVERLAY_PATHS} from './flush-overlay-merge-scope.mjs';
+test('Dashboard read merges preserve the tested scoped production patch and reject auth or other runtime changes',()=>{
+ const before='const auth="preserve";\n      sources: intel.map(old),\nasync function readAdminJson(){old}\nfunction buildAdvisory(){preserve}',after=before.replace('{old}','{new}').replace('intel.map(old)','intel.map(new)'),files=['admin-ai-ops-worker/src/index.js','admin-ai-ops-worker/test/ai-ops-worker.test.mjs','scripts/flush-overlay-merge-scope.mjs','scripts/flush-overlay-merge-scope.test.mjs'];
+ assert.equal(isAiOpsDashboardReadMerge('push',files,before,after),true);
+ assert.throws(()=>isAiOpsDashboardReadMerge('push',files,before,after.replace('auth="preserve"','auth="changed"')),/UNRELATED/);
+ assert.throws(()=>isAiOpsDashboardReadMerge('push',files,before,after.replace('buildAdvisory(){preserve}','buildAdvisory(){changed}')),/UNRELATED/);
+ assert.equal(isAiOpsDashboardReadMerge('push',[...files,'admin-ai-ops-worker/wrangler.toml'],before,after),false);
+ assert.equal(isAiOpsDashboardReadMerge('workflow_dispatch',files,before,after),false);
+});
 test('the exact FLUSH merge preserves the tested production overlays',()=>{
  assert.equal(isFlushOverlayMerge('push',[...FLUSH_OVERLAY_PATHS]),true);
 });

@@ -2,6 +2,58 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import worker from "../src/index.js";
 
+test("dashboard recovery allows a slow source and retries transient GETs only", async () => {
+  const original = AbortSignal.timeout, delays = [];
+  AbortSignal.timeout = ms => { delays.push(ms); return new AbortController().signal; };
+  let calls = 0;
+  const service = { fetch: async req => {
+    assert.equal(req.method, "GET");
+    assert.equal(req.headers.get("cookie"), "synthetic");
+    if (new URL(req.url).pathname === "/v1/admin/auth/me") return Response.json({ok:true,authenticated:true,worker:"admin-worker"});
+    if (++calls === 1) throw new DOMException("Synthetic timeout", "TimeoutError");
+    return Response.json({ok:true,todos:[],boss:[],money:[],jobs:[],members:[],status:{}});
+  }};
+  try {
+    const r = await worker.fetch(new Request("https://www.mmdbkk.com/v1/admin/ai-ops/context?path=/internal/admin/dashboard", {headers:{cookie:"synthetic"}}), {MMS_ADMIN:service}, {}), d = await r.json();
+    assert.equal(d.command_center.status,"ready");
+    assert.equal(calls,2);
+    assert.equal(d.sources[0].attempts,2);
+    assert.equal(d.sources[0].ok,true);
+    assert.deepEqual(delays,[7000,30000,30000]);
+  } finally { AbortSignal.timeout = original; }
+});
+
+test("dashboard retries share a 45s deadline rather than multiplying timeouts",async()=>{
+ const timeout=AbortSignal.timeout,now=Date.now;let clock=0;const delays=[];
+ AbortSignal.timeout=ms=>{delays.push(ms);return new AbortController().signal;};Date.now=()=>clock;
+ const service={fetch:async req=>{if(new URL(req.url).pathname==="/v1/admin/auth/me")return Response.json({ok:true,authenticated:true,worker:"admin-worker"});clock+=delays.at(-1);throw new DOMException("Synthetic timeout","TimeoutError");}};
+ try{const d=await (await worker.fetch(new Request("https://mmdbkk.com/v1/admin/ai-ops/context?path=/internal/admin/dashboard"),{MMS_ADMIN:service},{})).json();assert.deepEqual(delays,[7000,30000,15000]);assert.equal(d.sources[0].elapsed_ms,45000);assert.equal(d.sources[0].error_code,"timeout");assert.equal(d.command_center.status,"waiting");}finally{AbortSignal.timeout=timeout;Date.now=now;}
+});
+
+for (const scenario of ["503_then_ok","network_then_ok","401","invalid_json","ok_false","always_timeout"]) {
+  test("dashboard recovery fails closed: "+scenario, async () => {
+    let calls=0;
+    const service={fetch:async req=>{
+      if(new URL(req.url).pathname==="/v1/admin/auth/me")return Response.json({ok:true,authenticated:true,worker:"admin-worker"});
+      calls++;
+      if(scenario==="always_timeout")throw new DOMException("Synthetic timeout","TimeoutError");
+      if(scenario==="503_then_ok"&&calls===1)return new Response("Unavailable",{status:503});
+      if(scenario==="network_then_ok"&&calls===1)throw new TypeError("Synthetic network failure");
+      if(scenario==="401")return Response.json({ok:false},{status:401});
+      if(scenario==="invalid_json")return new Response("<html>login</html>",{status:200});
+      if(scenario==="ok_false")return Response.json({ok:false});
+      return Response.json({ok:true,todos:[],boss:[],money:[],jobs:[],members:[],status:{}});
+    }};
+    const r=await worker.fetch(new Request("https://mmdbkk.com/v1/admin/ai-ops/context?path=/internal/admin/dashboard"),{MMS_ADMIN:service},{}),d=await r.json();
+    const recovered=scenario.endsWith("then_ok");
+    assert.equal(d.sources[0].ok,recovered);
+    assert.equal(calls,recovered||scenario==="always_timeout"?2:1);
+    assert.equal(d.command_center.status,recovered?"ready":"waiting");
+    if(!recovered)assert.equal(d.anomalies.some(x=>x.code==="intel_source_unavailable"),true);
+    assert.doesNotMatch(JSON.stringify(d),/Synthetic timeout|Synthetic network failure/);
+  });
+}
+
 test("shared client script is served from one endpoint", async () => {
   const response = await worker.fetch(new Request("https://mmdbkk.com/v1/admin/ai-ops/client.js"), { MMS_ADMIN: { fetch: globalThis.fetch } }, {});
   assert.equal(response.status, 200);
