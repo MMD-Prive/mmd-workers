@@ -56,10 +56,10 @@ async function handleRequest(request, env, identity) {
   }
   const quota = requestQuota(rawPrior);
   if (input.data.request_type === "your_request" && quota.remaining <= 0) return fail(429, "YOUR_REQUEST_MONTHLY_LIMIT", { "retry-after": "3600" });
-  const reservation = input.data.request_type === "your_request" ? await reserveQuota(env, identity.clientId, quota.month_key, input.data.request_id) : { ok: true, reserved: false };
-  if (!reservation.ok) return fail(reservation.status || 503, reservation.error || "REQUEST_QUEUE_UNAVAILABLE");
   const evidence = input.data.evidence_ids.length ? await validateEvidence(env, identity.clientId, input.data.evidence_ids) : [];
   if (evidence === null) return fail(409, "EVIDENCE_UNAVAILABLE");
+  const reservation = input.data.request_type === "your_request" ? await reserveQuota(env, identity.clientId, quota.month_key, input.data.request_id, requestFingerprint(input.data), rawPrior.map((record) => parsePayload(record?.fields?.payload_json)).filter((data) => data.request_type === "your_request" && monthKeyInBangkok(data.created_at) === quota.month_key).map((data) => data.request_id)) : { ok: true, reserved: false };
+  if (!reservation.ok) return fail(reservation.status || 503, reservation.error || "REQUEST_QUEUE_UNAVAILABLE");
   const now = new Date().toISOString();
   const payload = {
     schema: "mmd_customer_request_v1",
@@ -85,7 +85,11 @@ async function handleRequest(request, env, identity) {
     payload_json: JSON.stringify(payload),
     status: "new",
   });
-  if (!created) { if (reservation.reserved) await releaseQuota(env, identity.clientId, quota.month_key, input.data.request_id); return fail(503, "REQUEST_QUEUE_UNAVAILABLE"); }
+  if (!created.ok) {
+    if (reservation.reserved) await finalizeQuota(env, identity.clientId, quota.month_key, input.data.request_id, reservation.lease, created.uncertain ? "uncertain" : "release", requestFingerprint(input.data));
+    return fail(503, created.uncertain ? "REQUEST_QUEUE_WRITE_UNCERTAIN" : "REQUEST_QUEUE_UNAVAILABLE");
+  }
+  if (reservation.reserved) await finalizeQuota(env, identity.clientId, quota.month_key, input.data.request_id, reservation.lease, "commit", requestFingerprint(input.data));
   const item = customerItem(payload);
   return json({ ok: true, item, idempotent: false, quota: { ...quota, used: quota.used + (input.data.request_type === "your_request" ? 1 : 0), remaining: Math.max(0, quota.remaining - (input.data.request_type === "your_request" ? 1 : 0)) } }, 201);
 }
@@ -181,19 +185,19 @@ function requestFingerprint(data) {
   return JSON.stringify({ request_type: data?.request_type || "", model: data?.model || {}, customer: data?.customer || {}, evidence_ids: data?.evidence_ids || [] });
 }
 
-async function reserveQuota(env, clientId, monthKey, requestId) {
+async function reserveQuota(env, clientId, monthKey, requestId, fingerprint, observedRequestIds = []) {
   if (!env.CUSTOMER_REQUEST_QUOTA?.idFromName || !env.CUSTOMER_REQUEST_QUOTA?.get) return { ok: false, status: 503, error: "REQUEST_QUOTA_UNAVAILABLE" };
   const id = env.CUSTOMER_REQUEST_QUOTA.idFromName(`${clientId}:${monthKey}`);
-  const response = await env.CUSTOMER_REQUEST_QUOTA.get(id).fetch("https://quota/reserve", { method: "POST", body: JSON.stringify({ action: "reserve", month_key: monthKey, request_id: requestId }) }).catch(() => null);
+  const response = await env.CUSTOMER_REQUEST_QUOTA.get(id).fetch("https://quota/reserve", { method: "POST", body: JSON.stringify({ action: "reserve", month_key: monthKey, request_id: requestId, fingerprint, observed_request_ids: observedRequestIds }) }).catch(() => null);
   if (!response) return { ok: false, status: 503, error: "REQUEST_QUOTA_UNAVAILABLE" };
   const payload = await response.json().catch(() => null);
-  return response.ok ? { ok: true, reserved: payload?.idempotent !== true } : { ok: false, status: response.status === 429 ? 429 : 503, error: payload?.error || "REQUEST_QUOTA_UNAVAILABLE" };
+  return response.ok ? { ok: true, reserved: payload?.idempotent !== true, lease: payload?.lease } : { ok: false, status: [409, 429, 503].includes(response.status) ? response.status : 503, error: payload?.error || "REQUEST_QUOTA_UNAVAILABLE" };
 }
 
-async function releaseQuota(env, clientId, monthKey, requestId) {
+async function finalizeQuota(env, clientId, monthKey, requestId, lease, action, fingerprint = "") {
   if (!env.CUSTOMER_REQUEST_QUOTA?.idFromName || !env.CUSTOMER_REQUEST_QUOTA?.get) return;
   const id = env.CUSTOMER_REQUEST_QUOTA.idFromName(`${clientId}:${monthKey}`);
-  await env.CUSTOMER_REQUEST_QUOTA.get(id).fetch("https://quota/release", { method: "POST", body: JSON.stringify({ action: "release", month_key: monthKey, request_id: requestId }) }).catch(() => null);
+  await env.CUSTOMER_REQUEST_QUOTA.get(id).fetch(`https://quota/${action}`, { method: "POST", body: JSON.stringify({ action, month_key: monthKey, request_id: requestId, lease, fingerprint }) }).catch(() => null);
 }
 
 async function validateEvidence(env, clientId, ids) {
@@ -224,9 +228,11 @@ async function listInbox(env, lineUserId) {
 }
 async function createInbox(env, fields) {
   const key = safeText(env.AIRTABLE_API_KEY, 2000); const base = safeText(env.AIRTABLE_BASE_ID, 100); const table = safeText(env.AIRTABLE_TABLE_CONSOLE_INBOX, 180) || INBOX_TABLE;
-  if (!key || !base) return false;
-  const response = await airtableFetch(env, `${API}/${encodeURIComponent(base)}/${encodeURIComponent(table)}`, { method: "POST", headers: { authorization: `Bearer ${key}`, "content-type": "application/json" }, body: JSON.stringify({ fields }) });
-  return response.ok;
+  if (!key || !base) return { ok: false, uncertain: false };
+  try {
+    const response = await airtableFetch(env, `${API}/${encodeURIComponent(base)}/${encodeURIComponent(table)}`, { method: "POST", headers: { authorization: `Bearer ${key}`, "content-type": "application/json" }, body: JSON.stringify({ fields }) });
+    return { ok: response.ok, uncertain: response.status >= 500 };
+  } catch { return { ok: false, uncertain: true }; }
 }
 function internalAuthorized(request) { const url = new URL(request.url); return request.method === "POST" && url.hostname === SERVICE_HOST && token(request.headers.get("x-mmd-internal-call")) === "true" && safeText(request.headers.get("x-mmd-service-binding"), 80) === "admin-worker"; }
 async function airtableFetch(env, url, init = {}) { return env.AIRTABLE_HTTP?.fetch ? env.AIRTABLE_HTTP.fetch(new Request(url, init)) : fetch(url, init); }
