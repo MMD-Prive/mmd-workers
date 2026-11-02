@@ -24,11 +24,11 @@ test('baseline verification rejects version, deployment, split traffic, and migr
 });
 
 test('paired release stages both workers and records rollback targets on partial promotion', async () => {
-  const calls = []; const receipt = [];
+  const calls = []; const receipt = []; const uploaded = {};
   const io = {
     save: r => receipt.push(r), approve: async stage => calls.push(`approve:${stage}`),
-    snapshot: async worker => snapshot(worker, id(worker === 'member-pages-worker' ? 1 : 3), id(worker === 'member-pages-worker' ? 2 : 4)),
-    upload: async (worker) => { calls.push(`upload:${worker}`); return { id: id(worker === 'member-pages-worker' ? 5 : 6) }; },
+    snapshot: async worker => ({ ...snapshot(worker, id(worker === 'member-pages-worker' ? 1 : 3), id(worker === 'member-pages-worker' ? 2 : 4)), latest_version: uploaded[worker] || id(worker === 'member-pages-worker' ? 1 : 3) }),
+    upload: async (worker) => { calls.push(`upload:${worker}`); uploaded[worker] = id(worker === 'member-pages-worker' ? 5 : 6); return { id: uploaded[worker] }; },
     verifyUploaded: async worker => calls.push(`verify:${worker}`),
     promote: async worker => { calls.push(`promote:${worker}`); if (worker === 'admin-worker') throw Error('admin promotion denied'); return { id: id(7) }; },
   };
@@ -67,7 +67,7 @@ test('production adapter uses only scoped Cloudflare reads, uploads and promotio
     }
     if (path === root + '/versions' && u.search === '?bindings_inherit=strict' && init.method === 'POST') {
       state.uploadedReady = true;
-      state.uploadedVersion = { id: state.uploaded, resources: { bindings: [{ name: 'KEEP', type: 'secret_text' }, ...(worker === 'member-pages-worker' ? [{ name: 'CUSTOMER_REQUEST_MUTATION', type: 'durable_object_namespace' }] : [])], script_runtime: { migration_tag: state.newMigration } } };
+      state.uploadedVersion = { id: state.uploaded, resources: { bindings: [{ name: 'KEEP', type: 'secret_text' }, ...(worker === 'member-pages-worker' ? [{ name: 'CUSTOMER_REQUEST_MUTATION', type: 'durable_object_namespace', class_name: 'CustomerRequestMutationCoordinator' }] : [])], script_runtime: { compatibility_date: '2026-06-20', compatibility_flags: [], migration_tag: state.newMigration } } };
       return response({ id: state.uploaded });
     }
     if (path === root + '/deployments' && init.method === 'POST') {
@@ -78,7 +78,7 @@ test('production adapter uses only scoped Cloudflare reads, uploads and promotio
     if (path === root + '/script-settings' && (init.method || 'GET') === 'GET') return response({ settings: 'unchanged' });
     throw new Error(`unexpected ${init.method || 'GET'} ${path}${u.search}`);
   };
-  const env = { MMD_RECOVERY_APPROVAL: 'approved', MMD_RECOVERY_APPROVAL_REF: 'test-ref', MMD_RECOVERY_APPROVED_SHA: 'a'.repeat(40) };
+  const env = { MMD_RECOVERY_APPROVAL: 'approved', MMD_RECOVERY_APPROVAL_REF: 'test-ref', MMD_RECOVERY_APPROVED_SHA: 'a'.repeat(40), MMD_RECOVERY_MIGRATION_MODE: 'full-script-deploy-reviewed' };
   const io = createCloudflareRecoveryAdapter({ token: 'synthetic-token', request, env });
   const memberBytes = workers['member-pages-worker'].candidate, adminBytes = workers['admin-worker'].candidate;
   const digest = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -96,6 +96,13 @@ test('production adapter uses only scoped Cloudflare reads, uploads and promotio
 test('execute approval fails closed before any Cloudflare request', () => {
   assert.throws(() => requireRecoveryExecuteApproval({}), /MMD_RECOVERY_APPROVAL=approved/);
   assert.throws(() => requireRecoveryExecuteApproval({ MMD_RECOVERY_APPROVAL: 'approved' }), /MMD_RECOVERY_APPROVAL_REF/);
+});
+
+test('production adapter blocks the unsupported version-upload migration route by default', async () => {
+  let requests = 0;
+  const io = createCloudflareRecoveryAdapter({ token: 'synthetic-token', env: { MMD_RECOVERY_APPROVAL: 'approved', MMD_RECOVERY_APPROVAL_REF: 'ref', MMD_RECOVERY_APPROVED_SHA: 'a'.repeat(40) }, request: async () => { requests++; throw Error('must not call Cloudflare'); } });
+  await assert.rejects(io.approve('preflight').then(() => io.assertMigrationReady()), /version upload is disabled/);
+  assert.equal(requests, 0);
 });
 
 test('upload receipt preserves a returned member version when the admin upload is uncertain', async () => {

@@ -66,7 +66,7 @@ export function verifyServingBaseline(snapshot, expected, worker) {
 }
 
 export async function executeRecoveryArtifactRelease(io, plan) {
-  const receipt = { phase: 'preflight', scope: 'membership-recovery-artifact-pair', rollback_policy: 'no_automatic_rollback_across_DO_migration', rollback_targets: {}, upload_attempts: {}, promotion_attempts: {} };
+  const receipt = { phase: 'preflight', scope: 'membership-recovery-artifact-pair', rollback_policy: 'no_automatic_rollback_across_DO_migration', fallback_strategy: 'manual_forward_compatible_full_script_deploy_required', rollback_targets: {}, upload_attempts: {}, promotion_attempts: {} };
   const save = value => io.save?.(structuredClone(value));
   try {
     await io.approve('preflight');
@@ -74,6 +74,7 @@ export async function executeRecoveryArtifactRelease(io, plan) {
     const admin = await io.snapshot(ADMIN_WORKER);
     verifyBaseline(member, plan.member, MEMBER_WORKER);
     verifyBaseline(admin, plan.admin, ADMIN_WORKER);
+    io.assertMigrationReady?.();
     receipt.rollback_targets = {
       member: { deployment_id: member.deployment.id, version_id: member.version.id },
       admin: { deployment_id: admin.deployment.id, version_id: admin.version.id },
@@ -95,6 +96,8 @@ export async function executeRecoveryArtifactRelease(io, plan) {
     await io.verifyUploaded(ADMIN_WORKER, adminUploaded.id, adminMeta, plan.adminManifest);
     const memberServing = await io.snapshot(MEMBER_WORKER); const adminServing = await io.snapshot(ADMIN_WORKER);
     verifyServingBaseline(memberServing, plan.member, MEMBER_WORKER); verifyServingBaseline(adminServing, plan.admin, ADMIN_WORKER);
+    if (memberServing.latest_version !== undefined) assert.equal(memberServing.latest_version, memberUploaded.id, 'member latest version changed after upload');
+    if (adminServing.latest_version !== undefined) assert.equal(adminServing.latest_version, adminUploaded.id, 'admin latest version changed after upload');
     await io.approve('promote');
     receipt.phase = 'promotion-attempted-outcome-unknown'; receipt.promotion_attempts.member = { state: 'started', version_id: memberUploaded.id }; await save(receipt);
     const memberDeployment = await io.promote(MEMBER_WORKER, memberUploaded.id);
@@ -128,6 +131,10 @@ export function requireRecoveryExecuteApproval(env = process.env) {
   assert.equal(env.MMD_RECOVERY_APPROVAL, 'approved', 'MMD_RECOVERY_APPROVAL=approved is required for --execute');
   assert.ok(env.MMD_RECOVERY_APPROVAL_REF?.trim(), 'MMD_RECOVERY_APPROVAL_REF is required for --execute');
   assert.match(env.MMD_RECOVERY_APPROVED_SHA || '', /^[a-f0-9]{40}$/i, 'MMD_RECOVERY_APPROVED_SHA is required for --execute');
+}
+
+export function requireRecoveryMigrationRoute(env = process.env) {
+  assert.equal(env.MMD_RECOVERY_MIGRATION_MODE, 'full-script-deploy-reviewed', 'DO migration route is not approved; version upload is disabled until a reviewed full-script deployment adapter is available');
 }
 
 // Production transport for the scoped pair. It is deliberately narrower than a
@@ -177,9 +184,18 @@ export function createCloudflareRecoveryAdapter({ token, request = fetch, accoun
     const actualByName = new Map(actualBindings.map(binding => [binding.name, binding]));
     for (const binding of metadata.__expected_bindings || []) {
       const actual = actualByName.get(binding.name); assert.ok(actual, `${worker} binding readback missing: ${binding.name}`);
-      for (const key of Object.keys(binding)) if (key !== 'text' && key !== 'secret_text' && key !== 'secret_key') assert.deepEqual(actual[key], binding[key], `${worker} binding changed: ${binding.name}.${key}`);
+      for (const key of Object.keys(binding)) if (!(binding.type === 'secret_text' || binding.type === 'secret_key') || key === 'name' || key === 'type') assert.deepEqual(actual[key], binding[key], `${worker} binding changed: ${binding.name}.${key}`);
     }
     assert.ok(actualByName.has('CUSTOMER_REQUEST_MUTATION') === (worker === MEMBER_WORKER), `${worker} mutation binding scope changed`);
+    if (worker === MEMBER_WORKER) {
+      const mutation = actualByName.get('CUSTOMER_REQUEST_MUTATION');
+      assert.equal(mutation.type, 'durable_object_namespace', `${worker} mutation binding type changed`);
+      assert.equal(mutation.class_name, DO_CLASS, `${worker} mutation binding class changed`);
+    }
+    const runtime = exact?.resources?.script_runtime || {};
+    for (const key of ['compatibility_date', 'compatibility_flags', 'usage_model', 'limits']) if (metadata[key] !== undefined) assert.deepEqual(runtime[key], metadata[key], `${worker} runtime metadata changed: ${key}`);
+    if (metadata.placement !== undefined) assert.deepEqual(exact?.resources?.script?.placement || exact?.placement, metadata.placement, `${worker} placement changed`);
+    if (metadata.cache_options !== undefined) assert.deepEqual(exact.cache_options, metadata.cache_options, `${worker} cache options changed`);
     if (worker === MEMBER_WORKER) {
       assert.equal(exact?.resources?.script_runtime?.migration_tag, manifest.migration?.new_tag, `${worker} migration readback mismatch`);
     }
@@ -202,6 +218,7 @@ export function createCloudflareRecoveryAdapter({ token, request = fetch, accoun
     assert.equal(jsonHash(current.settings), jsonHash(baselineSettings), `${worker} settings changed during promotion`);
   };
   return {
+    assertMigrationReady: () => requireRecoveryMigrationRoute(env),
     approve: async stage => {
       requireRecoveryExecuteApproval(env);
     },
@@ -229,6 +246,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     console.log(JSON.stringify({ scope: 'membership-recovery-artifact-pair', requires: ['fresh active snapshots', 'owner approval', 'paired upload readback', 'paired promotion'] }));
   } else if (mode === '--execute') {
     requireRecoveryExecuteApproval();
+    requireRecoveryMigrationRoute();
     const required = ['MMD_RECOVERY_MEMBER_CANDIDATE', 'MMD_RECOVERY_ADMIN_CANDIDATE', 'MMD_RECOVERY_MEMBER_MANIFEST', 'MMD_RECOVERY_ADMIN_MANIFEST', 'MMD_RECOVERY_MEMBER_VERSION', 'MMD_RECOVERY_MEMBER_DEPLOYMENT', 'MMD_RECOVERY_ADMIN_VERSION', 'MMD_RECOVERY_ADMIN_DEPLOYMENT'];
     for (const name of required) assert.ok(process.env[name], `${name} is required for --execute`);
     const plan = readPlan(process.env.MMD_RECOVERY_MEMBER_CANDIDATE, process.env.MMD_RECOVERY_ADMIN_CANDIDATE, process.env.MMD_RECOVERY_MEMBER_MANIFEST, process.env.MMD_RECOVERY_ADMIN_MANIFEST);
