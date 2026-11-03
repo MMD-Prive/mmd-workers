@@ -7,6 +7,16 @@ const job=workflow.slice(workflow.indexOf('  my-mmd-home-release:'));
 const evaluate=new Function('github','inputs','return '+job.match(/^    if: (.+)$/m)[1]);
 const sha='a'.repeat(40),github={event_name:'workflow_dispatch',ref:'refs/heads/main',sha};
 const inputs={execution_mode:'my-mmd-home-delta',production_approved:true,approval_ref:'fixture',approved_sha:sha,expected_version:'fixture',expected_deployment:'fixture',patch_manifest:'fixture',expected_manifest_sha256:'fixture',expected_module_sha256:'fixture'};
+test('alias manifest and workflow pin agree with reviewed alias-only source',()=>{
+ const manifest=JSON.parse(readFileSync(new URL('./my-mmd-home-delta-manifest.json',import.meta.url),'utf8'));
+ assert.equal(manifest.source_sha,job.match(/APPROVED_SOURCE_SHA: ([a-f0-9]{40})/)[1]);
+ assert.equal(manifest.modules.length,1);assert.equal(manifest.modules[0].patches.length,1);
+ const patch=manifest.modules[0].patches[0];
+ assert.equal(patch.before,'"/api/v1/member/updates/list?limit=10"');
+ assert.equal(patch.after,'"/api/member/app/updates?limit=10"');
+ const shell=readFileSync(new URL('../member-pages-worker/src/liff-member-shell.js',import.meta.url),'utf8');
+ assert(shell.includes('memberApiFetch('+patch.after));assert(!shell.includes('memberApiFetch('+patch.before));
+});
 test('Home release is manual, protected and rejects incomplete input',()=>{
  assert.equal(evaluate(github,inputs),true);
  for(const key of Object.keys(inputs))assert.equal(evaluate(github,{...inputs,[key]:key==='production_approved'?false:''}),false);
