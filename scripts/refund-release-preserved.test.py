@@ -90,6 +90,13 @@ class ReleaseContract(unittest.TestCase):
     def run_release(self, api):
         return r.release(api, r.ORDER[0], self.folder, self.output, "a" * 40)
 
+    def test_map_filename_default_is_narrow_and_does_not_hide_mapping_changes(self):
+        expected = {"version": 3, "sources": ["a.js"], "sourcesContent": ["const a=1"], "names": [], "mappings": "AAAA"}
+        served = {**expected, "file": "worker.js", "sourcesRoot": None}
+        self.assertEqual(r.semantic_map(expected, "worker.js"), r.semantic_map(served, "worker.js"))
+        self.assertNotEqual(r.semantic_map(expected, "worker.js"), r.semantic_map({**served, "file": "other.js"}, "worker.js"))
+        self.assertNotEqual(r.semantic_map(expected, "worker.js"), r.semantic_map({**served, "mappings": "AACA"}, "worker.js"))
+
     def test_release_preserves_bindings_and_map_semantics(self):
         api = FakeApi()
         result = self.run_release(api)

@@ -158,8 +158,8 @@ def artifacts(folder):
     return manifest
 
 
-def semantic_map(value):
-    return {k: value.get(k) for k in ["version", "file", "sources", "sourcesContent", "names", "mappings"]} | {"sourceRoot": value.get("sourceRoot", value.get("sourcesRoot"))}
+def semantic_map(value, module_name=None):
+    return {k: value.get(k) for k in ["version", "sources", "sourcesContent", "names", "mappings"]} | {"file": value.get("file", module_name), "sourceRoot": value.get("sourceRoot", value.get("sourcesRoot"))}
 
 
 def release(api, worker, folder, receipt_dir, merge_sha, peer_version=None):
@@ -236,7 +236,7 @@ def release(api, worker, folder, receipt_dir, merge_sha, peer_version=None):
         require(headers["etag"].strip('"') == candidate["resources"]["script"]["etag"], "live download not tied to exact new version")
         parts = snapshot.parts(raw, headers, pin["name"])
         require(digest(parts[pin["name"]]) == pin["js"], "active JS differs from approved artifact")
-        require(semantic_map(json.loads(parts[pin["name"] + ".map"])) == semantic_map(json.loads(Path(folder, worker, pin["name"] + ".map").read_text())), "active source map semantic mismatch")
+        require(semantic_map(json.loads(parts[pin["name"] + ".map"]), pin["name"]) == semantic_map(json.loads(Path(folder, worker, pin["name"] + ".map").read_text()), pin["name"]), "active source map semantic mismatch")
         for name, data in parts.items():
             target = out / name
             target.parent.mkdir(parents=True, exist_ok=True)
