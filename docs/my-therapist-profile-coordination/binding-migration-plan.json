@@ -14,8 +14,19 @@
   },
   "tagProvisional": true,
   "actualConfigurationChanged": false,
-  "liveNamespacesRead": false,
+  "liveNamespacesRead": true,
   "liveMigrationTagRead": false,
+  "readback": {
+    "checkedAt": "2026-11-03T06:28:35.796Z",
+    "workerVersion": "694931ac-3682-452a-98e9-2d9ce7d52fc4",
+    "trafficPercent": 100,
+    "sourceAnnotation": "32f4260760a0a65516ebcbf060986dfa273fc957",
+    "existingDoBindings": 5,
+    "newProfileBindingPresent": false,
+    "appliedMigrationTag": "NOT_EXPOSED_BY_READ_ENDPOINTS",
+    "sourceArtifactEquivalence": false,
+    "productionWrites": false
+  },
   "validation": {
     "bindingAdds": 1,
     "migrationAdds": 1,

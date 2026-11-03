@@ -8,7 +8,7 @@ Prepared 2026-11-03. No configuration was applied, no namespace was provisioned,
 - Proposed private binding: `MMS_THERAPIST_PROFILES` → `MmsTherapistProfileCoordinator`.
 - Storage: a **new SQLite-backed namespace** for that class. Continue using its storage key-value API for the operation journal.
 - Proposed append-only legacy migration: `v6-mms-therapist-profile`, `new_sqlite_classes: ["MmsTherapistProfileCoordinator"]`.
-- The tag is provisional: local config currently ends at v5, but no current production migration/namespace state was read. Stop if the tag/class/binding is already used or history differs; never invent a replacement tag to make validation pass.
+- The tag is provisional: local config currently ends at v5. Read-only production settings on 2026-11-03 confirmed five existing DO bindings and no profile binding, but the settings/version endpoints did not expose the applied migration tag. Binding absence is not proof that the class/tag was never provisioned. Stop if the tag/class/binding is already used or history differs; never invent a replacement tag to make validation pass.
 - Existing five DO bindings and migration entries v1–v5 remain intact, in their current order. Do not rename, transfer, delete or recreate any existing namespace. Do not convert this Worker to the newer `exports` lifecycle format in this change.
 - No routes, secrets, compatibility date/flags, cron, R2 binding/bucket/key scheme, service bindings or other Worker config changes.
 - Owner naming remains deterministic `getByName(authenticatedTherapistId)`. Never include client owner/storage keys, change the owner naming scheme on rollback or create a new namespace to bypass quarantine.
@@ -56,7 +56,7 @@ All rows are hard gates. A green CI or approval to review this PR does not close
 |---|---|---|
 | Code and proposal integrity | Exact-head tests, journal crash/retry regressions, proposed config guard | Implemented; exact-head CI reported on PR |
 | Airtable unknown-outcome operating model | Explicit acceptance of potentially indefinite owner quarantine and directory availability impact, or a separately reviewed safe settlement design | Not accepted by a code-review request; no settlement API exists |
-| Production baseline and deployment hold | Current version/traffic/config/migration readback plus a proven hold or isolated release path preventing automatic main deployment | Not performed or implemented |
+| Production baseline and deployment hold | Current version/traffic/config/migration readback plus a proven hold or isolated release path preventing automatic main deployment | Partial readback below; applied tag/config equivalence and deployment hold remain unproven |
 | Lifecycle bootstrap | Isolated baseline-derived bootstrap candidate, byte/scope comparison and preservation of existing request paths/config | Not built or validated |
 | Legacy writer pause/drain | Server-enforced pause, inventory of all writers/automations to the same fields and R2 keys, exact outcome evidence for outstanding writes/retries | Not implemented or proven; elapsed time alone is insufficient |
 | Compatible corrective release | Tested coordinator-compatible candidate retaining binding, pending journal and tombstones | Not prepared |
@@ -66,7 +66,9 @@ The outcome is **code review candidate, RELEASE NO-GO** while any operational ro
 
 ## Evidence boundaries
 
-Local config-diff guard tests and check-only patch validation are proof of the proposed diff's scope. Previous/fresh local code tests are not CI or production acceptance. No fresh deployed artifact equivalence, namespace readback, migration success, write-drain proof, operational settlement mechanism or authenticated LINE acceptance is claimed. RELEASE: NO-GO.
+Read-only production evidence at 2026-11-03T06:28:35.796Z: version `694931ac-3682-452a-98e9-2d9ce7d52fc4` served 100% traffic; version annotations identify source `32f4260760a0a65516ebcbf060986dfa273fc957`, matching this PR's integration baseline. Settings show the existing five DO bindings, no profile binding, and compatibility date 2026-08-21. No secret values or account/profile data were read. The applied migration tag was not exposed by these endpoints; annotations do not establish byte-for-byte source/artifact equivalence. This snapshot must be refreshed before release and does not prove a deployment hold, complete config equivalence or writer drain.
+
+Local config-diff guard tests and fixture patch validation prove only the proposed diff's scope. Previous/fresh local code tests are not CI or production acceptance. No fresh deployed artifact equivalence, applied migration confirmation, migration success, write-drain proof, operational settlement mechanism or authenticated LINE acceptance is claimed. RELEASE: NO-GO.
 
 Official references, read 2026-11-03:
 - https://developers.cloudflare.com/durable-objects/reference/durable-object-class-migrations-legacy/
