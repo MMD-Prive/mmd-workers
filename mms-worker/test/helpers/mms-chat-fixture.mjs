@@ -1,3 +1,4 @@
+import {memoryProfileNamespace} from "./profile-coordinator-fixture.mjs";
 import test from 'node:test';
 import { createHmac } from 'node:crypto';
 import { MmsChatStore } from '../../src/mms-chat-store.mjs';
@@ -41,7 +42,7 @@ export function fixture() {
     'MY MMS Access': 'Approved', 'LINE Subject Hash': 'private-subject-hash', 'Matching Enabled': true,
     'Availability Status': 'Available', 'Base Service Zone': [zones[0].id], 'Coverage Service Zones': [zones[0].id],
   } };
-  const manifest = { profile_visibility: 'public', intro: 'สอบถามรายละเอียดคอร์สได้ครับ', courses: [{ name: 'Aroma', duration_minutes: 60, price_thb: 1500 }] };
+  const manifest = { version:1,photos:[],public_photo_ids:[],profile_visibility: 'public', intro: 'สอบถามรายละเอียดคอร์สได้ครับ', courses: [{ name: 'Aroma', duration_minutes: 60, price_thb: 1500 }] };
   const env = {
     MMS_DIRECT_CHAT: { getByName(name) { if (!instances.has(name)) instances.set(name, database()); return instances.get(name).store; } },
     MMS_PRIVATE_UPLOADS: { async get() { return { text: async () => JSON.stringify(manifest) }; } },
@@ -50,6 +51,7 @@ export function fixture() {
     MMS_THERAPIST_AUTH_ENABLED: 'true', MMS_THERAPIST_SESSION_SECRET: 'fixture-session-secret-for-chat-tests-only-123456789',
     ALLOWED_ORIGINS: ORIGIN,
   };
+  env.MMS_THERAPIST_PROFILES=memoryProfileNamespace(env);
   const original = globalThis.fetch;
   const calls = [];
   globalThis.fetch = async (input, init) => {
@@ -58,7 +60,7 @@ export function fixture() {
     if (url.pathname.endsWith(env.AIRTABLE_THERAPISTS_TABLE_ID)) return Response.json({ records: [record] });
     throw new Error('Unexpected network call in fixture');
   };
-  return { env, instances, manifest, record, calls, restore() { globalThis.fetch = original; for (const item of instances.values()) item.db.close(); } };
+  return { env, instances, manifest, record, zones, calls, restore() { globalThis.fetch = original; for (const item of instances.values()) item.db.close(); } };
 }
 
 export function cookie(env, therapistId = THERAPIST.id) {

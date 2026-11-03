@@ -32,6 +32,8 @@ permissions:
 
 jobs:
   validate-and-deploy:
+    # Fail closed until a separately approved release explicitly lifts the hold.
+    if: ${{ vars.MMS_PROFILE_RELEASE_GATE == 'approved' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:

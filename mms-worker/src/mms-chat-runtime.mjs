@@ -1,3 +1,4 @@
+import { profileDirectorySnapshot } from "./therapist-profile-runtime.mjs";
 import { requireMyMmsApprovedTherapist } from './my-mms-access-runtime.mjs';
 import { linkedServiceZoneCodes, loadMmsServiceZoneIndex } from './service-zones-runtime.mjs';
 import { MMS_CHAT_POLICY, chatSafeLabel, inspectChatMessage } from '../../shared/mms-chat-policy.mjs';
@@ -173,27 +174,27 @@ async function directory(env, { therapistId = '', zone = '', offset = '', custom
   if (therapistId && payload.records.length !== 1) failure(409, 'MMS_CHAT_THERAPIST_UNAVAILABLE');
   const therapists = [];
   for (const record of payload.records) {
-    const f = record.fields || {};
-    const id = f['Therapist ID'];
-    if (!/^[A-Za-z0-9_-]{4,80}$/.test(id) || f.Status !== 'Active' || f['Therapist Auth Status'] !== 'Active' || f['MY MMS Access'] !== 'Approved' || !f['LINE Subject Hash']) continue;
+    const id = record.fields?.['Therapist ID'];
+    if (!/^[A-Za-z0-9_-]{4,80}$/.test(id)) continue;
+    // The list only discovers IDs. Final fields and manifest are read together
+    // inside the owner queue so an intervening profile commit cannot mix them.
+    let snapshot;
+    try { snapshot = await profileDirectorySnapshot(id, env); } catch { failure(503, 'MMS_CHAT_DIRECTORY_UNAVAILABLE'); }
+    const current = snapshot.therapist, profile = snapshot.manifest;
+    if (!current.active || !current.approved || !current.line_linked) continue;
     if (id === peer) {
-      // Chat acceptance only; never mutate matching, availability, profile or job state.
-      if (f['Matching Enabled'] === true || f['Manual Review Only'] !== true || f['Availability Status'] !== 'Unavailable' || !String(f['Display Name'] || '').startsWith('TEST ONLY') || zone) continue;
-      therapists.push({ therapist_id: id, display_name: chatSafeLabel(f['Display Name']), intro: 'TEST ONLY · ทดสอบแชตกับ Per · ไม่มีบริการหรือการรับงานจริง', available: true, is_test: true, zones: [], courses: [] });
+      if (current.matching_enabled || !current.manual_review_only || current.availability_status !== 'Unavailable' || !current.display_name.startsWith('TEST ONLY') || zone) continue;
+      therapists.push({ therapist_id: id, display_name: chatSafeLabel(current.display_name), intro: 'TEST ONLY · ทดสอบแชตกับ Per · ไม่มีบริการหรือการรับงานจริง', available: true, is_test: true, zones: [], courses: [] });
       continue;
     }
-    if (f['Matching Enabled'] !== true) continue;
-    const zones = linkedServiceZoneCodes(f['Coverage Service Zones'], index);
+    if (!current.matching_enabled) continue;
+    const zones = linkedServiceZoneCodes(current.coverage_links, index);
     if (!zones.length || zone && !zones.includes(zone)) continue;
-    const stored = await env.MMS_PRIVATE_UPLOADS.get(`therapist-dashboard/v1/${id}/profile.json`);
-    if (!stored) continue;
-    let profile;
-    try { profile = JSON.parse(await stored.text()); } catch { failure(503, 'MMS_CHAT_DIRECTORY_UNAVAILABLE'); }
     if (profile.profile_visibility !== 'public') continue;
     const courses = (Array.isArray(profile.courses) ? profile.courses : []).slice(0, 8)
       .filter(c => typeof c?.name === 'string' && !inspectChatMessage(c.name).code && Number.isInteger(c.duration_minutes) && c.duration_minutes >= 30 && Number.isFinite(c.price_thb) && c.price_thb >= 0)
       .map(c => ({ name: c.name.slice(0, 80), duration_minutes: c.duration_minutes, price_thb: c.price_thb }));
-    therapists.push({ therapist_id: id, display_name: chatSafeLabel(f['Display Name']), intro: typeof profile.intro === 'string' && !inspectChatMessage(profile.intro).code ? profile.intro.slice(0, 600) : '', available: f['Availability Status'] === 'Available', zones, courses });
+    therapists.push({ therapist_id: id, display_name: chatSafeLabel(current.display_name), intro: typeof profile.intro === 'string' && !inspectChatMessage(profile.intro).code ? profile.intro.slice(0, 600) : '', available: current.availability_status === 'Available', zones, courses });
   }
   return { therapists, next: typeof payload.offset === 'string' ? payload.offset : null,
     zones: [...index.byCode].map(([code, item]) => ({ code, label: chatSafeLabel(item.label_th || item.label || code, code) })) };

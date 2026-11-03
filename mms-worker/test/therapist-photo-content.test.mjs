@@ -1,6 +1,7 @@
+import {memoryProfileNamespace,memoryR2Object,r2ConditionMatches} from "./helpers/profile-coordinator-fixture.mjs";
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHash, createHmac } from 'node:crypto';
+import { createHmac } from 'node:crypto';
 import { handleMmsTherapistProfileRequest, therapistProfileErrorResponse } from '../src/therapist-profile-runtime.mjs';
 
 // Isolated fixtures only: no production identity, credentials, network or storage.
@@ -16,10 +17,10 @@ function cookie(index) {
   return '__Secure-mms_therapist_session=v1.'+payload+'.'+mac('mms-therapist-session-v1.'+payload);
 }
 function fixture() {
-  const objects = new Map();
+  const objects = new Map(),metadata=new Map();
   const writes = [];
   const records = ids.map((id,i)=>({id:'recFixtureAccount'+i,fields:{'Therapist ID':id,'Display Name':'TEST ONLY '+i,Status:'Active','Therapist Auth Status':'Active','LINE Subject Hash':'fixture-line-'+i,'Availability Status':'Unavailable','Matching Enabled':false,'Public Profile Status':'Hidden'}}));
-  ids.forEach((id,i)=>objects.set(manifestKey(id),JSON.stringify({version:1,intro:'owner '+i,profile_visibility:'hidden',courses:[],photos:[{id:photoIds[i],key:`fixture-photo-${i}`,content_type:'image/png'}],public_photo_ids:[]})));
+  ids.forEach((id,i)=>objects.set(manifestKey(id),JSON.stringify({version:1,intro:'owner '+i,profile_visibility:'hidden',courses:[],photos:[{id:photoIds[i],key:`therapist-dashboard/v1/${id}/photos/${photoIds[i]}`,content_type:'image/png'}],public_photo_ids:[]})));
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input,init={})=>{
     const url = new URL(String(input));
@@ -37,17 +38,13 @@ function fixture() {
     return Response.json({records:selected});
   };
   const env = {MMS_THERAPIST_AUTH_ENABLED:'true',MMS_THERAPIST_SESSION_SECRET:secret,AIRTABLE_API_TOKEN:'fixture-only',AIRTABLE_BASE_ID:'appFixtureOnly000',AIRTABLE_THERAPISTS_TABLE_ID:'tblFixtureOnly000',ALLOWED_ORIGINS:origin,MMS_PRIVATE_UPLOADS:{
-    async get(key) { const value=objects.get(key); return value===undefined?null:{etag:createHash("sha256").update(value).digest("hex"),async text(){return value;}}; },
-    async put(key,value,options={}){
-      const existing=objects.get(key);
-      if(options.onlyIf?.etagMatches && (existing===undefined || options.onlyIf.etagMatches!==createHash("sha256").update(existing).digest("hex")))return null;
-      if(options.onlyIf instanceof Headers && options.onlyIf.get("If-None-Match")==="*" && existing!==undefined)return null;
-      writes.push(key);objects.set(key,value);return {etag:createHash("sha256").update(value).digest("hex")};
-    },
+    async get(key) { const value=objects.get(key); return memoryR2Object(value,metadata.get(key)); },
+    async put(key,value,options={}){if(!r2ConditionMatches(objects.get(key),options))return null;writes.push(key);objects.set(key,value);metadata.set(key,options);return memoryR2Object(value,options);},
     async delete(key){writes.push(key);objects.delete(key);}
   }};
+  env.MMS_THERAPIST_PROFILES=memoryProfileNamespace(env);
   async function call(actor,method,suffix='',body) {
-    const request = new Request(origin+'/male-massage/therapists/api/auth/profile'+suffix,{method,headers:{Origin:origin,Cookie:cookie(actor),'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});
+    const request = new Request(origin+'/male-massage/therapists/api/auth/profile'+suffix,{method,headers:{'X-Profile-Operation-Id':crypto.randomUUID(),'X-Profile-Revision':String(env.MMS_THERAPIST_PROFILES.revision(ids[actor])),Origin:origin,Cookie:cookie(actor),'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});
     try{return await handleMmsTherapistProfileRequest(request,env);}catch(error){return therapistProfileErrorResponse(error,request,env);}
   }
   return {env,objects,writes,records,call,restore(){globalThis.fetch=originalFetch;}};
@@ -71,7 +68,7 @@ function pngWithRaster(raster,width=2,height=2,interlace=0) {
  return Buffer.concat([PNG.subarray(0,8),pngChunk('IHDR',h),pngChunk('IDAT',deflateSync(raster)),pngChunk('IEND',Buffer.alloc(0))]);
 }
 async function upload(f,body,type='image/png',length) {
- const request=new Request(origin+'/male-massage/therapists/api/auth/profile/photos',{method:'POST',headers:{Origin:origin,Cookie:cookie(0),'Content-Type':type,'X-File-Name':'test-only.png',...(length===undefined?{}:{'Content-Length':String(length)})},body});
+ const request=new Request(origin+'/male-massage/therapists/api/auth/profile/photos',{method:'POST',headers:{'X-Profile-Operation-Id':crypto.randomUUID(),'X-Profile-Revision':String(f.env.MMS_THERAPIST_PROFILES.revision(ids[0])),Origin:origin,Cookie:cookie(0),'Content-Type':type,'X-File-Name':'test-only.png',...(length===undefined?{}:{'Content-Length':String(length)})},body});
  try{return await handleMmsTherapistProfileRequest(request,f.env);}
  catch(e){return therapistProfileErrorResponse(e,request,f.env);}
 }
