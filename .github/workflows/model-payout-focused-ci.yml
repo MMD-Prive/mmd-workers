@@ -9,6 +9,8 @@ on:
       - "admin-worker/model-payout-outcomes.test.mjs"
       - "admin-worker/partner-owner-console.test.mjs"
       - "scripts/model-payout-read-admin-baseline.py"
+      - "scripts/model-payout-build-preserved.mjs"
+      - "scripts/model-payout-preserved-runtime.mjs"
       - ".github/workflows/model-payout-focused-ci.yml"
 
 permissions:
@@ -62,4 +64,76 @@ jobs:
         with:
           name: payout-admin-baseline-${{ github.event.pull_request.head.sha }}
           path: payout-admin-baseline/
+          retention-days: 7
+
+  preserved-artifact:
+    needs: read-admin-baseline
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 0c8c06a7d1330a6fd1933d49d160a20a8e918439
+          path: payout-baseline-source
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v4
+        with:
+          name: payout-admin-baseline-${{ github.event.pull_request.head.sha }}
+          path: payout-admin-baseline
+      - name: Install pinned offline assembly tools (no production credentials)
+        run: npm install --prefix "$RUNNER_TEMP/payout-tools" --no-save esbuild@0.28.1 @jridgewell/sourcemap-codec@1.6.0
+      - name: Reproduce live baseline and enforce reviewed JS/map hashes
+        env:
+          PAYOUT_TOOLS_DIR: ${{ runner.temp }}/payout-tools
+          PAYOUT_BASELINE_SOURCE_DIR: payout-baseline-source
+        run: node scripts/model-payout-build-preserved.mjs
+      - name: Record exact release-file checksums
+        working-directory: payout-preserved-bundles
+        run: sha256sum worker.js admin-login-hero-worker.js.map manifest.json > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: payout-preserved-candidate-${{ github.event.pull_request.head.sha }}
+          path: |
+            payout-preserved-bundles/worker.js
+            payout-preserved-bundles/admin-login-hero-worker.js.map
+            payout-preserved-bundles/manifest.json
+            payout-preserved-bundles/SHA256SUMS
+          retention-days: 7
+
+  preserved-runtime:
+    needs: preserved-artifact
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v4
+        with:
+          name: payout-preserved-candidate-${{ github.event.pull_request.head.sha }}
+          path: payout-preserved-bundles
+      - name: Verify downloaded checksums
+        working-directory: payout-preserved-bundles
+        run: sha256sum --check SHA256SUMS
+      - name: Install pinned local fixture runtime (no production credentials)
+        run: npm install --prefix "$RUNNER_TEMP/payout-tools" --no-save miniflare@4.20260317.3
+      - name: Run fixtures on the downloaded preserved artifact
+        env:
+          PAYOUT_TOOLS_DIR: ${{ runner.temp }}/payout-tools
+        run: node scripts/model-payout-preserved-runtime.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: payout-preserved-acceptance-${{ github.event.pull_request.head.sha }}
+          path: payout-artifact-fixture/result.json
           retention-days: 7
