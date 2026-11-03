@@ -557,7 +557,7 @@ function publicJobView(job, { detail = false } = {}) {
     }
   }
   if (view.world === "private" && !detail) {
-    // Private teaser is deliberately metadata-free. Sensitive job data is only
+    // Private teaser exposes only owner-approved compensation. Sensitive job data is only
     // projected after the approved Model explicitly opens the job.
     view.title = "PRIVATE JOB";
     view.listing_description = "";
@@ -566,7 +566,6 @@ function publicJobView(job, { detail = false } = {}) {
     view.date = "";
     view.time = "";
     view.area = "";
-    view.compensation = "";
     view.customer_count = null;
     view.customer_gender = "unspecified";
     view.safe_customer_description = "";
@@ -578,7 +577,8 @@ function publicJobView(job, { detail = false } = {}) {
 function jobCard(job) {
   const meta = [job.date, job.duration, job.area].filter(Boolean).join(" · ") || "ดูรายละเอียดในบรีฟ";
   if (job.world === "private") {
-    return `<article class="job private-card" data-job-id="${esc(job.id)}" data-job-status="${esc(job.status)}"><p class="eyebrow">PRIVATE JOB · 🔒</p><h2>งาน Private</h2><p>รายละเอียดจะเปิดหลังจากคุณแตะเข้าดูงานนี้</p><a href="${PREFIX}/${encodeURIComponent(job.id)}">แตะเพื่อดูรายละเอียด</a></article>`;
+    const budget = job.budget_disclosure_approved === true ? String(job.compensation || "").trim() : "";
+    return `<article class="job private-card" data-job-id="${esc(job.id)}" data-job-status="${esc(job.status)}"><p class="eyebrow">PRIVATE JOB · 🔒</p><h2>งาน Private</h2><p>รายละเอียดจะเปิดหลังจากคุณแตะเข้าดูงานนี้</p><a href="${PREFIX}/${encodeURIComponent(job.id)}">${budget ? `ดูงาน Private · ${esc(budget)}` : "แตะเพื่อดูรายละเอียด"}</a></article>`;
   }
   return `<article class="job" data-job-id="${esc(job.id)}" data-job-status="${esc(job.status)}"><p class="eyebrow">PUBLIC JOB</p><h2>${esc(job.title)}</h2><p>${esc(meta)}</p><p>${esc(job.required_appearance_profile)}</p><a href="${PREFIX}/${encodeURIComponent(job.id)}">เลือกงานนี้</a></article>`;
 }
