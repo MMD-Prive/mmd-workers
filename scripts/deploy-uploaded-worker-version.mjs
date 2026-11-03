@@ -6,7 +6,7 @@ export async function deployUploadedWorkerVersion({worker,version,account,token,
   const call=async(path,init={})=>{
     const response=await fetcher(root+path,{...init,headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},signal:AbortSignal.timeout(30000)});
     const data=await response.json().catch(()=>null);
-    if(!response.ok || data?.success !== true) throw Error(`Cloudflare ${init.method || 'GET'} ${path} failed (${response.status})`);
+    if(!response.ok || data?.success !== true) { const error=Error(`Cloudflare ${init.method || 'GET'} ${path} failed (${response.status})`); error.status=response.status; throw error; }
     return data.result;
   };
   // Read the exact uploaded version; never infer a version from deployment history.
@@ -14,7 +14,15 @@ export async function deployUploadedWorkerVersion({worker,version,account,token,
   if(uploaded?.id !== version) throw Error('Uploaded version readback mismatch');
   const created=await call('/deployments',{method:'POST',body:JSON.stringify({strategy:'percentage',versions:[{version_id:version,percentage:100}]})});
   if(!/^[0-9a-f-]{36}$/i.test(created?.id || '')) throw Error('Deployment ID missing');
-  const deployed=await call(`/deployments/${created.id}`);
+  let deployed;
+  try { deployed=await call(`/deployments/${created.id}`); }
+  catch(error) {
+    if(error.status !== 404) throw error;
+    // Some deployments are visible in the collection before the detail route.
+    // Match the exact ID returned by POST; never promote or infer latest history.
+    const history=await call('/deployments');
+    deployed=history?.deployments?.find(item=>item.id === created.id);
+  }
   if(deployed?.id !== created.id || deployed.strategy !== 'percentage' || deployed.versions?.length !== 1 || deployed.versions[0].version_id !== version || deployed.versions[0].percentage !== 100) throw Error('Deployment readback mismatch');
   return {worker,version,deployment:created.id};
 }
@@ -24,3 +32,4 @@ if(process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
     console.log(JSON.stringify({ok:true,...result}));
   } catch(error) { console.error(error.message);process.exitCode=1; }
 }
+
