@@ -185,16 +185,20 @@ async function verifyLineIdToken(idToken, env) {
   });
 
   let response;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
   try {
     response = await fetch(LINE_VERIFY_ENDPOINT, {
+      signal: controller.signal,
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body,
     });
   } catch {
     throw authError(503, "LINE_VERIFY_UNAVAILABLE");
-  }
+  } finally { clearTimeout(timeout); }
 
+  if (response.status === 429 || response.status >= 500) throw authError(503, "LINE_VERIFY_UNAVAILABLE");
   if (!response.ok) throw authError(401, "LINE_ID_TOKEN_INVALID");
 
   let payload;

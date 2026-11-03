@@ -107,6 +107,15 @@ export function therapistClient(maxCoverageZones = 0) {
     $("detail").hidden = true; $("workspace").hidden = true; profile = null; access = null; actionKeys.clear();
   }
   const messages = {
+    LIFF_INIT_FAILED: "LINE Mini App ยังยืนยันตัวตนไม่ได้ครับ ลองเปิด Mini App ใหม่อีกครั้ง",
+    LINE_VERIFY_UNAVAILABLE: "ระบบตรวจบัญชี LINE ยังไม่พร้อมครับ กรุณาลองอีกครั้ง โดยไม่ต้องผูกบัญชีใหม่",
+    THERAPIST_AUTH_UNAVAILABLE: "ระบบบัญชี Therapist ยังไม่พร้อมครับ กรุณาลองอีกครั้ง",
+    THERAPIST_AUTH_NOT_CONFIGURED: "ระบบยืนยันบัญชียังตั้งค่าไม่ครบครับ ติดต่อพี่เปอร์เพื่อตรวจระบบ",
+    THERAPIST_AUTH_NOT_ENABLED: "ระบบยืนยันบัญชี Therapist ยังไม่เปิดใช้งานครับ",
+    THERAPIST_IDENTITY_CONFLICT: "ยังยืนยันเจ้าของบัญชีไม่ได้ครับ ติดต่อพี่เปอร์เพื่อตรวจบัญชี",
+    AUTH_REQUEST_TIMEOUT: "การยืนยันบัญชีใช้เวลานานเกินไปครับ กดลองอีกครั้ง",
+    AUTH_NETWORK_UNAVAILABLE: "เชื่อมต่อระบบยืนยันบัญชีไม่ได้ครับ ตรวจอินเทอร์เน็ตแล้วลองอีกครั้ง",
+    AUTH_INVALID_RESPONSE: "ระบบยืนยันบัญชีตอบข้อมูลไม่ครบครับ กรุณาลองอีกครั้ง",
     LIFF_UNAVAILABLE: "ยังเปิด LINE Login ไม่ได้ครับ ลองเปิดผ่าน LINE Mini App ด้านล่าง",
     LIFF_INIT_TIMEOUT: "LINE ยังไม่ตอบกลับครับ ลองเปิดผ่าน LINE Mini App ด้านล่าง",
     THERAPIST_SESSION_REQUIRED: "กรุณายืนยันผ่าน LINE อีกครั้งครับ",
@@ -140,13 +149,17 @@ export function therapistClient(maxCoverageZones = 0) {
       if (epoch !== accountEpoch) throw Object.assign(new Error("STALE_RESPONSE"), { code: "STALE_RESPONSE" });
       progress?.received(step);
       if (response.status === 204) { progress?.ready(step); return null; }
-      const body = await response.json();
+      let body;
+      try { body = await response.json(); }
+      catch (error) { if (path === P + "/api/auth/line") throw Object.assign(new Error("AUTH_INVALID_RESPONSE"), { code: "AUTH_INVALID_RESPONSE" }); throw error; }
+      if (path === P + "/api/auth/line" && (!body || typeof body !== "object")) throw Object.assign(new Error("AUTH_INVALID_RESPONSE"), { code: "AUTH_INVALID_RESPONSE" });
       if (epoch !== accountEpoch) throw Object.assign(new Error("STALE_RESPONSE"), { code: "STALE_RESPONSE" });
       if (!response.ok || body.ok !== true) {
         const e = new Error(body?.error?.code || "UNAVAILABLE"); e.code = body?.error?.code; e.status = response.status;
         if (response.status === 401 || e.code === "PROFILE_ACCOUNT_CHANGED") { clearPrivate(); $("workspace").hidden = true; $("entry").hidden = false; $("line-login").onclick = () => location.assign(P + "/login"); }
         throw e;
       }
+      if (path === P + "/api/auth/line" && (!body.data || typeof body.data.therapist_id !== "string" || !body.data.therapist_id)) throw Object.assign(new Error("AUTH_INVALID_RESPONSE"), { code: "AUTH_INVALID_RESPONSE" });
       if (body.data === undefined || body.data === null) throw Object.assign(new Error("PROFILE_INVALID_RESPONSE"), { code: "PROFILE_INVALID_RESPONSE" });
       if (path === P + "/api/auth/profile" && (typeof body.data.display_name !== "string" || !Array.isArray(body.data.courses) || !Array.isArray(body.data.photos))) {
         throw Object.assign(new Error("PROFILE_INVALID_RESPONSE"), { code: "PROFILE_INVALID_RESPONSE" });
@@ -157,6 +170,7 @@ export function therapistClient(maxCoverageZones = 0) {
       progress?.ready(step); return body.data;
     } catch (error) {
       if (epoch === accountEpoch) progress?.fail(step, controller.signal.aborted ? "คำขอใช้เวลานานเกินไปครับ ลองตรวจข้อมูลอีกครั้ง" : "ระบบยังไม่ได้ยืนยันผลครับ ลองตรวจข้อมูลอีกครั้ง");
+      if (path === P + "/api/auth/line" && (!error.code || error.name === "AbortError")) throw Object.assign(new Error(controller.signal.aborted || error.name === "AbortError" ? "AUTH_REQUEST_TIMEOUT" : "AUTH_NETWORK_UNAVAILABLE"), { code: controller.signal.aborted || error.name === "AbortError" ? "AUTH_REQUEST_TIMEOUT" : "AUTH_NETWORK_UNAVAILABLE" });
       throw error;
     } finally { clearTimeout(timer); controllers.delete(controller); }
   }
@@ -398,6 +412,9 @@ export function therapistClient(maxCoverageZones = 0) {
           window.liff.init({ liffId: "2011425652-YqK1F6y8" }),
           new Promise((_, reject) => { timeout = setTimeout(() => { const e = new Error("LIFF_INIT_TIMEOUT"); e.code = "LIFF_INIT_TIMEOUT"; reject(e); }, 12000); }),
         ]);
+      } catch (error) {
+        if (error.code === "LIFF_INIT_TIMEOUT") throw error;
+        throw Object.assign(new Error("LIFF_INIT_FAILED"), { code: "LIFF_INIT_FAILED" });
       } finally { clearTimeout(timeout); }
       progress?.received(step);
       if (explicitLogout) {
