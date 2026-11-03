@@ -1,6 +1,16 @@
 name: Release reviewed Booking artifacts and additive coordinator migration
 
 on:
+  pull_request:
+    paths:
+      - "scripts/member-booking-*"
+      - "member-pages-worker/src/liff-member-shell.js"
+      - "member-pages-worker/src/member-booking-*"
+      - "member-pages-worker/src/liff-member-booking.js"
+      - "member-pages-worker/test/*booking*"
+      - "member-pages-worker/test/liff-member-oauth-host-return.test.mjs"
+      - "sigil-booking-worker/src/**"
+      - ".github/workflows/deploy-member-booking-artifact.yml"
   workflow_dispatch:
     inputs:
       production_approved:
@@ -16,6 +26,10 @@ on:
         description: 'Exact reviewed additive migration tag'
         type: string
         required: true
+      approved_source_map_policy:
+        description: 'Explicitly approve runtime byte readback and keep maps as local build evidence only'
+        type: string
+        required: true
       approval_ref:
         description: 'Owner approval reference for this exact artifact and migration plan'
         type: string
@@ -26,18 +40,56 @@ permissions:
   actions: read
 
 concurrency:
-  group: deploy-member-pages-worker-production
+  group: ${{ github.event_name == 'pull_request' && format('booking-artifact-review-{0}', github.event.pull_request.number) || 'deploy-member-pages-worker-production' }}
   cancel-in-progress: false
 
 env:
   APPROVED_SHA: ${{ inputs.approved_sha }}
   APPROVED_MIGRATION_TAG: ${{ inputs.approved_migration_tag }}
+  APPROVED_SOURCE_MAP_POLICY: ${{ inputs.approved_source_map_policy }}
   APPROVAL_REF: ${{ inputs.approval_ref }}
   APPROVED_RELEASE_SCOPE: booking-artifact-with-migration
 
 jobs:
+  review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      # This job preserves the historical v5 -> v6 artifact review. Current
+      # Public booking behavior is tested by sigil-customer-access-ci.yml.
+      - name: Validate PR-head workflow and owner guards
+        run: node --test scripts/member-booking-workflow.test.mjs scripts/member-booking-owner-approval.test.mjs scripts/member-booking-route-inventory.test.mjs
+      - name: Check out immutable legacy Booking source
+        uses: actions/checkout@v5
+        with:
+          ref: b5b4c1744927551f93a94534fde7b99ef1c571b4
+          path: legacy-booking-source
+          persist-credentials: false
+      - name: Verify historical contract is unchanged
+        run: cmp scripts/member-booking-release-contract.json legacy-booking-source/scripts/member-booking-release-contract.json
+      - name: Run offline Booking and release guard regressions
+        working-directory: legacy-booking-source
+        run: node --test member-pages-worker/test/liff-member-oauth-host-return.test.mjs scripts/member-booking-release.test.mjs scripts/member-booking-owner-approval.test.mjs scripts/member-booking-workflow.test.mjs member-pages-worker/test/liff-member-booking-return.test.mjs scripts/member-booking-route-inventory.test.mjs
+      - name: Install pinned build tool outside the checkout
+        run: npm install --prefix "$RUNNER_TEMP/booking-build-tools" --ignore-scripts --no-audit --no-fund esbuild@0.27.3
+      - name: Verify pinned runtime bytes offline
+        working-directory: legacy-booking-source
+        env:
+          ESBUILD_BIN: ${{ runner.temp }}/booking-build-tools/node_modules/.bin/esbuild
+        run: node --input-type=module -e 'import {buildSigilBooking} from "./scripts/member-booking-build.mjs"; buildSigilBooking({esbuild:process.env.ESBUILD_BIN});'
+
   owner-policy:
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.actor == 'mmdprive' && inputs.production_approved == true && inputs.approved_sha == github.sha && inputs.approved_migration_tag == 'v4-member-booking-coordinator-20261102' && inputs.approval_ref != ''
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.actor == 'mmdprive' && inputs.production_approved == true && inputs.approved_sha == github.sha && inputs.approved_migration_tag == 'v6-member-booking-coordinator-20261102' && inputs.approved_source_map_policy == 'local-evidence-only-not-uploaded' && inputs.approval_ref != ''
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
@@ -69,7 +121,7 @@ jobs:
       - name: Install pinned build tool outside the checkout
         run: npm install --prefix "$RUNNER_TEMP/booking-build-tools" --ignore-scripts --no-audit --no-fund esbuild@0.27.3
       - name: Run targeted release guard regressions
-        run: node --test scripts/member-booking-release.test.mjs scripts/member-booking-owner-approval.test.mjs scripts/member-booking-workflow.test.mjs member-pages-worker/test/liff-member-booking-return.test.mjs
+        run: node --test member-pages-worker/test/liff-member-oauth-host-return.test.mjs scripts/member-booking-release.test.mjs scripts/member-booking-owner-approval.test.mjs scripts/member-booking-workflow.test.mjs member-pages-worker/test/liff-member-booking-return.test.mjs scripts/member-booking-route-inventory.test.mjs
       - name: Release supporting handler then atomic Member migration
         env:
           GH_TOKEN: ${{ github.token }}

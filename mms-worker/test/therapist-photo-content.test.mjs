@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHmac } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 import { handleMmsTherapistProfileRequest, therapistProfileErrorResponse } from '../src/therapist-profile-runtime.mjs';
 
 // Isolated fixtures only: no production identity, credentials, network or storage.
@@ -37,8 +37,13 @@ function fixture() {
     return Response.json({records:selected});
   };
   const env = {MMS_THERAPIST_AUTH_ENABLED:'true',MMS_THERAPIST_SESSION_SECRET:secret,AIRTABLE_API_TOKEN:'fixture-only',AIRTABLE_BASE_ID:'appFixtureOnly000',AIRTABLE_THERAPISTS_TABLE_ID:'tblFixtureOnly000',ALLOWED_ORIGINS:origin,MMS_PRIVATE_UPLOADS:{
-    async get(key) { const value=objects.get(key); return value===undefined?null:{async text(){return value;}}; },
-    async put(key,value){writes.push(key);objects.set(key,value);},
+    async get(key) { const value=objects.get(key); return value===undefined?null:{etag:createHash("sha256").update(value).digest("hex"),async text(){return value;}}; },
+    async put(key,value,options={}){
+      const existing=objects.get(key);
+      if(options.onlyIf?.etagMatches && (existing===undefined || options.onlyIf.etagMatches!==createHash("sha256").update(existing).digest("hex")))return null;
+      if(options.onlyIf instanceof Headers && options.onlyIf.get("If-None-Match")==="*" && existing!==undefined)return null;
+      writes.push(key);objects.set(key,value);return {etag:createHash("sha256").update(value).digest("hex")};
+    },
     async delete(key){writes.push(key);objects.delete(key);}
   }};
   async function call(actor,method,suffix='',body) {

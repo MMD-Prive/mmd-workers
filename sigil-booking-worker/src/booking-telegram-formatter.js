@@ -2,10 +2,10 @@ const EMPTY = "ไม่ระบุ";
 const CANONICAL_ADMIN_ORIGIN = "https://sigil.mmdbkk.com";
 const CANONICAL_ADMIN_PATH = "/internal/admin/control-room";
 
-export function buildBookingTelegramText({ body = {}, fields = {} } = {}) {
+export function buildBookingTelegramText({ body = {}, fields = {}, trustedIdentity = null } = {}) {
   const resolver = parseObject(fields.resolver_payload_json);
   const search = resolver.customer_search && typeof resolver.customer_search === "object" ? resolver.customer_search : {};
-  const client = first(fields.client_nickname, fields["Contact Name"], body.client_nickname, body.client_name);
+  const client = trustedIdentity?.source === "linked_per_rename_index_v1" && typeof trustedIdentity.per_rename === "string" && !/U[0-9a-f]{32}/i.test(trustedIdentity.per_rename) ? trustedIdentity.per_rename.slice(0,160) : "ไม่ทราบ Per Rename";
   const model = first(fields["Selected Model Name"], fields.model_search_query, search.preferred_model_name, body.model, "รอเลือก");
   const date = first(fields["Preferred Date"], body.preferred_date, body.date);
   const time = first(fields["Preferred Time"], body.preferred_time, body.time);
@@ -19,6 +19,7 @@ export function buildBookingTelegramText({ body = {}, fields = {} } = {}) {
     "🕯️ <b>MMD Booking</b>",
     qa ? "🧪 <b>ทดสอบเท่านั้น</b>" : "",
     `ลูกค้า: <b>${escHtml(client || EMPTY)}</b>`,
+    `งบสูงสุด: <b>${escHtml(formatBudget(search.budget))}</b>`,
     `โมเดล: ${escHtml(model || "รอเลือก")}`,
     `วันเวลา: ${escHtml(when)}`,
     `สถานที่: ${escHtml(place)}`,
@@ -66,3 +67,12 @@ function first(...values) { return values.map(str).find(Boolean) || ""; }
 function normalize(value) { return str(value).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, ""); }
 function str(value) { return value == null ? "" : String(value).trim(); }
 function escHtml(value) { return str(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+
+function formatBudget(budget) {
+  if (budget?.provided !== true) return EMPTY;
+  const maximum = budget.max_thb;
+  if (typeof maximum === "number" && Number.isFinite(maximum) && maximum > 0) return maximum.toLocaleString("th-TH") + " บาท";
+  const minimum = budget.min_thb;
+  if (typeof minimum === "number" && Number.isFinite(minimum) && minimum > 0) return "ไม่กำหนด · ตั้งแต่ " + minimum.toLocaleString("th-TH") + " บาท";
+  return EMPTY;
+}

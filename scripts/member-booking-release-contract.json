@@ -5,15 +5,15 @@
   "base_source_sha": "c13aaade1d432c305a079babf71eee40d617e638",
   "member": {
     "name": "member-pages-worker",
-    "version": "85da9919-e1c8-425d-94e8-fb0a5ff7a0c4",
-    "deployment": "2d3b7c3c-1dce-4cf5-b0fe-a5bb5e16a7e7",
+    "version": "43f372c1-e804-46b8-9f63-9655a22708ab",
+    "deployment": "6815df60-8d70-4152-8be2-5c6551097e9e",
     "main_module": "worker.js",
     "baseline_modules": {
-      "worker.js": "9bbe9bf7ad95ed49de8f64cd485883507e2fd142d47df2e5ae0ac28bfb34f523"
+      "worker.js": "1f0946a8af1891def0e4030568b5b0070790b5eb2471f413c496bb190871e310"
     },
-    "candidate_sha256": "6eebc988c319bb638b8d9299babe040fac122629304f439a5b94b695b5b6aa6b",
-    "old_migration_tag": "v3-remembered-login-device",
-    "new_migration_tag": "v4-member-booking-coordinator-20261102",
+    "candidate_sha256": "defad3efeebf5fd50ce3c95642f3087d81744381bbbe0991aca89a47ae084f42",
+    "old_migration_tag": "v5-customer-request-mutation",
+    "new_migration_tag": "v6-member-booking-coordinator-20261102",
     "binding": "MEMBER_BOOKING_COORDINATOR",
     "class_name": "MemberBookingCoordinator"
   },
@@ -23,12 +23,10 @@
     "deployment": "c7453c6d-adf7-4f0c-b376-ea068f98dbdd",
     "main_module": "runtime-index.js",
     "baseline_modules": {
-      "runtime-index.js": "19b6d5329bb4a41e9728f3903becad25e73bfb480cd058fe999155d80a134b96",
-      "runtime-index.js.map": "e7a9d2b55c0d7fd1950fcb620e2a2767a3dbc736db1a890c6e6f7a4e70f98baf"
+      "runtime-index.js": "19b6d5329bb4a41e9728f3903becad25e73bfb480cd058fe999155d80a134b96"
     },
     "candidate_modules": {
-      "runtime-index.js": "dde2ed44772f47d5b54eb39196ca9f3d692a1a38589b5a8dc1f07791053e4d44",
-      "runtime-index.js.map": "ddb3097cd7129c83682b35a0b15028ed982b64efe87acfbb12585ad4e128ff6f"
+      "runtime-index.js": "1119bf1db8ef473d163c8c00699cbe5c0cfe0aede06bbaa161a3b28601711084"
     },
     "source_paths": [
       "sigil-booking-worker/src/customer-discovery-policy.js",
@@ -47,14 +45,19 @@
       "sigil-booking-worker/src/care-back-trusted-caller.js",
       "sigil-booking-worker/src/public-profiles-catalog.js",
       "sigil-booking-worker/src/runtime-index.js"
-    ]
+    ],
+    "source_map_policy": "local-evidence-only-not-uploaded",
+    "local_debug_artifacts": {
+      "runtime-index.js": "dde2ed44772f47d5b54eb39196ca9f3d692a1a38589b5a8dc1f07791053e4d44",
+      "runtime-index.js.map": "ddb3097cd7129c83682b35a0b15028ed982b64efe87acfbb12585ad4e128ff6f"
+    }
   },
   "source_hashes": {
     "auth-worker/src/member-entitlement-resolver.js": "2e06992fcd9b40d8b375d6bae5aaeddef6e6b001f59c6e29dac254e051d0628d",
     "member-pages-worker/src/liff-member-booking.js": "3b7cb31650c64c17ec6ab91b01b64ed123ecbfac5f8af271372ea53cfff54847",
     "member-pages-worker/src/member-booking-coordinator.js": "dcead648cf7c45ccca1711a62d6fec14d9723aa25f0df1d18ab5b51bd9e5d93c",
     "member-pages-worker/src/member-booking-flow.js": "5f45b05d08dcb4fc19b6b363c08ca59b676e3bb553e959026d35c868a6dddd38",
-    "member-pages-worker/src/runtime-index.js": "ece4ad5ec2631610c4be3f157658bbfb961b33e437a15bb81e25718b42b11d2b",
+    "member-pages-worker/src/runtime-index.js": "d8fd6927492977150075bf29a9ceb163310825435ab6314bf1535555b1a0ebf4",
     "member-pages-worker/test/liff-member-booking-return.test.mjs": "3f3f57bef45d6d24fbb37f638586dc2aae5e62a4f1a8f3d14f59c3219e7e3000",
     "member-pages-worker/test/liff-member-booking.test.mjs": "66ca308f197e13719f8c0127a08617ec744c9957cdb83f665a323fb801af4880",
     "member-pages-worker/test/member-booking-flow.test.mjs": "77877359313e6bbcd0dfae2d6b917ecfe7aa23d8da78d520627cd6fff78bebe2",
@@ -75,6 +78,14 @@
     "sigil-booking-worker/src/runtime-index.js": "c2832fedd8d58b3ad10034691a1fd29d381d0df865d00c75c46c9c76780974ad",
     "sigil-booking-worker/test/member-booking-reference-guard.test.mjs": "fe99a629599cadfdf8e3326d2238ef38fdfde81bead408a4a6a767fb22ebd25f",
     "webflow/booking/booking-api-bridge.js": "d7b9b8cd2c8a1396b3036b60f0f1580c55ec824e62b1ea25080d3135ede662a0",
-    "webflow/booking/booking-api-bridge.test.cjs": "bd817d6d7928fd3d1f7f38fe59693dac92d8c8c2cd3a03a350883535e561b6a0"
+    "webflow/booking/booking-api-bridge.test.cjs": "bd817d6d7928fd3d1f7f38fe59693dac92d8c8c2cd3a03a350883535e561b6a0",
+    "member-pages-worker/src/liff-member-shell.js": "b9b621d4cd36e413af8824e21a793045ec6908c5aa4774c5327151f7ebb5b284",
+    "member-pages-worker/test/liff-member-oauth-host-return.test.mjs": "1321c41d9f841e20a1b8c457793c4cd1bdc053451c66e18988473dcac8bac021"
+  },
+  "provenance": {
+    "reviewed_source_checkout": "29dd438c375046dce2df1285a6acb9bd4ba312e0",
+    "kind": "layered-active-artifact-plus-reviewed-booking-and-oauth-host",
+    "whole_artifact_source_sha_proven": false,
+    "prepared_source_checkout": "c74ea758b3cfee8413a867faae5e1db12350648f"
   }
 }

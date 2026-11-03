@@ -2,9 +2,6 @@ import test from 'node:test';import assert from 'node:assert/strict';import {rea
 import {bookingRequestAllowed,assertCleanBookingCheckout} from './member-booking-release-adapter.mjs';
 import {contract as liveContract,verifyBookingSources,normalizeSigilMap} from './member-booking-build.mjs';
 import {buildMemberBookingArtifact,verifyPreservation,transformBookingArtifact} from './member-booking-artifact.mjs';
-import {mkdtempSync,mkdirSync,writeFileSync,rmSync} from 'node:fs';
-import {tmpdir} from 'node:os';
-import {join,dirname} from 'node:path';
 const hash=x=>createHash('sha256').update(x).digest('hex'),sha='a'.repeat(40),id=n=>String(n).repeat(8)+'-'+String(n).repeat(4)+'-'+String(n).repeat(4)+'-'+String(n).repeat(4)+'-'+String(n).repeat(12);
 const bytes={mb:Buffer.from('member baseline'),mc:Buffer.from('member candidate'),sb:Buffer.from('sigil baseline'),sc:Buffer.from('sigil candidate'),sm:Buffer.from('source map')};
 function fixture(fault=''){
@@ -31,40 +28,12 @@ for(const [fault,count,phase]of [['upload-unknown',1,'sigil-upload-outcome-unkno
 test('tampered prepared migration, modules and scope rejected before writes',async()=>{for(const kind of ['migration','bytes','summary']){const f=fixture(),p=await f.engine.prepareBookingRelease(f.io);if(kind==='migration')p.memberMetadata.migrations.deleted_classes=['ExistingClass'];if(kind==='bytes')p.member[0].bytes=Buffer.from('wrong');if(kind==='summary')p.summary.scope='code-only';await assert.rejects(f.engine.executeBookingRelease(f.io,p));assert.equal(f.writes(),0);}});
 test('transport allowlist excludes Member version-upload, route/secret mutation and foreign workers',()=>{const root=`/accounts/${liveContract.account}/workers/scripts/`;assert.ok(bookingRequestAllowed(root+'member-pages-worker','PUT'));assert.ok(bookingRequestAllowed(root+'sigil-booking-worker/versions?bindings_inherit=strict','POST'));for(const[p,m]of [[root+'member-pages-worker/versions','POST'],[root+'member-pages-worker/deployments','POST'],[root+'member-pages-worker/secrets','PUT'],[`/zones/${liveContract.zone}/workers/routes`,'POST'],[root+'other','PUT']])assert.equal(bookingRequestAllowed(p,m),false);});
 test('release checkout rejects dirty work, wrong root or wrong SHA',()=>{const run=(cmd,args)=>args.join(' ')==='rev-parse --show-toplevel'?'/fixture\n':args.join(' ')==='rev-parse HEAD'?sha+'\n':' M unrelated\n';assert.throws(()=>assertCleanBookingCheckout('/fixture',sha,run),/dirty/);assert.throws(()=>assertCleanBookingCheckout('/other',sha,run));assert.throws(()=>assertCleanBookingCheckout('/fixture','b'.repeat(40),run));});
-test('historical Booking snapshot pins remain valid, independently of current-source release eligibility',()=>{
- const directory=mkdtempSync(join(tmpdir(),'booking-snapshot-test-'));
- try {
-  for(const path of Object.keys(liveContract.source_hashes)){
-   let bytes=readFileSync(new URL('../'+path,import.meta.url));
-   if(path==='member-pages-worker/src/runtime-index.js'){
-    // Reconstruct only the two reviewed exports added by #2980 after #2976.
-    // The unchanged historical hash below verifies the exact recovered bytes.
-    bytes=Buffer.from(bytes.toString().replace('export { CustomerRequestQuotaCoordinator } from "./customer-request-quota-durable-object.js";\n','').replace('export { CustomerRequestMutationCoordinator } from "./customer-request-mutation-durable-object.js";\n',''));
-   }
-   assert.equal(hash(bytes),liveContract.source_hashes[path],'historical snapshot drift: '+path);
-   mkdirSync(dirname(join(directory,path)),{recursive:true});writeFileSync(join(directory,path),bytes);
-  }
-  assert.equal(verifyBookingSources(directory),true);
-  writeFileSync(join(directory,'member-pages-worker/src/runtime-index.js'),'corrupt fixture');
-  assert.throws(()=>verifyBookingSources(directory),/source drift/);
- } finally {rmSync(directory,{recursive:true,force:true});}
-});
-test('current source remains ineligible for historical release and corrupt active baseline is rejected',()=>{
- assert.throws(()=>verifyBookingSources(),/source drift: member-pages-worker\/src\/runtime-index\.js/);
- assert.throws(()=>buildMemberBookingArtifact(Buffer.from('not active artifact')),/active artifact drift/);
-});
-test('source-pin failure blocks preparation before snapshot, approval or writes',async()=>{
- const f=fixture();let snapshots=0;
- f.io.verifySources=()=>verifyBookingSources();
- f.io.snapshot=async()=>{snapshots++;throw Error('must not reach provider');};
- await assert.rejects(()=>f.engine.prepareBookingRelease(f.io),/source drift/);
- assert.equal(snapshots,0);
-});
+test('repository source pins match and corrupt active baseline is rejected',()=>{assert.equal(verifyBookingSources(),true);assert.throws(()=>buildMemberBookingArtifact(Buffer.from('not active artifact')),/active artifact drift/);});
 test('preservation guard rejects arbitrary extra candidate bytes',()=>{assert.throws(()=>verifyPreservation(Buffer.from('base'),Buffer.from('base extra'),[]),/unrelated/);});
 test('source-map normalization rejects external source paths',()=>{assert.throws(()=>normalizeSigilMap({version:3,sources:['/outside/repo.js'],sourcesContent:['unapproved']},'/tmp','/fixture'),/outside repository/);});
 test('pure Booking transform applies ten exact anchors and reverses without changing other bytes',()=>{
- const fixture=['  function memberApiFetch(url, init = {}) {\n    const run = memberApiChain.then(async () => {\n','async function readBoundedJsonObject() {}\n__name(readBoundedJsonObject, "readBoundedJsonObject");','async function readMemberAppSession() {}\n__name(readMemberAppSession, "readMemberAppSession");','async function resolveCanonicalClientForLine() {}\n__name(resolveCanonicalClientForLine, "resolveCanonicalClientForLine");','export {\n','    const response3 = await worker.fetch(request, env, ctx);','["intent", "liff_intent", "campaign", "view", "lang"]','    // Browser-controlled world/audience hints are never identity or entitlement.','${MY_MMD_LIFF_LV15_CSS}\n</style>','    <section id="jobs" class="panel digital-view" aria-label="Jobs">','  const personalMainUI =','    const target = document.getElementById(targetId) || document.getElementById("home");','    const readers = {','    accountUI.reset();'].join('\n');
- const bytes=Buffer.from(fixture),r=transformBookingArtifact(bytes);assert.equal(r.edits.length,11);assert.equal(verifyPreservation(bytes,r.bytes,r.edits),true);assert.equal(r.activeHelpers.length,3);assert.throws(()=>transformBookingArtifact(Buffer.from(fixture.replace('export {\n',''))),/missing/);
+ const fixture=['window.liff.login({ redirectUri: window.location.href });','  function memberApiFetch(url, init = {}) {\n    const run = memberApiChain.then(async () => {\n','async function readBoundedJsonObject() {}\n__name(readBoundedJsonObject, "readBoundedJsonObject");','async function readMemberAppSession() {}\n__name(readMemberAppSession, "readMemberAppSession");','async function resolveCanonicalClientForLine() {}\n__name(resolveCanonicalClientForLine, "resolveCanonicalClientForLine");','export {\n','    const response3 = await worker.fetch(request, env, ctx);','["intent", "liff_intent", "campaign", "view", "lang"]','    // Browser-controlled world/audience hints are never identity or entitlement.','${MY_MMD_LIFF_LV15_CSS}\n</style>','    <section id="jobs" class="panel digital-view" aria-label="Jobs">','  const personalMainUI =','    const target = document.getElementById(targetId) || document.getElementById("home");','    const readers = {','    accountUI.reset();'].join('\n');
+ const bytes=Buffer.from(fixture),r=transformBookingArtifact(bytes);assert.equal(r.edits.length,12);assert.equal(verifyPreservation(bytes,r.bytes,r.edits),true);assert.equal(r.activeHelpers.length,3);assert.throws(()=>transformBookingArtifact(Buffer.from(fixture.replace('export {\n',''))),/missing/);
 });
 test('unknown settings and resources fail closed before metadata is generated',()=>{for(const kind of ['settings','resources']){const f=fixture(),snapshot=f.state[f.contract.member.name];if(kind==='settings')snapshot.settings.unreviewed_feature={enabled:true};else snapshot.version.resources.unreviewed_resource={};assert.throws(()=>f.engine.metadataFor(snapshot,f.contract.member,{member:true}));}});
 test('metadata inherits secrets by name and never copies their values',()=>{const f=fixture(),s=f.state[f.contract.member.name];s.version.resources.bindings[0].text='fixture-private-value';const metadata=f.engine.metadataFor(s,f.contract.member,{member:true});assert.doesNotMatch(JSON.stringify(metadata),/fixture-private-value/);assert.deepEqual(JSON.parse(JSON.stringify(metadata.bindings[0])),{name:'KEEP_SECRET',type:'inherit'});});

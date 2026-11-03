@@ -62,11 +62,13 @@ test('unsigned ownership injection and existing member request overwrite are den
 test('service delegates actual SIGIL search/media policy and actual intake with signed ownership retained',async()=>{
  const {default:runtime}=await import('../../sigil-booking-worker/src/runtime-index.js');
  const rows=[],native=globalThis.fetch;let writes=0;
- const env={AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES:secret,AIRTABLE_API_KEY:'fixture',AIRTABLE_BASE_ID:'fixture',AIRTABLE_TABLE_BOOKING_REQUESTS_ID:'Bookings',AIRTABLE_TABLE_MODELS_ID:'Models',AIRTABLE_TABLE_MODEL_OFFER_RULES:'Rules',AIRTABLE_TABLE_MODEL_MEDIA_ID:'Media',TELEGRAM_NOTIFY_ENABLED:'false'};
- env.MEMBER_PAGES_WORKER={fetch:async()=>Response.json({ok:true,memberRef:await digest('mmd-discovery-member-v1:member_a')})};
+ const env={AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES:secret,AIRTABLE_API_KEY:'fixture',AIRTABLE_BASE_ID:'fixture',AIRTABLE_TABLE_BOOKING_REQUESTS_ID:'Bookings',AIRTABLE_TABLE_MODELS_ID:'Models',AIRTABLE_TABLE_MODEL_OFFER_RULES:'Rules',AIRTABLE_TABLE_MODEL_MEDIA_ID:'Media',AIRTABLE_TABLE_MEMBERS_ID:'Members',AIRTABLE_TABLE_ENTITLEMENTS_ID:'Entitlements',TELEGRAM_NOTIFY_ENABLED:'false'};
+ env.MEMBER_PAGES_WORKER={fetch:async()=>Response.json({ok:true,memberId:'member_a',memberRef:await digest('mmd-discovery-member-v1:member_a')})};
  globalThis.fetch=async(input,init={})=>{
   const url=new URL(input instanceof URL?input:typeof input==='string'?input:input.url);assert.equal(url.hostname,'api.airtable.com');const table=decodeURIComponent(url.pathname.split('/')[3]||'');
   if((init.method||'GET')!=='GET'){assert.equal(table,'Bookings');writes++;const fields=JSON.parse(init.body).fields;const row={id:'recBookingFixture',fields};rows.push(row);return Response.json(row);}
+  if(table==='Members'){const member={id:'recMemberFixture01',fields:{member_id:'member_a',status:'active','MMD — Member Entitlements':['recEntitlement0001']}};return Response.json(url.pathname.endsWith('/recMemberFixture01')?member:{records:[member]});}
+  if(table==='Entitlements')return Response.json({records:[{id:'recEntitlement0001',fields:{member:['recMemberFixture01'],capability:'public_member',member_lifecycle_status:'active',access_status:'active'}}]});
   if(table==='Models')return Response.json({records:[{id:model,fields:{working_name:'Fixture',status:'active',can_work_public:true,orientation:'straight',private_tier:'premium'}}]});
   if(table==='Bookings')return Response.json({records:rows});
   return Response.json({records:[]});
@@ -77,6 +79,8 @@ test('service delegates actual SIGIL search/media policy and actual intake with 
   const search=await call('search');assert.equal(search.status,200);assert.equal((await search.json()).items[0]?.model_id,model);
   const submit=await call('submit');assert.equal(submit.status,201,JSON.stringify(await submit.clone().json()));assert.equal(writes,1);
   assert.equal(JSON.parse(rows[0].fields.resolver_payload_json).my_mmd_owner.owner,owner);
+  const publicOwner=JSON.parse(rows[0].fields.resolver_payload_json).public_booking_owner;
+  assert.equal(publicOwner.member_id,'member_a');assert.equal(publicOwner.schema,'public_booking_owner_v1');assert.match(publicOwner.signature,/^[a-f0-9]{64}$/);
   assert.equal(rows[0].fields['Client Notes'],'พื้นที่: Bangkok\nfixture');
   const list=await call('list');assert.equal((await list.json()).items[0].request_ref,reference);
   await call('submit');assert.equal(writes,1);

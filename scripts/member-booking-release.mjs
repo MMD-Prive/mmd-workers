@@ -24,10 +24,10 @@ export function metadataFor(snapshot,target,{member=false}={}){
  const r=snapshot.version.resources,rt=r.script_runtime;assert.ok(Object.keys(rt).every(k=>['compatibility_date','compatibility_flags','usage_model','limits','migration_tag'].includes(k)),'unknown runtime setting');
  assert.ok(Object.keys(r.script).every(k=>['etag','handlers','named_handlers','last_deployed_from','placement','placement_mode'].includes(k)),'unknown script setting');
  const settings=snapshot.settings;assert.ok(settings&&typeof settings==='object');
- assert.ok(Object.keys(settings).every(k=>['bindings','compatibility_date','compatibility_flags','usage_model','limits','migration_tag','placement','logpush','observability','tail_consumers','tags','cache_options'].includes(k)),'unknown settings need explicit preservation');
+ assert.ok(Object.keys(settings).every(k=>['bindings','compatibility_date','compatibility_flags','usage_model','limits','migration_tag','placement','logpush','observability','tail_consumers','tags','cache_options','annotations'].includes(k)),'unknown settings need explicit preservation');
  const metadata={main_module:target.main_module,bindings:r.bindings.map(b=>({name:b.name,type:'inherit'})),compatibility_date:rt.compatibility_date,compatibility_flags:rt.compatibility_flags||[]};
  for(const key of ['usage_model','limits'])if(rt[key]!==undefined)metadata[key]=copy(rt[key]);
- for(const key of ['logpush','observability','tail_consumers','tags','cache_options'])if(settings[key]!==undefined)metadata[key]=copy(settings[key]);
+ for(const key of ['logpush','observability','tail_consumers','tags','cache_options','annotations'])if(settings[key]!==undefined)metadata[key]=copy(settings[key]);
  if(r.script.placement)metadata.placement=copy(r.script.placement);else if(r.script.placement_mode==='smart')metadata.placement={mode:'smart'};else if(settings.placement)metadata.placement=copy(settings.placement);
  if(snapshot.version.cache_options!=null)metadata.cache_options=copy(snapshot.version.cache_options);
  if(member){metadata.bindings.push({name:contract.member.binding,type:'durable_object_namespace',class_name:contract.member.class_name});metadata.migrations={old_tag:contract.member.old_migration_tag,new_tag:contract.member.new_migration_tag,new_sqlite_classes:[contract.member.class_name]};}

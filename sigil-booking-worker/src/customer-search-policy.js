@@ -1,7 +1,7 @@
 const PRIVATE_FOLDERS = new Set(["standard", "premium", "vip", "exclusive"]);
 
 export const SIGIL_CUSTOMER_SEARCH_POLICY_VERSION = "sigil-customer-search-v1";
-export const PUBLIC_MODEL_MIN_BUDGET_THB = 5000;
+export const PUBLIC_MODEL_MIN_BUDGET_THB = 4500;
 export const MODEL_BODY_TYPES = new Set(["lean", "athletic", "muscular", "slim", "soft"]);
 export const MODEL_SKIN_TONES = new Set(["fair", "light", "medium", "tan", "deep"]);
 
@@ -111,6 +111,7 @@ export function normalizeBudget(input = {}) {
   const direct = positiveNumber(input.budget_thb || input.budget || input.budget_max_thb);
   const band = cleanToken(input.budget_band);
   if (direct) return { provided: true, min_thb: 0, max_thb: direct, label: String(Math.round(direct)) };
+  if (["4500_10000", "4_5_10", "4_5k_10k"].includes(band)) return { provided: true, min_thb: 4500, max_thb: 10000, label: "4500_10000" };
   if (["5000_10000", "5_10", "5k_10k"].includes(band)) return { provided: true, min_thb: 5000, max_thb: 10000, label: "5000_10000" };
   if (["under_10000", "under10k"].includes(band)) return { provided: true, min_thb: 0, max_thb: 10000, label: "under_10000" };
   if (["10000_20000", "10_20", "10k_20k"].includes(band)) return { provided: true, min_thb: 10000, max_thb: 20000, label: "10000_20000" };
