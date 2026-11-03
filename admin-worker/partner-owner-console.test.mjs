@@ -137,6 +137,7 @@ test('P2A finance timeline links payment, model payout adjustments and Partner c
   const env = {
     ADMIN_LOGIN_CREDENTIAL: 'fixture-credential',
     ADMIN_SESSION_SECRET: 'fixture-secret',
+    LINE_SLIP_EVIDENCE: { async get() { return null; } },
     AIRTABLE_API_KEY: 'fixture-airtable',
     AIRTABLE_BASE_ID: 'appFixture',
     AIRTABLE_TABLE_SESSIONS: 'Sessions',
