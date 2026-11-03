@@ -1,0 +1,143 @@
+name: Refund preserved code-only release
+
+on:
+  pull_request:
+    paths:
+      - "scripts/refund-release-preserved.py"
+      - "scripts/refund-release-preserved.test.py"
+      - ".github/workflows/refund-preserved-release.yml"
+  workflow_dispatch:
+    inputs:
+      production_approved:
+        description: Owner approval for both exact preserved PR3032 artifacts only
+        type: boolean
+        required: true
+        default: false
+      approved_sha:
+        description: Exact main merge SHA approved to run the release helper
+        type: string
+        required: true
+      approval_ref:
+        description: Owner authorization reference; no route/config/secret/business changes
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+  deployments: read
+
+jobs:
+  release-contracts:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: No-network release and existing protection contracts
+        run: |
+          PYTHONDONTWRITEBYTECODE=1 python3 scripts/refund-release-preserved.test.py
+          node --test scripts/admin-production-approval.test.mjs
+
+  production-approval:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approved_sha == github.sha && inputs.approval_ref != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify unchanged owner-only production protection (GET only)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APPROVAL_REF: ${{ inputs.approval_ref }}
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+        run: node scripts/admin-production-approval.mjs
+
+  release-line:
+    needs: production-approval
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approved_sha == github.sha
+    concurrency:
+      group: deploy-member-dashboard-chat-worker-production
+      cancel-in-progress: false
+    environment: mmd-production-mutation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: 41700178784
+          name: refund-preserved-bundles-59187649f3cdeb209f6b424303b03da765ec31b8
+          path: refund-preserved-input
+      - name: Release only pinned module/map bytes; preserve live configuration
+        id: release
+        env:
+          PRODUCTION_APPROVED: ${{ inputs.production_approved }}
+          APPROVAL_REF: ${{ inputs.approval_ref }}
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+          TARGET_WORKER: member-dashboard-chat-worker
+          PEER_VERSION: ''
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python3 scripts/refund-release-preserved.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: refund-3032-release-line-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+          path: refund-release/
+          retention-days: 7
+
+  release-admin:
+    needs: release-line
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approved_sha == github.sha
+    concurrency:
+      group: deploy-admin-worker-production
+      cancel-in-progress: false
+    environment: mmd-production-mutation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: 41700178784
+          name: refund-preserved-bundles-59187649f3cdeb209f6b424303b03da765ec31b8
+          path: refund-preserved-input
+      - name: Release only pinned module/map bytes; preserve live configuration
+        id: release
+        env:
+          PRODUCTION_APPROVED: ${{ inputs.production_approved }}
+          APPROVAL_REF: ${{ inputs.approval_ref }}
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+          TARGET_WORKER: admin-worker
+          PEER_VERSION: ${{ needs.release-line.outputs.version }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python3 scripts/refund-release-preserved.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: refund-3032-release-admin-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+          path: refund-release/
+          retention-days: 7
