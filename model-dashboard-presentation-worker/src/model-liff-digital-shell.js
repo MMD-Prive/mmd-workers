@@ -134,12 +134,9 @@ export function modelLiffDigitalBootstrapHtml({
     var exchangeBody=await exchange.json().catch(function(){return null});
     if(!exchange.ok||!exchangeBody||exchangeBody.ok!==true){
       if(${JSON.stringify(publicJobApplicant)}&&exchange.status===202&&exchangeBody&&exchangeBody.state==="identity_review_required"){
-        var intake=new URL("/sigil/model/dashboard","https://mmdbkk.com");
-        intake.searchParams.set("flow","apply");
-        intake.searchParams.set("intent","job_board");
-        intake.searchParams.set("source","job_board");
-        ${safeJobBoard.job_id ? `intake.searchParams.set("job_id",${JSON.stringify(safeJobBoard.job_id)});` : ""}
-        window.location.replace(intake.toString());return;
+        // Browsing the board establishes the anonymous Public-job session.
+        // Private access still requires the canonical Model gate.
+        window.location.replace("https://sigil.mmdbkk.com/public/api/jobs");return;
       }
       throw new Error(exchangeBody&&exchangeBody.error||"model_session_exchange_failed");
     }
