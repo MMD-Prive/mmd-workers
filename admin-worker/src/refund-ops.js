@@ -393,7 +393,7 @@ function modelMiniAppForConfirmation(returnTo, payload = {}) {
   url.searchParams.set("return_to", safeReturnTo);
   url.searchParams.set("source", "refund_completed_pack");
   url.searchParams.set("lang", "th");
-  const modelAlias = clean(payload.model_alias || payload.owner_model_alias || payload.model_name || payload.model_display_name || "Film J", 160);
+  const modelAlias = clean(payload.model_alias || payload.owner_model_alias || payload.model_name || payload.model_display_name || "", 160);
   if (modelAlias) url.searchParams.set("model_alias", modelAlias);
   return url.toString();
 }
@@ -525,7 +525,7 @@ function modelJobAppUrl(payload = {}) {
   if (!jobId) return "";
   const next = new URL(`https://sigil.mmdbkk.com/public/api/jobs/${encodeURIComponent(jobId)}`);
   const url = new URL("https://miniapp.line.me/2010864854-N34SgCqq/");
-  const modelAlias = clean(payload.model_alias || payload.owner_model_alias || payload.model_name || payload.model_display_name || "Film J", 160);
+  const modelAlias = clean(payload.model_alias || payload.owner_model_alias || payload.model_name || payload.model_display_name || "", 160);
   const modelRecordId = clean(payload.model_record_id || payload.model_id || payload.model_airtable_id || "", 120);
   url.searchParams.set("intent", "job_board");
   url.searchParams.set("source", "refund_completed_pack");
@@ -559,7 +559,7 @@ async function notifyRefundCompletedToTelegram(env, record, payload, { mediaUrl 
   const amount = payloadRefundAmount(payload);
   const currency = currencyText(payload.owner_refund_currency || payload.refund_currency || "THB");
   const customer = clean(record?.fields?.member_name || payload.customer_name || "LINE customer", 160);
-  const modelName = clean(payload.model_name || payload.model_display_name || "Film J", 160);
+  const modelName = clean(payload.model_name || payload.model_display_name || "โมเดลของงานนี้", 160);
   const jobId = clean(payload.job_id, 120);
   const sessionId = clean(payload.session_id, 120);
   const ref = clean(payload.owner_refund_reference || "", 160);
@@ -988,3 +988,4 @@ export async function handleRefundOpsRequest(request, env = {}, { isAuthed } = {
   if (path === REFUND_OPS_RECOVER_PATH && method === "POST") return handleReceiptRecovery(request, env);
   return null;
 }
+
