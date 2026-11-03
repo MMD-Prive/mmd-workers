@@ -78,9 +78,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      ARTIFACT_ROOT: ${{ runner.temp }}/public-booking-artifacts
-      JOURNAL_PATH: ${{ runner.temp }}/public-booking-receipt.jsonl
-      BUILD_TOOLS_DIR: ${{ runner.temp }}/public-booking-build-tools
+      ARTIFACT_ROOT: ${{ github.workspace }}/public-booking-artifacts
+      JOURNAL_PATH: ${{ github.workspace }}/public-booking-receipt.jsonl
+      BUILD_TOOLS_DIR: ${{ github.workspace }}/public-booking-build-tools
     steps:
       - name: Initialize safe receipt before preparation
         run: printf '%s\n' '{"phase":"preparation-started","writes":0}' > "$JOURNAL_PATH"
@@ -127,7 +127,7 @@ jobs:
         working-directory: release-tools
         env:
           MEMBER_SOURCE_ROOT: ${{ github.workspace }}/reviewed-source
-          MEMBER_CANDIDATE: ${{ runner.temp }}/public-booking-artifacts/member-candidate.js
+          MEMBER_CANDIDATE: ${{ github.workspace }}/public-booking-artifacts/member-candidate.js
         run: node --test scripts/booking-code-only/member-builder.test.mjs scripts/booking-code-only/member-bundled-identity.test.mjs
       - name: Generate and run actual SIGIL candidate regressions outside checkouts
         working-directory: release-tools
@@ -147,5 +147,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: public-booking-code-only-receipt-${{ github.run_id }}
-          path: ${{ runner.temp }}/public-booking-receipt.jsonl
+          path: ${{ github.workspace }}/public-booking-receipt.jsonl
           if-no-files-found: error
