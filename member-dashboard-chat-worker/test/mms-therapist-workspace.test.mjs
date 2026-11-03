@@ -463,6 +463,14 @@ test('unknown acknowledgement client retry preserves operation ID, body and base
  const calls=h.calls.filter(c=>c.options.method==='PUT');assert.equal(attempts,2);assert.equal(calls[0].options.headers['X-Profile-Operation-Id'],calls[1].options.headers['X-Profile-Operation-Id']);assert.equal(calls[0].options.headers['X-Profile-Revision'],'4');assert.equal(calls[0].options.body,calls[1].options.body);assert.equal(h.els.intro.value,'Same operation');
 });
 
+test('invalid durable journal preserves the draft and shows a stop-and-review message',async()=>{
+ const h=clientHarness({profileOverride:{profile_revision:4},respond:(url,options)=>url.endsWith('/profile')&&options.method==='PUT'?Response.json({ok:false,error:{code:'PROFILE_JOURNAL_INVALID'}},{status:503}):undefined});
+ await settle();await h.tabs[2].click();h.els.intro.value='Keep this draft';
+ await h.els['profile-form'].onsubmit({preventDefault(){}});await settle();
+ assert.equal(h.els.intro.value,'Keep this draft');assert.match(h.els.notice.textContent,/ตรวจสอบก่อนบันทึกต่อ/);
+ assert.equal(h.calls.filter(c=>c.options.method==='PUT').length,1);
+});
+
 // Current-main auth/progress/privacy regressions retained across renderer update.
 test('saving courses without changing zones omits zone replacement fields',async()=>{
  const h=clientHarness();await settle();await h.tabs[2].click();h.els.intro.value='Fixture intro';await h.els['profile-form'].onsubmit({preventDefault(){}});await settle();

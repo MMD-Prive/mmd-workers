@@ -213,3 +213,57 @@ for(const winner of ['edit','selection','delete'])test('current-main regression:
 test('current-main regression: unavailable R2 ETag fails before effects',async t=>{
  const f=fixture(t),get=f.env.MMS_PRIVATE_UPLOADS.get;f.env.MMS_PRIVATE_UPLOADS.get=async k=>{const object=await get(k);if(object)delete object.etag;return object;};assert.equal((await f.call('PUT',{intro:'Do not write'})).status,503);assert.deepEqual(f.writes,[]);
 });
+
+for (const phase of ['unrecognized', 'prepared', 'airtable_saved', 'manifest_saved', 'rejected']) test('journal phase '+phase+' without its durable plan stays quarantined after restart', async t => {
+ const f=fixture(t),body={display_name:'Must not dispatch from corrupt journal',intro:'Must not commit'};
+ f.failure.journalHook=async updates=>{if(updates.pending?.phase==='validating')f.failure.journal='after';};
+ assert.equal((await f.call('PUT',body)).status,503);
+ delete f.failure.journalHook;delete f.failure.journal;
+ const values=f.env.MMS_THERAPIST_PROFILES.owners.get(IDS[0]).values;
+ const pending=values.get('pending');pending.phase=phase;
+ const before=structuredClone([...values]);f.env.MMS_THERAPIST_PROFILES.evict(IDS[0]);
+ const retry=await f.call('PUT',body);
+ assert.equal(retry.status,503);assert.equal(retry.error.code,'PROFILE_JOURNAL_INVALID');
+ assert.equal((await f.call()).status,503);await assert.rejects(()=>profileDirectorySnapshot(IDS[0],f.env));
+ assert.deepEqual(f.writes,[]);assert.deepEqual([...values],before);
+ assert.equal((await f.call('PUT',{intro:'Other owner still available'},{actor:1})).status,200);
+});
+
+test('pending revision mismatch cannot resume effects or advance the head revision',async t=>{
+ const f=fixture(t),body={intro:'Pending intent'};f.failure.put='before';assert.equal((await f.call('PUT',body)).status,503);delete f.failure.put;
+ const values=f.env.MMS_THERAPIST_PROFILES.owners.get(IDS[0]).values;values.set('revision',1);
+ const before=structuredClone([...values]);f.env.MMS_THERAPIST_PROFILES.evict(IDS[0]);
+ const retry=await f.call('PUT',body);assert.equal(retry.status,503);assert.equal(retry.error.code,'PROFILE_JOURNAL_INVALID');assert.deepEqual(f.writes,[]);assert.deepEqual([...values],before);
+});
+
+for(const revision of [-1,1.5,'1',null,NaN,Number.MAX_SAFE_INTEGER])test('invalid durable revision '+String(revision)+' fails closed for reads and writes',async t=>{
+ const f=fixture(t);assert.equal((await f.call()).status,200);const values=f.env.MMS_THERAPIST_PROFILES.owners.get(IDS[0]).values;values.set('revision',revision);
+ const before=structuredClone([...values]);f.env.MMS_THERAPIST_PROFILES.evict(IDS[0]);
+ assert.equal((await f.call()).error.code,'PROFILE_JOURNAL_INVALID');
+ assert.equal((await f.call('PUT',{intro:'Do not reset corrupt head'},{headers:rev(0)})).error.code,'PROFILE_JOURNAL_INVALID');assert.deepEqual(f.writes,[]);assert.deepEqual([...values],before);
+});
+
+test('a validating intent interrupted before its plan can still resume the exact request',async t=>{
+ const f=fixture(t),body={intro:'Safe pre-plan recovery'};
+ f.failure.journalHook=async updates=>{if(updates.pending?.phase==='validating')f.failure.journal='after';};
+ assert.equal((await f.call('PUT',body)).status,503);delete f.failure.journalHook;delete f.failure.journal;f.env.MMS_THERAPIST_PROFILES.evict(IDS[0]);
+ assert.equal((await f.call('PUT',body)).status,200);assert.equal((await f.call()).data.intro,body.intro);
+});
+
+test('lost owner marker with an existing intent never reinitializes the coordinator',async t=>{
+ const f=fixture(t),body={intro:'Do not rebind journal'};f.failure.put='before';assert.equal((await f.call('PUT',body)).status,503);delete f.failure.put;
+ const values=f.env.MMS_THERAPIST_PROFILES.owners.get(IDS[0]).values;values.delete('owner');const before=structuredClone([...values]);f.env.MMS_THERAPIST_PROFILES.evict(IDS[0]);
+ assert.equal((await f.call('PUT',body)).error.code,'PROFILE_JOURNAL_INVALID');assert.deepEqual(f.writes,[]);assert.deepEqual([...values],before);
+});
+
+test('revision exhaustion preserves readable data but never writes an unrepresentable revision',async t=>{
+ const f=fixture(t);await f.call();const values=f.env.MMS_THERAPIST_PROFILES.owners.get(IDS[0]).values;values.set('revision',999_999_999_999_999);
+ assert.equal((await f.call()).status,200);assert.equal((await f.call('PUT',{intro:'Do not overflow'})).error.code,'PROFILE_REVISION_EXHAUSTED');assert.deepEqual(f.writes,[]);
+});
+
+test('receipt at the final supported revision remains replayable without another write',async t=>{
+ const f=fixture(t);await f.call();const values=f.env.MMS_THERAPIST_PROFILES.owners.get(IDS[0]).values;values.set('revision',999_999_999_999_998);
+ const body={intro:'Final supported operation'},headers={'X-Profile-Operation-Id':randomUUID(),'X-Profile-Revision':'999999999999998'};
+ assert.equal((await f.call('PUT',body,{headers})).status,200);const before=f.writes.length;f.env.MMS_THERAPIST_PROFILES.evict(IDS[0]);
+ assert.equal((await f.call('PUT',body,{headers})).status,200);assert.equal(f.writes.length,before);
+});

@@ -13,7 +13,7 @@ Prepared 2026-11-03. No configuration was applied, no namespace was provisioned,
 - No routes, secrets, compatibility date/flags, cron, R2 binding/bucket/key scheme, service bindings or other Worker config changes.
 - Owner naming remains deterministic `getByName(authenticatedTherapistId)`. Never include client owner/storage keys, change the owner naming scheme on rollback or create a new namespace to bypass quarantine.
 
-`binding-migration.proposed.patch` is the exact minimal config diff against the recorded local config hash. It is stored outside the production config and has passed `git apply --check` without applying it. `binding-migration-plan.json` and the local scope guard tests verify that only the one appended binding and one appended creation migration may differ. The actual `mms-worker/wrangler.jsonc` remains unchanged.
+`binding-migration.proposed.patch` is the exact minimal config diff against the recorded local config hash. It is stored outside the production config. `mms-worker/test/therapist-profile-migration-plan.test.mjs` checks the hash, applies the proposal only to a disposable configuration fixture, and verifies that only the one appended binding and one appended SQLite creation migration differ. That test is included by the existing mms-worker CI test command; it does not provision Cloudflare resources. The actual `mms-worker/wrangler.jsonc` remains unchanged.
 
 ## Storage initialization
 
@@ -47,6 +47,22 @@ Check the exact approved Wrangler version when preparing release. Official docum
 - A UI rollback must not restore unversioned write bypasses. If no compatible UI is available, keep writes paused.
 - Do not roll back R2/Airtable data, reset revision to zero, delete pending entries, change namespace owner names or discard quarantine to make a smoke test pass.
 - Any baseline/tag/config drift, unexplained external writer, unsettled old write, schema mismatch, wrong code/binding pair or unsupported recovery proof stops the activation. Report the exact gap; do not switch baselines silently.
+
+## Release decision checklist
+
+All rows are hard gates. A green CI or approval to review this PR does not close an operational gate. Do not merge first to prepare these steps: the current main-push workflow can deploy the unbound business candidate immediately.
+
+| Gate | Evidence required before release | Status in this PR |
+|---|---|---|
+| Code and proposal integrity | Exact-head tests, journal crash/retry regressions, proposed config guard | Implemented; exact-head CI reported on PR |
+| Airtable unknown-outcome operating model | Explicit acceptance of potentially indefinite owner quarantine and directory availability impact, or a separately reviewed safe settlement design | Not accepted by a code-review request; no settlement API exists |
+| Production baseline and deployment hold | Current version/traffic/config/migration readback plus a proven hold or isolated release path preventing automatic main deployment | Not performed or implemented |
+| Lifecycle bootstrap | Isolated baseline-derived bootstrap candidate, byte/scope comparison and preservation of existing request paths/config | Not built or validated |
+| Legacy writer pause/drain | Server-enforced pause, inventory of all writers/automations to the same fields and R2 keys, exact outcome evidence for outstanding writes/retries | Not implemented or proven; elapsed time alone is insufficient |
+| Compatible corrective release | Tested coordinator-compatible candidate retaining binding, pending journal and tombstones | Not prepared |
+| Paired activation and acceptance | Approved frontend/backend pair, binding readback, controlled-account tests and explicit decision to reopen writes | Not performed; test accounts must remain Offline/Hidden/Matching disabled |
+
+The outcome is **code review candidate, RELEASE NO-GO** while any operational row is open. A future release task must produce the concrete bootstrap/pause/corrective candidates and review evidence before requesting release approval; this document alone cannot authorize or implement them.
 
 ## Evidence boundaries
 

@@ -22,6 +22,8 @@ The policy favors data integrity over availability for the affected owner. Other
 | `rejected` persisted but receipt cleanup interrupted | Terminal failure before any effects; finish failure receipt cleanup | Falling through to manifest persistence / 200 |
 | Unknown/corrupt phase or owner/record mismatch | Quarantine and investigate | Guessing a safe phase or moving the operation to a new record/owner |
 
+Before replay or recovery, the coordinator checks the persisted journal envelope: owner, bounded integer revision, pending identity/fingerprint/revision, and the phase/plan relationship. Only `validating` may lack a plan. A missing plan in any later phase, an unknown phase or inconsistent revision returns `503 PROFILE_JOURNAL_INVALID` without replacing the journal, starting effects or initializing a new owner over it. A structurally valid `validating` intent may still prepare the exact same request after a crash. This is an integrity guard, not a proof that arbitrary out-of-band storage edits can be repaired safely.
+
 The two rejection identifiers are a deliberately narrow allowlist, not an exhaustive claim about Airtable errors. Other definitive categories may be added only after documented review and a regression proving their semantics. Error bodies are not logged or sent to the browser.
 
 Official reference checked 2026-11-03: Airtable distinguishes status codes from JSON error identifiers and documents validation failures; it also documents request timeouts separately from rate limiting. Those pages do not provide this implementation with an operation-correlated terminal-status/fencing contract. The no-blind-retry policy is our conservative consistency rule, not a claim that Airtable's general retry guidance mandates permanent quarantine.

@@ -17,7 +17,8 @@ Only synthetic accounts and storage are used by tests. Config guard validation i
 
 ## Validation for this draft candidate
 
-- 247 targeted tests passed, zero failed/skipped, across profile concurrency/contracts/photo validation, zones, frontend identity/auth/progress, and chat directory integration.
+- 265 targeted tests passed, zero failed/skipped, across profile concurrency/contracts/photo validation, zones, frontend identity/auth/progress, chat directory integration and the unapplied migration proposal.
+- Follow-up review reproduced unsafe recovery from a missing durable plan/inconsistent revision. The coordinator now refuses inconsistent journal envelopes before effects; crash-before-plan retries remain supported. The frontend preserves the draft and asks for review.
 - 7 local workerd checks passed using SQLite-backed Durable Objects and R2 with synthetic Airtable interception. Cached Miniflare 4.20260611.0 uses compatibility date 2026-06-11, so this is not production-runtime equivalence with the unchanged 2026-08-21 configuration.
 - Backend/frontend bundles and whitespace checks passed. The proposed configuration diff passes check-only application; the active configuration is not edited.
 - Real LINE/account acceptance and production source/artifact equivalence remain open. CI status belongs to the PR's exact head commit and is reported separately.

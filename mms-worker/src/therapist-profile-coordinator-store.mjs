@@ -3,6 +3,17 @@ import { handleMmsTherapistProfileRequest, therapistProfileErrorResponse, profil
 
 const hash = async bytes => [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(x => x.toString(16).padStart(2, '0')).join('');
 const operationId = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
+const MAX_REVISION = 999_999_999_999_999; // Matches the bounded wire protocol.
+const plannedPhases = new Set(['prepared', 'airtable_inflight', 'airtable_unknown', 'airtable_saved', 'manifest_saved', 'rejected']);
+
+function validPending(record, owner, revision) {
+  if (!record || typeof record !== 'object' || Array.isArray(record)
+    || !operationId.test(record.id || '') || !/^[a-f0-9]{64}$/.test(record.fingerprint || '') || record.revision !== revision) return false;
+  if (record.phase === 'validating') return record.plan === undefined;
+  // A later phase can never be recomputed from the request if its plan is lost.
+  return plannedPhases.has(record.phase) && record.plan?.owner === owner
+    && /^rec[A-Za-z0-9]{10,30}$/.test(record.plan?.recordId || '');
+}
 
 // Factory keeps the exact implementation testable with synthetic durable storage.
 // The production export supplies cloudflare:workers DurableObject as Base.
@@ -22,10 +33,14 @@ export function createMmsTherapistProfileCoordinator(Base) {
       if (internal && request.method !== 'GET') return problem(405, 'METHOD_NOT_ALLOWED');
       const owner = internal ? internal[1] : await profileCoordinatorOwner(request, this.env);
       const storedOwner = await this.storage.get('owner');
-      if (storedOwner && storedOwner !== owner) return problem(403, 'PROFILE_ACCOUNT_MISMATCH');
-      if (!storedOwner) await this.storage.put('owner', owner);
-      const revision = (await this.storage.get('revision')) || 0;
+      if (storedOwner !== undefined && storedOwner !== owner) return problem(403, 'PROFILE_ACCOUNT_MISMATCH');
+      const storedRevision = await this.storage.get('revision');
+      const revision = storedRevision === undefined ? 0 : storedRevision;
       const pending = await this.storage.get('pending');
+      if (!Number.isSafeInteger(revision) || revision < 0 || revision > MAX_REVISION
+        || (pending !== undefined && pending !== null && !validPending(pending, owner, revision))
+        || (storedOwner === undefined && (storedRevision !== undefined || pending != null))) return problem(503, 'PROFILE_JOURNAL_INVALID');
+      if (storedOwner === undefined) await this.storage.put('owner', owner);
       if (['GET', 'HEAD', 'OPTIONS'].includes(request.method)) {
         if (pending) return problem(503, 'PROFILE_OPERATION_PENDING');
         if (internal) return Response.json(await readProfileDirectoryInternal(owner, this.env), { headers: { 'Cache-Control': 'no-store' } });
@@ -58,6 +73,7 @@ export function createMmsTherapistProfileCoordinator(Base) {
         if (!saved.retryableBeforeEffects) return this.receipt(saved.result,request);
       }
       if (!pending && Number(expectedText) !== revision) return problem(409, 'PROFILE_REVISION_CONFLICT');
+      if (revision === MAX_REVISION) return problem(503, 'PROFILE_REVISION_EXHAUSTED');
       const record = pending || { id, fingerprint, phase: 'validating', revision };
       if (!pending) await this.storage.put('pending', record);
       const context = {
