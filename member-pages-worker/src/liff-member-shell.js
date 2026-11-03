@@ -355,6 +355,7 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
       <summary class="digital-news-summary">
         <span class="digital-sectionline"><h2 id="digital-news-title"><small>MMD UPDATE</small>MMD NOW</h2><span class="digital-unread" id="digital-unread" hidden></span></span>
       </summary>
+      <div id="digital-news-progress"></div>
       <div class="digital-news-feed" id="digital-news-feed"><div class="digital-quiet">กำลังตรวจสอบอัปเดตล่าสุด</div></div>
     </details>
     <section class="digital-snapshot" aria-label="สถานะสมาชิก">${customerGraphic("membership-frame")}<div class="digital-snapshot-member"><span class="digital-snapshot-icon" aria-hidden="true">◇</span><div><span class="digital-snapshot-label">สมาชิก MMD Privé</span><strong id="profile-tier">Member</strong><p id="profile-status">กำลังตรวจสอบสถานะ</p></div></div><div class="digital-snapshot-points"><span class="digital-snapshot-label">Points</span><strong id="profile-points" class="digital-points">—</strong><span id="profile-points-note" class="digital-points-note">กำลังตรวจสอบยอด</span></div></section>
