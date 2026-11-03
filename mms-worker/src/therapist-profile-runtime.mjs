@@ -2,6 +2,7 @@ import { MMS_MAX_COVERAGE_ZONES } from "../../shared/mms-service-zone-policy.mjs
 import { linkedServiceZoneCodes, loadMmsServiceZoneIndex } from "./service-zones-runtime.mjs";
 import { isTherapistPhotoContent } from "./therapist-photo-content.mjs";
 
+const MANIFEST_ETAG = Symbol("manifestEtag");
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const PROFILE_PREFIX = "/male-massage/therapists/api/auth/profile";
 const SESSION_COOKIE = "__Secure-mms_therapist_session";
@@ -154,6 +155,7 @@ async function updateProfile(current, request, env) {
   try { if (manifestChanged) await saveManifest(current.therapist_id, next, env); }
   catch (error) {
     if (Object.keys(airtableFields).length) throw profileError(503, "PROFILE_PARTIALLY_SAVED");
+    if (error.code === "PROFILE_VERSION_CONFLICT") throw error;
     throw profileError(503, "PROFILE_SAVE_UNCONFIRMED");
   }
   if (!serviceZoneIndex) {
@@ -195,7 +197,15 @@ async function uploadPhoto(current, request, env) {
     photos: [...manifest.photos, { id: photoId, key, file_name: fileName, content_type: contentType, created_at: new Date().toISOString() }],
     updated_at: new Date().toISOString(),
   };
-  await saveManifest(current.therapist_id, next, env);
+  try { await saveManifest(current.therapist_id, next, env); }
+  catch (error) {
+    // A confirmed conflict never referenced this newly generated private object.
+    // An uncertain write may have committed; retain its bytes for readback.
+    if (error.code === "PROFILE_VERSION_CONFLICT") {
+      try { await env.MMS_PRIVATE_UPLOADS.delete(key); } catch { /* Private orphan; never published. */ }
+    }
+    throw error;
+  }
 
   return json({ ok: true, data: photoView(current.therapist_id, next, next.photos[next.photos.length - 1]) }, 201, request, env);
 }
@@ -217,8 +227,6 @@ async function deletePhoto(current, photoId, request, env) {
   const manifest = await loadManifest(current.therapist_id, env);
   const photo = manifest.photos.find((item) => item.id === photoId);
   if (!photo) throw profileError(404, "PHOTO_NOT_FOUND");
-  try { await env.MMS_PRIVATE_UPLOADS.delete(photo.key); }
-  catch { throw profileError(503, "PHOTO_STORAGE_UNAVAILABLE"); }
   const next = {
     ...manifest,
     photos: manifest.photos.filter((item) => item.id !== photoId),
@@ -226,6 +234,8 @@ async function deletePhoto(current, photoId, request, env) {
     updated_at: new Date().toISOString(),
   };
   await saveManifest(current.therapist_id, next, env);
+  try { await env.MMS_PRIVATE_UPLOADS.delete(photo.key); }
+  catch { throw profileError(503, "PHOTO_STORAGE_UNAVAILABLE"); }
   return new Response(null, { status: 204, headers: responseHeaders(request, env) });
 }
 
@@ -351,7 +361,7 @@ function validateCourses(value) {
 }
 
 function defaultManifest() {
-  return { version: 1, intro: "", profile_visibility: "hidden", courses: [], photos: [], public_photo_ids: [], updated_at: null };
+  return { [MANIFEST_ETAG]: null, version: 1, intro: "", profile_visibility: "hidden", courses: [], photos: [], public_photo_ids: [], updated_at: null };
 }
 
 async function loadManifest(therapistId, env) {
@@ -360,6 +370,7 @@ async function loadManifest(therapistId, env) {
   try {
     const parsed = JSON.parse(await object.text());
     return {
+      [MANIFEST_ETAG]: object.etag,
       version: 1,
       intro: clean(parsed.intro, 600),
       profile_visibility: parsed.profile_visibility === "public" ? "public" : "hidden",
@@ -372,9 +383,17 @@ async function loadManifest(therapistId, env) {
 }
 
 async function saveManifest(therapistId, manifest, env) {
+  const etag = manifest[MANIFEST_ETAG];
+  if (etag !== null && (typeof etag !== "string" || !etag)) throw profileError(503, "PROFILE_STORAGE_UNAVAILABLE");
+  let result;
   try {
-    await env.MMS_PRIVATE_UPLOADS.put(manifestKey(therapistId), JSON.stringify(manifest), { httpMetadata: { contentType: "application/json" } });
+    result = await env.MMS_PRIVATE_UPLOADS.put(manifestKey(therapistId), JSON.stringify(manifest), {
+      onlyIf: etag === null ? new Headers({ "If-None-Match": "*" }) : { etagMatches: etag },
+      httpMetadata: { contentType: "application/json" },
+    });
   } catch { throw profileError(503, "PROFILE_STORAGE_UNAVAILABLE"); }
+  if (result === null) throw profileError(409, "PROFILE_VERSION_CONFLICT");
+  if (!result?.etag) throw profileError(503, "PROFILE_STORAGE_UNAVAILABLE");
 }
 
 function validStoredPhoto(photo) {

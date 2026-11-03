@@ -35,7 +35,7 @@ const env = {
   AIRTABLE_THERAPISTS_TABLE_ID: "tblTC9ZHQa4hAUwLu",
   AIRTABLE_SERVICE_ZONES_TABLE_ID: "tblAAAAAAAAAAAAAA",
   ALLOWED_ORIGINS: ORIGIN,
-  MMS_PRIVATE_UPLOADS: { async get() { return null; }, async put() {} },
+  MMS_PRIVATE_UPLOADS: { async get() { return null; }, async put() { return {etag:"fixture-write"}; } },
 };
 
 function sessionCookie() {
@@ -184,7 +184,7 @@ test('unchanged profile does not rewrite storage',async()=>{
 test('photos and existing courses survive an unrelated update; read/write retry uses actual stored state',async()=>{
   const mock=installFetchMock(),storage=env.MMS_PRIVATE_UPLOADS;
   let manifest={version:1,intro:'',profile_visibility:'hidden',courses:[{name:'Women Massage',duration_minutes:90,price_thb:4500}],photos:[{id:'ph_'+'a'.repeat(24),key:'fixture/photo',file_name:'fixture.jpg'}],public_photo_ids:[]};
-  env.MMS_PRIVATE_UPLOADS={async get(){return {text:async()=>JSON.stringify(manifest)};},async put(key,value){manifest=JSON.parse(value);}};
+  env.MMS_PRIVATE_UPLOADS={async get(){return {etag:"fixture-read",text:async()=>JSON.stringify(manifest)};},async put(key,value){manifest=JSON.parse(value);return {etag:"fixture-write"};}};
   try{assert.equal((await call('PUT',{intro:'Updated intro'})).status,200);assert.equal(manifest.photos.length,1);assert.equal(manifest.courses[0].price_thb,4500);const res=await call('GET');assert.equal((await res.json()).data.intro,'Updated intro');}
   finally{mock.restore();env.MMS_PRIVATE_UPLOADS=storage;}
 });
