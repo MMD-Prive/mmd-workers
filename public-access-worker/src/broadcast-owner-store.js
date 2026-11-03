@@ -75,6 +75,38 @@ export async function handleBroadcastOwnerBridge(request, env, api) {
     }));
     return response({ ok: true, jobs, next_cursor: page.truncated ? page.cursor : null });
   }
+  const review = /^jobs\/([A-Za-z0-9][A-Za-z0-9_-]{2,99})\/candidates(?:\/([A-Za-z0-9][A-Za-z0-9_-]{2,99})\/media\/([1-9]|10))?$/.exec(action);
+  if (review) {
+    const [, jobId, applicationRef, slot] = review;
+    const job = await api.getJson(env, api.jobKey(jobId));
+    if (job?.schema !== "mmd_public_job_board_v2.job") return response({ ok: false, error: "job_not_found" }, 404);
+    if (!applicationRef) return response({ ok: true, job: api.ownerJobView(api.applyOwnerConfirmedJobCorrections(job)), candidates: await api.listApplications(env, jobId) });
+    const application = await api.getJson(env, `${ROOT}/applications/${jobId}/${applicationRef}.json`);
+    if (application?.schema !== "mmd_public_job_board_v2.application" || application?.job_id !== jobId || application?.application_ref !== applicationRef || application.submission_status !== "submitted") return response({ ok: false, error: "application_not_found" }, 404);
+    const upload = application.uploads?.find(item => Number(item.slot) === Number(slot));
+    const types = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif", "video/mp4", "video/quicktime", "video/webm"]);
+    const prefix = `${ROOT}/private-media/${jobId}/${applicationRef}/`;
+    if (!upload || !types.has(upload.content_type) || !upload.key?.startsWith(prefix) || !new RegExp(`^${slot}\\.[a-z0-9]+$`).test(upload.key.slice(prefix.length))) return response({ ok: false, error: "media_not_found" }, 404);
+    const headers = new Headers({ "content-type": upload.content_type, "cache-control": "no-store, private", "x-content-type-options": "nosniff", "cross-origin-resource-policy": "same-origin", "accept-ranges": "bytes" });
+    const rangeHeader = request.headers.get("range");
+    let range;
+    if (rangeHeader) {
+      const match = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader);
+      const metadata = await env.PUBLIC_ACCESS_EVIDENCE.head(upload.key);
+      if (!metadata) return response({ ok: false, error: "media_not_found" }, 404);
+      const size = metadata.size;
+      const start = match?.[1] ? Number(match[1]) : Math.max(0, size - Number(match?.[2]));
+      const end = match?.[1] && match[2] ? Math.min(size - 1, Number(match[2])) : size - 1;
+      if (!match || (!match[1] && !match[2]) || !Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || start >= size || end < start || (!match[1] && Number(match[2]) <= 0)) return response({ ok: false, error: "media_range_invalid" }, 416);
+      range = { offset: start, length: end - start + 1 };
+      headers.set("content-range", `bytes ${start}-${end}/${size}`);
+      headers.set("content-length", String(range.length));
+    }
+    const object = await env.PUBLIC_ACCESS_EVIDENCE.get(upload.key, range ? { range } : undefined);
+    if (!object) return response({ ok: false, error: "media_not_found" }, 404);
+    if (!range && Number.isSafeInteger(object.size)) headers.set("content-length", String(object.size));
+    return new Response(object.body, { status: range ? 206 : 200, headers });
+  }
   if (action.startsWith("jobs/")) {
     const id = decodeURIComponent(action.slice(5));
     if (!/^[A-Za-z0-9][A-Za-z0-9_-]{2,99}$/.test(id)) fail("job_id_invalid");

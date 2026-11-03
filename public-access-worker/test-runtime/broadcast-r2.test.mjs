@@ -40,5 +40,31 @@ test("workerd R2 conditional writes deduplicate concurrent publish and resume a 
     assert.equal(replay.job.id, reservedJob.id);
     assert.equal((await bucket.list({ prefix: "public-job-board/v2/jobs/" })).objects.length, 2);
 
+    // The same service-only owner bridge streams private applicant media from
+    // real R2 without creating or binding a Model.
+    const jobId = results[0].job.id, applicationRef = "APP-REVIEW-TEST";
+    const mediaKey = `public-job-board/v2/private-media/${jobId}/${applicationRef}/9.mp4`;
+    const application = { schema: "mmd_public_job_board_v2.application", job_id: jobId, application_ref: applicationRef, submission_status: "submitted", identity: { verified_model_record_id: null }, controls: { auto_bind: false }, uploads: [{ slot: 9, kind: "clip", key: mediaKey, content_type: "video/mp4" }] };
+    const applicationKey = `public-job-board/v2/applications/${jobId}/${applicationRef}.json`;
+    await bucket.put(applicationKey, JSON.stringify(application));
+    await bucket.put(mediaKey, new Uint8Array([1, 2, 3, 4]));
+    const reviewUrl = `https://public-job-board.internal/__internal/job-board/jobs/${jobId}/candidates`;
+    const review = await mf.dispatchFetch(reviewUrl, { headers }).then(r => r.json());
+    assert.equal(review.candidates[0].identity.verified_model_record_id, null);
+    const media = await mf.dispatchFetch(reviewUrl + `/${applicationRef}/media/9`, { headers });
+    assert.equal(media.status, 200);
+    assert.equal(media.headers.get("cache-control"), "no-store, private");
+    assert.deepEqual([...new Uint8Array(await media.arrayBuffer())], [1, 2, 3, 4]);
+    const partial = await mf.dispatchFetch(reviewUrl + `/${applicationRef}/media/9`, { headers: { ...headers, range: "bytes=1-2" } });
+    assert.equal(partial.status, 206);
+    assert.equal(partial.headers.get("content-range"), "bytes 1-2/4");
+    assert.deepEqual([...new Uint8Array(await partial.arrayBuffer())], [2, 3]);
+    const suffix = await mf.dispatchFetch(reviewUrl + `/${applicationRef}/media/9`, { headers: { ...headers, range: "bytes=-2" } });
+    assert.equal(suffix.status, 206);
+    assert.deepEqual([...new Uint8Array(await suffix.arrayBuffer())], [3, 4]);
+    assert.equal((await mf.dispatchFetch(reviewUrl + `/${applicationRef}/media/9`, { headers: { ...headers, range: "bytes=99-100" } })).status, 416);
+    assert.equal((await mf.dispatchFetch(reviewUrl + `/${applicationRef}/media/9`)).status, 401);
+    assert.deepEqual(await (await bucket.get(applicationKey)).json(), application);
+
   } finally { await mf.dispose(); }
 });
