@@ -183,7 +183,8 @@ test('calendar configuration rejects ambiguous weekdays, invalid dates and overl
 test('production config explicitly enables the future Tuesday/Friday cadence', () => {
   const config = readFileSync(new URL('./wrangler.toml', import.meta.url), 'utf8');
   assert.match(config, /HYPE_CADENCE_START_DATE\s*=\s*"2026-10-23"/);
-  assert.match(config, /HYPE_PROMOTION_WEEKDAYS\s*=\s*"2,5"/);\n  assert.match(config, /HYPE_PROMOTION_SEND_AT_ICT\\s*=\\s*"10:00"/);
+  assert.match(config, /HYPE_PROMOTION_WEEKDAYS\s*=\s*"2,5"/);
+  assert.match(config, /HYPE_PROMOTION_SEND_AT_ICT\s*=\s*"10:00"/);
   assert.match(config, /HYPE_STANDARD_ENABLED\s*=\s*"true"/);
   assert.match(config, /HYPE_STANDARD_SEND_AT_ICT\s*=\s*"20:00"/);
 });
