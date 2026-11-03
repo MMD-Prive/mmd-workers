@@ -159,7 +159,7 @@ def artifacts(folder):
 
 
 def semantic_map(value, module_name=None):
-    return {k: value.get(k) for k in ["version", "sources", "sourcesContent", "names", "mappings"]} | {"file": value.get("file", module_name), "sourceRoot": value.get("sourceRoot", value.get("sourcesRoot"))}
+    return {k: value.get(k) for k in ["version", "sources", "sourcesContent", "names", "mappings"]} | {"file": module_name if value.get("file", "") == "" else value["file"], "sourceRoot": value.get("sourceRoot", value.get("sourcesRoot"))}
 
 
 def release(api, worker, folder, receipt_dir, merge_sha, peer_version=None):

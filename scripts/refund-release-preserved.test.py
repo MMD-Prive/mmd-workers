@@ -94,6 +94,8 @@ class ReleaseContract(unittest.TestCase):
         expected = {"version": 3, "sources": ["a.js"], "sourcesContent": ["const a=1"], "names": [], "mappings": "AAAA"}
         served = {**expected, "file": "worker.js", "sourcesRoot": None}
         self.assertEqual(r.semantic_map(expected, "worker.js"), r.semantic_map(served, "worker.js"))
+        self.assertEqual(r.semantic_map(expected, "worker.js"), r.semantic_map({**served, "file": ""}, "worker.js"))
+        self.assertNotEqual(r.semantic_map(expected, "worker.js"), r.semantic_map({**served, "file": None}, "worker.js"))
         self.assertNotEqual(r.semantic_map(expected, "worker.js"), r.semantic_map({**served, "file": "other.js"}, "worker.js"))
         self.assertNotEqual(r.semantic_map(expected, "worker.js"), r.semantic_map({**served, "mappings": "AACA"}, "worker.js"))
 
