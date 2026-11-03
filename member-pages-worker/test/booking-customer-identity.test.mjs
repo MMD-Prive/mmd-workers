@@ -41,3 +41,10 @@ test('verified nonmember login receives discovery alias without any membership g
  const response=await attachDiscoverySession(new Request('https://mmdbkk.com/member/api/liff/start'),env,new Response('{}',{headers:{'set-cookie':'__Host-mmd_liff_session='+'b'.repeat(64)+'; Path=/; Secure; HttpOnly'}}),async()=>({lineUserId:uid,memberExists:false,memberId:null}));
  assert.match(response.headers.get('set-cookie'),/__Secure-mmd_discovery_session=/);assert.equal(stored.session_token,'b'.repeat(64));assert.equal(stored.member_id,undefined);
 });
+
+test('nonempty conflicting current staging and missing source provenance return unknown',async()=>{
+ const env=envFor(),base=env.AIRTABLE_HTTP.fetch;
+ env.AIRTABLE_HTTP.fetch=async request=>new URL(request.url).pathname.includes('tblOs8')?Response.json({records:[{id:'recStageFixture01',fields:{'LINE User ID':uid,'Import Status':'matched','Canonical Client':[other],'Current LINE Rename':'Per remembered'}}]}):base(request);
+ assert.equal(await resolveBookingPerRename(env,uid),null);
+ const missing=row();missing.fields.source_record_id='recMissingSource01';missing.fields.confidence='verified';assert.equal(await resolveBookingPerRename(envFor([{records:[missing]}]),uid),null);
+});

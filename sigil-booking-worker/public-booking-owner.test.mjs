@@ -1,5 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 import runtime from './src/runtime-index.js';
+import {preparePublicRequest,protectPublicOwnerFromPrivateWrite} from './src/public-booking-owner.js';
 const memberRecordId='recMemberFixture01',ent='recEntitlement0001',secret='fixture-secret-more-than-32-characters';
 const hash=async id=>Buffer.from(await crypto.subtle.digest('SHA-256',new TextEncoder().encode('mmd-discovery-member-v1:'+id))).toString('hex');
 test('A contact claims cannot borrow B rights, overwrite B reference or erase ownership via private resolve',async t=>{
@@ -31,4 +32,11 @@ test('A contact claims cannot borrow B rights, overwrite B reference or erase ow
  // Forged marker does not become a fallback to contact based authorization.
  const stored=JSON.parse(records[0].fields.resolver_payload_json);stored.public_booking_owner.member_id='B';records[0].fields.resolver_payload_json=JSON.stringify(stored);
  assert.equal((await call('/__internal/booking/confirm',{booking_ref:payload.booking_ref,payment_ref:'fixture'})).status,409);assert.equal(writes.length,before);
+});
+
+test('alternate Request ID collisions are checked before either Public or Private write',async t=>{
+ const env={AIRTABLE_BASE_ID:'fixture',AIRTABLE_API_KEY:'fixture',AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES:secret};
+ t.mock.method(globalThis,'fetch',async(input)=>{const url=new URL(input);assert.equal(url.searchParams.get('filterByFormula'),'OR({booking_ref}="legacy-ref",{Request ID}="legacy-ref")');return Response.json({records:[{id:'recBookingFixture',fields:{'Request ID':'legacy-ref',booking_ref:'different-ref',resolver_payload_json:JSON.stringify({public_booking_owner:{schema:'public_booking_owner_v1',member_id:'B'}})}}]});});
+ await assert.rejects(preparePublicRequest(env,{booking_ref:'legacy-ref'},{viewer:{memberId:'A',memberRef:await hash('A')},memberRecordId}),/booking_owner_conflict/);
+ const response=await protectPublicOwnerFromPrivateWrite(new Request('https://internal/',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({lane:'private',booking_ref:'legacy-ref'})}),env);assert.equal(response.status,403);
 });
