@@ -295,7 +295,7 @@ async function renderApplication(request, env, jobId) {
   const gate = await requireModelBoardGate(request, env);
   await enforceViewerAccess(env, anon.id, job);
   if (job.public.world === "private" && !(await hasPrivateReveal(request, env, job.id, anon.id))) throw httpError(403, "job_brief_not_opened");
-  return html(pageShell(`สนใจงานนี้ · ${job.public.title}`, shortFormMarkup(job.id, job.public.title, esc) + shortFormScript(job.id)));
+  return html(pageShell(`สนใจงานนี้ · ${job.public.title}`, shortFormMarkup(job.id, job.public.title, esc).replace('</form>', `</form><a class="back" href="https://www.mmdbkk.com/sigil/model/dashboard/photos?source=job_board&job_id=${encodeURIComponent(job.id)}">อัปเดตรูปปัจจุบัน →</a>`) + shortFormScript(job.id)));
 }
 
 async function createInterest(request, env, jobId) {
