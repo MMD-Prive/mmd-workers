@@ -23,10 +23,10 @@ export function renderOwnerMyMmdRecoveryPage(initialQuery = '') {
 <section class="rc-result" data-result tabindex="-1" aria-label="ผลการตรวจ" aria-busy="true"><div class="rc-state"><p>กำลังเตรียมข้อมูล…</p></div></section>
 <noscript><p>เปิด JavaScript เพื่อค้นหาและอ่านผลการตรวจสมาชิก</p></noscript>
 <footer class="rc-footer">หน้านี้ใช้ตรวจสอบข้อมูล · ไม่เปลี่ยนสิทธิ์หรือยอด Points · ใช้สิทธิ์ Owner และไม่แสดง LINE User ID เต็ม</footer>
-</main><script>(${recoveryClient.toString()})();</script></body></html>`;
+</main><script>(${RECOVERY_CLIENT})();</script></body></html>`;
 }
 
-function recoveryClient() {
+const RECOVERY_CLIENT = String.raw`function recoveryClient() {
   'use strict';
   var form = document.querySelector('[data-form]');
   var input = form.elements.q;
@@ -162,4 +162,4 @@ function recoveryClient() {
   var client = params.get('client_id'), ref = params.get('request_id'), q = params.get('q');
   input.value = client || ref || q || '';
   load(client ? { client_id: client } : ref ? { request_id: ref } : q ? { q: q } : { inbox: '1' }, false);
-}
+}`;
