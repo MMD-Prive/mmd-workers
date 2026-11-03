@@ -269,7 +269,7 @@ function transformWorkerSurfaceHtml(source) {
     .replace("<html lang=\"th\">", "<html lang=\"th\" data-mmd-worker-surface=\"mobile-first-digital-v1\">")
     .replace("<body>", `<body class=\"mmd-worker-surface ${ownerSurface ? "owner-surface" : "model-surface"}\">`)
     .replace("</title>", "</title><meta name=\"theme-color\" content=\"#090807\"><meta name=\"apple-mobile-web-app-capable\" content=\"yes\"><meta name=\"apple-mobile-web-app-status-bar-style\" content=\"black-translucent\">")
-    .replace("</style>", `${workerSurfaceCss()}</style>`)
+    .replace("</style>", `${workerSurfaceCss()}${jobBoardTypographyCss()}</style>`)
     .replaceAll("MMD · PUBLIC JOB BOARD", "JOB BOARD")
     .replaceAll("MMD · OWNER", "OWNER")
     .replaceAll("ที่นี่เป็นพื้นที่รวมงานที่เปิดรับอยู่กับ MMD", "พื้นที่รวมงานที่เปิดรับอยู่ตอนนี้")
@@ -318,4 +318,16 @@ function statusFor(error) {
 function safeError(error) {
   const code = String(error?.message || "internal_error");
   return /^[a-z0-9_]+$/i.test(code) ? code : "internal_error";
+}
+
+// Thai-only font faces leave Latin text to the CI's heading/body families.
+function jobBoardTypographyCss() {
+  const assetRoot = "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/";
+  return `
+@font-face{font-family:"LINE Seed Sans TH";src:url("${assetRoot}6a619dd598baf067153fd1cc_LINESeedSansTH_W_Rg.woff2") format("woff2");font-style:normal;font-weight:100 599;font-display:swap;unicode-range:U+0E00-0E7F}
+@font-face{font-family:"LINE Seed Sans TH";src:url("${assetRoot}6a619dd4dc8d84b48cc84959_LINESeedSansTH_W_Bd.woff2") format("woff2");font-style:normal;font-weight:600 749;font-display:swap;unicode-range:U+0E00-0E7F}
+@font-face{font-family:"LINE Seed Sans TH";src:url("${assetRoot}6a619dd5cdf166a1e9e45b98_LINESeedSansTH_W_XBd.woff2") format("woff2");font-style:normal;font-weight:750 900;font-display:swap;unicode-range:U+0E00-0E7F}
+body.mmd-worker-surface,body.mmd-worker-surface :is(p,a,button,label,input,select,textarea,dt,dd,small,span,.eyebrow){font-family:"LINE Seed Sans TH","Helvetica Neue",Helvetica,Arial,sans-serif!important}
+body.mmd-worker-surface :is(h1,h2,h3,h4,h5,h6){font-family:"LINE Seed Sans TH",Didot,"Bodoni MT",serif!important}
+`;
 }
