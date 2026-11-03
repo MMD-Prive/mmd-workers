@@ -11,6 +11,8 @@
     "deploy": "wrangler deploy --keep-vars"
   },
   "devDependencies": {
-    "wrangler": "4.125.0"
+    "wrangler": "4.125.0",
+    "miniflare": "4.20260611.0",
+    "esbuild": "0.27.3"
   }
 }

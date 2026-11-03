@@ -70,6 +70,28 @@ async function approve(applicationId) {
   }), env);
 }
 
+for (const body of [{status:'Approved'},{approve_to_therapist:true},{status:' Approved ',internal_notes:'No partial approval'}]) test('paused promotion rejects before application or therapist effects '+JSON.stringify(body),async t=>{
+ let calls=0;t.mock.method(globalThis,'fetch',async()=>{calls++;throw Error('Must not reach Airtable');});
+ const request=new Request('https://mms.internal/internal/mms/admin/applications/mmsapp_1234567890abcdef12345678',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+ await assert.rejects(()=>handleMmsAdminRuntime(request,{...env,MMS_PROFILE_WRITES_PAUSED:'true'}),{status:503,code:'PROFILE_WRITES_PAUSED'});assert.equal(calls,0);
+});
+
+for(const body of [{display_name:'New name'},{matching_enabled:true},{internal_notes:'Paused edit'}])test('paused Back Office therapist PATCH has no external effects '+JSON.stringify(body),async t=>{
+ let calls=0;t.mock.method(globalThis,'fetch',async()=>{calls++;throw Error('Must not reach Airtable');});
+ const response=await handleMmsAdminRuntime(new Request('https://mms.internal/internal/mms/admin/therapists/mmst_fixture',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}),{...env,MMS_PROFILE_WRITES_PAUSED:'true'});
+ assert.equal(response.status,503);assert.equal((await response.json()).error.code,'PROFILE_WRITES_PAUSED');assert.equal(calls,0);
+});
+
+test('pause retains non-promotion application review',async t=>{
+ const store=airtableMock();t.mock.method(globalThis,'fetch',store.fetch);
+ const r=await handleMmsAdminRuntime(new Request('https://mms.internal/internal/mms/admin/applications/'+store.application.fields['Application ID'],{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:'Under Review',internal_notes:'Review only'})}),{...env,MMS_PROFILE_WRITES_PAUSED:'true'});
+ assert.equal(r.status,200);assert.equal(store.therapists.length,0);assert.equal(store.application.fields['Internal Notes'],'Review only');
+});
+
+test('pause does not bypass internal authorization',async()=>{
+ await assert.rejects(()=>handleMmsAdminRuntime(new Request('https://untrusted.invalid/internal/mms/admin/therapists/mmst_fixture',{method:'PATCH'}),{...env,MMS_PROFILE_WRITES_PAUSED:'true'}),{status:404});
+});
+
 test("approve promotes applicant into a safe review-stage therapist exactly once", async (t) => {
   const store = airtableMock();
   t.mock.method(globalThis, "fetch", store.fetch);

@@ -1,3 +1,4 @@
+import {profileWritesPaused, profileWritePauseResponse} from './therapist-profile-write-pause.mjs';
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const INTERNAL_HOST = "mms.internal";
 
@@ -70,6 +71,7 @@ export async function handleMmsAdminRuntime(request, env = {}) {
 
   const therapistMatch = path.match(/^\/internal\/mms\/admin\/therapists\/([A-Za-z0-9_-]{4,80})$/);
   if (therapistMatch && method === "PATCH") {
+    if (profileWritesPaused(env)) return profileWritePauseResponse();
     return json(await patchTherapist(request, env, therapistMatch[1]));
   }
 
@@ -106,6 +108,10 @@ async function snapshot(env) {
 async function patchApplication(request, env, applicationId) {
   const body = await readJson(request);
   rejectKeys(body, new Set(["status", "internal_notes", "approve_to_therapist"]));
+  // Stop before the application PATCH too: approval must not be half-applied.
+  if (profileWritesPaused(env) && (body.approve_to_therapist === true || clean(body.status, 40) === 'Approved')) {
+    throw httpError(503, 'PROFILE_WRITES_PAUSED', 'Therapist writes are paused');
+  }
 
   const application = await findAirtableRecord(env, tableId(env, "APPLICATIONS"), "Application ID", applicationId);
   if (!application) throw httpError(404, "APPLICATION_NOT_FOUND", "Application not found");
@@ -134,6 +140,7 @@ async function patchApplication(request, env, applicationId) {
 }
 
 async function promoteApplicationToTherapist(env, application, adminNote = "") {
+  if (profileWritesPaused(env)) throw httpError(503, 'PROFILE_WRITES_PAUSED', 'Therapist writes are paused');
   const source = application.fields || {};
   const applicationId = clean(source["Application ID"], 80);
   const therapistId = await therapistIdFor(applicationId);

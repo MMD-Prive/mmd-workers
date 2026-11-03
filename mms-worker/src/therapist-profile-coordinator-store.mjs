@@ -20,6 +20,24 @@ function validPending(record, owner, revision) {
 export function createMmsTherapistProfileCoordinator(Base) {
   return class MmsTherapistProfileCoordinator extends Base {
     constructor(ctx, env) { super(ctx, env); this.storage = ctx.storage; this.env = env; this.tail = Promise.resolve(); }
+    // Private binding RPC only. No HTTP route, initialization or recovery.
+    inspect(owner) {
+      const result = this.tail.then(async () => {
+        if (typeof owner !== 'string' || !/^[A-Za-z0-9_-]{4,80}$/.test(owner)) throw Error('PROFILE_INSPECTION_INVALID');
+        const values = await this.storage.get(['owner', 'revision', 'pending']);
+        const storedOwner = values.get('owner'), revision = values.get('revision'), pending = values.get('pending');
+        if (storedOwner !== undefined && storedOwner !== owner) return {status:'DENIED'};
+        if (storedOwner === undefined && revision === undefined && pending === undefined) return {status:'NOT_OBSERVED',drain:'UNKNOWN'};
+        const head = revision === undefined ? 0 : revision;
+        if (storedOwner !== owner || !Number.isSafeInteger(head) || head < 0 || head > MAX_REVISION
+          || (pending != null && !validPending(pending, owner, head))) return {status:'CORRUPT',drain:'UNKNOWN'};
+        return {status:pending ? 'PENDING' : 'NO_LOCAL_PENDING',revision:head,
+          phase:pending?.phase || null,plan_present:pending?.plan !== undefined,
+          writes_paused:this.env.MMS_PROFILE_WRITES_PAUSED === 'true',drain:'UNKNOWN'};
+      });
+      this.tail = result.catch(() => undefined);
+      return result;
+    }
     fetch(request) {
       // This queue covers external awaits in one instance. The persisted pending
       // record provides the separate crash/eviction barrier; no timer releases it.
