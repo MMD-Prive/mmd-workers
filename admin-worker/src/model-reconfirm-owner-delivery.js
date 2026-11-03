@@ -3,6 +3,7 @@ import {deliverTelegramOnce} from '../../shared/telegram-delivery-once.mjs';
 import {readTravelSession} from '../../shared/model-travel-store.mjs';
 import {checkReconfirmFreshness,reconfirmRevision,reconfirmSnapshot} from './model-reconfirm-freshness.js';
 import {resolveOwnerDestination} from './model-reconfirm-guard.js';
+import {readReconfirmLifecycle} from './model-reconfirm-lifecycle.js';
 
 export const RECONFIRM_OWNER_LANE='model-reconfirm-overdue-owner';
 async function currentOwnerContext(env,payload,now){
@@ -10,7 +11,7 @@ async function currentOwnerContext(env,payload,now){
   const destination=resolveOwnerDestination(env),endpoint=String(env.TELEGRAM_INTERNAL_SEND_URL||'').trim();
   if(!destination||destination.chat_id!==payload.recipient||(destination.thread_id||'')!==payload.thread||await notificationDigest(endpoint)!==payload.endpoint_digest)return {ok:false,error:'owner_recipient_changed'};
   const record=await readTravelSession(env,payload.session_id),f=record.fields,snapshot=reconfirmSnapshot(f);
-  const state=String(f[env.AT_SESSIONS__STATE||'model_session_state']||f.session_state||f.state||'').toLowerCase();
+  const state=readReconfirmLifecycle(env,f);
   if(!['confirmed','accepted'].includes(state))return {ok:false,error:'owner_job_not_pending_reconfirm'};
   if(f[env.AT_SESSIONS__RECONFIRM_ACKNOWLEDGED_AT||'reconfirm_acknowledged_at'])return {ok:false,error:'model_already_acknowledged'};
   const notified=f[env.AT_SESSIONS__RECONFIRM_NOTIFIED_AT||'reconfirm_notified_at'];

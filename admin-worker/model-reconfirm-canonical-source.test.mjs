@@ -1,6 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { collectReconfirmDecisions, runModelReconfirmSweep } from "./src/model-reconfirm-runtime.js";
+import {memoryR2} from '../shared/test/payment-memory-r2.mjs';
+import {readReconfirmLifecycle} from './src/model-reconfirm-lifecycle.js';
+
+test('owner retry and sweep share lifecycle precedence without replacing terminal or unknown states',()=>{
+  assert.equal(readReconfirmLifecycle({}, {'Session Status':'Confirmed'}),'confirmed');
+  for(const value of ['cancelled','work_started','unknown'])assert.equal(readReconfirmLifecycle({}, {model_session_state:value,'Session Status':'Confirmed'}),value);
+  assert.equal(readReconfirmLifecycle({AT_SESSIONS__CANONICAL_STATE:'canonical'}, {canonical:'cancelled',session_state:'confirmed'}),'cancelled');
+});
 
 const NOW = Date.parse("2026-10-17T18:00:00+07:00");
 const M1 = "recMODELAAAAAAAAAA";
@@ -49,6 +57,7 @@ function session(overrides = {}) {
 }
 
 function harness(t, input = session()) {
+  ENV.PRIVATE_MODEL_MEDIA = memoryR2();
   const record = structuredClone(input);
   const log = { line: [], telegram: [], patches: [], modelReads: [], retryKeys: [] };
   t.mock.method(globalThis, "fetch", async (input, init = {}) => {

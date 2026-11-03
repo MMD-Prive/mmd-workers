@@ -18,6 +18,7 @@ import { CANONICAL_MODEL_FIELD, canonicalModelIds } from "./model-current-sessio
 import { normalizeSessionState } from "./modelSessionContractV1.js";
 import { buildModelJobBoardBroadcastLink } from "../../shared/model-job-board-links.mjs";
 import { sendReconfirmOwnerOnce } from './model-reconfirm-owner-delivery.js';
+import {readReconfirmLifecycle} from './model-reconfirm-lifecycle.js';
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 
@@ -942,15 +943,7 @@ function sessionModelRef(env, fields) {
   return fields?.[sessionFields(env).modelRecordId];
 }
 function sessionLifecycleState(env, fields) {
-  const names = sessionFields(env);
-  const keys = unique([clean(env.AT_SESSIONS__CANONICAL_STATE || "model_session_state"), names.state, names.status, "Session Status"]);
-  for (const key of keys) {
-    const value = clean(fields?.[key]);
-    // Only absent states may fall through; terminal and unknown newer values
-    // must never be replaced by a stale legacy Confirmed value.
-    if (value) return normalizeSessionState(value) || normalizeWord(value);
-  }
-  return "";
+  return readReconfirmLifecycle(env,fields);
 }
 function isReconfirmLifecycleState(value) { return RECONFIRM_LIFECYCLE_STATES.has(normalizeWord(value)); }
 
