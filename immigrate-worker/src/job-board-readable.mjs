@@ -33,4 +33,19 @@ html body #mmd-job-board-workspace#mmd-job-board-workspace #jb-review figcaption
 html body #mmd-job-board-workspace#mmd-job-board-workspace #jb-review figure a{width:100%;font-size:14px!important}
 html body #mmd-job-board-workspace#mmd-job-board-workspace [hidden]{display:none!important}
 @media(max-width:600px){html body #mmd-job-board-workspace#mmd-job-board-workspace :is(.hero,.card,#jb-review){padding:16px!important}html body #mmd-job-board-workspace#mmd-job-board-workspace .steps{grid-template-columns:repeat(2,minmax(0,1fr))!important}html body #mmd-job-board-workspace#mmd-job-board-workspace .hero .btn{width:auto!important;flex:1}html body #mmd-job-board-workspace#mmd-job-board-workspace #jb-review{margin-bottom:16px!important}html body #mmd-job-board-workspace#mmd-job-board-workspace #jb-review article{padding:12px!important}}
+html body #mmd-job-board-workspace#mmd-job-board-workspace .jb-extra{border:1px solid #cbd2da;border-radius:10px;padding:12px;background:#f8fafb}
+html body #mmd-job-board-workspace#mmd-job-board-workspace .jb-extra summary{cursor:pointer;color:#334155!important;font-size:15px;min-height:24px;line-height:1.6}
+html body #mmd-job-board-workspace#mmd-job-board-workspace .jb-extra[open]>summary{margin-bottom:12px}
+html body #mmd-job-board-workspace#mmd-job-board-workspace .jb-id-search{margin-top:12px}
+@media(max-width:760px){
+html body #mmd-job-board-workspace#mmd-job-board-workspace .hero :is(.steps,.kicker){display:none!important}
+html body #mmd-job-board-workspace#mmd-job-board-workspace .hero{padding:14px 16px!important}
+html body #mmd-job-board-workspace#mmd-job-board-workspace .hero h1{font-size:30px!important;margin:0 0 4px!important}
+html body #mmd-job-board-workspace#mmd-job-board-workspace .hero p{margin:4px 0 8px!important}
+html body #mmd-job-board-workspace#mmd-job-board-workspace #job-board-form>.label{display:none!important}
+html body #mmd-job-board-workspace#mmd-job-board-workspace .form{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:12px 10px!important}
+html body #mmd-job-board-workspace#mmd-job-board-workspace .field{min-width:0}
+html body #mmd-job-board-workspace#mmd-job-board-workspace .field span{font-size:13px!important;letter-spacing:0!important}
+html body #mmd-job-board-workspace#mmd-job-board-workspace :is(.jb-title,.jb-compensation){grid-column:1/-1}
+}
 `;

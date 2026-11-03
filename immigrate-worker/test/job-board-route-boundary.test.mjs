@@ -65,7 +65,7 @@ test("Job Board client accepts the short /j/ broadcast link and the legacy login
 test("canonical Job Board renders the existing authenticated candidate review without route or gate changes", async () => {
   const pages = await readFile(pagesUrl, "utf8");
   const board = pages.slice(pages.indexOf("export function renderJobBoardPage"), pages.indexOf("export function renderCreateJobPage"));
-  assert.match(board, /\$\{jobBoardCandidateReview\(\)\}/);
+  assert.match(board, /\$\{jobBoardCandidateReview\(\)\.replace\(/);
   assert.match(pages, /import \{ jobBoardCandidateReview \} from '\.\.\/\.\.\/admin-worker\/src\/job-board-candidate-review\.js'/);
   const routes = await readFile(routesUrl, "utf8");
   assert.match(routes, /pathname === "\/internal\/admin\/jobs\/job-board"[\s\S]*?requireAdminGate\(request, env\)[\s\S]*?return renderJobBoardPage\(\)/);
