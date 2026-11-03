@@ -16,6 +16,24 @@ async function page(t, fetch, query = '', setup = () => {}) {
 function search(w, value) { w.document.querySelector('input').value = value; w.document.querySelector('form').dispatchEvent(new w.Event('submit', { bubbles: true, cancelable: true })); }
 const content = w => w.document.querySelector('[data-result]').textContent;
 
+test('historical candidate shows match evidence without automatically selecting a client', async t => {
+  let calls = 0;
+  const w = await page(t, async () => { calls++; return reply({ ok: false, error: 'recovery_client_selection_required', choices: [{ client_id: client, display_name: 'Current name', matched_value: '<img src=x onerror=alert(1)>' }] }, 409); }, '?q=Old');
+  assert.match(content(w), /Current name/);
+  assert.match(content(w), /พบจากชื่อ: <img/);
+  assert.equal(w.document.querySelector('[data-result] img'), null);
+  assert.equal(calls, 1);
+  assert.equal(w.document.querySelector('[data-client]').getAttribute('data-client'), client);
+});
+
+test('search failures distinguish missing names from unavailable data', async t => {
+  const w = await page(t, async () => reply({ ok: false, error: 'per_rename_not_resolved' }, 404), '?q=Missing');
+  assert.match(content(w), /ไม่พบสมาชิกจากชื่อนี้/);
+  w.fetch = async () => reply({ ok: false, error: 'identity_resolution_unavailable' }, 503);
+  search(w, 'Again'); await tick();
+  assert.match(content(w), /ไม่ได้หมายความว่าไม่พบลูกค้า/);
+});
+
 test('server query is escaped and inline client script parses', () => {
   const html = renderOwnerMyMmdRecoveryPage('\"></script><img src=x onerror=alert(1)>');
   assert.match(html, /&lt;\/script&gt;/);
