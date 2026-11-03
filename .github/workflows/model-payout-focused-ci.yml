@@ -8,6 +8,7 @@ on:
       - "admin-worker/model-payout-adjustments.test.mjs"
       - "admin-worker/model-payout-outcomes.test.mjs"
       - "admin-worker/partner-owner-console.test.mjs"
+      - "scripts/model-payout-read-admin-baseline.py"
       - ".github/workflows/model-payout-focused-ci.yml"
 
 permissions:
@@ -40,3 +41,24 @@ jobs:
           node --check admin-worker/src/model-payout-adjustments.js
           node --check admin-worker/src/model-payout-operation.js
           git diff --check HEAD^ HEAD
+
+  read-admin-baseline:
+    needs: payout-contracts
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'codex/model-payout-outcome-guard-v7'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Read pinned admin module/map only (GET; no business storage)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python3 scripts/model-payout-read-admin-baseline.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: payout-admin-baseline-${{ github.event.pull_request.head.sha }}
+          path: payout-admin-baseline/
+          retention-days: 7
