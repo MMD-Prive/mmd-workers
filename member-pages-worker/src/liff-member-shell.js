@@ -1712,7 +1712,7 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
       try {
         await digitalHomeReady;
         if (generation !== digitalUpdatesGeneration) return;
-        const response = await memberApiFetch("/api/v1/member/updates/list?limit=10", { credentials:"same-origin", cache:"no-store", headers:{ accept:"application/json" } });
+        const response = await memberApiFetch("/api/member/app/updates?limit=10", { credentials:"same-origin", cache:"no-store", headers:{ accept:"application/json" } });
         const body = await response.json().catch(() => null);
         if (generation !== digitalUpdatesGeneration) return;
         if (!response.ok || body?.ok === false || !Array.isArray(body?.items)) throw new Error("updates_unavailable");
