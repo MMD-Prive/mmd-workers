@@ -2,10 +2,25 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import test from 'node:test';
-import { buildConsoleEmbed, assetManifest } from '../../../scripts/build-model-console-atelier-embed.mjs';
+import { buildConsoleEmbed, assetManifest, consoleStyleSource } from '../../../scripts/build-model-console-atelier-embed.mjs';
+import CleanCSS from 'clean-css';
+import { travelClientCss } from '../../../shared/model-travel-client-source.mjs';
 const base = new URL('./console-atelier/', import.meta.url);
 const skin = fs.readFileSync(new URL('./model-console-atelier-v3.js', import.meta.url), 'utf8');
 const css = fs.readFileSync(new URL('./model-console-atelier-v3.css', import.meta.url), 'utf8');
+test('compact style storage restores the exact existing CSS and keeps a single style owner', () => {
+  const expected = new CleanCSS({ level: 2 }).minify(css + travelClientCss).styles;
+  const styles = new Map();
+  const context = { document: {
+    getElementById: id => styles.get(id), createElement: () => ({}),
+    head: { append: style => { assert.equal(styles.has(style.id), false); styles.set(style.id, style); } },
+  } };
+  vm.runInNewContext(consoleStyleSource(expected), context);
+  vm.runInNewContext(consoleStyleSource(expected), context);
+  assert.equal(styles.size, 1);
+  assert.equal(styles.get('mmd-console-lv9-css').textContent, expected);
+  for (const token of ['$r', '$c', '$v']) assert.throws(() => consoleStyleSource(`a{content:"${token}"}`), /collision/);
+});
 test('LINE recovery CTA overrides inherited muted text fill without changing auth or other buttons', () => {
   const selector = '#sigil-model-console-v3[data-console-atelier] [data-model-console-line-return]';
   const rules = [...css.matchAll(/([^{}]+)\{([^{}]+)\}/g)].filter(([, s]) => s.trim().endsWith(selector));
@@ -99,7 +114,7 @@ test('error and malformed responses cannot produce an empty-session illustration
   for (const body of [{ ok: false, session: null }, {}, { ok: true }, { ok: true, session: {} }, { ok: true, session: [] }, { ok: true, session: null }]) {
     let renders = 0;
     const context = {
-      busy: false, R: { dataset: { currentEndpoint: '/v1/model/session/current' } },
+      busy: false, posting: false, read: 0, controller: null, P: new URLSearchParams(), R: { dataset: { currentEndpoint: '/v1/model/session/current' } },
       lock() {}, view() {}, chip() {}, modeCopy() {}, d: () => ({}), render: () => { renders++; },
       AbortController, setTimeout, clearTimeout,
       fetch: async () => ({ status: 200, ok: true }), j: async () => body,
@@ -115,7 +130,7 @@ test('two simultaneous taps produce only one synthetic action request', async ()
   let count = 0, release;
   const pending = new Promise(resolve => { release = resolve; });
   const context = {
-    busy: false, ses: { state: 'confirmed', allowed_actions: ['start_travel'] },
+    busy: false, posting: false, ses: { state: 'confirmed', allowed_actions: ['start_travel'] },
     next: { confirmed: ['start_travel'] }, state: session => session.state,
     R: { dataset: { actionEndpoint: '/v1/model/session/action' } },
     lock: busy => { context.busy = Boolean(busy); }, note() {}, load: async () => {},

@@ -4,6 +4,24 @@ import {deployUploadedWorkerVersion} from './deploy-uploaded-worker-version.mjs'
 const version='b70239bd-00ba-423a-96f8-e04359725bd0',deployment='11111111-1111-1111-1111-111111111111';
 const args={worker:'admin-worker',version,account:'a'.repeat(32),token:'test-token'};
 const result=data=>Response.json({success:true,result:data});
+test('detail 404 verifies exact created deployment in collection without another POST', async()=>{
+  let posts=0;
+  const out=await deployUploadedWorkerVersion({...args,fetcher:async(url,init)=>{
+    if(url.endsWith('/versions/'+version))return result({id:version});
+    if(init.method==='POST'){posts++;return result({id:deployment});}
+    if(url.endsWith('/deployments/'+deployment))return Response.json({success:false},{status:404});
+    assert.ok(url.endsWith('/deployments'));
+    return result({deployments:[{id:deployment,strategy:'percentage',versions:[{version_id:version,percentage:100}]}]});
+  }});assert.equal(posts,1);assert.equal(out.deployment,deployment);
+});
+test('detail 404 cannot accept another deployment with the same version',async()=>{
+  await assert.rejects(()=>deployUploadedWorkerVersion({...args,fetcher:async(url,init)=>{
+    if(url.endsWith('/versions/'+version))return result({id:version});
+    if(init.method==='POST')return result({id:deployment});
+    if(url.endsWith('/deployments/'+deployment))return Response.json({success:false},{status:404});
+    return result({deployments:[{id:'different',strategy:'percentage',versions:[{version_id:version,percentage:100}]}]});
+  }}),/Deployment readback mismatch/);
+});
 test('promotes only the uploaded version to 100% and verifies exact deployment without listing history',async()=>{
   const calls=[];
   const out=await deployUploadedWorkerVersion({...args,fetcher:async(url,init)=>{
@@ -13,3 +31,4 @@ test('promotes only the uploaded version to 100% and verifies exact deployment w
 test('wrong uploaded version prevents promotion',async()=>{let calls=0;await assert.rejects(()=>deployUploadedWorkerVersion({...args,fetcher:async()=>{calls++;return result({id:'wrong'});}}),/version readback mismatch/);assert.equal(calls,1);});
 test('wrong deployment allocation fails readback verification',async()=>{let calls=0;await assert.rejects(()=>deployUploadedWorkerVersion({...args,fetcher:async()=>{calls++;return calls===1?result({id:version}):calls===2?result({id:deployment}):result({id:deployment,strategy:'percentage',versions:[{version_id:version,percentage:50}]});}}),/Deployment readback mismatch/);});
 test('API and malformed responses fail closed without printing credentials',async()=>{await assert.rejects(()=>deployUploadedWorkerVersion({...args,fetcher:async()=>new Response('html',{status:200})}),error=>error.message.includes('failed (200)')&&!error.message.includes(args.token));});
+

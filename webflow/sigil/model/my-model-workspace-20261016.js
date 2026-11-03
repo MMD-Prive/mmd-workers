@@ -60,7 +60,7 @@
   const q = selector => root.querySelector(selector);
   const text = (selector, value) => { const node = q(selector); if (node) node.textContent = value; };
   const form = q('[data-mss-profile-form]'), workspace = q('[data-mm-workspace]');
-  let profile = null, busy = false, alive = true, jobSession = null, jobGeneration = 0, acknowledging = false;
+  let profile = null, busy = false, savingProfile = null, alive = true, jobSession = null, jobGeneration = 0, acknowledging = false;
   const controllers = new Set();
   async function request(path, options = {}) {
     const controller = new AbortController(); controllers.add(controller);
@@ -83,9 +83,19 @@
     q('[data-mm-reconfirm-ack]').disabled = true;
     text('[data-mm-reconfirm-time]', ''); text('[data-mm-reconfirm-location]', ''); text('[data-mm-reconfirm-status]', '');
     root.dataset.modelBrandLane = 'public';
-    q('[data-mm-console]').href = '/sigil/model/console';
+    const expected = new URLSearchParams(global.location.search).get('session_id');
+    const previous = new URL(q('[data-mm-console]').href || '/sigil/model/console', global.location.origin).searchParams.get('session_id');
+    q('[data-mm-console]').href = expected || previous ? consoleHref(expected || previous) : '/sigil/model/console';
     text('[data-mm-job]', 'ยังตรวจงานไม่สำเร็จ');
     text('[data-mm-job-copy]', 'ยังสรุปไม่ได้ว่าไม่มีงาน ลองตรวจอีกครั้งหรือให้ MMD ช่วย');
+  }
+  function consoleHref(sessionId) {
+    const params = new URLSearchParams(global.location.search);
+    const url = new URL('/sigil/model/console', global.location.origin);
+    if (params.get('t')) url.searchParams.set('t', params.get('t'));
+    // Navigation context only. The backend still decides ownership and actions.
+    url.searchParams.set('session_id', sessionId);
+    return url.href;
   }
   function locked(error) {
     jobGeneration += 1;
@@ -110,6 +120,7 @@
   function fill(model) {
     profile = model; workspace.hidden = false;
     q('[data-mss-save]').disabled = false;
+    text('[data-mm-save-status]', '');
     q('[data-mm-primary]').hidden = true; q('[data-mm-apply]').hidden = true;
     status('บัญชี MY MODEL เชื่อมแล้ว', 'อัปเดตโปรไฟล์และสถานะรับงานได้ แม้ยังไม่มีงานปัจจุบัน');
     text('[data-mm-auth]', 'บัญชีเชื่อมแล้ว · สถานะความพร้อมตรวจแยกตามรายการ');
@@ -159,7 +170,7 @@
     text('[data-mm-job-copy]', 'ดูบรีฟ ยอดเงินถึงตัวคุณ และอัปเดตตามขั้นตอนจริงใน Console');
     const link=new URL('/sigil/model/console',global.location.origin);
     if(params.get('t'))link.searchParams.set('t',params.get('t'));
-    q('[data-mm-console]').href=link.href;
+    q('[data-mm-console]').href=consoleHref(session.session_id);
     renderReconfirm(session);
     global.dispatchEvent(new CustomEvent('mmd:model-session-ready',{detail:data}));
   }
@@ -175,10 +186,12 @@
       showJob(data);
     } catch (error) {
       if(generation!==jobGeneration || profile!==identity)return;
-      if (error.status === 404 && ['session_not_found', 'active_session_not_found'].includes(error.message)) {
+      const noJob = error.status === 404 && ['session_not_found', 'active_session_not_found'].includes(error.message);
+      if (noJob && !params.get('session_id')) {
+        q('[data-mm-console]').href = '/sigil/model/console';
         text('[data-mm-job]', 'ยังไม่มีงานที่กำลังใช้งาน');
         text('[data-mm-job-copy]', 'บัญชีเชื่อมแล้ว จัดการโปรไฟล์หรือเปิด Jobs Today ต่อได้');
-      } else if (classify(error) === 'review') {
+      } else if (noJob || classify(error) === 'review') {
         text('[data-mm-job]', 'MMD กำลังตรวจข้อมูลงาน');
         text('[data-mm-job-copy]', 'ยังไม่เลือกงานให้อัตโนมัติ ให้ MMD ตรวจข้อมูลที่กำกวมก่อน');
       } else if (classify(error) === 'login') locked(error);
@@ -277,20 +290,32 @@
     }
   }
   form.addEventListener('submit', async event => {
-    event.preventDefault(); if (!profile) return;
+    event.preventDefault();
+    if (!profile) {
+      text('[data-mm-save-status]', 'ยังไม่เชื่อม · ตรวจสถานะบัญชี');
+      q('[data-mm-refresh]').focus();
+      return;
+    }
     const identity = profile;
+    if (savingProfile === identity) return;
     const current = () => alive && profile === identity;
     const button = q('[data-mss-save]'); button.disabled = true;
+    savingProfile = identity;
+    text('[data-mm-save-status]', 'กำลังบันทึก');
     try {
       const data = await request('/v1/model/profile', {method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(profilePatch(form))});
-      // Lock/reverification replaces this snapshot; an old save cannot restore it.
       if (!current()) return;
-      if (!data.model) throw new Error('profile_invalid'); fill(data.model); text('[data-mm-save-status]', 'บันทึกข้อมูลแล้ว');
+      if (!data.model) throw new Error('profile_invalid');
+      fill(data.model);
+      text('[data-mm-save-status]', data.review_required === true ? 'บันทึกแล้ว · รอตรวจ' : 'บันทึกสำเร็จ');
     } catch (error) {
       if (!current()) return;
       if (['login','denied'].includes(classify(error))) locked(error);
-      text('[data-mm-save-status]', 'ยังยืนยันการบันทึกไม่ได้ ตรวจสถานะก่อนส่งอีกครั้ง');
-    } finally { if (current()) button.disabled = false; }
+      text('[data-mm-save-status]', classify(error) === 'login' ? 'หมดเวลา · ตรวจ LINE' : error?.status === 400 ? 'ข้อมูลไม่ถูกต้อง · ตรวจใหม่' : 'บันทึกไม่ได้ · ตรวจสถานะ ลองใหม่');
+    } finally {
+      if (savingProfile === identity) savingProfile = null;
+      if (current()) button.disabled = false;
+    }
   });
   q('[data-mm-telegram-connect]').addEventListener('click', async event => {
     if (!profile) return; const button = event.currentTarget; button.disabled = true;

@@ -1,3 +1,4 @@
+import { profileDirectorySnapshot } from "./therapist-profile-runtime.mjs";
 import { requireMyMmsApprovedTherapist } from './my-mms-access-runtime.mjs';
 import { linkedServiceZoneCodes, loadMmsServiceZoneIndex } from './service-zones-runtime.mjs';
 import { MMS_CHAT_POLICY, chatSafeLabel, inspectChatMessage } from '../../shared/mms-chat-policy.mjs';
@@ -70,7 +71,7 @@ export async function maybeHandleMmsChat(request, env = {}) {
       const zone = url.searchParams.get('zone') || '';
       const offset = url.searchParams.get('offset') || '';
       if (zone && !/^[A-Z0-9-]{2,80}$/.test(zone) || offset.length > 200) failure(400, 'MMS_CHAT_QUERY_INVALID');
-      return json({ ok: true, data: await directory(env, { zone, offset }) });
+      return json({ ok: true, data: await directory(env, { zone, offset, customerId: actor.id }) });
     }
     if (suffix === '/threads') {
       if (request.method === 'GET') {
@@ -82,11 +83,12 @@ export async function maybeHandleMmsChat(request, env = {}) {
       query(url, []);
       const body = await readChatJson(request, ['therapist_id']);
       if (typeof body.therapist_id !== 'string' || !/^[A-Za-z0-9_-]{4,80}$/.test(body.therapist_id)) failure(400, 'MMS_CHAT_THERAPIST_INVALID');
-      const found = await directory(env, { therapistId: body.therapist_id });
+      const found = await directory(env, { therapistId: body.therapist_id, customerId: actor.id });
       const therapist = found.therapists[0];
       if (found.therapists.length !== 1 || !therapist?.available) failure(409, 'MMS_CHAT_THERAPIST_UNAVAILABLE');
       const threadId = `mmschat_${(await sha256(`${actor.id}\0${therapist.therapist_id}`)).slice(0, 32)}`;
       const metadata = { thread_id: threadId, customer_id: actor.id, therapist_id: therapist.therapist_id, therapist_label: therapist.display_name };
+      if (therapist.is_test) metadata.test_expires_at = Date.parse(JSON.parse(env.MMS_CHAT_TEST_PAIR).expires_at);
       const initialized = await room(env, threadId).initialize(metadata);
       if (!initialized.ok) return deliver(initialized);
       const peer = { role: 'therapist', id: therapist.therapist_id };
@@ -112,10 +114,20 @@ export async function maybeHandleMmsChat(request, env = {}) {
     query(url, []);
     if (matched[2] === 'messages') {
       const body = await readChatJson(request, ['text', 'request_key']);
+      const scope = await chat.read(actor, Number.MAX_SAFE_INTEGER);
+      if (!scope.ok) return deliver(scope);
+      if (scope.data.test_expires_at) {
+        let pair;
+        try { pair = JSON.parse(env.MMS_CHAT_TEST_PAIR || '{}'); } catch { failure(409, 'MMS_CHAT_THERAPIST_UNAVAILABLE'); }
+        if (testPeer(env, pair.customer_id) !== scope.data.therapist_id ||
+            'mmschat_' + (await sha256(pair.customer_id + '\0' + scope.data.therapist_id)).slice(0, 32) !== threadId) failure(409, 'MMS_CHAT_THERAPIST_UNAVAILABLE');
+        const testDirectory = await directory(env, { therapistId: scope.data.therapist_id, customerId: pair.customer_id });
+        if (testDirectory.therapists.length !== 1 || !testDirectory.therapists[0].is_test) failure(409, 'MMS_CHAT_THERAPIST_UNAVAILABLE');
+      }
       if (customer) {
-        const membership = await chat.read(actor, Number.MAX_SAFE_INTEGER);
+        const membership = scope;
         if (!membership.ok) return deliver(membership);
-        const current = await directory(env, { therapistId: membership.data.therapist_id });
+        const current = await directory(env, { therapistId: membership.data.therapist_id, customerId: actor.id });
         if (current.therapists.length !== 1) failure(409, 'MMS_CHAT_THERAPIST_UNAVAILABLE');
       }
       // Never accept attachments, sender roles, contact data or member IDs from
@@ -132,18 +144,29 @@ export async function maybeHandleMmsChat(request, env = {}) {
   }
 }
 
-async function directory(env, { therapistId = '', zone = '', offset = '' } = {}) {
+function testPeer(env, customerId) {
+  if (!env.MMS_CHAT_TEST_PAIR) return '';
+  let pair;
+  try { pair = JSON.parse(env.MMS_CHAT_TEST_PAIR); } catch { failure(503, 'MMS_CHAT_DIRECTORY_UNAVAILABLE'); }
+  if (!pair || !/^mmsmem_[a-f0-9]{32}$/.test(pair.customer_id || '') ||
+      !/^mmst_[a-f0-9]{24}$/.test(pair.therapist_id || '') ||
+      !Number.isFinite(Date.parse(pair.expires_at))) failure(503, 'MMS_CHAT_DIRECTORY_UNAVAILABLE');
+  return pair.customer_id === customerId && Date.parse(pair.expires_at) > Date.now() ? pair.therapist_id : '';
+}
+
+async function directory(env, { therapistId = '', zone = '', offset = '', customerId = '' } = {}) {
+  const peer = testPeer(env, customerId);
   if (!env.AIRTABLE_API_TOKEN || !/^app[A-Za-z0-9]{14}$/.test(env.AIRTABLE_BASE_ID) || !/^tbl[A-Za-z0-9]{14}$/.test(env.AIRTABLE_THERAPISTS_TABLE_ID) || !env.MMS_PRIVATE_UPLOADS?.get) failure(503, 'MMS_CHAT_DIRECTORY_UNAVAILABLE');
   const index = await loadMmsServiceZoneIndex(env);
   if (zone && !index.byCode.has(zone)) failure(400, 'MMS_CHAT_QUERY_INVALID');
   const url = new URL(`https://api.airtable.com/v0/${env.AIRTABLE_BASE_ID}/${env.AIRTABLE_THERAPISTS_TABLE_ID}`);
-  const filters = ["{Status}='Active'", "{Therapist Auth Status}='Active'", "{MY MMS Access}='Approved'", '{Matching Enabled}=TRUE()'];
+  const filters = ["{Status}='Active'", "{Therapist Auth Status}='Active'", "{MY MMS Access}='Approved'", peer ? `OR({Matching Enabled}=TRUE(),{Therapist ID}='${peer}')` : '{Matching Enabled}=TRUE()'];
   if (therapistId) filters.push(`{Therapist ID}='${therapistId}'`);
   url.searchParams.set('filterByFormula', `AND(${filters.join(',')})`);
   url.searchParams.set('pageSize', therapistId ? '2' : '20');
   if (therapistId) url.searchParams.set('maxRecords', '2');
   if (offset) url.searchParams.set('offset', offset);
-  for (const field of ['Therapist ID', 'Display Name', 'Status', 'Therapist Auth Status', 'MY MMS Access', 'Matching Enabled', 'LINE Subject Hash', 'Availability Status', 'Base Service Zone', 'Coverage Service Zones']) url.searchParams.append('fields[]', field);
+  for (const field of ['Therapist ID', 'Display Name', 'Status', 'Therapist Auth Status', 'MY MMS Access', 'Matching Enabled', 'Manual Review Only', 'LINE Subject Hash', 'Availability Status', 'Base Service Zone', 'Coverage Service Zones']) url.searchParams.append('fields[]', field);
   const response = await fetch(url, { headers: { Authorization: `Bearer ${env.AIRTABLE_API_TOKEN}` }, signal: AbortSignal.timeout(8000) });
   if (!response.ok) failure(503, 'MMS_CHAT_DIRECTORY_UNAVAILABLE');
   const payload = await response.json();
@@ -151,20 +174,27 @@ async function directory(env, { therapistId = '', zone = '', offset = '' } = {})
   if (therapistId && payload.records.length !== 1) failure(409, 'MMS_CHAT_THERAPIST_UNAVAILABLE');
   const therapists = [];
   for (const record of payload.records) {
-    const f = record.fields || {};
-    const id = f['Therapist ID'];
-    if (!/^[A-Za-z0-9_-]{4,80}$/.test(id) || f.Status !== 'Active' || f['Therapist Auth Status'] !== 'Active' || f['MY MMS Access'] !== 'Approved' || f['Matching Enabled'] !== true || !f['LINE Subject Hash']) continue;
-    const zones = linkedServiceZoneCodes(f['Coverage Service Zones'], index);
+    const id = record.fields?.['Therapist ID'];
+    if (!/^[A-Za-z0-9_-]{4,80}$/.test(id)) continue;
+    // The list only discovers IDs. Final fields and manifest are read together
+    // inside the owner queue so an intervening profile commit cannot mix them.
+    let snapshot;
+    try { snapshot = await profileDirectorySnapshot(id, env); } catch { failure(503, 'MMS_CHAT_DIRECTORY_UNAVAILABLE'); }
+    const current = snapshot.therapist, profile = snapshot.manifest;
+    if (!current.active || !current.approved || !current.line_linked) continue;
+    if (id === peer) {
+      if (current.matching_enabled || !current.manual_review_only || current.availability_status !== 'Unavailable' || !current.display_name.startsWith('TEST ONLY') || zone) continue;
+      therapists.push({ therapist_id: id, display_name: chatSafeLabel(current.display_name), intro: 'TEST ONLY · ทดสอบแชตกับ Per · ไม่มีบริการหรือการรับงานจริง', available: true, is_test: true, zones: [], courses: [] });
+      continue;
+    }
+    if (!current.matching_enabled) continue;
+    const zones = linkedServiceZoneCodes(current.coverage_links, index);
     if (!zones.length || zone && !zones.includes(zone)) continue;
-    const stored = await env.MMS_PRIVATE_UPLOADS.get(`therapist-dashboard/v1/${id}/profile.json`);
-    if (!stored) continue;
-    let profile;
-    try { profile = JSON.parse(await stored.text()); } catch { failure(503, 'MMS_CHAT_DIRECTORY_UNAVAILABLE'); }
     if (profile.profile_visibility !== 'public') continue;
     const courses = (Array.isArray(profile.courses) ? profile.courses : []).slice(0, 8)
       .filter(c => typeof c?.name === 'string' && !inspectChatMessage(c.name).code && Number.isInteger(c.duration_minutes) && c.duration_minutes >= 30 && Number.isFinite(c.price_thb) && c.price_thb >= 0)
       .map(c => ({ name: c.name.slice(0, 80), duration_minutes: c.duration_minutes, price_thb: c.price_thb }));
-    therapists.push({ therapist_id: id, display_name: chatSafeLabel(f['Display Name']), intro: typeof profile.intro === 'string' && !inspectChatMessage(profile.intro).code ? profile.intro.slice(0, 600) : '', available: f['Availability Status'] === 'Available', zones, courses });
+    therapists.push({ therapist_id: id, display_name: chatSafeLabel(current.display_name), intro: typeof profile.intro === 'string' && !inspectChatMessage(profile.intro).code ? profile.intro.slice(0, 600) : '', available: current.availability_status === 'Available', zones, courses });
   }
   return { therapists, next: typeof payload.offset === 'string' ? payload.offset : null,
     zones: [...index.byCode].map(([code, item]) => ({ code, label: chatSafeLabel(item.label_th || item.label || code, code) })) };

@@ -13,6 +13,29 @@ import {
 
 const here = dirname(fileURLToPath(import.meta.url));
 
+test('assigned member host link alone is not customer identity or a historical alias', async () => {
+  const saved = structuredClone(fixtures);
+  const restore = installAirtableMock();
+  try {
+    fixtures.entitlements = [];
+    fixtures.staging = [];
+    fixtures.clients[0].fields = { 'Client Name': 'Customer A' };
+    fixtures.members[0].fields = { 'Full Name': 'Different Host B', Clients: ['recClient1'], 'Membership Tier': 'Premium' };
+    const response = await handleCreateSessionClientLineageRequest(authedRequest(CREATE_SESSION_CLIENT_LINEAGE_LOOKUP_PATH, {
+      method: 'POST', body: JSON.stringify({ query: 'Different Host B', canonical_only: true }),
+    }), env);
+    assert.equal(response.status, 200);
+    assert.deepEqual((await response.json()).records, []);
+    const direct = await handleCreateSessionClientLineageRequest(authedRequest(CREATE_SESSION_CLIENT_LINEAGE_LOOKUP_PATH, {
+      method: 'POST', body: JSON.stringify({ query: 'recClient1', canonical_only: true }),
+    }), env);
+    const record = (await direct.json()).records[0];
+    assert.equal(record.client_name, 'Customer A');
+    assert.ok(!record.member_id);
+    assert.ok(!record.aliases?.includes('Different Host B'));
+  } finally { Object.assign(fixtures, saved); restore(); }
+});
+
 for (const mode of [{ canonical_only: true }, { allow_manual_fallback: false }, { canonical_only: true, allow_manual_fallback: true }]) {
   test(`strict lookup returns no synthetic client: ${JSON.stringify(mode)}`, async () => {
     const restore = installAirtableMock();
@@ -362,4 +385,5 @@ test("active composed worker wires lineage before studio fallback", async () => 
     "lineage handler must run before the legacy fallback",
   );
 });
+
 

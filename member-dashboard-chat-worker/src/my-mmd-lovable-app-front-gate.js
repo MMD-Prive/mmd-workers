@@ -585,6 +585,15 @@ async function rewriteStatusReturnTarget(request, response) {
   const html = await response.text();
   const headers = new Headers(response.headers);
   for (const name of ["content-length", "content-encoding", "etag", "last-modified", "content-md5"]) headers.delete(name);
+  // LIFF renders the member home itself. Keep its existing session bootstrap
+  // in every skin: /my-mmd/ redirects here, so a return bridge creates a loop.
+  // Album/payment return targets continue through their existing gates below.
+  if (target === "/my-mmd/") {
+    headers.set("cache-control", "private, no-store");
+    headers.delete("x-mmd-liff-return-target");
+    headers.set("x-mmd-liff-ui-mode", /<body\b[^>]*\bdata-mmd-skin=["']nightline["']/i.test(html) ? "nightline-home" : "native-home");
+    return new Response(html, { status: response.status, statusText: response.statusText, headers });
+  }
   // The current LIFF shell renders Digital Home, not the legacy target constant.
   // Resume only the bounded EMs destination after the member API confirms a session.
   if (target === "/my-mmd/" || target === "/my-mmd/ems" || target === "/my-mmd/gws" || /^\/my-mmd\/(ems|gws)\/\1\d+-[a-f0-9]{12}$/.test(target)) {
@@ -649,6 +658,14 @@ export default {
     if (/^\/my-mmd\/(?:points\/?|[^/]+\.(?:png|webp|jpg|jpeg|gif|svg|ico|js|css))$/.test(path)) return proxyLovablePage(request);
     if (path === "/my-mmd/payments" || path === "/my-mmd/payments/") return proxyLovablePage(request);
     if (/^\/my-mmd\/(menu\/?|albums\/ems\/[^/]+\/?)$/.test(path)) return proxyLovablePage(request);
+    // Home links from Verify must enter the same Worker app as direct LIFF.
+    // This navigation grants no identity or entitlement; the shell validates both.
+    if ((path === "/my-mmd" || path === "/my-mmd/") && !new URL(request.url).searchParams.has("session_id") && !/(?:^|;\s*)mmd_care_back_wish_link=/.test(request.headers.get("cookie") || "")) {
+      if (!["GET", "HEAD"].includes(request.method)) return new Response(null, { status: 405, headers: { allow: "GET, HEAD", "cache-control": "no-store" } });
+      const destination = new URL("/member/liff", request.url);
+      destination.searchParams.set("intent", "status");
+      return new Response(null, { status: 307, headers: { location: destination.pathname + destination.search, "cache-control": "private, no-store", "x-mmd-home-entry": "nightline" } });
+    }
     if (isMyMmdUiPath(path)) return myMmdWebflowPage(request);
 
     // Identity, session, points, membership, entitlement, coupons, history,

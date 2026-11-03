@@ -1,3 +1,5 @@
+import { isMemberBookingPath, handleMemberBooking } from './member-booking-flow.js';
+export { MemberBookingCoordinator } from './member-booking-coordinator.js';
 import { DISCOVERY_VIEWER_PATH, handleDiscoveryViewer, attachDiscoverySession } from "./booking-discovery-viewer.js";
 import { isEmsAlbumRequest, handleEmsAlbums } from './member-ems-albums.js';
 import {isPersonalMainRequest, handlePersonalMain} from "./member-personal-main.js";
@@ -74,6 +76,8 @@ import { handleMemberReplySnapshot, isMemberReplySnapshotPath, scheduleMemberRep
 
 export * from "./legacy-member-pages.js";
 export { CareBackBirthdayWishCoordinator } from "./care-back-birthday-wish-durable-object.js";
+export { CustomerRequestQuotaCoordinator } from "./customer-request-quota-durable-object.js";
+export { CustomerRequestMutationCoordinator } from "./customer-request-mutation-durable-object.js";
 export { RememberedLoginDevice } from "./liff-remembered-login-device.js";
 export { PrivatePreviewGate };
 export { MemberResolverDiagnosticEntrypoint };
@@ -146,6 +150,7 @@ const worker = {
     if (isMemberClientCreditsRequest(request)) {
       return handleMemberClientCredits(request, env);
     }
+    if (isMemberBookingPath(request)) return handleMemberBooking(request, env);
     if (isMemberCustomerRequestPath(request)) {
       return handleMemberCustomerRequest(request, env);
     }

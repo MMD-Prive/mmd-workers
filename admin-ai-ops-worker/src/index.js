@@ -115,7 +115,7 @@ export default {
       anomalies: advisory.anomalies,
       next_actions: advisory.next_actions,
       command_center: dashboardRead ? buildCommandCenter(dashboardRead) : null,
-      sources: intel.map(({ route, ok, status }) => ({ route, ok, status })),
+      sources: intel.map(({ route, ok, status, attempts, elapsed_ms, error_code }) => ({ route, ok, status, ...(attempts ? { attempts, elapsed_ms, ...(error_code ? { error_code } : {}) } : {}) })),
       authority: AUTHORITY,
       generated_at: new Date().toISOString(),
     });
@@ -157,15 +157,27 @@ async function readAdminJson(request, route, service = null) {
     const value = request.headers.get(key);
     if (value) headers.set(key, value);
   }
-  try {
-    const init = { method: "GET", headers, redirect: "manual" };
-    const r = await service.fetch(new Request(target, { ...init, signal: AbortSignal.timeout(9000) }));
-    const text = await r.text();
-    let data = null;
-    try { data = text ? JSON.parse(text) : null; } catch {}
-    return { route, ok: r.ok && data !== null, status: r.status, data };
-  } catch (error) {
-    return { route, ok: false, status: 0, data: null, error: String(error?.message || error) };
+  const dashboard = route === "/v1/admin/dashboard";
+  const started = Date.now(), deadline = started + (dashboard ? 45000 : 9000);
+  const result = (value, attempts) => dashboard
+    ? { route, ...value, attempts, elapsed_ms: Date.now() - started }
+    : { route, ...value };
+  for (let attempt = 1; attempt <= (dashboard ? 2 : 1); attempt++) {
+    const remaining = deadline - Date.now();
+    try {
+      const init = { method: "GET", headers, redirect: "manual" };
+      const r = await service.fetch(new Request(target, { ...init, signal: AbortSignal.timeout(Math.max(1, Math.min(dashboard ? 30000 : 9000, remaining))) }));
+      const text = await r.text();
+      let data = null;
+      try { data = text ? JSON.parse(text) : null; } catch {}
+      if (dashboard && attempt === 1 && [502, 503, 504].includes(r.status) && deadline - Date.now() >= 1000) continue;
+      const valid = data !== null && (!dashboard || (typeof data === "object" && !Array.isArray(data) && data.ok === true));
+      return result({ ok: r.ok && valid, status: r.status, data: valid ? data : null, ...(dashboard && (!r.ok || !valid) ? { error_code: r.ok ? "invalid_response" : "http_error" } : {}) }, attempt);
+    } catch (error) {
+      const timeout = error?.name === "TimeoutError" || error?.name === "AbortError";
+      if (dashboard && attempt === 1 && (timeout || error instanceof TypeError) && deadline - Date.now() >= 1000) continue;
+      return result({ ok: false, status: 0, data: null, ...(dashboard ? { error_code: timeout ? "timeout" : "transport_error" } : { error: String(error?.message || error) }) }, attempt);
+    }
   }
 }
 

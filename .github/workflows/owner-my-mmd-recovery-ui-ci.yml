@@ -1,0 +1,46 @@
+name: Owner MY MMD recovery UI
+
+on:
+  pull_request:
+    paths:
+      - 'admin-worker/src/owner-my-mmd-recovery*.js'
+      - 'admin-worker/src/owner-recovery-identity.js'
+      - 'admin-worker/src/create-session-client-lineage-runtime.js'
+      - 'admin-worker/create-session-client-lineage-runtime.test.mjs'
+      - 'admin-worker/owner-recovery-identity.test.mjs'
+      - 'admin-worker/owner-my-mmd-recovery*.test.mjs'
+      - '.github/workflows/owner-my-mmd-recovery-ui-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'admin-worker/src/owner-my-mmd-recovery*.js'
+      - 'admin-worker/src/owner-recovery-identity.js'
+      - 'admin-worker/src/create-session-client-lineage-runtime.js'
+      - 'admin-worker/create-session-client-lineage-runtime.test.mjs'
+      - 'admin-worker/owner-recovery-identity.test.mjs'
+      - 'admin-worker/owner-my-mmd-recovery*.test.mjs'
+      - '.github/workflows/owner-my-mmd-recovery-ui-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  recovery-contract-and-ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Check syntax and owner recovery behavior
+        run: |
+          node --check admin-worker/src/owner-my-mmd-recovery-diagnostic.js
+          node --check admin-worker/src/owner-my-mmd-recovery-page.js
+          node --experimental-global-webcrypto --test admin-worker/create-session-client-lineage-runtime.test.mjs admin-worker/owner-recovery-identity.test.mjs admin-worker/owner-my-mmd-recovery-diagnostic.test.mjs admin-worker/owner-my-mmd-recovery-page.test.mjs
+      - name: Exercise deployed script after bundling with function name preservation
+        run: |
+          npx --yes esbuild@0.25.12 admin-worker/src/owner-my-mmd-recovery-page.js --bundle --keep-names --minify --platform=node --format=esm --outfile=admin-worker/src/owner-recovery-bundled.mjs
+          RECOVERY_PAGE_MODULE=./src/owner-recovery-bundled.mjs node --test admin-worker/owner-my-mmd-recovery-page.test.mjs

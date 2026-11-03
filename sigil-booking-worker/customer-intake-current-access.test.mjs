@@ -20,7 +20,7 @@ async function withFixture({ entitlements = [], booking = stored, selected = mod
   const linkedIds = fixturePages.flatMap(page => page.records).filter(row => !row.fields?.member || row.fields.member.includes(memberRecordId)).map(row => row.id);
   const original = globalThis.fetch;
   const previousBinding = env.MEMBER_PAGES_WORKER;
-  env.MEMBER_PAGES_WORKER = { fetch: async () => viewerRef ? Response.json({ ok: true, memberRef: viewerRef }) : Response.json({ ok: false }, { status: 401 }) };
+  env.MEMBER_PAGES_WORKER = { fetch: async () => viewerRef ? Response.json({ ok: true, identity_binding_verified: true, memberRef: viewerRef, memberId: memberRow.fields.member_id || `mmd_rec_${memberRecordId}` }) : Response.json({ ok: false }, { status: 401 }) };
   const writes = [];
   const reads = [];
   globalThis.fetch = async (input, init = {}) => {
@@ -34,7 +34,7 @@ async function withFixture({ entitlements = [], booking = stored, selected = mod
     reads.push(url);
     const table = url.pathname.split("/")[3];
     if (table === "Bookings") return Response.json({ records: booking ? [booking] : [] });
-    if (table === "Members") return Response.json({ ...memberRow, fields: { "MMD — Member Entitlements": linkedIds, ...memberRow.fields } });
+    if (table === "Members") { const row = { ...memberRow, fields: { "MMD — Member Entitlements": linkedIds, ...memberRow.fields } }; return Response.json(url.pathname.endsWith("/" + memberRecordId) ? row : { records: [row] }); }
     if (table === "Entitlements") {
       if (lookupFails) return new Response("unavailable", { status: 503 });
       const page = fixturePages[Number(url.searchParams.get("offset") || 0)];
@@ -65,7 +65,7 @@ test("exact withheld records remain absent across scopes and renamed identities;
 
 test("stale selections of either withheld record cannot create Public or Private drafts", async () => {
   for (const lane of ["public", "private"]) for (const id of excluded) {
-    await withFixture({ entitlements: active, selected: { ...model, id } }, async ({ writes }) => {
+    await withFixture({ entitlements: active, selected: { ...model, id }, booking: lane === "public" ? null : stored }, async ({ writes }) => {
       const response = await runtimeWorker.fetch(request({ lane, selected_model_id: id }), env);
       assert.equal(response.status, 422);
       assert.equal((await response.json()).error, "selected_model_unavailable");
@@ -150,12 +150,12 @@ test("current Standard access replaces stale Premium snapshot and refuses stale 
 
 test("ordinary Public intake and Per-help requests preserve existing draft collection", async () => {
   for (const selected_model_id of [model.id, undefined]) {
-    await withFixture({ booking: null }, async ({ writes, reads }) => {
+    await withFixture({ booking: null, entitlements: [{ fields: { capability: "public_member", member_status: "active", access_status: "active" } }] }, async ({ writes, reads }) => {
       const response = await runtimeWorker.fetch(request({ lane: "public", selected_model_id }), env);
       assert.equal(response.status, 200);
       assert.equal(writes.length, 1);
       assert.equal(writes[0]["Request Status"], "draft");
-      assert.equal(reads.some(url => url.pathname.endsWith("/Entitlements")), false);
+      assert.equal(reads.some(url => url.pathname.endsWith("/Entitlements")), true);
     });
   }
 });

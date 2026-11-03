@@ -44,6 +44,15 @@ function env() {
             materialized_count: 8,
             updated_at: "2026-09-19T12:00:00.000Z",
           },
+          identity_recovery_request: {
+            found: true,
+            request_id: "IMR-ABC123",
+            status: "review_required",
+            submitted: { email: "chen@example.com", phone: "+66812345678" },
+            verified_line_identity: { verified: true, tail: LINE_ID.slice(-6) },
+            matching: { state: "review_required", match_type: "exact_client_phone", confidence: 92, evidence_sources: ["clients_phone"], candidate_member_ids: [], candidate_client_ids: [CLIENT_ID] },
+            unresolved: true,
+          },
           points: { status: "verified", value: 1250, source: "history_recovery" },
           acceptance: {
             status: "recorded",
@@ -94,6 +103,16 @@ test("owner API resolves canonical client then returns recovery truth without ra
         fields: {
           "Client Name (Display)": "เชน",
           line_user_id: LINE_ID,
+          merge_request_id: "IMR-ABC123",
+          status: "review_required",
+          identity_email: "chen@example.com",
+          identity_phone: "+66812345678",
+          match_type: "exact_client_phone",
+          match_confidence: 92,
+          source_path: "/member/api/liff/recovery",
+          created_at: "2026-09-19T11:00:00.000Z",
+          updated_at: "2026-09-19T11:05:00.000Z",
+          payload_json: JSON.stringify({ state: "review_required", match_type: "exact_client_phone", evidence_sources: ["clients_phone"] }),
         },
       });
     }
@@ -114,12 +133,36 @@ test("owner API resolves canonical client then returns recovery truth without ra
     assert.equal(body.recovery.state, "reconciled");
     assert.equal(body.points.value, 1250);
     assert.equal(body.acceptance.evidence_id, "mmdacc_1234567890abcdef12345678");
+    assert.equal(body.identity_recovery_request.request_id, "IMR-ABC123");
+    assert.equal(body.identity_recovery_request.submitted.email, "chen@example.com");
+    assert.equal(body.identity_recovery_request.submitted.phone, "+66812345678");
+    assert.equal(body.identity_recovery_request.matching.match_type, "exact_client_phone");
+    assert.equal(body.identity_recovery_request.unresolved, true);
     assert.equal(body.guardrails.owner_session_required, true);
     assert.equal(body.guardrails.browser_raw_line_user_id_exposed, false);
     assert.doesNotMatch(JSON.stringify(body), new RegExp(LINE_ID));
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("owner can inspect an unresolved request by IMR reference without canonical client resolution", async () => {
+  const requestEnv = {
+    ...env(),
+    MEMBER_PAGES_MEMBER_WALLET: {
+      async fetch(request) {
+        const body = await request.json();
+        assert.deepEqual(body, { merge_request_id: "IMR-ABC123" });
+        return Response.json({ ok: true, identity_recovery_request: { found: true, request_id: "IMR-ABC123", unresolved: true, submitted: { email: "chen@example.com", phone: null } } });
+      },
+    },
+  };
+  const response = await handleOwnerMyMmdRecoveryDiagnostic(request(OWNER_MY_MMD_RECOVERY_API_PATH + "?request_id=IMR-ABC123"), requestEnv, { id: "per", role: "owner", auth_method: "credential" });
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.identity_recovery_request.request_id, "IMR-ABC123");
+  assert.equal(body.identity_recovery_request.submitted.email, "chen@example.com");
+  assert.equal(body.identity_recovery_request.unresolved, true);
 });
 
 test("owner page is noindex and does not embed customer identity", async () => {
@@ -132,6 +175,8 @@ test("owner page is noindex and does not embed customer identity", async () => {
   assert.match(response.headers.get("x-robots-tag") || "", /noindex/);
   const html = await response.text();
   assert.match(html, /MY MMD Recovery Diagnostic/);
+  assert.match(html, /Identity request/);
+  assert.match(html, /claimed name/);
   assert.doesNotMatch(html, new RegExp(LINE_ID));
 });
 

@@ -8,6 +8,7 @@ import {applyConsolePresentation} from './model-console-live-presentation.js';
 
 export * from '../live-baseline/member-pages-worker.js';
 export {CustomerRequestMutationCoordinator} from './customer-request-mutation-live.js';
+export {CustomerRequestQuotaCoordinator} from './customer-request-quota-durable-object.js';
 
 // Retain the exact deployed identity/recovery handlers and durable classes.
 // Only the existing Console/credit routes use their newer local handlers.

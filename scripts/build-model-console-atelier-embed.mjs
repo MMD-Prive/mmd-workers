@@ -17,6 +17,16 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const source = path.join(root, 'webflow/sigil/model');
 const assets = path.join(source, 'console-atelier');
 const names = { session: 'console-session-etching.svg', travel: 'console-travel-arc.svg', empty: 'console-no-session.svg', after: 'console-after-job.svg' };
+export function consoleStyleSource(css) {
+  // Lossless storage only: decoded CSS is byte-for-byte identical. Keep the
+  // existing style owner and embed order; make room for the session guard.
+  const tokens = [['$r', '#sigil-model-console-v3[data-console-atelier]'], ['$c', '.smcv3-'], ['$v', 'var(--ca-']];
+  if (tokens.some(([token]) => css.includes(token))) throw new Error('Console CSS token collision');
+  let packed = css;
+  for (const [token, value] of tokens) packed = packed.replaceAll(value, token);
+  const decoded = tokens.reduce((code, [token, value]) => code + `.replaceAll(${JSON.stringify(token)},${JSON.stringify(value)})`, JSON.stringify(packed));
+  return `if(!document.getElementById('mmd-console-lv9-css')){const s=document.createElement('style');s.id='mmd-console-lv9-css';s.textContent=${decoded};document.head.append(s);}`;
+}
 export function buildConsoleEmbed() {
   const illustrations = Object.fromEntries(Object.entries(names).map(([key, file]) => [key, fs.readFileSync(path.join(assets, file), 'utf8').trim()]));
   const sprite = fs.readFileSync(path.join(assets, 'icons.svg'), 'utf8');

@@ -340,7 +340,7 @@ test("exact Per Rename collision across canonical Clients still fails closed", a
     const body = await response.json();
     assert.equal(response.headers.get("x-mmd-per-rename-search"), "ambiguous");
     assert.equal(body.per_rename_alias_ambiguous, true);
-    assert.equal(body.manual_fallback, true);
+    assert.equal(body.manual_fallback, false, 'ambiguous authoritative identity must not reopen legacy/manual fallback');
     assert.equal(body.records.length, 0);
     assert.deepEqual(body.results, []);
     assert.deepEqual(body.items, []);

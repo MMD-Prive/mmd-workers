@@ -11,13 +11,16 @@ on:
         options:
           - approval_boundary_only
           - release
+          - recovery-artifact
           - companion-artifact
           - renewal-artifact
           - renewal-activation
           - promote-existing
           - lv15-artifact
+          - nightline-artifact
           - care-back-november
           - care-back-november-resume
+          - my-mmd-home-delta
       production_approved:
         description: 'Owner authorization for the selected mode and exact SHA; not an environment approval receipt'
         type: boolean
@@ -37,6 +40,22 @@ on:
         required: false
       expected_deployment:
         description: 'Active deployment UUID from fresh approved preflight'
+        type: string
+        required: false
+      recovery_member_version:
+        description: 'Recovery pair: fresh active member-pages-worker version UUID'
+        type: string
+        required: false
+      recovery_member_deployment:
+        description: 'Recovery pair: fresh active member-pages-worker deployment UUID'
+        type: string
+        required: false
+      recovery_admin_version:
+        description: 'Recovery pair: fresh active admin-worker version UUID'
+        type: string
+        required: false
+      recovery_admin_deployment:
+        description: 'Recovery pair: fresh active admin-worker deployment UUID'
         type: string
         required: false
       patch_manifest:
@@ -62,7 +81,7 @@ concurrency:
 
 jobs:
   production-approval:
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha && (inputs.execution_mode == 'approval_boundary_only' || inputs.execution_mode == 'release' || inputs.execution_mode == 'companion-artifact' || inputs.execution_mode == 'renewal-artifact' || inputs.execution_mode == 'promote-existing' || inputs.execution_mode == 'renewal-activation' || inputs.execution_mode == 'lv15-artifact' || (inputs.execution_mode == 'care-back-november' || inputs.execution_mode == 'care-back-november-resume'))
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha && (inputs.execution_mode == 'my-mmd-home-delta' || inputs.execution_mode == 'approval_boundary_only' || inputs.execution_mode == 'release' || inputs.execution_mode == 'recovery-artifact' || inputs.execution_mode == 'companion-artifact' || inputs.execution_mode == 'renewal-artifact' || inputs.execution_mode == 'promote-existing' || inputs.execution_mode == 'renewal-activation' || inputs.execution_mode == 'lv15-artifact' || inputs.execution_mode == 'nightline-artifact' || (inputs.execution_mode == 'care-back-november' || inputs.execution_mode == 'care-back-november-resume'))
     runs-on: ubuntu-latest
     timeout-minutes: 3
     permissions:
@@ -109,7 +128,7 @@ jobs:
         run: node scripts/member-pages-owner-approval.mjs
 
   release:
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha && (inputs.execution_mode == 'release' || inputs.execution_mode == 'companion-artifact' || inputs.execution_mode == 'renewal-artifact' || inputs.execution_mode == 'promote-existing' || inputs.execution_mode == 'renewal-activation') && inputs.expected_version != '' && inputs.expected_deployment != ''
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha && (inputs.execution_mode == 'release' || inputs.execution_mode == 'recovery-artifact' || inputs.execution_mode == 'companion-artifact' || inputs.execution_mode == 'renewal-artifact' || inputs.execution_mode == 'promote-existing' || inputs.execution_mode == 'renewal-activation') && (inputs.execution_mode == 'recovery-artifact' || (inputs.expected_version != '' && inputs.expected_deployment != '')) && (inputs.execution_mode != 'recovery-artifact' || (inputs.recovery_member_version != '' && inputs.recovery_member_deployment != '' && inputs.recovery_admin_version != '' && inputs.recovery_admin_deployment != ''))
     needs: [production-approval]
     environment: member-pages-code-only-owner
     runs-on: ubuntu-latest
@@ -132,6 +151,66 @@ jobs:
           fetch-depth: 0
           path: release-source
           persist-credentials: false
+      - name: Check out exact reviewed recovery source
+        if: inputs.execution_mode == 'recovery-artifact'
+        uses: actions/checkout@v5
+        with:
+          ref: d82c284fb48943c7c8a8cc5a970107f799186ee3
+          fetch-depth: 0
+          path: recovery-source
+          persist-credentials: false
+      - name: Install pinned recovery build tool
+        if: inputs.execution_mode == 'recovery-artifact'
+        run: npm install --prefix "$RUNNER_TEMP/recovery-build-tools" --ignore-scripts --no-audit --no-fund esbuild@0.27.3
+      - name: Fetch and verify exact active recovery baselines
+        if: inputs.execution_mode == 'recovery-artifact'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          MMD_RECOVERY_MEMBER_VERSION: ${{ inputs.recovery_member_version }}
+          MMD_RECOVERY_MEMBER_DEPLOYMENT: ${{ inputs.recovery_member_deployment }}
+          MMD_RECOVERY_ADMIN_VERSION: ${{ inputs.recovery_admin_version }}
+          MMD_RECOVERY_ADMIN_DEPLOYMENT: ${{ inputs.recovery_admin_deployment }}
+        run: node scripts/fetch-member-pages-recovery-baseline.mjs "$RUNNER_TEMP/recovery-artifacts"
+      - name: Build and hash reviewed recovery candidates
+        if: inputs.execution_mode == 'recovery-artifact'
+        env:
+          ESBUILD: ${{ runner.temp }}/recovery-build-tools/node_modules/.bin/esbuild
+        run: |
+          node scripts/build-member-pages-recovery-artifact.mjs member "$RUNNER_TEMP/recovery-artifacts/member-active.js" "$GITHUB_WORKSPACE/recovery-source" "$RUNNER_TEMP/recovery-artifacts/member-pages-worker-recovery-candidate.js" "$RUNNER_TEMP/recovery-artifacts/member-pages-recovery-artifact-manifest.json"
+          node scripts/build-member-pages-recovery-artifact.mjs admin "$RUNNER_TEMP/recovery-artifacts/admin-active.js" "$GITHUB_WORKSPACE/recovery-source" "$RUNNER_TEMP/recovery-artifacts/admin-worker-recovery-candidate.js" "$RUNNER_TEMP/recovery-artifacts/admin-recovery-artifact-manifest.json"
+      - name: Verify scoped recovery release runner without production writes
+        if: inputs.execution_mode == 'recovery-artifact'
+        run: |
+          node --test scripts/member-pages-recovery-artifact.test.mjs scripts/member-pages-recovery-artifact-release.test.mjs
+          node scripts/member-pages-recovery-frontend-compatibility.mjs ../recovery-source/webflow/sigil/member/login-existing-member-dialog.html ../recovery-source/webflow/sigil/member/existing-member-dialog.html
+          node scripts/member-pages-recovery-artifact-release.mjs --plan-only
+      - name: Execute approved paired recovery artifact release
+        if: inputs.execution_mode == 'recovery-artifact'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          MMD_RECOVERY_APPROVAL: approved
+          MMD_RECOVERY_APPROVAL_REF: ${{ inputs.approval_ref }}
+          MMD_RECOVERY_APPROVED_SHA: ${{ inputs.approved_sha }}
+          MMD_RECOVERY_MIGRATION_MODE: full-script-deploy-reviewed
+          MMD_RECOVERY_MEMBER_CANDIDATE: ${{ runner.temp }}/recovery-artifacts/member-pages-worker-recovery-candidate.js
+          MMD_RECOVERY_ADMIN_CANDIDATE: ${{ runner.temp }}/recovery-artifacts/admin-worker-recovery-candidate.js
+          MMD_RECOVERY_MEMBER_MANIFEST: ${{ runner.temp }}/recovery-artifacts/member-pages-recovery-artifact-manifest.json
+          MMD_RECOVERY_ADMIN_MANIFEST: ${{ runner.temp }}/recovery-artifacts/admin-recovery-artifact-manifest.json
+          MMD_RECOVERY_MEMBER_VERSION: ${{ inputs.recovery_member_version }}
+          MMD_RECOVERY_MEMBER_DEPLOYMENT: ${{ inputs.recovery_member_deployment }}
+          MMD_RECOVERY_ADMIN_VERSION: ${{ inputs.recovery_admin_version }}
+          MMD_RECOVERY_ADMIN_DEPLOYMENT: ${{ inputs.recovery_admin_deployment }}
+          MMD_RECOVERY_RECEIPT_PATH: ${{ runner.temp }}/member-pages-recovery-receipt.json
+        run: node scripts/member-pages-recovery-artifact-release.mjs --execute
+      - name: Upload sanitized recovery release receipt
+        if: always() && inputs.execution_mode == 'recovery-artifact'
+        uses: actions/upload-artifact@v4
+        with:
+          name: member-pages-recovery-${{ github.run_id }}
+          path: ${{ runner.temp }}/member-pages-recovery-receipt.json
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: Check out original startup source for promotion-only recovery
         if: inputs.execution_mode == 'promote-existing'
         uses: actions/checkout@v5
@@ -266,6 +345,45 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+  nightline-release:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha && inputs.execution_mode == 'nightline-artifact' && inputs.expected_version != '' && inputs.expected_deployment != ''
+    needs: [production-approval]
+    environment: member-pages-code-only-owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Verify Nightline skin and owner gate
+        run: node --test scripts/member-pages-owner-approval.test.mjs
+      - name: Apply exact reversible Nightline delta to approved active artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APPROVAL_REF: ${{ inputs.approval_ref }}
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+          RELEASE_MODE: nightline-artifact
+          PRODUCTION_APPROVED: ${{ inputs.production_approved }}
+          EXPECTED_VERSION: ${{ inputs.expected_version }}
+          EXPECTED_DEPLOYMENT: ${{ inputs.expected_deployment }}
+          CLOUDFLARE_ACCOUNT_ID: b176eda1172b741fd2e58904cc9d77c5
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node scripts/member-pages-nightline-artifact.mjs --execute-approved
+      - name: Save sanitized Nightline release receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: member-pages-nightline-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/member-pages-nightline-receipt.json
+          if-no-files-found: ignore
+          retention-days: 14
+
   care-back-november-release:
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha && (inputs.execution_mode == 'care-back-november' || inputs.execution_mode == 'care-back-november-resume') && inputs.expected_version != '' && inputs.expected_deployment != '' && inputs.patch_manifest != '' && inputs.expected_manifest_sha256 != '' && inputs.expected_module_sha256 != ''
     needs: [production-approval]
@@ -304,6 +422,48 @@ jobs:
         with:
           name: care-back-november-member-pages-${{ github.run_id }}
           path: ${{ runner.temp }}/care-back-november-member-pages-worker-receipt.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+  my-mmd-home-release:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha && inputs.execution_mode == 'my-mmd-home-delta' && inputs.expected_version != '' && inputs.expected_deployment != '' && inputs.patch_manifest != '' && inputs.expected_manifest_sha256 != '' && inputs.expected_module_sha256 != ''
+    needs: [production-approval]
+    environment: member-pages-code-only-owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Verify exact artifact delta and existing owner approval contract
+        run: node --test scripts/my-mmd-home-delta-adapter.test.mjs scripts/my-mmd-home-delta-workflow.test.mjs scripts/care-back-november-policy-release.test.mjs scripts/member-pages-owner-approval.test.mjs
+      - name: Apply reviewed My MMD policy to the fresh active artifact
+        env:
+          APPROVED_SOURCE_SHA: 8572cab0b2a6ab5a0326fcc3c8e6d7b4fc6b72a2
+          GH_TOKEN: ${{ github.token }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: b176eda1172b741fd2e58904cc9d77c5
+          PRODUCTION_APPROVED: ${{ inputs.production_approved }}
+          PRODUCTION_ENVIRONMENT_NAME: member-pages-code-only-owner
+          APPROVAL_REF: ${{ inputs.approval_ref }}
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+          PATCH_MANIFEST: ${{ inputs.patch_manifest }}
+          EXPECTED_MANIFEST_SHA256: ${{ inputs.expected_manifest_sha256 }}
+          EXPECTED_MODULE_SHA256: ${{ inputs.expected_module_sha256 }}
+          EXPECTED_VERSION: ${{ inputs.expected_version }}
+          EXPECTED_DEPLOYMENT: ${{ inputs.expected_deployment }}
+        run: node scripts/my-mmd-home-delta-cli.mjs --execute-approved
+      - name: Save sanitized My MMD artifact release receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: my-mmd-home-${{ github.run_id }}
+          path: ${{ runner.temp }}/my-mmd-home-release-receipt.json
           if-no-files-found: ignore
           retention-days: 14
 

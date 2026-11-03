@@ -160,6 +160,9 @@ export async function handleCreateSessionClientLineageRequest(request, env = {},
         body: JSON.stringify(lookupPayload),
       }), env);
       perRenameState = rename.headers.get("X-MMD-Per-Rename-Search") || "none";
+      if (perRenameState === "unavailable") {
+        return json({ ok: false, error: "per_rename_lookup_unavailable" }, 503);
+      }
       if (["resolved", "multiple", "ambiguous"].includes(perRenameState)) return rename;
     }
     const snapshot = await buildClientLineageRecords(env, {
@@ -303,8 +306,13 @@ async function buildClientLineageRecords(env, { query = "", limit = 40, recent =
   const rows = clients
     .map((record) => {
       const fields = record.fields || {};
-      const relatedMember = resolveRelatedMember(fields, memberIndexes, entitlementIndexes, record.id);
-      const relatedEntitlements = resolveRelatedEntitlements(fields, relatedMember, entitlementIndexes, record.id);
+      const memberResolution = resolveRelatedMember(fields, memberIndexes, entitlementIndexes, record.id);
+      const relatedMember = memberResolution.member;
+      if (memberResolution.conflict && !warnings.includes("member_identity_conflict")) {
+        warnings.push("member_identity_conflict");
+      }
+      const relatedEntitlements = memberResolution.conflict ? []
+        : resolveRelatedEntitlements(fields, relatedMember, entitlementIndexes, record.id);
       const entitlement = chooseDisplayEntitlement(relatedEntitlements);
       const relatedStaging = resolveRelatedStaging(fields, stagingIndexes, record.id);
       const searchEntries = lineageSearchEntries(
@@ -334,7 +342,7 @@ async function buildClientLineageRecords(env, { query = "", limit = 40, recent =
         score: match.score,
         priority: match.priority,
         createdTime: record.createdTime || "",
-        record: toClientLineageRecord(record, relatedMember, entitlement, relatedStaging, match),
+        record: toClientLineageRecord(record, relatedMember, entitlement, relatedStaging, match, memberResolution.conflict),
       };
     })
     .filter(Boolean)
@@ -378,7 +386,7 @@ async function optionalAirtableList(env, tableName, fields, maxRecords, warnings
   }
 }
 
-function toClientLineageRecord(clientRecord, memberRecord, entitlementRecord, stagingRecords, match) {
+function toClientLineageRecord(clientRecord, memberRecord, entitlementRecord, stagingRecords, match, identityConflict = false) {
   const client = clientRecord.fields || {};
   const member = memberRecord?.fields || {};
   const entitlement = entitlementRecord?.fields || {};
@@ -428,9 +436,10 @@ function toClientLineageRecord(clientRecord, memberRecord, entitlementRecord, st
     lookup_chain: CUSTOMER_LOOKUP_CHAIN,
     username: firstText(client.username, member.username),
     phone,
-    package_code: packageCode,
-    tier,
-    membership_status: membershipStatus,
+    package_code: identityConflict ? "" : packageCode,
+    tier: identityConflict ? "" : tier,
+    membership_status: identityConflict ? "" : membershipStatus,
+    ...(identityConflict ? { identity_status: "conflict_review_required" } : {}),
     purchased_history: buildLineageSummary(member, entitlement),
     line_record_id: firstText(staging.import_id, stagingRecords?.[0]?.id),
     line_user_id: lineUserId,
@@ -514,19 +523,22 @@ function resolveRelatedMember(client, memberIndexes, entitlementIndexes, clientR
   for (const entitlement of directEntitlements) {
     for (const memberId of linkIds(entitlement.fields?.member)) {
       const byRecord = memberIndexes.byRecordId.get(memberId);
-      if (byRecord) return byRecord;
+      if (byRecord) return { member: byRecord, conflict: false };
     }
   }
 
-  const email = normalizeSearch(firstText(client.email, client["Contact Email"]));
-  if (email && memberIndexes.byEmail.has(email)) return memberIndexes.byEmail.get(email);
-
-  const line = normalizeSearch(client.line_user_id);
-  if (line && memberIndexes.byLine.has(line)) return memberIndexes.byLine.get(line);
-
-  const username = normalizeSearch(client.username);
-  if (username && memberIndexes.byUsername.has(username)) return memberIndexes.byUsername.get(username);
-  return null;
+  // Shared keys are candidates, not a priority contest. Retain all matches so
+  // duplicate keys and disagreement cannot silently choose the first person.
+  // Canonical entitlement precedence above remains unchanged.
+  const candidates = new Map();
+  for (const [index, value] of [
+    [memberIndexes.byEmail, firstText(client.email, client["Contact Email"])],
+    [memberIndexes.byLine, client.line_user_id],
+    [memberIndexes.byUsername, client.username],
+  ]) {
+    for (const record of index.get(normalizeSearch(value)) || []) candidates.set(record.id, record);
+  }
+  return { member: candidates.size === 1 ? candidates.values().next().value : null, conflict: candidates.size > 1 };
 }
 
 function resolveRelatedEntitlements(client, memberRecord, indexes, clientRecordId) {
@@ -534,6 +546,13 @@ function resolveRelatedEntitlements(client, memberRecord, indexes, clientRecordI
   const seen = new Set();
   const add = (record) => {
     if (!record || seen.has(record.id)) return;
+    // Shared email/LINE keys may locate candidates, but cannot override an
+    // explicit canonical link to another Client or Member. Filter before rank.
+    const clients = linkIds(record.fields?.client);
+    const members = linkIds(record.fields?.member);
+    if (clients.some((id) => id !== clientRecordId)) return;
+    if (memberRecord && members.some((id) => id !== memberRecord.id)) return;
+    if (!memberRecord && !clients.includes(clientRecordId) && members.length) return;
     seen.add(record.id);
     out.push(record);
   };
@@ -631,9 +650,9 @@ function buildMemberIndexes(records) {
     for (const clientId of linkIds(fields.Clients)) {
       setFirst(indexes.byClientRecordId, clientId, record);
     }
-    setFirst(indexes.byEmail, normalizeSearch(fields["Contact Email"]), record);
-    setFirst(indexes.byLine, normalizeSearch(fields.line_id), record);
-    setFirst(indexes.byUsername, normalizeSearch(fields.username), record);
+    pushMap(indexes.byEmail, normalizeSearch(fields["Contact Email"]), record);
+    pushMap(indexes.byLine, normalizeSearch(fields.line_id), record);
+    pushMap(indexes.byUsername, normalizeSearch(fields.username), record);
   }
   return indexes;
 }

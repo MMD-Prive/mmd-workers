@@ -1,3 +1,4 @@
+import { renderMemberBooking, createMemberBookingUI, MEMBER_BOOKING_CSS } from './liff-member-booking.js';
 import { renderApprovedEntry, renderApprovedLoader, createHypeLoaderMotion, createEntryPercentMotion, installApprovedEntryLoading } from "./liff-approved-entry.js";
 import { resolveEmsAlbumReturnTarget } from '../../shared/ems-album-navigation.mjs';
 import { createAccountView } from "./liff-account-view.js";
@@ -42,7 +43,7 @@ export function handleLiffMemberShell(request, env = {}) {
   // LINE can deliver the entry query inside liff.state on the first redirect.
   const stateValue = url.searchParams.get("liff.state") || url.searchParams.get("liff_state") || "";
   const state = new URLSearchParams(stateValue.includes("?") ? stateValue.slice(stateValue.indexOf("?") + 1) : stateValue);
-  for (const key of ["intent", "liff_intent", "campaign", "view", "lang"]) {
+  for (const key of ["intent", "liff_intent", "campaign", "view", "lang", "booking_model", "booking_scope"]) {
     if (!url.searchParams.has(key) && state.has(key)) url.searchParams.set(key, state.get(key));
   }
   const config = {
@@ -53,6 +54,8 @@ export function handleLiffMemberShell(request, env = {}) {
     intent: normalizeIntent(url.searchParams.get("intent") || url.searchParams.get("liff_intent")),
     campaign: normalizeCampaign(url.searchParams.get("campaign")),
     view: normalizeView(url.searchParams.get("view")),
+    bookingScope: url.searchParams.get("booking_scope") === "private" ? "private" : "public",
+    bookingModel: /^rec[A-Za-z0-9]{14,24}$/.test(url.searchParams.get("booking_model") || "") ? url.searchParams.get("booking_model") : "",
     // Browser-controlled world/audience hints are never identity or entitlement.
     world: "public",
     language: normalizeLanguage(url.searchParams.get("lang") || url.searchParams.get("locale")),
@@ -305,6 +308,7 @@ ${PERSONAL_MAIN_CSS}
 ${MY_MMD_VERIFICATION_CSS}
 ${MY_MMD_SIGIL_PRIVATE_CSS}
   ${MY_MMD_LIFF_LV15_CSS}
+${MEMBER_BOOKING_CSS}
 </style>
 </head>
 <body class="${config.intent === "signup" ? "signup-mode app-entered " : "context-resolving "}world-${config.world}" data-world="${config.world}" data-mmd-liff-digital="v3" data-mmd-liff-compact="v4" data-mmd-graphics="v6" data-brand-audience="unresolved" data-mmd-liff-level="15">
@@ -341,7 +345,7 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
   <section id="profile" class="profile hidden" aria-label="Member profile">
     <div class="section-rail">
     <section id="home" class="panel digital-home" aria-label="Home" data-active="true">
-    <header class="digital-top">${renderCustomerBrand()}<div><span class="digital-session" id="digital-session">${customerIcon("icon-check")} LINE VERIFIED</span> <button id="member-logout" class="digital-signout" type="button">ออกจากระบบ</button></div></header>
+    <header class="digital-top">${renderCustomerBrand()}<div><span class="digital-session" id="digital-session">${customerIcon("icon-check")} กำลังตรวจสอบบัญชี</span> <button id="member-logout" class="digital-signout" type="button">ออกจากระบบ</button></div></header>
     <svg class="digital-bangkok-trace" viewBox="0 0 520 34" preserveAspectRatio="none" fill="none" aria-hidden="true" focusable="false" role="presentation">
       <path d="M9 28H511M61 28V17h24v11M82 17V9h11v19M132 28V14h18V5h25v23M182 28V19h27V12h13v16M254 28V11h20V2h18v26M291 28V21h34V15h15v13M385 28V20h18V9h29v19M441 28V18h25v10" stroke="currentColor" stroke-width="1" stroke-linejoin="round"/>
       <path d="M8 8H96M420 6h94M24 13h21M476 15h36M10 32h500" stroke="currentColor" stroke-width=".8" opacity=".55"/>
@@ -351,6 +355,7 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
       <summary class="digital-news-summary">
         <span class="digital-sectionline"><h2 id="digital-news-title"><small>MMD UPDATE</small>MMD NOW</h2><span class="digital-unread" id="digital-unread" hidden></span></span>
       </summary>
+      <div id="digital-news-progress"></div>
       <div class="digital-news-feed" id="digital-news-feed"><div class="digital-quiet">กำลังตรวจสอบอัปเดตล่าสุด</div></div>
     </details>
     <section class="digital-snapshot" aria-label="สถานะสมาชิก">${customerGraphic("membership-frame")}<div class="digital-snapshot-member"><span class="digital-snapshot-icon" aria-hidden="true">◇</span><div><span class="digital-snapshot-label">สมาชิก MMD Privé</span><strong id="profile-tier">Member</strong><p id="profile-status">กำลังตรวจสอบสถานะ</p></div></div><div class="digital-snapshot-points"><span class="digital-snapshot-label">Points</span><strong id="profile-points" class="digital-points">—</strong><span id="profile-points-note" class="digital-points-note">กำลังตรวจสอบยอด</span></div></section>
@@ -410,6 +415,7 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
       <details class="card details"><summary data-copy="packageHistoryLabel">Package history</summary><div id="package-history" class="stack"></div></details>
     </section>
     <section id="jobs" class="panel digital-view" aria-label="Jobs">
+      ${renderMemberBooking()}
       <div class="card"><h2 data-copy="jobsTitle">💼 Jobs</h2><div id="jobs-groups" class="stack"></div></div>
       <details class="card details"><summary data-copy="requestsLabel">Recent requests</summary><div id="requests" class="stack"></div></details>
       <details class="card details"><summary data-copy="mmsLabel">MMS prebookings</summary><div id="mms" class="stack"></div></details>
@@ -450,7 +456,7 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
       </details>
       <details class="card details digital-request-block">
         <summary><span><small>YOUR REQUEST</small><strong>อยากให้ MMD ตามหาใคร</strong></span></summary>
-        <div class="digital-request-body"><p class="form-note">อัปโหลดรูปที่คุณมีได้สูงสุด 3 รูป (JPG, PNG หรือ WebP) เพื่อให้ทีมตามหาเป็นการภายใน รูปจะไม่ขึ้นหน้า Public หรือโปรไฟล์โมเดลโดยอัตโนมัติ</p>
+        <div class="digital-request-body"><p class="form-note">อัปโหลดรูปที่คุณมีได้สูงสุด 3 รูป (JPG, PNG หรือ WebP) เพื่อให้ทีมตามหาเป็นการภายใน รูปจะไม่ขึ้นหน้า Public หรือโปรไฟล์โมเดลโดยอัตโนมัติ</p><p id="your-request-quota" class="form-note">โควตาเดือนนี้: กำลังตรวจสอบ…</p>
           <form id="your-request-form" class="form-stack"><label>ชื่อนายแบบ<input id="requested-model-name" type="text" maxlength="120" required></label><label>ลิงก์โซเชียล (ได้สูงสุด 3 ลิงก์)<textarea id="requested-model-social" maxlength="500" placeholder="https://..."></textarea></label><label>สนใจงานแบบไหน<select id="requested-model-audience"><option value="public">งานทั่วไป (Public)</option><option value="private">งาน Private</option></select></label><label>ทำไมอยากให้ MMD ตามหา<textarea id="requested-model-reason" maxlength="1800" required></textarea></label><label>รูปอ้างอิง (ไม่บังคับ)<input id="requested-model-evidence" type="file" accept="image/jpeg,image/png,image/webp" multiple></label><button type="submit">ส่ง Your Request</button></form>
           <div id="your-request-status" class="form-note" role="status" aria-live="polite"></div>
         </div>
@@ -483,6 +489,7 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
   const customerBrand = (${createCustomerBrand.toString()})(document.getElementById("customer-brand-v6"));
   const resetCustomerBrand = () => customerBrand.reset();
   const accountUI = (${createAccountView.toString()})(document.getElementById("digital-account"), memberApiFetch, () => currentMemberRef, () => clearMemberProfile());
+  const memberBookingUI = (${createMemberBookingUI.toString()})(document.getElementById("member-booking"), memberApiFetch, () => profileReady ? currentMemberRef : "", CONFIG.bookingModel, CONFIG.bookingScope);
   const personalMainUI = (${createPersonalMainUI.toString()})(document.getElementById("personal-main"), memberApiFetch);
   const logoutButton = document.getElementById("member-logout");
   const actions = document.getElementById("actions");
@@ -552,7 +559,7 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 4500);
     try {
-      const response = await fetch(CONFIG.welcomeContextEndpoint, {
+      const response = await memberApiFetch(CONFIG.welcomeContextEndpoint, {
         method: "GET",
         credentials: "same-origin",
         redirect: "error",
@@ -582,7 +589,7 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
       const body = { id_token: idToken, liff_intent: CONFIG.intent };
       if (CONFIG.promoCode) body.promo_code = CONFIG.promoCode;
       if (CONFIG.campaign) body.campaign = CONFIG.campaign;
-      const response = await fetch(CONFIG.startEndpoint, {
+      const response = await memberApiFetch(CONFIG.startEndpoint, {
         method: "POST",
         credentials: "same-origin",
         headers: { "content-type": "application/json", accept: "application/json" },
@@ -720,6 +727,7 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
     }
     const targetId = view === "history" ? "history-panel" : view;
     const target = document.getElementById(targetId) || document.getElementById("home");
+    if (typeof memberBookingUI !== "undefined" && target.id !== "jobs") memberBookingUI.leave();
     for (const panel of document.querySelectorAll(".section-rail > .panel")) panel.setAttribute("data-active", String(panel === target));
     for (const item of document.querySelectorAll("[data-view]")) {
       const active = item.getAttribute("data-view") === (target.id === "history-panel" ? "history" : target.id);
@@ -894,7 +902,7 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
   async function call(endpoint, body) {
     let response;
     try {
-      response = await fetch(endpoint, {
+      response = await (endpoint === CONFIG.startEndpoint ? memberApiFetch : fetch)(endpoint, {
         method: "POST",
         credentials: "same-origin",
         headers: { "content-type": "application/json", "accept": "application/json" },
@@ -1010,6 +1018,7 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
 
   async function hydrateMemberHome(view = initialView) {
     const readers = {
+      jobs: () => memberBookingUI.load(),
       coupons: readCouponWallet,
       credits: readCreditWallet,
       history: readCanonicalHistory,
@@ -1032,10 +1041,16 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
   // Keep the credential lane locked through headers AND body. A timeout aborts
   // the actual request; it must never release a second read alongside a live one.
   function memberApiFetch(url, init = {}) {
+    const valid = arguments[2] || (() => true);
     const run = memberApiChain.then(async () => {
+      if (!valid()) throw Object.assign(new Error("member_request_stale"), {code:"member_request_not_started"});
       const controller = new AbortController();
+      const abort = () => controller.abort();
+      if (init.signal?.aborted) abort();
+      init.signal?.addEventListener("abort", abort, { once: true });
       const timer = setTimeout(() => controller.abort(), 10000);
       try {
+        if (controller.signal.aborted) throw new Error("member_request_aborted");
         const response = await fetch(url, { ...init, signal: controller.signal });
         const reader = response.body?.getReader();
         if (!reader) return response;
@@ -1052,7 +1067,10 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
         const bytes = new Uint8Array(size); let offset = 0;
         for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
         return new Response(bytes, { status: response.status, statusText: response.statusText, headers: response.headers });
-      } finally { clearTimeout(timer); }
+      } finally {
+        clearTimeout(timer);
+        init.signal?.removeEventListener("abort", abort);
+      }
     });
     memberApiChain = run.then(() => undefined, () => undefined);
     return run;
@@ -1138,9 +1156,12 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
   function hideMemberProfile() {
     personalMainUI.reset();
     resetCustomerBrand();
+    if (typeof memberBookingUI !== "undefined") memberBookingUI.reset();
     accountUI.reset();
     if (typeof customerLoading !== "undefined") customerLoading.reset({ memberOnly:true });
     profileReady = false;
+    const sessionLabel = document.getElementById("digital-session");
+    if (sessionLabel) sessionLabel.textContent = "กำลังตรวจสอบบัญชี";
     currentMemberRef = "";
     secondaryReads.clear();
     profile.classList.add("hidden");
@@ -1244,6 +1265,9 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
       const payload = await response.json().catch(() => null);
       if (generation !== profileGeneration) return false;
       if (!response.ok || payload?.ok !== true || !Array.isArray(payload.items)) throw new Error("unavailable");
+      const quota = payload.quota || {};
+      const quotaNode = document.getElementById("your-request-quota");
+      if (quotaNode) quotaNode.textContent = "โควตาเดือนนี้: เหลือ " + (Number.isFinite(quota.remaining) ? quota.remaining : "—") + " / " + (Number.isFinite(quota.limit) ? quota.limit : 4) + " คน";
       renderCustomerRequests(payload.items);
       return true;
     } catch {
@@ -1261,7 +1285,7 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
     const requests = safeList(items).filter((item) => item?.request_type !== "saved_model");
     const savedItems = safeList(items).filter((item) => item?.request_type === "saved_model" && item.action === "save");
     if (!requests.length) appendEmpty(list, "ยังไม่มีคำขอที่ส่งจากบัญชีนี้");
-    else for (const item of requests) list.append(eventRow(item.created_at, item.request_type === "your_request" ? (item.model_name || "Your Request") : "อัปเดตข้อมูลของฉัน", item.status, item.audience ? item.audience.toUpperCase() : "กำลังตรวจสอบ"));
+    else for (const item of requests) { const row = eventRow(item.created_at, item.request_type === "your_request" ? (item.model_name || "Your Request") : "อัปเดตข้อมูลของฉัน", item.status, item.audience ? item.audience.toUpperCase() : "กำลังตรวจสอบ"); if (item.request_type === "your_request") { const input = document.createElement("input"); input.type = "file"; input.accept = "image/jpeg,image/png,image/webp"; input.multiple = true; input.setAttribute("aria-label", "เพิ่มหลักฐานให้คำขอเดิม"); const button = document.createElement("button"); button.type = "button"; button.textContent = "เพิ่มรูปให้คำขอเดิม"; button.addEventListener("click", async () => { button.disabled = true; try { const evidence = await uploadRequestEvidence(input.files); const response = await requestJson({ action: "append_evidence", request_id: item.request_id, evidence_ids: evidence.ids }); if (!response.response.ok || response.payload?.ok !== true) throw Error("append_failed"); clearEvidenceState(evidence.storageKeys); await readCustomerRequests(); } catch { button.disabled = false; } }); row.append(input, button); } list.append(row); }
     if (!savedItems.length) appendEmpty(saved, "ยังไม่มีนายแบบที่บันทึกไว้");
     else for (const item of savedItems) saved.append(eventRow(item.created_at, item.model_name || "Saved model", item.status, "บันทึกไว้"));
   }
@@ -1314,10 +1338,10 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
       evidenceState = await uploadRequestEvidence(document.getElementById("requested-model-evidence").files);
       const request_id = pendingRequestId("your_request");
       const { response, payload } = await requestJson({ request_id, request_type:"your_request", model_name:document.getElementById("requested-model-name").value, model_social:document.getElementById("requested-model-social").value, audience:document.getElementById("requested-model-audience").value, reason:document.getElementById("requested-model-reason").value, evidence_ids:evidenceState.ids });
-      if (!response.ok || payload?.ok !== true) { if (terminalClientError(response)) { clearPendingRequest("your_request"); clearEvidenceState(evidenceState.storageKeys); } throw new Error("request_failed"); }
+      if (!response.ok || payload?.ok !== true) { if (terminalClientError(response)) { clearPendingRequest("your_request"); clearEvidenceState(evidenceState.storageKeys); } throw Object.assign(new Error("request_failed"), { status: response.status, code: payload?.error?.code }); }
       clearPendingRequest("your_request"); clearEvidenceState(evidenceState.storageKeys);
       yourRequestForm.reset(); yourRequestStatus.textContent = "MMD รับคำขอแล้วครับ ทีมจะตรวจสอบเป็นการภายใน"; await readCustomerRequests();
-    } catch { yourRequestStatus.textContent = "ตอนนี้ยังส่งคำขอไม่ได้ครับ กรุณาลองใหม่อีกครั้ง"; }
+    } catch (error) { yourRequestStatus.textContent = error?.status === 429 ? "ครบโควตา 4 คนของเดือนนี้แล้วครับ" : "ตอนนี้ยังส่งคำขอไม่ได้ครับ กรุณาลองใหม่อีกครั้ง"; }
     finally { button.disabled = false; }
   });
 
@@ -1761,6 +1785,8 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
     if (appStatus) appStatus.dataset.mmdStatusKind = "ready";
     secondaryReads.clear();
     profileReady = true;
+    const sessionLabel = document.getElementById("digital-session");
+    if (sessionLabel) sessionLabel.textContent = "LINE VERIFIED";
     // Only after the existing authenticated profile read succeeds. The album
     // endpoint independently rechecks account and media permission on arrival.
     if (CONFIG.returnTo === "/my-mmd/ems" || CONFIG.returnTo.startsWith("/my-mmd/ems/")) { window.location.replace(CONFIG.returnTo); return; }
@@ -2267,7 +2293,10 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
           show("เปิดใน LINE ด้วยปุ่มด้านล่างเพื่อยืนยันตัวตนและสมัครสมาชิกครับ");
           return;
         }
-        window.liff.login({ redirectUri: window.location.href });
+        const loginReturn = new URL(window.location.href);
+        loginReturn.protocol = "https:";
+        loginReturn.host = "mmdbkk.com";
+        window.liff.login({ redirectUri: loginReturn.href });
         return;
       }
       signupLineEntry?.classList.add("hidden");

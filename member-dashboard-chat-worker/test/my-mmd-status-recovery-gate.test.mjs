@@ -15,10 +15,10 @@ function assertDirectReturn(output, target = "/my-mmd/") {
   assert.match(output, /if \(started\)/);
 }
 
-test("direct status LIFF returns to same-origin Lovable after verified LINE", () => {
+test("direct status LIFF keeps its profile bootstrap without a home round trip", () => {
   const request = new Request("https://www.mmdbkk.com/member/liff?intent=status");
   assert.equal(I.statusReturnTarget(request), "/my-mmd/");
-  assertDirectReturn(I.stabilizeStatusShell(STATUS_SHELL, request));
+  assert.equal(I.stabilizeStatusShell(STATUS_SHELL, request), STATUS_SHELL);
 });
 
 test("coupon status LIFF returns to the single /coupon entry after verified start", () => {
@@ -114,12 +114,12 @@ test("signed customer job confirmation enters through LIFF and returns only to t
   }
 });
 
-test("LINE liff.state status launch returns to same-origin Lovable", () => {
+test("LINE liff.state status launch keeps the native LIFF home", () => {
   const state = encodeURIComponent("/member/liff?intent=status");
   const request = new Request(`https://www.mmdbkk.com/member/liff?liff.state=${state}`);
   assert.equal(I.isStatusLiffShellRequest(request), true);
   assert.equal(I.statusReturnTarget(request), "/my-mmd/");
-  assertDirectReturn(I.stabilizeStatusShell(STATUS_SHELL, request));
+  assert.equal(I.stabilizeStatusShell(STATUS_SHELL, request), STATUS_SHELL);
 });
 
 test("LINE liff.state carries the coupon return target without allowing arbitrary redirects", () => {

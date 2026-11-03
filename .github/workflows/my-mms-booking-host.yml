@@ -1,0 +1,23 @@
+name: MY MMS booking host validation
+on:
+  pull_request:
+    paths:
+      - 'member-dashboard-chat-worker/src/mms-customer-booking-page.mjs'
+      - 'member-dashboard-chat-worker/src/my-mms-customer-front-gate-entry.js'
+      - 'member-dashboard-chat-worker/src/my-mms-customer-app-front-gate.js'
+      - 'member-dashboard-chat-worker/test/mms-customer-booking-page.test.mjs'
+      - 'member-dashboard-chat-worker/test/mms-booking-account.test.mjs'
+      - 'scripts/mms-booking-catalog-code-only.mjs'
+      - 'scripts/mms-booking-catalog-code-only.test.mjs'
+      - '.github/workflows/my-mms-booking-host.yml'
+permissions:
+  contents: read
+jobs:
+  booking-host:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test scripts/mms-booking-catalog-code-only.test.mjs member-dashboard-chat-worker/test/mms-customer-booking-page.test.mjs member-dashboard-chat-worker/test/my-mms-customer-app.test.mjs member-dashboard-chat-worker/test/mms-booking-account.test.mjs

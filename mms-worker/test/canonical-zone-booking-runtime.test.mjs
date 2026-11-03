@@ -72,6 +72,8 @@ function therapists() {
         "Matching Enabled": true,
         "Manual Review Only": false,
         "MY MMS Access": "Approved",
+        "Therapist Auth Status": "Active",
+        "LINE Subject Hash": "fixture-hash",
         Status: "Active",
       },
     },
@@ -92,6 +94,8 @@ function therapists() {
         "Matching Enabled": true,
         "Manual Review Only": false,
         "MY MMS Access": "Approved",
+        "Therapist Auth Status": "Active",
+        "LINE Subject Hash": "fixture-hash",
         Status: "Active",
       },
     },
@@ -110,21 +114,24 @@ function therapists() {
         "Matching Enabled": true,
         "Manual Review Only": false,
         "MY MMS Access": "Approved",
+        "Therapist Auth Status": "Active",
+        "LINE Subject Hash": "fixture-hash",
         Status: "Active",
       },
     },
   ];
 }
 
-function installAirtableFetch() {
+function installAirtableFetch(records = therapists()) {
   const original = globalThis.fetch;
-  globalThis.fetch = async (input) => {
+  globalThis.fetch = async (input, init) => {
+    assert.equal(init?.method || "GET", "GET", "matching must never write provider data");
     const url = new URL(String(input));
     if (url.pathname.includes(ENV.AIRTABLE_SERVICE_ZONES_TABLE_ID)) {
       return Response.json({ records: serviceZones() });
     }
     if (url.pathname.includes(ENV.AIRTABLE_THERAPISTS_TABLE_ID)) {
-      return Response.json({ records: therapists() });
+      return Response.json({ records: records });
     }
     throw new Error(`unexpected fetch ${url}`);
   };
@@ -186,4 +193,28 @@ test("runtime intercepts canonical Zone Code before legacy prebooking auto-dispa
   const legacyIndex = source.indexOf("runtime.fetch(request, env, ctx)");
   assert.ok(canonicalIndex >= 0 && legacyIndex > canonicalIndex);
   assert.match(source, /canonicalZoneErrorResponse/);
+});
+
+const search = () => new Request('https://mms.internal/mms/api/therapists/match', {
+  method:'POST', headers:{'content-type':'application/json'},
+  body:JSON.stringify({recipient_gender:'male',zone:'BKK-SUKHUMVIT',skills:['aroma_therapy_oil']})
+});
+for (const [name, patch] of Object.entries({
+  offline:{'Availability Status':'Unavailable'}, paused:{'Availability Status':'Paused'},
+  unknownAvailability:{'Availability Status':''}, unlinked:{'Therapist Auth Status':'Unlinked'},
+  missingIdentity:{'LINE Subject Hash':''}, revoked:{'MY MMS Access':'Revoked'},
+  missingAccess:{'MY MMS Access':undefined}, inactive:{Status:'Review'},
+  matchingOff:{'Matching Enabled':false}, missingMatching:{'Matching Enabled':undefined},
+  manualReview:{'Manual Review Only':true}, unverifiedService:{'Verified Skills':['Thai Massage']},
+  wrongRecipient:{'Customer Gender Scope':'ผู้หญิง'},
+  wrongCanonicalZone:{'Base Service Zone':[ZONE_B],'Coverage Service Zones':[]},
+  legacyTextOnly:{'Base Service Zone':[],'Coverage Service Zones':[]},
+})) test('canonical booking excludes '+name+' without writing or leaking identity', async()=>{
+  const records=therapists().slice(0,1); Object.assign(records[0].fields,patch);
+  const restore=installAirtableFetch(records);
+  try {const response=await maybeHandleCanonicalZoneBooking(search(),ENV);assert.equal(response.status,200);const result=await response.json();assert.deepEqual(result.data.matches,[]);assert.equal(JSON.stringify(result).includes('fixture-hash'),false);} finally{restore();}
+});
+test('catalog provider failure is an error, not a successful empty match',async()=>{
+ const original=globalThis.fetch; globalThis.fetch=async()=>Response.json({error:'fixture provider failure'},{status:503});
+ try{await assert.rejects(()=>maybeHandleCanonicalZoneBooking(search(),ENV));}finally{globalThis.fetch=original;}
 });

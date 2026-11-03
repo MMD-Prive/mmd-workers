@@ -1,3 +1,4 @@
+import { isBookingTherapistEligible } from './booking-therapist-eligibility.mjs';
 import {
   catalog,
   matchTherapists,
@@ -165,6 +166,7 @@ async function canonicalMatch(env, rawBody, canonicalZone, zoneIndex, prevalidat
 
   const records = await airtableListAll(env, tableId(env, "THERAPISTS"));
   const exactRecords = records
+    .filter(isBookingTherapistEligible)
     .filter((record) => therapistCoversCanonicalZone(record, canonicalZone.code, zoneIndex))
     .map((record) => {
       const fields = record.fields || {};

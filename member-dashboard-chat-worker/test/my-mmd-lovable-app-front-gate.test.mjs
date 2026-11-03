@@ -112,7 +112,7 @@ test("Private Teaser is a dedicated MY MMD viewer and never fetches the Lovable 
   assert.doesNotMatch(html, /private_original_key|r2_bucket|signed_url|media_id|localStorage|sessionStorage|indexedDB/);
 });
 
-test("Webflow owns home/profile and Orders recovery keeps its closed state", async () => {
+test("Home enters Nightline while Orders recovery keeps its closed state", async () => {
   globalThis.fetch = async request => new Response(
     new URL(request.url).pathname === "/member/dashboard" ? '<html><body><main id="mymmd-wf">MY MMD</main></body></html>' : "unavailable",
     { status: new URL(request.url).pathname === "/member/dashboard" ? 200 : 404, headers: { "content-type": "text/html" } },
@@ -120,9 +120,9 @@ test("Webflow owns home/profile and Orders recovery keeps its closed state", asy
   for (const path of ["/my-mmd", "/my-mmd/"]) {
     const response = await worker.fetch(new Request(`https://mmdbkk.com${path}`), {});
     const html = await response.text();
-    assert.equal(response.status, 200);
-    assert.equal(response.headers.get("x-mmd-presentation-owner"), "webflow");
-    assert.match(html, /mymmd-wf/);
+    assert.equal(response.status, 307);
+    assert.equal(response.headers.get("location"), "/member/liff?intent=status");
+    assert.equal(html, "");
   }
   const orders = await worker.fetch(new Request("https://mmdbkk.com/my-mmd/orders"), {});
   const ordersHtml = await orders.text();
@@ -326,7 +326,7 @@ test("My MMD presentation remains read-only while behavior stays on /api/member/
   assert.equal(api.headers.get("x-mmd-upstream-service"), "member-pages-worker");
 });
 
-test("direct status LIFF keeps Digital Home while bridging to Webflow after session confirmation", async () => {
+test("direct status LIFF keeps Digital Home without a second home bridge", async () => {
   const runtime = {
     MEMBER_PAGES_WORKER: {
       fetch: async () => new Response(
@@ -340,12 +340,13 @@ test("direct status LIFF keeps Digital Home while bridging to Webflow after sess
   const html = await response.text();
 
   assert.equal(response.status, 200);
-  assert.equal(response.headers.get("x-mmd-liff-return-target"), "/my-mmd/");
-  assert.equal(response.headers.get("x-mmd-liff-ui-mode"), null);
+  assert.equal(response.headers.get("x-mmd-liff-return-target"), null);
+  assert.equal(response.headers.get("x-mmd-liff-ui-mode"), "native-home");
   assert.match(html, /MMD Privé · LIFF Digital Home/);
   assert.match(html, /CANONICAL_POINTS_PATH = "\/my-mmd\/points"/);
   assert.match(html, /view === "history" \? "history-panel" : view/);
   assert.doesNotMatch(html, /mmd-status-bridge-veil/);
+  assert.doesNotMatch(html, /mmd-ems-login-return/);
 });
 
 test("private_teaser LIFF verifies the member then returns only to the allowlisted MY MMD teaser model", async () => {
@@ -493,3 +494,34 @@ test("private preview front gate overwrites rollout mode header and unknown conf
   ), runtime);
   assert.deepEqual(seen, ["pilot", "off"]);
 });
+
+for (const query of ['intent=status', 'intent=status&view=overview', 'liff.state='+encodeURIComponent('/?intent=status&view=overview')]) {
+  test('Nightline home remains on LIFF after login: '+query, async()=>{
+    const shell='<!doctype html><html><head></head><body data-mmd-skin="nightline"><main>Nightline</main><script nonce="existing">bootstrapExistingSession();</script></body></html>';
+    const calls=[];
+    const runtime={MEMBER_PAGES_WORKER:{fetch:async request=>{calls.push(new URL(request.url).pathname);return new Response(shell,{headers:{'content-type':'text/html','set-cookie':'__Host-session=fixture; Secure; HttpOnly; Path=/'}});}}};
+    const response=await worker.fetch(new Request('https://mmdbkk.com/member/liff?'+query),runtime);
+    assert.equal(await response.text(),shell);
+    assert.equal(response.headers.get('x-mmd-liff-ui-mode'),'nightline-home');
+    assert.equal(response.headers.get('x-mmd-liff-return-target'),null);
+    assert.equal(response.headers.get('set-cookie'),'__Host-session=fixture; Secure; HttpOnly; Path=/');
+    assert.deepEqual(calls,['/member/liff']);
+  });
+}
+for (const view of ['ems_albums','gws_albums']) {
+  test('Nightline does not suppress protected album return: '+view, async()=>{
+    const shell='<!doctype html><html><head></head><body data-mmd-skin="nightline"><script nonce="existing">bootstrapExistingSession();</script></body></html>';
+    const runtime={MEMBER_PAGES_WORKER:{fetch:async()=>new Response(shell,{headers:{'content-type':'text/html'}})}};
+    const response=await worker.fetch(new Request('https://mmdbkk.com/member/liff?intent='+view),runtime);
+    const html=await response.text();
+    assert.notEqual(response.headers.get('x-mmd-liff-ui-mode'),'nightline-home');
+    assert.match(html,/mmd-ems-login-return/);
+  });
+}
+
+for(const suffix of ['?from=line_verify','?world=private&tier=SVIP','?audience=public'])test('Verify home enters same-host app without browser audience authority '+suffix,async()=>{
+  globalThis.fetch=async()=>{throw Error('Must not fetch old Webflow home');};
+  const response=await worker.fetch(new Request('https://mmdbkk.com/my-mmd/'+suffix),{});
+  assert.equal(response.status,307);assert.equal(response.headers.get('location'),'/member/liff?intent=status');assert.equal(response.headers.get('cache-control'),'private, no-store');
+});
+test('home navigation does not forward POST into a different action',async()=>{const response=await worker.fetch(new Request('https://mmdbkk.com/my-mmd/',{method:'POST'}),{});assert.equal(response.status,405);});

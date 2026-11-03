@@ -1,3 +1,6 @@
+import { preparePublicRequest, verifyPublicOwner, protectPublicOwnerFromPrivateWrite } from "./public-booking-owner.js";
+import { authorizePublicBooking, paidPublicMembership } from "./public-booking-membership.js";
+import { resolveBookingViewer } from "./customer-discovery-policy.js";
 import bookingWorker, { sanitizeModelForBooking, withBrowserCors } from "./index.js";
 import { resolveMemberEntitlements } from "../../auth-worker/src/member-entitlement-resolver.js";
 import { allowedCustomerModelFolders, protectedCustomerModelAccess, safeSearchIntent } from "./customer-search-policy.js";
@@ -10,26 +13,42 @@ const BOOKING_CONFIRM_PATH = "/__internal/booking/confirm";
 const MODEL_SEARCH_PATH = "/sigil/api/models/search";
 
 export default {
-  async fetch(request, env, ctx) {
+  async fetch(request, env, ctx, memberContext = null) {
     const url = new URL(request.url);
     const path = normalizePath(url.pathname);
     const method = request.method.toUpperCase();
+
+    if (method === "POST" && [CLIENT_RESOLVE_PATH,BOOKING_INTAKE_PATH].includes(path)) {
+      const blocked=await protectPublicOwnerFromPrivateWrite(request,env);
+      if(blocked)return withBrowserCors(blocked,request,env);
+    }
 
     if (method === "POST" && path === BOOKING_CONFIRM_PATH) {
       return handleTrustedBookingConfirm(request, env);
     }
 
     if ((method === "GET" || method === "POST") && path === MODEL_SEARCH_PATH) {
-      return bookingWorker.fetch(request, env, ctx);
+      return bookingWorker.fetch(request, env, ctx, memberContext);
     }
 
     if (method === "POST" && path === CLIENT_RESOLVE_PATH) {
       const body = await request.clone().json().catch(() => ({}));
-      const response = await bookingWorker.fetch(request, env, ctx);
+      const privateResolve = clean(body.lane || body.model_scope).toLowerCase() === "private";
+      const publicAuthorization = privateResolve ? null : await authorizePublicBooking(request,env);
+      if (publicAuthorization && !publicAuthorization.ok) return withBrowserCors(json({ok:false,error:publicAuthorization.error},publicAuthorization.status),request,env);
+      let effectiveRequest=request, effectiveContext=memberContext;
+      if (publicAuthorization) {
+        try {
+          const prepared=await preparePublicRequest(env,body,publicAuthorization);
+          effectiveRequest=new Request(request,{body:JSON.stringify(prepared.body)});
+          effectiveContext={...memberContext,publicBookingOwner:prepared.owner,publicAccess:accessFromSnapshot(publicAuthorization.snapshot)};
+        } catch(error) { return withBrowserCors(json({ok:false,error:error.status?error.message:"membership_status_unavailable"},error.status||503),request,env); }
+      }
+      const response = await bookingWorker.fetch(effectiveRequest, env, ctx, effectiveContext);
       if (!response.ok) return response;
       const payload = await response.clone().json().catch(() => null);
       if (!payload?.ok) return response;
-      const canonical = await resolveCanonicalAccess(env, body).catch(() => failClosedAccess());
+      const canonical = publicAuthorization ? {snapshot:publicAuthorization.snapshot,response:accessFromSnapshot(publicAuthorization.snapshot)} : await resolveCanonicalAccess(env, body).catch(() => failClosedAccess());
       await persistCanonicalAccess(env, payload, canonical).catch(() => null);
       const headers = new Headers(response.headers);
       headers.set("content-type", "application/json; charset=utf-8");
@@ -38,20 +57,33 @@ export default {
     }
 
     if (method === "POST" && path === BOOKING_INTAKE_PATH) {
-      return handleCanonicalBookingIntake(request, env, ctx);
+      return handleCanonicalBookingIntake(request, env, ctx, memberContext);
     }
 
-    return bookingWorker.fetch(request, env, ctx);
+    return bookingWorker.fetch(request, env, ctx, memberContext);
   },
 };
 
-async function handleCanonicalBookingIntake(request, env, ctx) {
-  const body = await request.clone().json().catch(() => ({}));
-  const bookingRef = clean(body.booking_ref || body.request_id);
+async function handleCanonicalBookingIntake(request, env, ctx, memberContext = null) {
+  let body = await request.clone().json().catch(() => ({}));
+  let bookingRef = clean(body.booking_ref || body.request_id);
   const sessionId = clean(body.session_id);
+  const isPrivate = clean(body.lane || body.model_scope).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") === "private";
+  // Authenticate BEFORE reading/upserting a draft or sending a notification.
+  const publicAuthorization = isPrivate ? null : await authorizePublicBooking(request, env);
+  if (publicAuthorization && !publicAuthorization.ok) return withBrowserCors(json({ok:false,error:publicAuthorization.error},publicAuthorization.status),request,env);
+  let publicOwner=null;
+  if (publicAuthorization) {
+    try { const prepared=await preparePublicRequest(env,body,publicAuthorization); body=prepared.body;bookingRef=body.booking_ref;publicOwner=prepared.owner; }
+    catch(error) { return withBrowserCors(json({ok:false,error:error.status?error.message:"membership_status_unavailable"},error.status||503),request,env); }
+  }
+  const identity = publicAuthorization?.viewer || (isPrivate ? await resolveBookingViewer(request,env) : null);
+  const trustedContext = { ...memberContext, bookingIdentity: identity?.ok ? identity.perRename : null, publicBookingOwner:publicOwner };
   const stored = await readBookingRequest(env, { bookingRef, sessionId }).catch(() => null);
   let parsed = parseJson(stored?.fields?.resolver_payload_json);
-  let snapshot = parsed?.entitlement_snapshot;
+  if (memberContext?.memberRecordId) parsed = { ...parsed, access: { ...parsed?.access, member_record_id: memberContext.memberRecordId } };
+  let snapshot = publicAuthorization?.snapshot || parsed?.entitlement_snapshot;
+  if (publicAuthorization) parsed = {kind:"booking_intake", entitlement_snapshot:snapshot, saved_at:new Date().toISOString()};
   const privateIntake = clean(body.lane || body.model_scope).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") === "private";
   if (privateIntake) {
     const canonical = await currentPrivateAccess(request, env, clean(parsed?.access?.member_record_id));
@@ -81,7 +113,7 @@ async function handleCanonicalBookingIntake(request, env, ctx) {
   const safeBody = { ...body };
   if (privateIntake) {
     safeBody.client_contact = clean(stored?.fields?.client_contact || stored?.fields?.["Contact Value"]);
-    safeBody.line_or_member_id = clean(stored?.fields?.line_or_member_id);
+    safeBody.line_or_member_id = clean(memberContext?.memberId || stored?.fields?.line_or_member_id);
   }
   if (snapshot?.schema_version === "my_mmd_entitlement_resolver_v1") {
     const access = accessFromSnapshot(snapshot);
@@ -96,11 +128,15 @@ async function handleCanonicalBookingIntake(request, env, ctx) {
     safeBody.private_allowed = false;
   }
 
+  // Only the authenticated service entry may attach a signed request owner.
+  if (memberContext?.ownerMetadata) {
+    safeBody.resolver_payload_json = { ...safeBody.resolver_payload_json, my_mmd_owner: memberContext.ownerMetadata };
+  }
   const safeRequest = new Request(request, {
     body: JSON.stringify(safeBody),
     headers: withJsonContentType(request.headers),
   });
-  return bookingWorker.fetch(safeRequest, env, ctx);
+  return bookingWorker.fetch(safeRequest, env, ctx, trustedContext);
 }
 
 async function handleTrustedBookingConfirm(request, env) {
@@ -116,10 +152,20 @@ async function handleTrustedBookingConfirm(request, env) {
   if (!row?.id) return json({ ok: false, error: "booking_not_found" }, 404);
   const fields = row.fields || {};
 
-  const canonical = await resolveCanonicalAccess(env, {
-    client_contact: fields.client_contact || fields["Contact Value"],
-    line_or_member_id: fields.line_or_member_id,
-  }).catch(() => failClosedAccess());
+  const owner=parseJson(fields.resolver_payload_json)?.public_booking_owner;
+  let canonical;
+  if (owner) {
+    if (!await verifyPublicOwner(env,clean(fields.booking_ref || fields["Request ID"]),owner)) return json({ok:false,error:"booking_owner_invalid"},409);
+    const access=await currentPrivateAccess(request,env,owner.member_record_id,owner.member_ref,{throwOnUnavailable:true}).catch(()=>null);
+    if (!access || access.viewerRef!==owner.member_ref) return json({ok:false,error:"membership_status_unavailable"},503);
+    canonical={snapshot:access.snapshot,response:accessFromSnapshot(access.snapshot)};
+  } else {
+    // Legacy contact fields and member_booking_owner_v2 do not contain a
+    // verified binding to one Members record. Never turn an email/LINE match
+    // into confirmation authority, including for previously confirmed rows.
+    // Keep the record unchanged for explicit ownership review/migration.
+    return json({ok:false,error:"booking_owner_review_required"},409);
+  }
   const bookingAccess = bookingAccessFromSnapshot(canonical.snapshot, clean(fields.lane || fields.model_scope || body.lane || "public"));
   const payment = await verifyBookingPayment(env, {
     paymentRef: clean(body.payment_ref || fields.payment_ref),
@@ -127,7 +173,7 @@ async function handleTrustedBookingConfirm(request, env) {
     bookingRef: clean(bookingRef || fields.booking_ref),
   }).catch(() => ({ verified: false, reason: "payment_lookup_failed" }));
 
-  const entitlementValid = bookingAccess.allowed === true;
+  const entitlementValid = bookingAccess.allowed === true && (!owner || paidPublicMembership(canonical.snapshot));
   const paymentVerified = payment.verified === true;
   if (!entitlementValid || !paymentVerified) {
     return json({

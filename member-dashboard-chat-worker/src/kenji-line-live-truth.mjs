@@ -106,6 +106,14 @@ export function kenjiLiveTruthRequired(intent = "") {
   return LIVE_TRUTH_INTENTS.has(text(intent).toLowerCase());
 }
 
+// Fixed vocabulary only: never log identity, response bodies or exception text.
+function truthDiagnostic(intent, reason, status = null) {
+  try {
+    console.log(JSON.stringify({ kenji_member_truth: "failed", intent, reason,
+      http_status: Number.isInteger(status) ? status : null }));
+  } catch { /* diagnostics must not affect the customer reply */ }
+}
+
 export async function resolveKenjiLineLiveTruth({ env = {}, event = {}, intent = "" } = {}) {
   const effectiveIntent = text(intent).toLowerCase();
   if (!kenjiLiveTruthRequired(effectiveIntent)) {
@@ -113,6 +121,7 @@ export async function resolveKenjiLineLiveTruth({ env = {}, event = {}, intent =
   }
   const lineUserId = lineUserIdOf(event);
   if (!lineUserId || !env.MEMBER_PAGES_WORKER?.fetch) {
+    truthDiagnostic(effectiveIntent, !lineUserId ? "identity_invalid" : "binding_missing");
     return { ok: false, status: "unavailable", authority: AUTHORITY };
   }
 
@@ -145,12 +154,18 @@ export async function resolveKenjiLineLiveTruth({ env = {}, event = {}, intent =
     const failure = text(payload?.failure_class || payload?.status);
     if (payload?.ok === false && payload?.authority === AUTHORITY &&
       ["identity_unresolved", "no_entitlement", "upstream_error", "projection_invalid"].includes(failure)) {
+      truthDiagnostic(effectiveIntent, failure, response.status);
       return { ok: false, status: failure, failure_class: failure, authority: AUTHORITY };
     }
-    if (!response.ok) return { ok: false, status: "upstream_error", failure_class: "upstream_error", authority: AUTHORITY };
+    if (!response.ok) {
+      truthDiagnostic(effectiveIntent, "upstream_http_error", response.status);
+      return { ok: false, status: "upstream_error", failure_class: "upstream_error", authority: AUTHORITY };
+    }
     const truth = boundedTruth(payload || {});
+    if (!truth) truthDiagnostic(effectiveIntent, "contract_invalid", response.status);
     return truth || { ok: false, status: "unavailable", authority: AUTHORITY };
   } catch {
+    truthDiagnostic(effectiveIntent, controller.signal.aborted ? "timeout" : "transport_error");
     if (controller.signal.aborted) return { ok: false, status: "upstream_error", failure_class: "upstream_error", failure_reason: "timeout", authority: AUTHORITY };
     return { ok: false, status: "unavailable", authority: AUTHORITY };
   } finally {

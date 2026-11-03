@@ -21,7 +21,7 @@ const tables = Object.fromEntries(['PREBOOKINGS', 'JOBS', 'OFFERS', 'THERAPISTS'
 const origin = 'https://www.mmdbkk.com';
 const signedCookie = (env, id) => {
   const now = Math.floor(Date.now()/1000);
-  const body = Buffer.from(JSON.stringify({ v:1, role:'mms_therapist', therapist_id:id, iat:now, exp:now+3600 })).toString('base64url');
+  const body = Buffer.from(JSON.stringify({ v:1, role:'mms_therapist', therapist_id:id, line_binding: createHmac('sha256', env.MMS_THERAPIST_SESSION_SECRET).update('mms-therapist-line-binding-v1.fixture-only-hash').digest('hex'), iat:now, exp:now+3600 })).toString('base64url');
   return '__Secure-mms_therapist_session=v1.' + body + '.' + createHmac('sha256', env.MMS_THERAPIST_SESSION_SECRET).update('mms-therapist-session-v1.'+body).digest('hex');
 };
 

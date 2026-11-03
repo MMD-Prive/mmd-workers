@@ -1,0 +1,24 @@
+--- a/mms-worker/wrangler.jsonc
++++ b/mms-worker/wrangler.jsonc
+@@ -67,6 +67,10 @@
+       {
+         "name": "RELAX_SPA_LEDGER",
+         "class_name": "RelaxSpaLedger"
++      },
++      {
++        "name": "MMS_THERAPIST_PROFILES",
++        "class_name": "MmsTherapistProfileCoordinator"
+       }
+     ]
+   },
+@@ -90,6 +94,10 @@
+     {
+       "tag": "v5-mms-therapist-schedule",
+       "new_sqlite_classes": ["MmsTherapistScheduleCoordinator"]
++    },
++    {
++      "tag": "v6-mms-therapist-profile",
++      "new_sqlite_classes": ["MmsTherapistProfileCoordinator"]
+     }
+   ]
+ }

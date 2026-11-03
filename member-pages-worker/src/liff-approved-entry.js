@@ -269,6 +269,7 @@ export function installApprovedEntryLoading(createMotion,createPercentMotion) {
     else if(!visible&&shown){shown=false;motion.close();numbers.close();}
   }
   function update(state){
+    state={...state,overallPending:state.entryPending??state.overallPending,overallPercent:state.entryPercent??state.overallPercent,overallError:state.entryError??state.overallError};
     sync();
     if(!shown||state.overallPending===undefined)return;
     if(completed){numbers.paint();return;}

@@ -164,6 +164,7 @@ console.log('Missing Customer 360 scope locks without fallback: passed');
     ok: true, client_id: 'recDeepLink', identity: { status: 'canonical' },
   }) });
   await new Promise(resolve => setImmediate(resolve));
+  assert.equal(node('[data-state]').textContent, 'โหลดข้อมูลแล้ว');
   assert.equal(node('[data-detail]').hidden, false);
   assert.equal(node('[data-empty]').hidden, true);
   assert.equal(node('[data-client]').textContent, 'recDeepLink');
@@ -173,3 +174,58 @@ console.log('Missing Customer 360 scope locks without fallback: passed');
 }
 
 console.log('Customer memory deep link: passed');
+
+
+// Failed canonical reads must end the page loading state without exposing a client.
+for (const failure of [
+  { name: 'upstream unavailable', status: 503, body: { ok: false, error: 'upstream_unavailable' } },
+  { name: 'identity mismatch', status: 200, body: { ok: true, client_id: 'recDifferent', identity: { status: 'canonical' } } },
+  { name: 'session expired', status: 401, body: {} },
+  { name: 'permission denied', status: 403, body: {} },
+]) {
+  const source = readFileSync(new URL('../src/customer-360-live-client.ts', import.meta.url), 'utf8').split('String.raw`')[1].split('`;')[0];
+  const nodes = new Map();
+  const node = selector => {
+    if (!nodes.has(selector)) nodes.set(selector, {
+      textContent: '', innerHTML: '', hidden: false, href: '', dataset: {}, style: {},
+      removeAttribute() {}, appendChild() {}, insertAdjacentElement() {}, addEventListener() {}, closest() { return null; },
+      querySelector: s => node(s), querySelectorAll: () => [],
+    });
+    return nodes.get(selector);
+  };
+  node('[data-detail]').hidden = true;
+  node('[data-empty]').hidden = false;
+  node('[data-client]').textContent = '—';
+  const pending = [];
+  const document = {
+    querySelector: s => /runtime/.test(s) ? null : node(s),
+    querySelectorAll: () => [],
+    createElement: () => node('deep-link-' + nodes.size),
+    head: node('head-deep-link'),
+    documentElement: node('html-deep-link'),
+  };
+  const context = vm.createContext({
+    document,
+    location: {
+      pathname: '/internal/admin/customer-data',
+      href: 'https://example.test/internal/admin/customer-data?client_id=recDeepLink',
+      origin: 'https://example.test',
+    },
+    URL,
+    setTimeout,
+    MutationObserver: class { observe() {} },
+    fetch: () => new Promise(resolve => pending.push(resolve)),
+  });
+  vm.runInContext(source, context);
+  assert.equal(node('[data-state]').textContent, 'กำลังโหลดข้อมูล');
+  assert.equal(pending.length, 1);
+  pending[0]({ ok: failure.status === 200, status: failure.status,
+    text: async () => JSON.stringify(failure.body) });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(node('[data-state]').textContent, 'โหลดข้อมูลไม่สำเร็จ', failure.name);
+  assert.equal(node('[data-detail]').hidden, true, failure.name);
+  assert.equal(node('[data-empty]').hidden, false, failure.name);
+  assert.equal(node('[data-ci-state]').textContent, 'UNAVAILABLE', failure.name);
+  assert.equal(pending.length, 1, 'failed identity must not start a member history read');
+}
+console.log('Customer memory failed-read terminal states: passed');

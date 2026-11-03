@@ -40,7 +40,6 @@ export default {
     if (!eligible) return currentWorker.fetch(request, env, ctx);
 
     const inspectRequest = request.clone();
-    const retryRequest = request.clone();
     const firstResponse = await currentWorker.fetch(request, env, ctx);
     const firstPayload = await jsonPayload(firstResponse);
     if (!firstResponse.ok || firstPayload?.ok !== true || typeof firstPayload?.data?.member_exists !== "boolean") {
@@ -110,19 +109,13 @@ export default {
       return fastTrustProfileResponse(firstResponse, firstPayload, lineUserId, fastTrust);
     }
 
-    // No Fast Trust marker: retain the deterministic canonical-link recovery.
+    // No Fast Trust marker: retain read-only recovery hints for owner review.
     if (firstPayload.data.member_exists !== false) {
       return firstResponse;
     }
 
     const recovery = await recoverCanonicalMemberLineLink(env, lineUserId);
-    if (!recovery.linked) return withRecoveryHeader(firstResponse, recovery.reason || fastTrust.reason || "unresolved");
-
-    // Re-read through the normal resolver after writing only the canonical LINE
-    // identity field. Membership, tier, points, packages and entitlement remain
-    // untouched and continue to be resolved by their existing authorities.
-    const retried = await currentWorker.fetch(retryRequest, env, ctx);
-    return withRecoveryHeader(retried, "linked");
+    return withRecoveryHeader(firstResponse, recovery.reason || fastTrust.reason || "unresolved");
   },
 
   scheduled(controller, env, ctx) {
@@ -444,11 +437,11 @@ export async function recoverCanonicalMemberLineLink(env = {}, lineUserId) {
     const member = members[0];
     const existingLine = String(member?.fields?.[memberLineField] || "").trim();
     if (existingLine && existingLine !== lineId) return { linked: false, reason: "member_line_conflict" };
-    if (existingLine === lineId) return { linked: true, reason: "already_linked", source: "canonical_evidence" };
-
-    await airtableUpdate(env, memberTable, member.id, { [memberLineField]: lineId });
-    console.log({ event: "my_mmd_line_identity_recovered", source: "canonical_evidence", access_mutated: false });
-    return { linked: true, reason: "linked", source: "canonical_evidence" };
+    // These email joins are recovery hints, not proof that this LINE subject
+    // owns the Member. Do not create a link or certify an existing link whose
+    // provenance may be the same email-only recovery. Existing members resolved
+    // by the normal reader never enter this recovery branch.
+    return { linked: false, reason: "owner_review_required" };
   } catch (error) {
     console.warn({ event: "my_mmd_line_identity_recovery_failed", failure_class: safeFailure(error) });
     return { linked: false, reason: "identity_recovery_unavailable" };
@@ -473,9 +466,8 @@ function committedClientRecordIds(records, lineUserId) {
   return { id: ids.values().next().value || "", ambiguous: false };
 }
 
-// The canonical staging projection is already tied to the verified LINE
-// subject. It may supply one exact Client link, which lets us recover the
-// matching Member without falling back to customer-entered identifiers.
+// An exact staging Client link can narrow recovery hints, but does not prove
+// that a Member located only by email belongs to the verified LINE subject.
 function canonicalStagingClientRecordIds(records, lineUserId, source) {
   const ids = new Set();
   let invalid = false;
@@ -548,7 +540,7 @@ async function jsonPayload(response) {
 function withRecoveryHeader(response, state) {
   const headers = new Headers(response.headers);
   headers.set("x-mmd-line-identity-recovery", String(state || "unresolved").slice(0, 80));
-  headers.set("x-mmd-identity-authority", "canonical-member-link");
+  headers.set("x-mmd-identity-authority", "member-link-review");
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
@@ -563,23 +555,4 @@ async function airtableList(env, tableName, params = {}) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok || !Array.isArray(data.records)) throw new Error(`airtable_${response.status || "malformed"}`);
   return data.records;
-}
-
-async function airtableUpdate(env, tableName, recordId, fields) {
-  const url = `https://api.airtable.com/v0/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${encodeURIComponent(tableName)}/${encodeURIComponent(recordId)}`;
-  const init = {
-    method: "PATCH",
-    headers: {
-      Authorization: `Bearer ${env.AIRTABLE_API_KEY}`,
-      "content-type": "application/json",
-      accept: "application/json",
-    },
-    body: JSON.stringify({ fields, typecast: false }),
-  };
-  const response = env.AIRTABLE_HTTP?.fetch
-    ? await env.AIRTABLE_HTTP.fetch(new Request(url, init))
-    : await fetch(url, init);
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok || !data?.id) throw new Error(`airtable_update_${response.status || "malformed"}`);
-  return data;
 }

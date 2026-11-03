@@ -32,7 +32,9 @@ export async function listMmdNowItems(env, live) {
     const endpoint=`https://api.webflow.com/v2/collections/${COLLECTION}/items${live?'/live':''}?limit=100&offset=${offset}`;
     const requestHeaders={accept:'application/json'};
     if(env.WEBFLOW_CMS_TOKEN) requestHeaders.Authorization='Bearer '+env.WEBFLOW_CMS_TOKEN;
-    const request=new Request(endpoint,{headers:requestHeaders,signal:AbortSignal.timeout(10000),redirect:'error'});
+    // Workers does not support redirect:'error'. Keep redirects visible and
+    // let boundedJson reject every non-2xx response without following Location.
+    const request=new Request(endpoint,{headers:requestHeaders,signal:AbortSignal.timeout(10000),redirect:'manual'});
     const response=env.WEBFLOW_CMS_HTTP?.fetch ? await env.WEBFLOW_CMS_HTTP.fetch(request) : await fetch(request);
     const data=await boundedJson(response);if(!Array.isArray(data.items)||!Number.isInteger(data.pagination?.total))throw Error('cms_malformed');
     items.push(...data.items);offset+=data.items.length;if(offset>=data.pagination.total)return items;if(!data.items.length)break;

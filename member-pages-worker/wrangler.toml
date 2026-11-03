@@ -85,6 +85,14 @@ service = "sigil-booking-worker"
 name = "CARE_BACK_WISH_COORDINATOR"
 class_name = "CareBackBirthdayWishCoordinator"
 
+[[durable_objects.bindings]]
+name = "CUSTOMER_REQUEST_QUOTA"
+class_name = "CustomerRequestQuotaCoordinator"
+
+[[durable_objects.bindings]]
+name = "CUSTOMER_REQUEST_MUTATION"
+class_name = "CustomerRequestMutationCoordinator"
+
 [[migrations]]
 tag = "v1-care-back-birthday-wish"
 new_sqlite_classes = ["CareBackBirthdayWishCoordinator"]
@@ -135,6 +143,11 @@ class_name = "CustomerRequestMutationCoordinator"
 [[migrations]]
 tag = "v5-customer-request-mutation"
 new_sqlite_classes = ["CustomerRequestMutationCoordinator"]
+
+# Preserve the newly added quota class after the observed live v5 lineage.
+[[migrations]]
+tag = "v6-customer-request-quota"
+new_sqlite_classes = ["CustomerRequestQuotaCoordinator"]
 
 # Required before deployment:
 # - secret LINE_LOGIN_CHANNEL_ID (existing CARE BACK channel audience)

@@ -24,6 +24,28 @@ function internalRequest(body = { line_user_id: LINE_ID }, caller = "admin-worke
 
 function env() {
   return {
+    AIRTABLE_API_KEY: "test-key",
+    AIRTABLE_BASE_ID: "appTestRecovery123",
+    AIRTABLE_HTTP: {
+      async fetch(request) {
+        const url = new URL(request.url);
+        assert.match(decodeURIComponent(url.pathname), /MMD — Identity Merge Requests/);
+        return Response.json({ records: [{ id: "recMergeABC123", fields: {
+          merge_request_id: "IMR-TEST123",
+          status: "review_required",
+          line_user_id: LINE_ID,
+          identity_email: "chen@example.com",
+          identity_phone: "+66812345678",
+          match_type: "exact_client_phone",
+          match_confidence: 92,
+          source_path: "/member/api/liff/recovery",
+          created_at: "2026-09-19T11:00:00.000Z",
+          updated_at: "2026-09-19T11:05:00.000Z",
+          payload_json: JSON.stringify({ state: "review_required", match_type: "exact_client_phone", evidence_sources: ["clients_phone"] }),
+          "Candidate Client": ["recClient123456"],
+        } }] });
+      },
+    },
     LIFF_SESSION_SECRET: SECRET,
     LIFF_IDENTITY_KV: {
       async get(key, format) {
@@ -124,7 +146,24 @@ test("service-only diagnostic returns reconciled truth without raw LINE identity
   assert.equal(body.points.value, 1250);
   assert.equal(body.points.source, "history_recovery");
   assert.equal(body.acceptance.evidence_id, "mmdacc_1234567890abcdef12345678");
+  assert.equal(body.identity_recovery_request.request_id, "IMR-TEST123");
+  assert.equal(body.identity_recovery_request.submitted.email, "chen@example.com");
+  assert.equal(body.identity_recovery_request.matching.match_type, "exact_client_phone");
+  assert.equal(body.identity_recovery_request.unresolved, true);
   assert.equal(body.guardrails.raw_line_user_id_exposed, false);
+  assert.doesNotMatch(JSON.stringify(body), new RegExp(LINE_ID));
+});
+
+test("owner can open an unresolved recovery request by reference without a canonical client", async () => {
+  const response = await handleOwnerMyMmdRecoveryDiagnosticRpc(
+    internalRequest({ merge_request_id: "IMR-TEST123" }),
+    env(),
+  );
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.identity_recovery_request.request_id, "IMR-TEST123");
+  assert.equal(body.identity_recovery_request.submitted.email, "chen@example.com");
+  assert.equal(body.identity_recovery_request.unresolved, true);
   assert.doesNotMatch(JSON.stringify(body), new RegExp(LINE_ID));
 });
 

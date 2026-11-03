@@ -57,7 +57,7 @@ test('reconciliation still requires exact item, fingerprint and verified readbac
 test('configured Member entrypoint retains live artifact and migration/class exports',async t=>{
  const bytes=fs.readFileSync(path.join(root,'member-pages-worker/live-baseline/member-pages-worker.js'));
  assert.equal(createHash('sha256').update(bytes).digest('hex'),'d4712fc5621fa9cb1d0248bf1a04b0ac24ed9e26826608acd4c14cbfb0a0612d');
- assert.deepEqual(config.migrations.map(m=>m.tag),['v1-care-back-birthday-wish','v2-private-preview-gate','v3-remembered-login-device','v5-customer-request-mutation']);
+ assert.deepEqual(config.migrations.map(m=>m.tag),['v1-care-back-birthday-wish','v2-private-preview-gate','v3-remembered-login-device','v5-customer-request-mutation','v6-customer-request-quota']);
  const exports=Object.values(bundle.metafile.outputs).flatMap(x=>x.exports);for(const b of config.durable_objects.bindings)assert.ok(exports.includes(b.class_name),b.class_name);
  const runtime=new Miniflare({script:bundle.outputFiles[0].text,modules:true,compatibilityDate:config.compatibility_date,bindings:{LIFF_PROMOTION_PURCHASE_ENABLED:'false'},log:new Log(LogLevel.ERROR),outboundService:()=>new Response('blocked',{status:503})});t.after(()=>runtime.dispose());
  assert.equal((await runtime.dispatchFetch('https://mmdbkk.com/member/api/liff/promotions/double-moment/context?session_id=synthetic')).status,401);

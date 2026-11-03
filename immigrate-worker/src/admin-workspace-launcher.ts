@@ -1,6 +1,10 @@
 // Navigation only. Destination pages retain their existing session and role gates.
 const modules = [
-  ["CEO · ภาพรวมและจุดตัดสินใจ", "ดูภาพรวม แล้วเลือกเรื่องที่เปอร์ต้องรับช่วง", "/internal/ceo", "ceo owner per ภาพรวม ตัดสินใจ"],
+  ["คืนเงิน · Refund", "เปิดรายการคืนเงินและตรวจหลักฐานที่บันทึกไว้", "/internal/admin/refunds", "refund คืนเงิน บัญชี หลักฐาน"],
+  ["Partner · ข้อตกลงและการเงิน", "ตรวจข้อตกลง ค่าตอบแทน และรายการค้าง", "/internal/admin/partners", "partner referral settlement แนะนำ ค่าตอบแทน"],
+  ["ติดตามและแก้งานค้าง", "เปิด Recovery เดิมเพื่อตรวจเรื่องที่ต้องทำต่อ", "/internal/admin/recovery", "recovery งานค้าง แก้ไข"],
+  ["HYPE · HENNA · HAY", "เลือกผู้ช่วยและตรวจการส่งต่องาน", "/internal/admin/telegram-brief", "hype henna hay brief ผู้ช่วย"],
+  ["CEO · ภาพรวมและจุดตัดสินใจ", "ดูภาพรวม เปิด PER · AI OPS และ FLUSH จากงานเดิม", "/internal/ceo", "ceo owner per ภาพรวม ตัดสินใจ"],
   ["ลูกค้าและ MMD Memory", "ค้นตัวตน ชื่อที่เปอร์เรียก และประวัติที่มีหลักฐาน", "/internal/admin/member-intelligence", "ลูกค้า memory client customer LINE Per Rename"],
   ["งานทั้งหมด", "เลือกงานเดิมเพื่อตรวจรายละเอียดและขั้นตอนที่ค้าง", "/internal/admin/jobs/all", "งาน job session คอนเฟิร์ม confirmation"],
   ["สร้างงานใหม่", "เลือก Client และ Model ก่อนสร้างงาน", "/internal/admin/jobs/create-job", "สร้าง create booking จอง"],
@@ -75,3 +79,4 @@ export const ADMIN_WORKSPACE_STYLE = `<style data-mmd-admin-launcher-style>
 </style>`;
 
 export const ADMIN_WORKSPACE_SCRIPT = `<script data-mmd-admin-launcher-script>(function(){'use strict';var root=document.querySelector('[data-mmd-admin-launcher]');if(!root)return;var input=root.querySelector('input'),cards=Array.from(root.querySelectorAll('[data-admin-module]')),count=root.querySelector('[data-module-count]'),empty=root.querySelector('[data-module-empty]');var matches=${matchesAdminModule.toString()};function filter(){var visible=0;cards.forEach(function(card){card.hidden=!matches(card.querySelector('strong').textContent,card.querySelector('span').textContent,card.dataset.moduleKeywords,input.value);if(!card.hidden)visible++});count.textContent=visible+' เครื่องมือ';empty.hidden=visible!==0}input.addEventListener('input',filter);input.addEventListener('search',filter);filter()})();</script>`;
+

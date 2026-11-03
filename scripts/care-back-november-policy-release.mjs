@@ -240,11 +240,11 @@ export function createPolicyTransport(token, worker, { allowWrites = false, prom
   };
 }
 
-export async function releasePolicyPatch(io, { reviewedUploads = REVIEWED_UPLOADS } = {}) {
+export async function releasePolicyPatch(io, { reviewedUploads = REVIEWED_UPLOADS, parseManifest = parsePatchManifest, releaseLabel = 'CARE BACK November exact artifact delta' } = {}) {
   const mode = io.mode || 'inspect';
   assert.ok(MODES.includes(mode));
   assert.match(io.releaseSha || '', SHA);
-  const manifest = parsePatchManifest(io.manifestBytes, io.expectedManifestHash, io.worker);
+  const manifest = parseManifest(io.manifestBytes, io.expectedManifestHash, io.worker);
   assert.equal(manifest.baseline_version, io.expectedVersion, 'version pin mismatch');
   assert.equal(manifest.baseline_deployment, io.expectedDeployment, 'deployment pin mismatch');
   assert.equal(manifest.modules.find(m => m.name === manifest.main_module).before_sha256, io.expectedModuleHash, 'main module pin mismatch');
@@ -282,7 +282,7 @@ export async function releasePolicyPatch(io, { reviewedUploads = REVIEWED_UPLOAD
     const metadata = uploadMetadata(baseline, io.releaseSha);
     metadata.main_module = manifest.main_module;
     delete metadata.annotations['workers/commit_sha'];
-    metadata.annotations['workers/message'] = 'CARE BACK November exact artifact delta; base=' + manifest.baseline_version
+    metadata.annotations['workers/message'] = releaseLabel + '; base=' + manifest.baseline_version
       + '; manifest=' + io.expectedManifestHash + '; tooling=' + (recovery?.tooling_sha || io.releaseSha);
     state.stage = 'exact-artifact-patch';
     const candidate = buildPolicyModules(artifact, manifest);

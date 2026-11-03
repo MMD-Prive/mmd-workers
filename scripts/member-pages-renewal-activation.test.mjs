@@ -80,7 +80,15 @@ test('activation workflow keeps owner approval, exact SHA and default mode prote
  assert.match(text,/default: approval_boundary_only/);assert.match(text,/environment: member-pages-code-only-owner/);
  assert.match(text,/inputs\.approved_sha == github\.sha/);assert.match(text,/if: inputs.execution_mode == 'renewal-activation'\n\s+env:/);
  assert.match(text,/node scripts\/member-pages-renewal-activation.mjs --execute-approved/);
- assert.deepEqual([...text.matchAll(/secrets\.([A-Z_]+)/g)].map(m=>m[1]),Array(5).fill('CLOUDFLARE_API_TOKEN'));
+ assert.deepEqual([...text.matchAll(/secrets\.([A-Z_]+)/g)].map(m=>m[1]),Array(9).fill('CLOUDFLARE_API_TOKEN'));
+ const home=text.slice(text.indexOf('  my-mmd-home-release:'));
+ assert.deepEqual([...home.matchAll(/secrets\.([A-Z_]+)/g)].map(m=>m[1]),['CLOUDFLARE_API_TOKEN']);
+ assert.match(home,/inputs.execution_mode == 'my-mmd-home-delta'/);
+ assert.doesNotMatch(home,/inputs.execution_mode == 'renewal-activation'/);
+ assert.match(home,/needs: \[production-approval\]/);
+ assert.match(home,/environment: member-pages-code-only-owner/);
+ assert.match(home,/run: node scripts\/my-mmd-home-delta-cli.mjs --execute-approved/);
+ assert.doesNotMatch(home,/member-pages-renewal-activation.mjs|AIRTABLE|LINE_CHANNEL|wrangler|route-sync/);
  const step=text.slice(text.indexOf('      - name: Activate only'),text.indexOf('      - name: Promote only'));
  assert.doesNotMatch(step,/AIRTABLE|MEMBER_STATUS|PAYMENTS_WORKER|LINE_CHANNEL/);
 });

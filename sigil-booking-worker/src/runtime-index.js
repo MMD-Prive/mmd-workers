@@ -1,3 +1,4 @@
+import { isMemberBookingService, handleMemberBookingService, protectMemberBookingReference } from './member-booking-service.js';
 import { handleLegacyAssetHost } from "./legacy-media-retirement.js";
 import entitlementRuntime from "./entitlement-runtime-worker.js";
 import modelImagePolicyWorker from "./model-image-policy-worker.js";
@@ -14,6 +15,7 @@ export default {
     const url = new URL(request.url);
     const path = normalizePath(url.pathname);
     const method = request.method.toUpperCase();
+    if (isMemberBookingService(request)) return handleMemberBookingService(request, env, (r, context) => new URL(r.url).pathname.endsWith('/search') ? modelImagePolicyWorker.fetch(r, env, ctx, context) : entitlementRuntime.fetch(r, env, ctx, context));
     if (url.hostname === "models.mmdbkk.com") return handleLegacyAssetHost(request, env);
 
     if (isPublicProfilesCatalogRequest(path, method)) {
@@ -27,6 +29,8 @@ export default {
     }
 
     if (method === "POST" && [CLIENT_RESOLVE_PATH, BOOKING_INTAKE_PATH].includes(path)) {
+      const blocked = await protectMemberBookingReference(request, env);
+      if (blocked) return blocked;
       return entitlementRuntime.fetch(request, env, ctx);
     }
 

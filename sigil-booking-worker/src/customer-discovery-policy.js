@@ -28,12 +28,12 @@ export async function resolveDiscoveryViewer(request, env = {}) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5000);
   try {
-    const response = await env.MEMBER_PAGES_WORKER.fetch(new Request("https://member-pages.internal/__internal/booking/discovery-viewer", {
+    const response = await env.MEMBER_PAGES_WORKER.fetch(new Request("https://member-pages.internal/__internal/booking/discovery-viewer?context=identity", {
       headers: { cookie: cookies.join("; "), accept: "application/json", "x-mmd-booking-service-secret": secret }, signal: controller.signal,
     }));
     if (!response.ok) return "";
     const payload = await response.json();
-    if (payload.ok !== true) return "";
+    if (payload.ok !== true || payload.identity_binding_verified !== true) return "";
     return MEMBER_REF.test(payload.memberRef || "") ? payload.memberRef : "";
   } catch { return ""; }
   finally { clearTimeout(timeout); }
@@ -55,10 +55,13 @@ export async function resolveBookingViewer(request, env = {}) {
         headers: {cookie:cookies.join("; "), "x-mmd-booking-service-secret":secret}, signal:controller.signal,
       }));
       if (response.status === 401) return { ok:false, error:"login_required", status:401 };
-      if (response.status === 403) return {ok:false,error:"public_membership_required",status:403};
+      if (response.status === 403) {
+        const denied = await response.json().catch(() => null);
+        return {ok:false,error:denied?.error === "public_identity_review_required" ? "public_identity_review_required" : "public_membership_required",status:403};
+      }
       if (!response.ok) return unavailable;
       const data = await response.json();
-      if (data.ok !== true || !MEMBER_REF.test(data.memberRef || "") || typeof data.memberId !== "string" || !data.memberId.trim() || data.memberId.length > 160) return unavailable;
+      if (data.ok !== true || data.identity_binding_verified !== true || !MEMBER_REF.test(data.memberRef || "") || typeof data.memberId !== "string" || !data.memberId.trim() || data.memberId.length > 160) return unavailable;
       const name = data.perRename?.source === "linked_per_rename_index_v1" && typeof data.perRename.per_rename === "string" ? data.perRename.per_rename.trim().slice(0,160) : "";
       return {ok:true, memberRef:data.memberRef, memberId:data.memberId, perRename:name && !/U[0-9a-f]{32}/i.test(name) ? {per_rename:name, source:"linked_per_rename_index_v1"} : null};
     })(), new Promise(resolve => { timer=setTimeout(() => { controller.abort(); resolve(unavailable); },5000); })]);

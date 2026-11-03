@@ -51,8 +51,8 @@ test("direct customer status bypasses the old auth-only Lovable recovery layer",
   const html = await response.text();
 
   assert.equal(response.status, 200);
-  assert.equal(response.headers.get("x-mmd-liff-ui-mode"), null);
-  assert.equal(response.headers.get("x-mmd-liff-return-target"), "/my-mmd/");
+  assert.equal(response.headers.get("x-mmd-liff-ui-mode"), "native-home");
+  assert.equal(response.headers.get("x-mmd-liff-return-target"), null);
   assert.equal(response.headers.get("x-mmd-liff-recovery-gate"), null);
   assert.equal(response.headers.get("x-mmd-liff-session-check"), null);
   assert.match(html, /MY MMD LIFF DIGITAL/);
@@ -60,10 +60,16 @@ test("direct customer status bypasses the old auth-only Lovable recovery layer",
   assert.match(html, /LOVABLE_POINTS_PATH="\/my-mmd\/points"/);
   assert.doesNotMatch(html, /mmd-status-hard-timeout-gate/);
   assert.doesNotMatch(html, /mmd-status-single-surface-fix/);
-  const script = html.match(/<script nonce="abc123" id="mmd-ems-login-return">([\s\S]*?)<\/script>/);
+  assert.doesNotMatch(html, /mmd-ems-login-return|fetch\('\/api\/member\/app\/profile'/);
+  // The explicit album bridge remains session-checked; only the cyclic home
+  // bridge is removed.
+  const albumResponse = await worker.fetch(new Request("https://www.mmdbkk.com/member/liff?intent=status&view=ems_albums"), runtime);
+  const albumHtml = await albumResponse.text();
+  const script = albumHtml.match(/<script nonce="abc123" id="mmd-ems-login-return">([\s\S]*?)<\/script>/);
   assert.ok(script);
   for (const [label, reply, expected] of [
-    ["verified", () => Response.json({ ok: true }), "/my-mmd/"],
+    ["verified", () => Response.json({ ok: true, albums: [] }), "/my-mmd/ems"],
+    ["missing albums", () => Response.json({ ok: true }), null],
     ["unverified", () => Response.json({ ok: false }), null],
     ["unauthorized", () => Response.json({ ok: true }, { status: 401 }), null],
     ["unavailable", () => Response.json({ ok: true }, { status: 503 }), null],
@@ -87,7 +93,7 @@ test("direct customer status bypasses the old auth-only Lovable recovery layer",
     await new Promise(setImmediate);
     assert.equal(destination, expected, label);
     assert.equal(requests.length, 1, label);
-    assert.equal(requests[0].url, "/api/member/app/profile");
+    assert.equal(requests[0].url, "/api/member/app/ems-albums");
     assert.equal(requests[0].options.credentials, "same-origin");
     assert.equal(requests[0].options.cache, "no-store");
   }
@@ -122,7 +128,7 @@ test("canonical My MMD HTML receives the pending Wish bridge without moving coup
   };
 
   try {
-    const response = await worker.fetch(new Request("https://www.mmdbkk.com/my-mmd/"), {});
+    const response = await worker.fetch(new Request("https://www.mmdbkk.com/my-mmd/", { headers: { cookie: "mmd_care_back_wish_link=pw_" + "A".repeat(43) } }), {});
     const html = await response.text();
     assert.equal(response.status, 200);
     assert.equal(response.headers.get("x-mmd-care-back-wish-bridge"), "verified-coupon-v1");

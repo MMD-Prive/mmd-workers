@@ -21,10 +21,22 @@ for (const command of ['checkpts','package','regis','apply','โปร']) test(`
   const {status,calls}=await run(command,{env:categoryEnv});
   assert.equal(status,200);assert.equal(calls.replies.length,1);
   assert.ok(calls.writes.some(w=>w.table==='MMD — Console Inbox'),'inbound intake preserved');
-  if(command==='checkpts') assert.match(calls.replies[0].messages[0].text,/Points: 120 Points/);
+  if(command==='checkpts') {
+    const reply = calls.replies[0].messages[0].text;
+    assert.match(reply,/ประเภทสมาชิก: Premium/);
+    assert.match(reply,/สถานะสมาชิก: ใช้งานอยู่/);
+    assert.match(reply,/intent=status&view=overview/);
+    assert.doesNotMatch(reply,/Points|รับ Hiro/);
+    assert.deepEqual(calls.replies[0].messages[0].quickReply,{items:[{type:'action',action:{type:'uri',label:'เปิด My MMD',uri:'https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=overview'}}]});
+    assert.deepEqual(calls.truth,[{path:'/__internal/kenji/member-truth',intent:'membership_status'}]);
+  } else assert.equal(calls.replies[0].messages[0].quickReply,undefined,'other categories must not gain a membership button');
 });
 for (const options of [{owner:true},{kill:true},{globalKill:true},{ownerAfterTruth:true},{killAfterTruth:true}]) test(`restricted checkpts pause: ${JSON.stringify(options)}`,async()=>{
   const {calls}=await run('checkpts',{...options,env:categoryEnv});assert.equal(calls.replies.length,0);
+  const payload=calls.writes.map(w=>w.body.fields?.payload_json).filter(Boolean).map(p=>JSON.parse(p)).find(p=>p.telemetry_version==='kenji_seed_runtime_v1');
+  assert.ok(payload,'existing audit telemetry must retain the bounded guard reason');
+  assert.equal(payload.guard_reason,options.owner||options.ownerAfterTruth?'category_owner_takeover':options.killAfterTruth?'category_fresh_kill_switch':'category_initial_kill_switch');
+  assert.equal(payload.line_delivery_attempted,false);assert.equal(payload.line_delivery_succeeded,false);
 });
 test('restricted native FAQ and unknown messages retain intake without reply or truth lookup',async()=>{
   for(const command of ['มีบริการอะไรบ้าง','GWs คืออะไร','สวัสดี','จอง','checkpts ดูให้เพื่อน']){

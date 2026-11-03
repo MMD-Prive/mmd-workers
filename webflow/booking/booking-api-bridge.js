@@ -6,7 +6,7 @@
   const form = root.querySelector('[data-form]');
   const send = root.querySelector('[data-copy]');
   if (!form || !send) return;
-  root.dataset.bookingApiBridge = '20261026-v1';
+  root.dataset.bookingApiBridge = '20261103-v2';
   const API = 'https://sigil.mmdbkk.com';
   const value = name => String(form.elements[name]?.value || '').trim();
   const status = root.querySelector('[data-status]');
@@ -15,6 +15,7 @@
   const el = (tag, text, cls) => { const n = document.createElement(tag); if (text) n.textContent = text; if (cls) n.className = cls; return n; };
   const box = el('section', '', 'bk-api-models');
   box.innerHTML = `<h3>เลือก Model ที่สนใจ</h3><p>ค้นหาและดูรูปก่อนส่งคำขอ หรือข้ามให้ MMD ช่วยเลือกได้</p>
+    <label>งบสูงสุดสำหรับงาน (บาท)<input name="budget_thb" type="number" min="4500" step="1" inputmode="numeric" required placeholder="เริ่มต้น 4,500 บาท"></label><p>สำหรับสมาชิก Public ตั้งแต่แพ็กเกจแรกขึ้นไป · ระบุงบสูงสุดของคุณเพื่อให้ MMD ตรวจรายละเอียด</p>
     <div class="bk-api-search"><label>ชื่อ Model<input name="public_model_query" type="search" placeholder="พิมพ์ชื่อ หรือดูทั้งหมด" autocomplete="off"></label><button type="button" data-public-search>ค้นหา</button></div>
     <details><summary>ตัวกรองเพิ่มเติม</summary><div class="bk-api-filters">
     <label>ส่วนสูงตั้งแต่ (ซม.)<input name="min_height_cm" type="number" min="100" max="230" inputmode="numeric"></label>
@@ -24,7 +25,7 @@
     <label>รูปร่าง<select name="body_type"><option value="">ทั้งหมด</option><option value="lean">ลีน</option><option value="athletic">สมส่วนแบบนักกีฬา</option><option value="muscular">กล้ามชัด</option><option value="slim">ผอมเพรียว</option><option value="soft">หุ่นนุ่ม</option></select></label>
     <label>สีผิว<select name="skin_tone"><option value="">ทั้งหมด</option><option value="fair">ขาว</option><option value="light">ขาวเหลือง</option><option value="medium">กลาง</option><option value="tan">แทน</option><option value="deep">เข้ม</option></select></label>
     </div></details><progress max="100" value="0" hidden aria-label="ความคืบหน้าการค้นหา"></progress><p data-search-status role="status"></p><div class="bk-api-results"></div><div data-model-selected hidden></div>
-    <a class="bk-api-private" href="https://sigil.mmdbkk.com/sigil/booking?scope=private&mode=booking">จองด้วยแพ็กเกจสมาชิก →</a>`;
+`;
   const panel = form.querySelector('[data-panel="1"]');
   panel.insertBefore(box, panel.querySelector('.bk-actions'));
   const searchButton = box.querySelector('[data-public-search]');
@@ -35,6 +36,17 @@
   const sendProgress = el('progress'); sendProgress.max = 100; sendProgress.hidden = true; sendProgress.setAttribute('aria-label','ความคืบหน้าการส่งคำขอ'); status.before(sendProgress);
   const line = el('a','ติดต่อ MMD ทาง LINE','bk-api-private'); line.href = 'https://lin.ee/xRqsALs'; line.target = '_blank'; line.rel = 'noopener noreferrer'; status.after(line);
 
+  function showAccessError(target, error, fallback) {
+    const code = error && error.message;
+    target.replaceChildren();
+    if (code === 'login_required' || code === 'public_membership_required') {
+      target.append(el('span',code === 'login_required' ? 'เข้าสู่ระบบก่อนส่งคำขอ Public Booking' : 'ต้องมีสมาชิก Public ตั้งแต่แพ็กเกจแรกขึ้นไปก่อนส่งคำขอ'));
+      const link = el('a',code === 'login_required' ? 'เข้าสู่ระบบ' : 'สมัครแพ็กเกจ Public','bk-api-private');
+      link.href = code === 'login_required' ? 'https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&return_to=%2Fbooking' : 'https://mmdbkk.com/pay/membership';
+      link.target = '_blank'; link.rel = 'noopener noreferrer'; target.append(link);
+      target.append(el('span','เปิดในแท็บใหม่ ข้อมูลคำขอยังอยู่ กลับมาลองส่งอีกครั้งหลังดำเนินการเสร็จ'));
+    } else target.textContent = code === 'membership_status_unavailable' ? 'ยังตรวจสถานะสมาชิกไม่ได้ ข้อมูลคำขอยังอยู่ กรุณาลองอีกครั้ง' : fallback;
+  }
   function projectedMedia(item) {
     if (item.media_source !== 'mmd_model_media_assets') return {cover:null, gallery:[]};
     const valid = m => m && m.media_source === 'mmd_model_media_assets' && /^media_[a-z0-9_-]{8,100}$/i.test(m.media_id || '') && ['photo','clip'].includes(m.kind);
@@ -56,7 +68,7 @@
   async function api(path, options) {
     const response = await fetch(API + path, {...options, credentials:"include", signal:AbortSignal.timeout(25000)});
     const data = await response.json();
-    if (!response.ok || data.ok !== true || data.blocked) throw new Error('request_failed');
+    if (!response.ok || data.ok !== true || data.blocked) throw new Error(['login_required','public_membership_required','membership_status_unavailable'].includes(data.error || data.reason) ? (data.error || data.reason) : 'request_failed');
     return data;
   }
   function selectModel(item) {
@@ -76,10 +88,10 @@
       if(value(min) && value(max) && Number(value(min)) > Number(value(max))) { searchStatus.textContent = 'ค่าตั้งแต่ต้องไม่มากกว่าค่าไม่เกิน'; return; }
     }
     const version = ++searchVersion;
-    searchButton.disabled = true; progress.hidden = false; progress.value = 10; searchStatus.textContent = 'กำลังค้นหา 10%'; results.replaceChildren();
-    const tick = setInterval(() => {progress.value = Math.min(90,progress.value + 10); searchStatus.textContent = 'กำลังค้นหา ' + progress.value + '%';}, 600);
+    searchButton.disabled = true; progress.hidden = false; progress.removeAttribute('value'); searchStatus.textContent = 'กำลังค้นหา'; results.replaceChildren();
     try {
       const query = new URLSearchParams({scope:'public',search_mode:'booking'});
+      query.set('budget_thb',value('budget_thb'));
       if(value('public_model_query')) query.set('q',value('public_model_query'));
       filterKeys.forEach(k => {if(value(k)) query.set(k,value(k));});
       const data = await api('/sigil/api/models/search?' + query);
@@ -93,8 +105,8 @@
         b.onclick = () => selectModel(item); results.append(b);
       }
       progress.value = 100; searchStatus.textContent = items.length ? '100% · พบ ' + items.length + ' คน · แตะเพื่อเลือกและดูรูปเพิ่มเติม' : '100% · ยังไม่พบคนที่ตรง ลองลดตัวกรองหรือให้ MMD ช่วยเลือก';
-    } catch (_) { searchStatus.textContent = 'ค้นหายังไม่สำเร็จ ลองใหม่ได้ หรือส่งความต้องการให้ MMD ช่วยเลือก'; }
-    finally {clearInterval(tick); searchButton.disabled = false;}
+    } catch (error) { showAccessError(searchStatus,error,'ค้นหายังไม่สำเร็จ ลองใหม่ได้ หรือส่งความต้องการให้ MMD ช่วยเลือก'); }
+    finally {searchButton.disabled = false; progress.hidden = true;}
   }
   searchButton.addEventListener('click',search);
   box.querySelector('input[type="search"]').addEventListener('keydown',e => {if(e.key === 'Enter'){e.preventDefault();search();}});
@@ -107,7 +119,7 @@
       source:'public_booking',source_path:'/booking',search_mode:'booking',request_status:'draft',
       booking_ref:requestRef,lane:'public',model_scope:'public',private_allowed:false,access_scope:'public_only',
       client_nickname:value('name'),client_contact:value('contact'),preferred_date:value('date'),preferred_time:value('time'),
-      service_context:service,city:value('place'),google_address:value('place'),
+      budget_thb:Number(value('budget_thb')),service_context:service,city:value('place'),google_address:value('place'),
       selected_model_id:selected?.model_id || '',selected_model_name:selected ? (selected.display_name || selected.name || selected.working_name || '') : '',
       preferred_model_name:value('model'),model_search_query:value('model'),
       client_notes:[value('note'),summary].filter(Boolean).join('\n\n'),preference_text:[service,value('model'),value('place')].filter(Boolean).join(' · '),
@@ -119,20 +131,19 @@
     if(!form.reportValidity()) return;
     if(!['name','contact','date','time','place'].every(k=>value(k))) {status.textContent='กรอกชื่อ ช่องทางติดต่อ วัน เวลา และสถานที่ก่อนส่ง';return;}
     if(!requestRef) requestRef = 'book_' + crypto.randomUUID();
-    sending = true; send.disabled = true; sendProgress.hidden = false; sendProgress.value = 15; send.textContent = 'กำลังส่ง 15%';
-    const tick = setInterval(()=>{sendProgress.value=Math.min(90,sendProgress.value+10); send.textContent='กำลังส่ง '+sendProgress.value+'%';},600);
+    sending = true; send.disabled = true; sendProgress.hidden = false; sendProgress.removeAttribute('value'); send.textContent = 'กำลังส่งคำขอ';
     try {
       const data = await api('/sigil/api/booking/intake',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload())});
       if(!data.booking_ref) throw new Error('missing_reference');
       sent = true; requestRef = data.booking_ref; sendProgress.value = 100;
       status.textContent = 'ส่งคำขอแล้ว · เลขอ้างอิง ' + requestRef + ' · MMD จะตรวจรายละเอียดและติดต่อกลับก่อนยืนยันงาน';
       form.querySelectorAll('input,select,textarea,button').forEach(n=>n.disabled=true);
-    } catch (_) {status.textContent='ยังยืนยันการรับคำขอไม่ได้ กรุณาลองส่งอีกครั้ง ระบบจะใช้เลขอ้างอิงเดิม หรือเลือกติดต่อ MMD ทาง LINE';}
-    finally {clearInterval(tick);sending=false;send.disabled=sent;send.textContent=sent?'ส่งคำขอแล้ว 100%':'ส่งคำขอให้ MMD';}
+    } catch (error) {showAccessError(status,error,'ยังยืนยันการรับคำขอไม่ได้ กรุณาลองส่งอีกครั้ง ระบบจะใช้เลขอ้างอิงเดิม หรือเลือกติดต่อ MMD ทาง LINE');}
+    finally {sendProgress.hidden = true;sending=false;send.disabled=sent;send.textContent=sent?'ส่งคำขอแล้ว 100%':'ส่งคำขอให้ MMD';}
   }
   // Capture the existing CTA before the legacy copy/LINE listener runs.
   root.addEventListener('click',e=>{if(e.target.closest('[data-copy]')){e.preventDefault();e.stopImmediatePropagation();submitRequest();}},true);
   const label = () => {if(!sending && !sent && send.textContent !== 'ส่งคำขอให้ MMD') send.textContent='ส่งคำขอให้ MMD';};
   label(); new MutationObserver(label).observe(send,{childList:true,characterData:true,subtree:true});
-  form.addEventListener('submit',()=>setTimeout(()=>{if(!sent && !sending)status.textContent='ตรวจรายละเอียด แล้วกดส่งคำขอให้ MMD ได้เลย';},0));
+  form.addEventListener('submit',()=>setTimeout(()=>{if(!sent && !sending){status.textContent='ตรวจรายละเอียด แล้วกดส่งคำขอให้ MMD ได้เลย';const summary=root.querySelector('[data-summary]');if(summary){let row=summary.querySelector('[data-budget-summary]');if(!row){row=el('div','','bk-row');row.dataset.budgetSummary='1';summary.append(row);}row.replaceChildren(el('span','งบสูงสุด'),el('strong',Number(value('budget_thb')).toLocaleString('th-TH')+' บาท'));}}},0));
 })();

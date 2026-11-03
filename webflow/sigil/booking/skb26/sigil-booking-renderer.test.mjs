@@ -48,7 +48,7 @@ test('renderer keeps a safe no-media state and API failure state', () => {
   assert.match(footer, /selectedMedia\.appendChild\(mediaPlaceholder\(\)\)/);
   assert.match(footer, /selectedImg\.onerror=function\(\)\{selectedImg\.removeAttribute\('src'\);selectedImg\.style\.display='none';selectedBox\.classList\.remove\('has-media'\)\}/);
   assert.match(footer, /video\.addEventListener\('error',function\(\)\{video\.replaceWith\(mediaPlaceholder\(\)\)/);
-  assert.match(footer, /catch\(e\)\{results\.innerHTML='<div class="skb26-empty"><strong>ค้นหายังไม่สำเร็จ/);
+  assert.match(footer, /catch\(e\)\{if\(accessError\(e\)\)return;results\.innerHTML='<div class="skb26-empty"><strong>ค้นหายังไม่สำเร็จ/);
   assert.doesNotMatch(footer, /var img=item\.cover_url\|\|item\.public_image_url/);
 });
 
@@ -157,14 +157,23 @@ test('Public and Private scope inputs are mutually exclusive on the digital surf
 });
 
 
-test('Public World budget starts at 5,000 THB while Private keeps its legacy lower band', () => {
-  assert.ok(footer.includes('data-skb26-first-budget data-filter="budget_band" data-value="5000_10000">5–10K</button>'));
-  assert.ok(footer.includes('name="budget_thb" type="number" min="5000"'));
-  assert.ok(footer.includes("firstBudgetBtn.textContent=isPrivate?'ต่ำกว่า 10K':'5–10K'"));
-  assert.ok(footer.includes("firstBudgetBtn.dataset.value=isPrivate?'under_10000':'5000_10000'"));
-  assert.ok(footer.includes("form.elements.budget_thb.min=isPrivate?'0':'5000'"));
+test('Public World budget starts at 4,500 THB while Private keeps its legacy lower band', () => {
+  assert.ok(footer.includes('data-skb26-first-budget data-filter="budget_band" data-value="4500_10000">4.5–10K</button>'));
+  assert.ok(footer.includes('name="budget_thb" type="number" min="4500"'));
+  assert.ok(footer.includes("firstBudgetBtn.textContent=isPrivate?'ต่ำกว่า 10K':'4.5–10K'"));
+  assert.ok(footer.includes("firstBudgetBtn.dataset.value=isPrivate?'under_10000':'4500_10000'"));
+  assert.ok(footer.includes("form.elements.budget_thb.min=isPrivate?'0':'4500'"));
   assert.ok(footer.includes("function publicBudgetBelowFloor()"));
-  assert.ok(footer.includes("amount<5000"));
-  assert.match(footer, /Public Model เริ่มต้นที่ 5,000 บาท/);
+  assert.ok(footer.includes("amount<4500"));
+  assert.match(footer, /Public Model เริ่มต้นที่ 4,500 บาท/);
   assert.match(footer, /public_budget_below_minimum/);
+});
+
+test('membership failures explain the gate without losing retry and use verified login/signup routes', () => {
+  assert.match(footer,/credentials:'include'/);
+  for(const code of ['login_required','public_membership_required','membership_status_unavailable'])assert.ok(footer.includes(code));
+  assert.ok(footer.includes('https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&return_to=%2Fsigil%2Fbooking'));
+  assert.ok(footer.includes('https://mmdbkk.com/pay/membership'));
+  assert.ok(footer.includes("link.target='_blank'"));
+  assert.ok(footer.includes("catch(err){busy(submit,false,'กำลังส่ง...');if(accessError(err))return;"));
 });

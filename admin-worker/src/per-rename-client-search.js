@@ -69,7 +69,7 @@ export async function enrichLineageWithPerRename(request, response, env = {}) {
         items: [],
         no_canonical_match: true,
         count: 0,
-        manual_fallback: true,
+        manual_fallback: false,
         per_rename_alias: false,
         per_rename_alias_ambiguous: true,
         lineage_warnings: unique([
@@ -187,7 +187,8 @@ export async function resolvePerRenameAlias(env, query, options = {}) {
       const sameClient = best.filter((match) => match.client_ids.includes(clientId));
       const chosen = sameClient.sort(compareMatches)[0];
       const client = await fetchCanonicalClient(env, clientId);
-      if (!client?.id || !chosen) {
+      if (!client?.id) throw new Error("per_rename_canonical_client_unavailable");
+      if (!chosen) {
         return {
           state: "ambiguous",
           client_ids: linkedIds,
@@ -195,7 +196,7 @@ export async function resolvePerRenameAlias(env, query, options = {}) {
           reason: "canonical_fetch_incomplete",
         };
       }
-      if (expectedLineUserId && canonicalClientLineConflict(client, expectedLineUserId)) {
+      if (canonicalClientLineConflict(client, expectedLineUserId || chosen.line_user_id)) {
         return {
           state: "ambiguous",
           client_ids: linkedIds,
@@ -225,8 +226,8 @@ export async function resolvePerRenameAlias(env, query, options = {}) {
   const sameClient = best.filter((match) => match.client_ids.includes(clientId));
   const chosen = sameClient.sort(compareMatches)[0];
   const client = await fetchCanonicalClient(env, clientId);
-  if (!client?.id) return { state: "none" };
-  if (expectedLineUserId && canonicalClientLineConflict(client, expectedLineUserId)) {
+  if (!client?.id) throw new Error("per_rename_canonical_client_unavailable");
+  if (canonicalClientLineConflict(client, expectedLineUserId || chosen.line_user_id)) {
     return {
       state: "ambiguous",
       client_ids: [clientId],
@@ -268,8 +269,9 @@ export async function searchAuthoritativePerRenameRows(env, query) {
     });
     if (!result.ok) throw new Error(`airtable_${table}_${result.status}`);
 
-    const data = await result.json().catch(() => ({}));
-    const page = Array.isArray(data.records) ? data.records : [];
+    const data = await result.json();
+    if (!Array.isArray(data?.records)) throw new Error("per_rename_index_invalid_response");
+    const page = data.records;
     rows.push(...page);
     offset = clean(data.offset);
 
@@ -351,7 +353,11 @@ async function fetchCanonicalClient(env, clientId) {
   });
   if (response.status === 404) return null;
   if (!response.ok) throw new Error(`airtable_${table}_${response.status}`);
-  return response.json();
+  const record = await response.json();
+  if (record?.id !== clientId || !record.fields || typeof record.fields !== "object" || Array.isArray(record.fields)) {
+    throw new Error("per_rename_canonical_client_invalid_response");
+  }
+  return record;
 }
 
 function toCanonicalPerRenameRecord(record, match, query) {

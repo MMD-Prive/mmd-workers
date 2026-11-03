@@ -38,7 +38,7 @@ test("HENNA separates stable replies from manual-only decisions", () => {
   assert.equal(hennaReply("manual_price"), "");
 });
 
-test("HENNA chooses one safe CTA for each MMS audience", () => {
+test("HENNA keeps one service CTA plus the approved MY MMS news link", () => {
   const cases = [
     ["MMS คืออะไร", "home", "/male-massage/home"],
     ["พร้อมจองนวด", "booking", "/male-massage/member/mms-booking"],
@@ -55,7 +55,9 @@ test("HENNA chooses one safe CTA for each MMS audience", () => {
     assert.equal(classifyHennaIntent(message), intent, message);
     const reply = hennaReply(intent);
     assert.ok(reply.includes(`https://www.mmdbkk.com${path}`), message);
-    assert.equal((reply.match(/https:\/\//g) || []).length, 1, message);
+    const urls = reply.match(/https:\/\/[^\s]+/g) || [];
+    assert.equal(urls.length, intent === "my_mms" ? 2 : 1, message);
+    if (intent === "my_mms") assert.equal(urls[1], "https://t.me/mmdpriveth");
     assert.doesNotMatch(reply, /ทีมงาน|\/internal\/admin\//);
   }
   assert.match(hennaReply("booking"), /ยังไม่ใช่การยืนยันคิว/);
@@ -95,6 +97,21 @@ test("LINE webhook rejects an invalid signature", async () => {
   const result = await handleMmsLineWebhook(request, ENV);
   assert.equal(result.status, 401);
   assert.equal((await result.json()).error, "invalid_signature");
+});
+
+test("MY MMS promotion uses the canonical explainer and approved get-app copy", () => {
+  const reply = hennaReply("my_mms");
+  assert.match(reply, /MY MMS · Online Therapist Explorer/);
+  assert.ok(reply.includes("กดปุ่มรับ App MY MMS รอไว้เลย"));
+  assert.deepEqual(reply.match(/https:\/\/[^\s]+/g), [
+    "https://www.mmdbkk.com/male-massage/my-mms",
+    "https://t.me/mmdpriveth",
+  ]);
+  assert.match(reply, /ธันวาคม/);
+  assert.match(reply, /ระหว่างรอสิ้นปี/);
+  assert.match(reply, /ยืนยันบัญชี/);
+  assert.equal(classifyHennaIntent("เปิด MY MMS"), "my_mms");
+  assert.equal(classifyHennaIntent("เข้า MY Therapist"), "therapist_login");
 });
 
 test("auto reply remains silent while the production gate is disabled", async () => {
@@ -154,3 +171,4 @@ function signedRequest(body) {
     body,
   });
 }
+

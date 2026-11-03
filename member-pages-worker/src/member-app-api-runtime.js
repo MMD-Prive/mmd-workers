@@ -189,11 +189,12 @@ function paymentSnapshotFromSession(session = {}) {
   };
 }
 
-async function loadMemberAppSessionState(request, env = {}) {
+async function loadMemberAppSessionState(request, env = {}, {throwOnUnavailable=false} = {}) {
   const store = env.LIFF_IDENTITY_KV;
   const secret = String(env.LIFF_SESSION_SECRET || "");
   const token = cookieValue(request, SESSION_COOKIE);
-  if (!store?.get || secret.length < 32 || !token) return null;
+  if (!token) return null;
+  if (!store?.get || secret.length < 32) { if(throwOnUnavailable)throw Error("session_unavailable"); return null; }
   try {
     const hash = await hmacHex(secret, `session:${token}`);
     const sessionKey = `liff:session:${hash}`;
@@ -202,13 +203,14 @@ async function loadMemberAppSessionState(request, env = {}) {
     const lineUserId = asString(session.line_user_id, 160);
     if (!/^U[a-f0-9]{32}$/i.test(lineUserId)) return null;
     return { store, sessionKey, session, lineUserId };
-  } catch {
+  } catch(error) {
+    if(throwOnUnavailable)throw error;
     return null;
   }
 }
 
-export async function readMemberAppSession(request, env = {}) {
-  const state = await loadMemberAppSessionState(request, env);
+export async function readMemberAppSession(request, env = {}, options = {}) {
+  const state = await loadMemberAppSessionState(request, env, options);
   if (!state) return null;
   return {
     lineUserId: state.lineUserId,

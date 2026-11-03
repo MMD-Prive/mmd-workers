@@ -350,12 +350,12 @@ test("Public and Private share one feed while Private teaser leaks no sensitive 
   assert.match(page, /PUBLIC JOB/);
   assert.match(page, /PRIVATE JOB · 🔒/);
   assert.match(page, /เลือกงานนี้/);
-  assert.match(page, /แตะเพื่อดูรายละเอียด/);
+  assert.match(page, /ดูงาน Private · 10,000 ถึงตัว/);
   assert.doesNotMatch(page, /BUDGET · 10,000|ลูกค้า · ชาย|ลูกค้าเกย์ผู้ใหญ่/);
 
   const data = await (await call(testEnv, "/public/api/jobs/data", { headers: { cookie } })).json();
   const privateJob = data.jobs.find((job) => job.world === "private");
-  assert.equal(privateJob.compensation, "");
+  assert.equal(privateJob.compensation, "10,000 ถึงตัว");
   assert.equal(privateJob.title, "PRIVATE JOB");
   assert.equal(privateJob.date, "");
   assert.equal(privateJob.time, "");
@@ -671,4 +671,15 @@ test("anonymous Private teaser and interest require canonical Model login, not o
   const opened = await call(testEnv, `/public/api/jobs/${created.job.id}`, { headers: { cookie: `${cookie}; ${reveal.headers.get("set-cookie").split(";", 1)[0]}` } });
   assert.equal(opened.status, 200);
   assert.doesNotMatch(await opened.text(), /10,000|OWNER-NOTE-NEVER-MODEL/);
+});
+
+ test("Private list hides compensation unless owner explicitly approves disclosure", async () => {
+  const testEnv = env();
+  await ownerCreate(testEnv, { budget_disclosure_approved: false });
+  const response = await call(testEnv, "/public/api/jobs");
+  const page = await response.text();
+  assert.doesNotMatch(page, /10,000|ดูงาน Private ·/);
+  assert.match(page, /แตะเพื่อดูรายละเอียด/);
+  const data = await (await call(testEnv, "/public/api/jobs/data")).json();
+  assert.equal(data.jobs.find(job => job.world === "private").compensation, "");
 });

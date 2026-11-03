@@ -25,12 +25,14 @@ async function request(method, body, { origin = "https://mmdbkk.com", url = "htt
 async function runtime() {
   const sessionKey = await digest(SECRET, `session:${TOKEN}`);
   const records = [];
+  const quotaSlots = new Map();
   const airtableQueries = [];
   return {
     env: {
       LIFF_SESSION_SECRET: SECRET,
       LIFF_IDENTITY_KV: new MemoryKv([[`liff:session:${sessionKey}`, JSON.stringify({ line_user_id:LINE_ID, member_exists:true, member_id:"member-1", member_profile:{ display_name:"Tester", membership_status:"active" }, expires_at:Date.now() + 60_000 })]]),
       AIRTABLE_API_KEY:"pat-test", AIRTABLE_BASE_ID:"app-test",
+      CUSTOMER_REQUEST_QUOTA: { idFromName(name) { return name; }, get(name) { return { async fetch(_url, init) { const body = JSON.parse(init.body); const slots = quotaSlots.get(name) || new Set(); if (body.action === "release") { slots.delete(body.request_id); quotaSlots.set(name, slots); return Response.json({ ok:true }); } if (slots.has(body.request_id)) return Response.json({ ok:true, idempotent:true }); if (slots.size >= 4) return Response.json({ ok:false, error:"YOUR_REQUEST_MONTHLY_LIMIT" }, { status:429 }); slots.add(body.request_id); quotaSlots.set(name, slots); return Response.json({ ok:true, idempotent:false }); } }; } },
       AIRTABLE_HTTP: { async fetch(input) {
         const req = input instanceof Request ? input : new Request(input);
         airtableQueries.push(new URL(req.url));
@@ -81,7 +83,8 @@ test("Airtable applies the customer-request namespace before the bounded result 
   assert.match(formula, /\{intent\}='your_request'/);
   assert.match(formula, /\{intent\}='saved_model'/);
   assert.match(formula, /\{intent\}='profile_update'/);
-  assert.equal(inboxQuery?.searchParams.get("maxRecords"), "50");
+  assert.equal(inboxQuery?.searchParams.get("pageSize"), "100");
+  assert.equal(inboxQuery?.searchParams.get("maxRecords"), null);
 });
 
 test("Your Request queues private metadata once and returns a customer-safe projection", async () => {
@@ -94,7 +97,9 @@ test("Your Request queues private metadata once and returns a customer-safe proj
   assert.equal(firstBody.idempotent, false);
   assert.deepEqual({ ...firstBody.item, created_at:Boolean(firstBody.item.created_at) }, { request_id:"req_abcdefghijkl", request_type:"your_request", status:"received", created_at:true, model_name:"Example model", audience:"private", action:null });
   assert.equal(records.length, 1);
+  assert.deepEqual(records[0].fields.fld9gMhvFWegM345O, [CLIENT_ID]);
   const stored = JSON.parse(records[0].fields.payload_json);
+  assert.equal(stored.fld9gMhvFWegM345O, undefined);
   assert.equal(stored.visibility, "internal_only");
   assert.equal(stored.customer.line_user_id, undefined);
   assert.match(stored.model.social, /instagram/);
@@ -102,6 +107,27 @@ test("Your Request queues private metadata once and returns a customer-safe proj
   assert.equal(second.status, 200);
   assert.equal((await second.json()).idempotent, true);
   assert.equal(records.length, 1);
+});
+
+test("Your Request enforces four distinct request IDs per Bangkok calendar month and rejects conflicting retries", async () => {
+  const { env, records } = await runtime();
+  for (const suffix of ["a", "b", "c", "d"]) {
+    const response = await handleMemberCustomerRequest(await request("POST", { request_id:`req_quota_${suffix}123456`, request_type:"your_request", model_name:`Model ${suffix}`, reason:"ช่วยตามหา" }), env);
+    assert.equal(response.status, 201);
+  }
+  const fifth = await handleMemberCustomerRequest(await request("POST", { request_id:"req_quota_e123456", request_type:"your_request", model_name:"Model e", reason:"ช่วยตามหา" }), env);
+  assert.equal(fifth.status, 429);
+  const conflict = await handleMemberCustomerRequest(await request("POST", { request_id:"req_quota_a123456", request_type:"your_request", model_name:"Different person", reason:"เปลี่ยนคน" }), env);
+  assert.equal(conflict.status, 409);
+  assert.equal((await (await handleMemberCustomerRequest(await request("GET", null, { origin:null }), env)).json()).quota.used, 4);
+  assert.equal(records.length, 4);
+});
+
+test("Your Request fails closed when the atomic quota coordinator is unavailable", async () => {
+  const { env } = await runtime(); delete env.CUSTOMER_REQUEST_QUOTA;
+  const response = await handleMemberCustomerRequest(await request("POST", { request_id:"req_missingcoord123", request_type:"your_request", model_name:"Model", reason:"ช่วยตามหา" }), env);
+  assert.equal(response.status, 503);
+  assert.equal((await response.json()).error.code, "REQUEST_QUOTA_UNAVAILABLE");
 });
 
 test("profile updates are review requests and reject empty writes", async () => {
@@ -146,4 +172,10 @@ test("missing private evidence fails closed without creating an inbox record", a
   assert.equal(response.status, 409);
   assert.equal((await response.json()).error.code, "EVIDENCE_UNAVAILABLE");
   assert.equal(records.length, 0);
+});
+test("admin mutation gateway forwards item key and readback proof to the Durable Object", async () => {
+  const { env } = await runtime(); let forwarded;
+  env.CUSTOMER_REQUEST_MUTATION = { idFromName() { return "mutation-id"; }, get() { return { async fetch(_url, init) { forwarded = JSON.parse(init.body); return Response.json({ ok: true, inspected: true }); } }; } };
+  const response = await handleMemberCustomerRequest(new Request("https://member-pages-worker.internal/__internal/admin/my-mmd/customer-request-mutation", { method: "POST", headers: { "x-mmd-internal-call": "true", "x-mmd-service-binding": "admin-worker", "content-type": "application/json" }, body: JSON.stringify({ action: "reconcile_item", record_id: "recInbox123456", operation_id: "op-1", mutation_fingerprint: "manifest-1", item_key: "lineoa:item-3", readback_verified: true }) }), env);
+  assert.equal(response.status, 200); assert.equal(forwarded.item_key, "lineoa:item-3"); assert.equal(forwarded.readback_verified, true); assert.equal(forwarded.mutation_fingerprint, "manifest-1");
 });

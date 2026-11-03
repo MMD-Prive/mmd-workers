@@ -58,7 +58,7 @@ test('render hides an unknown progress indicator and does not activate a stage',
   steps.active = [];
   const context = {
     ses: { normalized_state: 'unknown', session_id: 'sess_synthetic_fixture' }, state, stageIndex, stages,
-    view() {}, chip() {}, txt() {}, actions() {}, d: () => copy.th,
+    view() {}, chip() {}, txt() {}, actions() {}, payout() {}, d: () => copy.th,
     R: { classList: { add() {}, remove() {} } },
     $: selector => { if (!nodes.has(selector)) nodes.set(selector, { style: {} }); return nodes.get(selector); },
     $$: () => steps,
@@ -76,7 +76,7 @@ test('submission uses canonical state even when legacy fields claim work may sta
     const requests = [];
     const context = {
       ses: { normalized_state: normalized, state: 'final_payment_confirmed', allowed_actions: ['start_work'], session_id: 'sess_synthetic_fixture' },
-      busy: false, next, state,
+      busy: false, posting: false, next, state,
       lock() {}, note() {}, load: async () => {}, d: () => copy.th,
       R: { dataset: { actionEndpoint: '/v1/model/session/action' } },
       v: (object, keys) => keys.map(key => object[key]).find(Boolean) || '',
@@ -87,4 +87,30 @@ test('submission uses canonical state even when legacy fields claim work may sta
     assert.equal(requests.length, normalized === 'final_payment_confirmed' ? 1 : 0);
     if (requests.length) assert.equal(JSON.parse(requests[0].options.body).session_id, 'sess_synthetic_fixture');
   }
+});
+
+// Compose the actual fetch wrappers and main runtime; all reads are local mocks.
+test('payout uses only the accepted main session and clears on reload, missing and mismatched context',async()=>{
+ const {JSDOM}=await import('jsdom');
+ const dom=new JSDOM('<section id="sigil-model-console-v3" data-smc data-current-endpoint="/v1/model/session/current"><div data-view="loading"></div><div data-view="error"></div><div data-view="empty"></div><div data-view="work"><div class="smcv3-summary"></div><div data-primary-actions></div></div><button data-refresh></button></section>',{url:'https://fixture.invalid/sigil/model/console?session_id=sess_A',runScripts:'outside-only'});
+ const w=dom.window,doc=w.document,reads=[];
+ w.Request=class Request{};
+ w.fetch=()=>new Promise(resolve=>reads.push(resolve));
+ const response=session=>({ok:true,status:200,json:async()=>({ok:true,session}),clone(){return this}});
+ const tick=()=>new Promise(setImmediate);
+ try{
+  w.eval(source);reads.shift()(response({session_id:'sess_A',pay_model_thb:10000,state:'confirmed',allowed_actions:[]}));await tick();await tick();
+  assert.match(doc.querySelector('[data-model-payout]').textContent,/10,000/);
+  w.dispatchEvent(new w.PageTransitionEvent('pagehide'));
+  assert.equal(doc.querySelector('[data-model-payout-row]'),null);
+  w.dispatchEvent(new w.PageTransitionEvent('pageshow',{persisted:true}));
+  const stale=reads.shift();
+  w.dispatchEvent(new w.PageTransitionEvent('pagehide'));w.dispatchEvent(new w.PageTransitionEvent('pageshow',{persisted:true}));
+  reads.shift()(response({session_id:'sess_B',pay_model_thb:90000,state:'confirmed'}));await tick();await tick();
+  assert.equal(doc.querySelector('[data-model-payout-row]'),null,'pinned A must never display raw B payout');
+  stale(response({session_id:'sess_A',pay_model_thb:77777,state:'confirmed'}));await tick();await tick();
+  assert.equal(doc.querySelector('[data-model-payout-row]'),null,'old generation cannot restore payout');
+  w.dispatchEvent(new w.PageTransitionEvent('pagehide'));w.dispatchEvent(new w.PageTransitionEvent('pageshow',{persisted:true}));
+  reads.shift()(response(null));await tick();await tick();assert.equal(doc.querySelector('[data-model-payout-row]'),null);
+ }finally{w.close()}
 });

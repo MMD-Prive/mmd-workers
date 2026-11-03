@@ -2,18 +2,38 @@
 export function restrictedReplyCategories(env = {}) {
   return env.KENJI_LINE_REPLY_CATEGORY_MODE === 'approved_qa_promo';
 }
+// Routing only: category-turn still owns intake, identity and runtime guards.
+export function isExplicitCategoryCommand(event = {}, env = {}) {
+  if (!restrictedReplyCategories(env) || event.type !== 'message' ||
+      event.message?.type !== 'text' || event.source?.type !== 'user') return false;
+  const command = String(event.message.text || '').normalize('NFKC').trim().toLowerCase();
+  return /^(checkpts|package|regis|apply)$/.test(command);
+}
 export const CATEGORY_REPLY_GRANT = Symbol('kenji-approved-reply');
+export function membershipUriButton(decision) {
+  const routes = [
+    'https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=overview',
+    'https://miniapp.line.me/2010862595-yT4DCEMc/?intent=renew&view=package',
+  ];
+  return decision?.reply_source === 'category_checkpts' && decision.intent === 'approved_command' &&
+    routes.includes(decision.cta_route) && decision.text?.endsWith(`เปิด My MMD → ${decision.cta_route}`)
+    ? {label:'เปิด My MMD',uri:decision.cta_route} : null;
+}
 export function categoryReplyTransportAllowed(env, token, text, button = null, extras = []) {
   if (env?.KENJI_LINE_REPLY_CATEGORY_MODE !== 'approved_qa_promo') return true;
   const grant = env[CATEGORY_REPLY_GRANT];
-  return Boolean(grant && grant.token === token && grant.text === text && !button &&
+  const buttonMatches = grant?.button
+    ? button?.label === grant.button.label && button?.uri === grant.button.uri && Object.keys(button).length === 2
+    : !button;
+  return Boolean(grant && grant.token === token && grant.text === text && buttonMatches &&
     Array.isArray(extras) && extras.length === 0);
 }
 export function withCategoryReplyGrant(env, token, decision) {
   if (env?.KENJI_LINE_REPLY_CATEGORY_MODE !== 'approved_qa_promo') return env;
   if (!decision?.text || !(decision.intent === 'approved_promotion' ||
       (decision.intent === 'approved_command' && /^category_(checkpts|package|regis|apply)$/.test(decision.reply_source)))) return env;
-  return {...env, [CATEGORY_REPLY_GRANT]: Object.freeze({token, text:decision.text})};
+  const button = membershipUriButton(decision);
+  return {...env, [CATEGORY_REPLY_GRANT]: Object.freeze({token, text:decision.text, button:button ? Object.freeze(button) : null})};
 }
 
 export function approvedCategoryReply(event, env = {}, adapters = {}) {

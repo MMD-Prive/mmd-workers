@@ -3,6 +3,14 @@ on:
   pull_request:
     paths:
       - "sigil-booking-worker/src/**"
+      - "sigil-booking-worker/public-booking*.test.mjs"
+      - "member-pages-worker/src/booking-*.js"
+      - "member-pages-worker/src/member-app-api-runtime.js"
+      - "member-pages-worker/test/booking-*.test.mjs"
+      - "auth-worker/src/my-mmd-line-identity-bridge.js"
+      - "auth-worker/test/my-mmd-line-identity-bridge.test.mjs"
+      - "webflow/booking/**"
+      - "webflow/sigil/booking/**"
       - "sigil-booking-worker/wrangler.toml"
       - "sigil-booking-worker/preview-origin-cors.test.mjs"
       - "sigil-booking-worker/customer-intake-current-access.test.mjs"
@@ -30,3 +38,14 @@ jobs:
         run: node --test sigil-booking-worker/preview-origin-cors.test.mjs
       - name: Private no-member smoke contract
         run: node --test sigil-booking-worker/test/private-search-smoke-contract.test.mjs
+
+      - name: Verified Public booking identity and ownership regressions
+        run: node --test sigil-booking-worker/public-booking*.test.mjs sigil-booking-worker/booking-telegram-formatter.test.mjs member-pages-worker/test/booking-customer-identity.test.mjs member-pages-worker/test/member-app-session.test.mjs member-pages-worker/test/member-booking-flow.test.mjs
+      - name: Identity binding freshness and read-only recovery
+        run: node --test member-pages-worker/test/booking-member-binding.test.mjs auth-worker/test/my-mmd-line-identity-bridge.test.mjs
+      - name: Install isolated booking DOM dependency
+        run: npm install --prefix "$RUNNER_TEMP/booking-dom" --no-save --ignore-scripts jsdom@26.1.0
+      - name: Public booking budget and interrupted login UX
+        env:
+          NODE_PATH: ${{ runner.temp }}/booking-dom/node_modules
+        run: node --test webflow/booking/booking-api-bridge.test.cjs webflow/sigil/booking/skb26/sigil-booking-renderer.test.mjs
