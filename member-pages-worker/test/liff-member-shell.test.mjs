@@ -406,11 +406,15 @@ describe("same-site /member/liff shell", () => {
       details, feed, document:{ getElementById:(id) => id === "digital-news-disclosure" ? details : feed },
       profileReady:true, digitalUpdatesLoaded:false, digitalUpdatesPending:null,
       digitalUpdatesGeneration:0, digitalHomeReady:Promise.resolve(), digitalPersonalizedFeed:[],
-      async memberApiFetch(url) { calls.push(url); return Response.json({ items:[], unread_count:0 }); },
+      async memberApiFetch(url, init) {
+        assert.equal(init.credentials,"same-origin");assert.equal(init.cache,"no-store");
+        assert.equal(init.headers.accept,"application/json");
+        calls.push(url); return Response.json({ items:[], unread_count:0 });
+      },
       renderDigitalNews(...args) { rendered.push(args); },
       Promise, Number,
     });
-    assert.deepEqual(calls, ["/api/v1/member/updates/list?limit=10"]);
+    assert.deepEqual(calls, ["/api/member/app/updates?limit=10"]);
     assert.equal(rendered.length, 1);
   });
 
@@ -599,7 +603,8 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /const allowedViews = new Set\(\["history","package","care","jobs","points","credits","coupons"\]\)/);
     assert.match(html, /if \(this\.open\) void loadDigitalUpdates\(\)/);
     assert.match(html, /renderDigitalNews\(digitalPersonalizedFeed, items,/);
-    assert.match(html, /memberApiFetch\("\/api\/v1\/member\/updates\/list\?limit=10"/);
+    assert.match(html, /memberApiFetch\("\/api\/member\/app\/updates\?limit=10"/);
+    assert.doesNotMatch(html, /memberApiFetch\("\/api\/v1\/member\/updates\/list/);
     assert.match(html, /data-feed-view/);
     assert.doesNotMatch(html, /internal_note|provider_transaction_id|slip_url/);
 
