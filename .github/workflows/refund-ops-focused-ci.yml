@@ -10,6 +10,7 @@ on:
       - "admin-worker/refund-ops.test.mjs"
       - "member-dashboard-chat-worker/src/index.js"
       - "member-dashboard-chat-worker/test/refund-receipt-notify.test.mjs"
+      - "scripts/refund-read-live-baselines.py"
       - ".github/workflows/refund-ops-focused-ci.yml"
   push:
     branches:
@@ -22,6 +23,7 @@ on:
       - "admin-worker/refund-ops.test.mjs"
       - "member-dashboard-chat-worker/src/index.js"
       - "member-dashboard-chat-worker/test/refund-receipt-notify.test.mjs"
+      - "scripts/refund-read-live-baselines.py"
       - ".github/workflows/refund-ops-focused-ci.yml"
 
 permissions:
@@ -63,3 +65,24 @@ jobs:
           name: refund-full-bundles-${{ github.event.pull_request.head.sha || github.sha }}
           path: refund-bundles/
           retention-days: 7
+
+  read-live-baselines:
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'codex/refund-delivery-outcome-guard-v7'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Read pinned live Worker modules and maps (GET only)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: python3 scripts/refund-read-live-baselines.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: refund-live-baselines-${{ github.event.pull_request.head.sha }}
+          path: refund-live-baselines/
+          retention-days: 3
