@@ -20,7 +20,7 @@ async function withFixture({ entitlements = [], booking = stored, selected = mod
   const linkedIds = fixturePages.flatMap(page => page.records).filter(row => !row.fields?.member || row.fields.member.includes(memberRecordId)).map(row => row.id);
   const original = globalThis.fetch;
   const previousBinding = env.MEMBER_PAGES_WORKER;
-  env.MEMBER_PAGES_WORKER = { fetch: async () => viewerRef ? Response.json({ ok: true, memberRef: viewerRef, memberId: memberRow.fields.member_id || `mmd_rec_${memberRecordId}` }) : Response.json({ ok: false }, { status: 401 }) };
+  env.MEMBER_PAGES_WORKER = { fetch: async () => viewerRef ? Response.json({ ok: true, identity_binding_verified: true, memberRef: viewerRef, memberId: memberRow.fields.member_id || `mmd_rec_${memberRecordId}` }) : Response.json({ ok: false }, { status: 401 }) };
   const writes = [];
   const reads = [];
   globalThis.fetch = async (input, init = {}) => {

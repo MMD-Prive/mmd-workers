@@ -669,7 +669,7 @@ const filterEnv = { AIRTABLE_API_KEY: "synthetic-key", AIRTABLE_BASE_ID: "synthe
   AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES: "fixture-service-secret-at-least-32-characters",
   MEMBER_PAGES_WORKER: { fetch: async () => {
     const digest = await webcrypto.subtle.digest("SHA-256", new TextEncoder().encode("mmd-discovery-member-v1:fixture-filter-member"));
-    return Response.json({ ok: true, memberRef: [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("") });
+    return Response.json({ ok: true, identity_binding_verified: true, memberRef: [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("") });
   } },
 };
 
@@ -856,7 +856,7 @@ const restrictedDiscovery = JSON.stringify({
 const verifiedViewerService = ref => ({ fetch: async request => {
   assert.equal(new URL(request.url).pathname, "/__internal/booking/discovery-viewer");
   assert.equal(request.headers.get("authorization"), null);
-  return Response.json({ ok: true, memberRef: ref });
+  return Response.json({ ok: true, identity_binding_verified: true, memberRef: ref });
 } });
 
 test("restricted Model discovery denies blocked and anonymous viewers; malformed rules fail closed", () => {
@@ -887,7 +887,7 @@ test("viewer identity comes only from member-service session validation and fail
   });
   const service = { fetch: async forwarded => {
     assert.equal(forwarded.headers.get("cookie"), "__Host-mmd_liff_session=opaque");
-    return Response.json({ ok: true, memberRef: allowedViewerRef });
+    return Response.json({ ok: true, identity_binding_verified: true, memberRef: allowedViewerRef });
   } };
   assert.equal(await resolveDiscoveryViewer(request, { AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES: "s".repeat(32), MEMBER_PAGES_WORKER: service }), allowedViewerRef);
   for (const payload of [

@@ -1,4 +1,5 @@
 import { resolveBookingPerRename } from "./booking-customer-identity.js";
+import { verifyBookingMemberBinding } from "./booking-member-binding.js";
 import { readMemberAppSession } from "./member-app-api-runtime.js";
 
 export const DISCOVERY_VIEWER_PATH = "/__internal/booking/discovery-viewer";
@@ -14,6 +15,8 @@ export async function handleDiscoveryViewer(request, env = {}, readSession = rea
   for (let i = 0; i < expected.length; i++) difference |= expected.charCodeAt(i) ^ (supplied.charCodeAt(i) || 0);
   if (expected.length < 32 || difference !== 0) return respond({ ok: false }, 401);
   try {
+    const context = new URL(request.url).searchParams.get("context");
+    const requireCurrentBinding = context === "booking" || context === "identity";
     let sourceRequest = request;
     const alias = cookieValue(request, "__Secure-mmd_discovery_session");
     if (alias) {
@@ -23,18 +26,25 @@ export async function handleDiscoveryViewer(request, env = {}, readSession = rea
       if (!record || record.expires_at <= Date.now() || !/^[a-f0-9]{64}$/.test(record.session_token || "")) return respond({ ok: false }, 401);
       sourceRequest = new Request(request.url, { headers: { cookie: "__Host-mmd_liff_session=" + record.session_token } });
     }
-    const session = await readSession(sourceRequest, env, {throwOnUnavailable:new URL(request.url).searchParams.get("context") === "booking"});
+    const session = await readSession(sourceRequest, env, {throwOnUnavailable:requireCurrentBinding});
     const status = String(session?.memberProfile?.membership_status || session?.memberProfile?.status || "").toLowerCase();
-    if (new URL(request.url).searchParams.get("context") === "booking" && session?.lineUserId && (session.memberExists !== true || !session.memberId)) return respond({ok:false,error:"public_membership_required"},403);
+    if (context === "booking" && session?.lineUserId && (session.memberExists !== true || !session.memberId)) return respond({ok:false,error:"public_membership_required"},403);
     if (!session?.lineUserId || session.memberExists !== true || !session.memberId || session.readGraceOnly === true
       || ["blocked", "suspended", "revoked", "pending_review"].includes(status)) return respond({ ok: false }, 401);
-    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode("mmd-discovery-member-v1:" + session.memberId));
+    let memberId = session.memberId;
+    if (requireCurrentBinding) {
+      const binding = await verifyBookingMemberBinding(env, session.lineUserId, session.memberId);
+      if (!binding.ok) return respond({ ok: false, error: binding.error }, binding.status);
+      memberId = binding.memberId;
+    }
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode("mmd-discovery-member-v1:" + memberId));
     const memberRef = [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("");
-    if (new URL(request.url).searchParams.get("context") === "booking") {
+    if (context === "booking") {
       // Additional identity stays behind this route's service-secret check.
       const perRename = await resolveBookingPerRename(env, session.lineUserId).catch(() => null);
-      return respond({ ok: true, memberRef, memberId: session.memberId, perRename }, 200);
+      return respond({ ok: true, identity_binding_verified: true, memberRef, memberId, perRename }, 200);
     }
+    if (context === "identity") return respond({ ok: true, identity_binding_verified: true, memberRef }, 200);
     return respond({ ok: true, memberRef }, 200);
   } catch { return respond({ ok: false }, 503); }
 }

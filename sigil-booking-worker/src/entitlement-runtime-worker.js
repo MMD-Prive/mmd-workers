@@ -159,10 +159,13 @@ async function handleTrustedBookingConfirm(request, env) {
     const access=await currentPrivateAccess(request,env,owner.member_record_id,owner.member_ref,{throwOnUnavailable:true}).catch(()=>null);
     if (!access || access.viewerRef!==owner.member_ref) return json({ok:false,error:"membership_status_unavailable"},503);
     canonical={snapshot:access.snapshot,response:accessFromSnapshot(access.snapshot)};
-  } else canonical = await resolveCanonicalAccess(env, {
-    client_contact: fields.client_contact || fields["Contact Value"],
-    line_or_member_id: fields.line_or_member_id,
-  }).catch(() => failClosedAccess());
+  } else {
+    // Legacy contact fields and member_booking_owner_v2 do not contain a
+    // verified binding to one Members record. Never turn an email/LINE match
+    // into confirmation authority, including for previously confirmed rows.
+    // Keep the record unchanged for explicit ownership review/migration.
+    return json({ok:false,error:"booking_owner_review_required"},409);
+  }
   const bookingAccess = bookingAccessFromSnapshot(canonical.snapshot, clean(fields.lane || fields.model_scope || body.lane || "public"));
   const payment = await verifyBookingPayment(env, {
     paymentRef: clean(body.payment_ref || fields.payment_ref),

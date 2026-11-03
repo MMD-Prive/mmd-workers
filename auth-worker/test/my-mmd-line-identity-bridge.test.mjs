@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { recoverCanonicalMemberLineLink } from "../src/my-mmd-line-identity-bridge.js";
+import worker, { recoverCanonicalMemberLineLink } from "../src/my-mmd-line-identity-bridge.js";
+
+import currentWorker from "../src/my-mmd-runtime-index.js";
 
 const LINE_ID = `U${"a".repeat(32)}`;
 
@@ -30,7 +32,7 @@ function tableName(url) {
   return decodeURIComponent(parts[2] || "");
 }
 
-test("links only the Members LINE field from one exact canonical client email", async () => {
+test("exact Client email remains a recovery hint and never writes the Members LINE field", async () => {
   const writes = [];
   const env = baseEnv(async (request) => {
     const url = new URL(request.url);
@@ -52,16 +54,12 @@ test("links only the Members LINE field from one exact canonical client email", 
   });
 
   const result = await recoverCanonicalMemberLineLink(env, LINE_ID);
-  assert.equal(result.linked, true);
-  assert.equal(result.reason, "linked");
-  assert.deepEqual(writes, [{
-    table: "Members",
-    record: "recMember01",
-    body: { fields: { line_id: LINE_ID }, typecast: false },
-  }]);
+  assert.equal(result.linked, false);
+  assert.equal(result.reason, "owner_review_required");
+  assert.deepEqual(writes, []);
 });
 
-test("uses an exact canonical staging Client link before asking a customer for recovery details", async () => {
+test("exact canonical staging Client link does not authorize an email-derived Member link", async () => {
   const writes = [];
   let canonicalFormula = "";
   const env = baseEnv(async (request) => {
@@ -93,14 +91,10 @@ test("uses an exact canonical staging Client link before asking a customer for r
   });
 
   const result = await recoverCanonicalMemberLineLink(env, LINE_ID);
-  assert.equal(result.linked, true);
-  assert.equal(result.reason, "linked");
+  assert.equal(result.linked, false);
+  assert.equal(result.reason, "owner_review_required");
   assert.equal(canonicalFormula, `{LINE User ID}='${LINE_ID}'`);
-  assert.deepEqual(writes, [{
-    table: "Members",
-    record: "recMemberCanonical",
-    body: { fields: { line_id: LINE_ID }, typecast: false },
-  }]);
+  assert.deepEqual(writes, []);
 });
 
 test("fails closed when canonical evidence points at different emails", async () => {
@@ -124,7 +118,7 @@ test("fails closed when canonical evidence points at different emails", async ()
   assert.equal(writes, 0);
 });
 
-test("accepts a committed exact LINE staging link but never changes access fields", async () => {
+test("committed exact LINE staging link does not authorize an email-derived Member link", async () => {
   const writes = [];
   const env = baseEnv(async (request) => {
     const url = new URL(request.url);
@@ -158,7 +152,101 @@ test("accepts a committed exact LINE staging link but never changes access field
   });
 
   const result = await recoverCanonicalMemberLineLink(env, LINE_ID);
-  assert.equal(result.linked, true);
-  assert.equal(writes.length, 1);
-  assert.deepEqual(writes[0], { fields: { line_id: LINE_ID }, typecast: false });
+  assert.equal(result.linked, false);
+  assert.equal(result.reason, "owner_review_required");
+  assert.deepEqual(writes, []);
+});
+
+for (const scenario of ["entitlement_member_conflict", "canonical_staging_unavailable", "members_paginated", "already_linked", "explicit_entitlement_link"]) {
+  test(`${scenario}: recovery never writes or certifies a Member link`, async () => {
+    const calls = [];
+    const memberId = "rec" + "A".repeat(14);
+    const env = baseEnv(async (request) => {
+      const url = new URL(request.url);
+      const table = tableName(url);
+      calls.push({ method: request.method, table });
+      assert.equal(request.method, "GET", "identity recovery must remain read-only");
+      if (table === "Clients" || table === "LINE OFC Client Import Staging") return response([]);
+      if (table === "MMD — LINE OFC Client Import Staging") {
+        return response([], scenario === "canonical_staging_unavailable" ? 503 : 200);
+      }
+      if (table === "MMD — Member Entitlements") {
+        return response([{ id: "rec" + "E".repeat(14), fields: {
+          line_user_id: LINE_ID,
+          member_email: "synthetic@example.test",
+          member: [scenario === "explicit_entitlement_link" ? memberId : "rec" + "B".repeat(14)],
+        } }]);
+      }
+      if (table === "Members") return Response.json({
+        records: [{ id: memberId, fields: {
+          "Contact Email": "synthetic@example.test",
+          line_id: scenario === "already_linked" ? LINE_ID : "",
+        } }],
+        ...(scenario === "members_paginated" ? { offset: "unread-conflict" } : {}),
+      });
+      throw new Error(`unexpected table ${table}`);
+    });
+    const result = await recoverCanonicalMemberLineLink(env, LINE_ID);
+    assert.deepEqual(result, { linked: false, reason: "owner_review_required" });
+    assert.ok(calls.length > 0);
+    assert.ok(calls.every(call => call.method === "GET"));
+  });
+}
+
+function profileRequest() {
+  return new Request("https://mmd-auth-worker.internal/__internal/member-profile/read", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ line_user_id: LINE_ID, purpose: "liff_member_profile_read" }),
+  });
+}
+
+test("unresolved profile retains its response and signals owner review without retry or write", async t => {
+  let normalReads = 0;
+  const payload = { ok: true, data: { member_exists: false } };
+  t.mock.method(currentWorker, "fetch", async () => { normalReads++; return Response.json(payload); });
+  const env = baseEnv(async request => {
+    assert.equal(request.method, "GET");
+    const table = tableName(request.url);
+    if (table === "Clients") return response([{ id: "recClient01", fields: { line_user_id: LINE_ID, email: "synthetic@example.test" } }]);
+    if (table === "Members") return response([{ id: "recMember01", fields: { "Contact Email": "synthetic@example.test" } }]);
+    return response([]);
+  });
+  const result = await worker.fetch(profileRequest(), env, {});
+  assert.equal(result.status, 200);
+  assert.deepEqual(await result.json(), payload);
+  assert.equal(result.headers.get("x-mmd-line-identity-recovery"), "owner_review_required");
+  assert.equal(result.headers.get("x-mmd-identity-authority"), "member-link-review");
+  assert.equal(normalReads, 1);
+});
+
+test("normal already-resolved Member profile is preserved without recovery or writes", async t => {
+  const calls = [];
+  const payload = { ok: true, data: { member_exists: true, member_id: "mmd_verified", profile: { membership_status: "active" } } };
+  t.mock.method(currentWorker, "fetch", async () => Response.json(payload));
+  const env = baseEnv(async request => {
+    calls.push({ method: request.method, table: tableName(request.url) });
+    assert.equal(request.method, "GET");
+    assert.equal(tableName(request.url), "MMD — LINE OFC Client Import Staging", "existing mapping must skip recovery");
+    return response([]);
+  });
+  const result = await worker.fetch(profileRequest(), env, {});
+  assert.deepEqual(await result.json(), payload);
+  assert.equal(result.headers.get("x-mmd-line-identity-recovery"), null);
+  assert.deepEqual(calls, [{ method: "GET", table: "MMD — LINE OFC Client Import Staging" }]);
+});
+
+test("existing Fast Trust projection remains read-only and skips Member-link recovery", async t => {
+  t.mock.method(currentWorker, "fetch", async () => Response.json({ ok: true, data: { member_exists: false } }));
+  const env = baseEnv(async request => {
+    assert.equal(request.method, "GET");
+    assert.equal(tableName(request.url), "MMD — LINE OFC Client Import Staging");
+    return response([{ id: "recTrusted01", fields: { "LINE User ID": LINE_ID, "Current LINE Rename": "Synthetic VIP" } }]);
+  });
+  const result = await worker.fetch(profileRequest(), env, {});
+  const payload = await result.json();
+  assert.equal(payload.data.fast_trust, true);
+  assert.equal(payload.data.profile.tier, "VIP");
+  assert.match(payload.data.member_id, /^fasttrust_/);
+  assert.equal(result.headers.get("x-mmd-line-identity-recovery"), null);
 });
