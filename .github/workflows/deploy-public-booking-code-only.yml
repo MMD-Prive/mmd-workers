@@ -1,0 +1,151 @@
+name: Release reviewed Public Booking code only
+on:
+  pull_request:
+    paths:
+      - "scripts/booking-code-only/**"
+      - ".github/workflows/deploy-public-booking-code-only.yml"
+  workflow_dispatch:
+    inputs:
+      production_approved:
+        description: Approve exact reviewed code-only artifacts; preserve current v5 migration and configuration
+        type: boolean
+        required: true
+        default: false
+      approved_sha:
+        description: Full main SHA containing this release workflow and tooling
+        type: string
+        required: true
+      approved_source_sha:
+        description: Reviewed application source SHA (82561437067dc06b751956376ba265fa7322cd34)
+        type: string
+        required: true
+      approval_ref:
+        description: Owner approval reference for both exact candidate hashes and no migration
+        type: string
+        required: true
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('public-booking-code-review-{0}', github.event.pull_request.number) || 'deploy-member-pages-worker-production' }}
+  cancel-in-progress: false
+env:
+  APPROVED_SHA: ${{ inputs.approved_sha }}
+  APPROVED_SOURCE_SHA: ${{ inputs.approved_source_sha }}
+  APPROVED_SOURCE_TREE: 83a93fc60ef2494ada52c0b40509d28edfdfe776
+  APPROVAL_REF: ${{ inputs.approval_ref }}
+  APPROVED_RELEASE_SCOPE: public-booking-code-only-no-migration
+  APPROVED_MIGRATION_POLICY: none-retain-existing-v5
+  APPROVED_SOURCE_MAP_POLICY: local-evidence-only-not-uploaded
+  SOURCE_ROOT: ${{ github.workspace }}/reviewed-source
+  RELEASE_ROOT: ${{ github.workspace }}/release-tools
+jobs:
+  review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Offline transport and workflow safety regressions
+        run: node --test scripts/booking-code-only/booking-code-only-adapter.test.mjs scripts/booking-code-only/booking-code-only-workflow.test.mjs
+  owner-policy:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.actor == 'mmdprive' && github.run_attempt == 1 && inputs.production_approved == true && inputs.approved_sha == github.sha && inputs.approved_source_sha == '82561437067dc06b751956376ba265fa7322cd34' && inputs.approval_ref != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          path: release-tools
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Verify existing owner protection without Cloudflare credentials
+        working-directory: release-tools
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node --input-type=module -e 'import {verifyCodeOnlyOwnerApproval} from "./scripts/booking-code-only/booking-code-only-owner-approval.mjs"; await verifyCodeOnlyOwnerApproval(process.env,fetch,{preflight:true});'
+  release:
+    needs: owner-policy
+    environment: member-pages-code-only-owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      ARTIFACT_ROOT: ${{ runner.temp }}/public-booking-artifacts
+      JOURNAL_PATH: ${{ runner.temp }}/public-booking-receipt.jsonl
+      BUILD_TOOLS_DIR: ${{ runner.temp }}/public-booking-build-tools
+    steps:
+      - name: Initialize safe receipt before preparation
+        run: printf '%s\n' '{"phase":"preparation-started","writes":0}' > "$JOURNAL_PATH"
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          path: release-tools
+      - uses: actions/checkout@v5
+        with:
+          ref: 82561437067dc06b751956376ba265fa7322cd34
+          persist-credentials: false
+          path: reviewed-source
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Verify fresh exact-run owner approval before preparation
+        working-directory: release-tools
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node --input-type=module -e 'import {verifyCodeOnlyOwnerApproval} from "./scripts/booking-code-only/booking-code-only-owner-approval.mjs"; await verifyCodeOnlyOwnerApproval(process.env);'
+      - name: Install pinned build dependencies outside both checkouts
+        run: npm install --prefix "$BUILD_TOOLS_DIR" --ignore-scripts --no-audit --no-fund esbuild@0.27.3 acorn@8.15.0
+      - name: Test release transport and workflow guards
+        working-directory: release-tools
+        run: node --test scripts/booking-code-only/booking-code-only-adapter.test.mjs scripts/booking-code-only/booking-code-only-workflow.test.mjs
+      - name: Fetch and verify exact live baseline artifacts read only
+        working-directory: release-tools
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node scripts/booking-code-only/fetch-booking-code-only-baselines.mjs --fetch
+      - name: Build deterministic isolated artifact deltas offline
+        working-directory: release-tools
+        run: |
+          node scripts/booking-code-only/member-builder.mjs --source-root "$SOURCE_ROOT" --baseline "$ARTIFACT_ROOT/member-baseline.js" --output-dir "$ARTIFACT_ROOT" --esbuild "$BUILD_TOOLS_DIR/node_modules/.bin/esbuild"
+          node scripts/booking-code-only/build-sigil-overlay.mjs --source-root "$SOURCE_ROOT" --baseline "$ARTIFACT_ROOT/sigil-baseline.js" --output-dir "$ARTIFACT_ROOT" --esbuild-module "$BUILD_TOOLS_DIR/node_modules/esbuild/lib/main.js"
+          node --check "$ARTIFACT_ROOT/member-candidate.js"
+          node --check "$ARTIFACT_ROOT/sigil-candidate.mjs"
+      - name: Test no-migration state machine against exact built artifacts
+        working-directory: release-tools
+        run: node --test scripts/booking-code-only/booking-code-only-release.test.mjs
+      - name: Test actual MEMBER candidate and isolated identity bundle
+        working-directory: release-tools
+        env:
+          MEMBER_SOURCE_ROOT: ${{ github.workspace }}/reviewed-source
+          MEMBER_CANDIDATE: ${{ runner.temp }}/public-booking-artifacts/member-candidate.js
+        run: node --test scripts/booking-code-only/member-builder.test.mjs scripts/booking-code-only/member-bundled-identity.test.mjs
+      - name: Generate and run actual SIGIL candidate regressions outside checkouts
+        working-directory: release-tools
+        run: |
+          node scripts/booking-code-only/prepare-sigil-overlay-tests.mjs --source-root "$SOURCE_ROOT" --artifact-root "$ARTIFACT_ROOT" --output-dir "$ARTIFACT_ROOT/compiled-tests"
+          node --test "$ARTIFACT_ROOT"/compiled-tests/*.test.mjs
+      - name: Publish exact code-only versions with fresh owner gates and readback
+        working-directory: release-tools
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          PRODUCTION_APPROVED: ${{ inputs.production_approved }}
+          RELEASE_MODE: public-booking-code-only-no-migration
+        run: node scripts/booking-code-only/booking-code-only-adapter.mjs --execute
+      - name: Preserve safe release receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: public-booking-code-only-receipt-${{ github.run_id }}
+          path: ${{ runner.temp }}/public-booking-receipt.jsonl
+          if-no-files-found: error
