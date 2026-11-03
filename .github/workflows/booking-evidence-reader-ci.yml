@@ -1,0 +1,28 @@
+name: Booking evidence reader CI
+on:
+  pull_request:
+    paths:
+      - shared/original-booking-evidence*
+      - member-pages-worker/test-runtime/package*.json
+      - .github/workflows/booking-evidence-reader-ci.yml
+permissions:
+  contents: read
+jobs:
+  reader-workerd:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Install locked local runtime dependencies
+        run: npm ci --prefix member-pages-worker/test-runtime --ignore-scripts --no-audit --no-fund
+      - name: Synthetic reader and workerd regressions
+        run: node --test shared/original-booking-evidence.test.mjs shared/original-booking-evidence.workerd.test.mjs
+      - name: Reader syntax and whitespace
+        run: |
+          node --check shared/original-booking-evidence.mjs
+          git diff --check

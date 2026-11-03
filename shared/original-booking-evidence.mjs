@@ -35,7 +35,9 @@ export async function readOriginalBookingEvidence(env = {}, clientId = "", fetch
     const url = new URL(`https://api.airtable.com/v0/${env.AIRTABLE_BASE_ID}/${table}${suffix}`);
     url.searchParams.set("returnFieldsByFieldId", "true");
     for (const [key, value] of Object.entries(params)) { if (Array.isArray(value)) for (const v of value) url.searchParams.append(key, v); else url.searchParams.set(key, value); }
-    const req = new Request(url, { method: "GET", redirect: "error", headers: { authorization: `Bearer ${env.AIRTABLE_API_KEY}`, accept: "application/json" }, signal: AbortSignal.timeout(5000) });
+    // Workers rejects redirect:"error". Expose redirects without following
+    // Location; the non-2xx guard below rejects them before reading evidence.
+    const req = new Request(url, { method: "GET", redirect: "manual", headers: { authorization: `Bearer ${env.AIRTABLE_API_KEY}`, accept: "application/json" }, signal: AbortSignal.timeout(5000) });
     const response = fetchImpl ? await fetchImpl(req) : env.AIRTABLE_HTTP?.fetch ? await env.AIRTABLE_HTTP.fetch(req) : await fetch(req);
     if (!response.ok) throw Error("source_unavailable");
     return response.json();
