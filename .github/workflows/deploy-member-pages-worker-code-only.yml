@@ -20,6 +20,7 @@ on:
           - nightline-artifact
           - care-back-november
           - care-back-november-resume
+          - my-mmd-home-delta
       production_approved:
         description: 'Owner authorization for the selected mode and exact SHA; not an environment approval receipt'
         type: boolean
@@ -80,7 +81,7 @@ concurrency:
 
 jobs:
   production-approval:
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha && (inputs.execution_mode == 'approval_boundary_only' || inputs.execution_mode == 'release' || inputs.execution_mode == 'recovery-artifact' || inputs.execution_mode == 'companion-artifact' || inputs.execution_mode == 'renewal-artifact' || inputs.execution_mode == 'promote-existing' || inputs.execution_mode == 'renewal-activation' || inputs.execution_mode == 'lv15-artifact' || inputs.execution_mode == 'nightline-artifact' || (inputs.execution_mode == 'care-back-november' || inputs.execution_mode == 'care-back-november-resume'))
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha && (inputs.execution_mode == 'my-mmd-home-delta' || inputs.execution_mode == 'approval_boundary_only' || inputs.execution_mode == 'release' || inputs.execution_mode == 'recovery-artifact' || inputs.execution_mode == 'companion-artifact' || inputs.execution_mode == 'renewal-artifact' || inputs.execution_mode == 'promote-existing' || inputs.execution_mode == 'renewal-activation' || inputs.execution_mode == 'lv15-artifact' || inputs.execution_mode == 'nightline-artifact' || (inputs.execution_mode == 'care-back-november' || inputs.execution_mode == 'care-back-november-resume'))
     runs-on: ubuntu-latest
     timeout-minutes: 3
     permissions:
@@ -209,6 +210,7 @@ jobs:
           path: ${{ runner.temp }}/member-pages-recovery-receipt.json
           if-no-files-found: ignore
           retention-days: 14
+
       - name: Check out original startup source for promotion-only recovery
         if: inputs.execution_mode == 'promote-existing'
         uses: actions/checkout@v5
@@ -420,6 +422,48 @@ jobs:
         with:
           name: care-back-november-member-pages-${{ github.run_id }}
           path: ${{ runner.temp }}/care-back-november-member-pages-worker-receipt.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+  my-mmd-home-release:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha && inputs.execution_mode == 'my-mmd-home-delta' && inputs.expected_version != '' && inputs.expected_deployment != '' && inputs.patch_manifest != '' && inputs.expected_manifest_sha256 != '' && inputs.expected_module_sha256 != ''
+    needs: [production-approval]
+    environment: member-pages-code-only-owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Verify exact artifact delta and existing owner approval contract
+        run: node --test scripts/my-mmd-home-delta-adapter.test.mjs scripts/my-mmd-home-delta-workflow.test.mjs scripts/care-back-november-policy-release.test.mjs scripts/member-pages-owner-approval.test.mjs
+      - name: Apply reviewed My MMD policy to the fresh active artifact
+        env:
+          APPROVED_SOURCE_SHA: 8572cab0b2a6ab5a0326fcc3c8e6d7b4fc6b72a2
+          GH_TOKEN: ${{ github.token }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: b176eda1172b741fd2e58904cc9d77c5
+          PRODUCTION_APPROVED: ${{ inputs.production_approved }}
+          PRODUCTION_ENVIRONMENT_NAME: member-pages-code-only-owner
+          APPROVAL_REF: ${{ inputs.approval_ref }}
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+          PATCH_MANIFEST: ${{ inputs.patch_manifest }}
+          EXPECTED_MANIFEST_SHA256: ${{ inputs.expected_manifest_sha256 }}
+          EXPECTED_MODULE_SHA256: ${{ inputs.expected_module_sha256 }}
+          EXPECTED_VERSION: ${{ inputs.expected_version }}
+          EXPECTED_DEPLOYMENT: ${{ inputs.expected_deployment }}
+        run: node scripts/my-mmd-home-delta-cli.mjs --execute-approved
+      - name: Save sanitized My MMD artifact release receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: my-mmd-home-${{ github.run_id }}
+          path: ${{ runner.temp }}/my-mmd-home-release-receipt.json
           if-no-files-found: ignore
           retention-days: 14
 

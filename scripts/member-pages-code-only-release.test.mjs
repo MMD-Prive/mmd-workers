@@ -565,7 +565,7 @@ test('release workflow is manual, exact-SHA and protected with no data-service c
   const source=readFileSync(new URL('../.github/workflows/deploy-member-pages-worker-code-only.yml',import.meta.url),'utf8');
   assert.match(source,/^  workflow_dispatch:/m);
   assert.doesNotMatch(source,/^  (push|pull_request|schedule|workflow_run):/m);
-  assert.equal((source.match(/inputs\.approved_sha == github\.sha/g)||[]).length,6);
+  assert.equal((source.match(/inputs\.approved_sha == github\.sha/g)||[]).length,7);
   assert.match(source,/needs: \[production-approval\][\s\S]*environment: member-pages-code-only-owner/);
   const preflight = source.slice(source.indexOf('  production-approval:'), source.indexOf('  release:'));
   assert.match(preflight, /permissions:\s+contents: read\s+actions: read/);
@@ -575,7 +575,19 @@ test('release workflow is manual, exact-SHA and protected with no data-service c
 
   assert.match(source,/EXPECTED_VERSION: \$\{\{ inputs\.expected_version \}\}/);
   assert.match(source,/EXPECTED_DEPLOYMENT: \$\{\{ inputs\.expected_deployment \}\}/);
-  assert.deepEqual([...source.matchAll(/secrets\.([A-Z_]+)/g)].map(match=>match[1]),Array(8).fill('CLOUDFLARE_API_TOKEN'));
+  assert.deepEqual([...source.matchAll(/secrets\.([A-Z_]+)/g)].map(match=>match[1]),Array(9).fill('CLOUDFLARE_API_TOKEN'));
+  const home=source.slice(source.indexOf('  my-mmd-home-release:'));
+  assert.match(home,/needs: \[production-approval\]/);
+  assert.match(home,/environment: member-pages-code-only-owner/);
+  assert.match(home,/ref: \$\{\{ github.sha \}\}\s+persist-credentials: false\s+fetch-depth: 0/);
+  const condition=new Function('github','inputs','return '+home.match(/^    if: (.+)$/m)[1]);
+  const github={event_name:'workflow_dispatch',ref:'refs/heads/main',sha:'fixture'};
+  const inputs={execution_mode:'my-mmd-home-delta',production_approved:true,approval_ref:'approved',approved_sha:'fixture',expected_version:'v',expected_deployment:'d',patch_manifest:'m',expected_manifest_sha256:'h',expected_module_sha256:'b'};
+  assert.equal(condition(github,inputs),true);
+  for(const event_name of ['push','pull_request','workflow_run'])assert.equal(condition({...github,event_name},inputs),false);
+  for(const key of Object.keys(inputs))assert.equal(condition(github,{...inputs,[key]:key==='production_approved'?false:''}),false);
+  assert.equal(condition({...github,ref:'refs/heads/other'},inputs),false);
+  assert.equal(condition({...github,sha:'drift'},inputs),false);
   assert.match(source,/CLOUDFLARE_API_TOKEN: \$\{\{ secrets\.CLOUDFLARE_API_TOKEN \}\}/);
   assert.doesNotMatch(source,/AIRTABLE|R2_API|ensure-private|ensure-payment|wrangler route|wrangler secret|synthetic_write|production public Wish/i);
   assert.match(source,/node scripts\/member-pages-code-only-release\.mjs --execute-approved/);

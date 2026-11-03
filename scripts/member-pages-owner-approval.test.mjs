@@ -105,7 +105,7 @@ const authorized={production_approved:true,approval_ref:'fixture',approved_sha:s
 
 test('approval-only is the explicit safe default; missing or invalid modes never release',()=>{
  assert.match(workflow,/execution_mode:[\s\S]*?type: choice\s+required: true\s+default: approval_boundary_only/);
- assert.deepEqual([...workflowJobs.keys()],['production-approval','approval-boundary-only','release','lv15-release','nightline-release','care-back-november-release']);
+ assert.deepEqual([...workflowJobs.keys()],['production-approval','approval-boundary-only','release','lv15-release','nightline-release','care-back-november-release','my-mmd-home-release']);
  for(const execution_mode of [undefined,'','invalid',true,false]) {
    for(const id of workflowJobs.keys()) assert.equal(jobCondition(id)(dispatch,{...authorized,execution_mode}),false);
  }
@@ -153,7 +153,7 @@ test('approval-only execution surface has no write credential, release command, 
  assert.deepEqual([...job.matchAll(/^          ([A-Z_]+):/gm)].map(match=>match[1]),['GH_TOKEN','APPROVAL_REF','APPROVED_SHA']);
  const header=workflow.split('\njobs:')[0];
  assert.doesNotMatch(header,/secrets\.|^env:|: write|id-token/);
- assert.equal((workflow.match(/secrets\./g)||[]).length,8);
+ assert.equal((workflow.match(/secrets\./g)||[]).length,9);
  assert.ok(workflowJobs.get('release').includes('secrets.CLOUDFLARE_API_TOKEN'));
 });
 
