@@ -1,0 +1,39 @@
+{
+  "scope": "booking-identity-hardening-code-only",
+  "account": "b176eda1172b741fd2e58904cc9d77c5",
+  "source_sha": "7fd8dae0d97a42d0594650a8b663df99fe584467",
+  "source_tree": "0806c133499c3600d554bd175e5c4533163acd08",
+  "targets": {
+    "member": {
+      "name": "member-pages-worker",
+      "module": "worker.js",
+      "version": "aadc55ef-47dc-4dd1-9c3a-0c434d9e7f34",
+      "deployment": "faaa7b28-0bd7-4b28-b897-41168bfa5ffa",
+      "sha256": "e8924a29d90b47c254eba84ffae85256b574569443be9a37ad748deebb5d87f5",
+      "migration": "v5-customer-request-mutation",
+      "configuration_sha256": "9345083f139428405b205d523622902c116f7ebebc03d70428adec989929df98"
+    },
+    "sigil": {
+      "name": "sigil-booking-worker",
+      "module": "runtime-index.js",
+      "version": "c47e3b99-ac6d-48fe-88eb-e1bb4701bf26",
+      "deployment": "ea78b9e0-8788-45c5-9834-c7f264b3d560",
+      "sha256": "f8fdd9ec081d5cb30ab1293addf9209f19f3d868940b65a1b356687d0a0f5d29",
+      "configuration_sha256": "6ac3ce9cd923847cf3df6ce1283a757d90ab7adbd7e5c2f8ca83028be08fa06a"
+    }
+  },
+  "candidateHashes": {
+    "member": "2aa4d1d759cc7a731fc32c9a8db3a0d9b3689c5a5339296b2cab0a5d14efed45",
+    "sigil": "4ce2dd1c1573fa1d5babced3764b1c5c7c77e024c24303b7ba9534fd3f5b19b0"
+  },
+  "proof_files": {
+    "member": {
+      "path": "member-candidate-manifest.json",
+      "sha256": "a6d5039db96ddd32c70eb08891df9bfb93944ebb15d20badc41069b212b54bf2"
+    },
+    "sigil": {
+      "path": "sigil-overlay-proof.json",
+      "sha256": "264c05c4d2c9c29e51f7dd48084b5fa1cd6826093586e722daccb4ffea7d13f4"
+    }
+  }
+}
