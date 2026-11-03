@@ -5,6 +5,7 @@ import {handleMemberAppSessionApi} from './member-app-session.js';
 import {readMemberAppSession} from './member-app-api.js';
 import {handleLiffPromotionPurchase,isLiffPromotionPurchasePath} from './liff-promotion-purchase.js';
 import {applyConsolePresentation} from './model-console-live-presentation.js';
+import {isMemberAttentionRequest,handleMemberAttention} from './member-attention.js';
 
 export * from '../live-baseline/member-pages-worker.js';
 export {CustomerRequestMutationCoordinator} from './customer-request-mutation-live.js';
@@ -15,6 +16,7 @@ export {CustomerRequestQuotaCoordinator} from './customer-request-quota-durable-
 export default {
   ...live,
   async fetch(request,env,ctx) {
+    if(isMemberAttentionRequest(request))return handleMemberAttention(request,env);
     if(isDoubleMomentCheckoutRequest(request))return handleDoubleMomentCheckout(request,env);
     if(isMemberClientCreditsRequest(request))return handleMemberClientCredits(request,env);
     if(isLiffPromotionPurchasePath(request.url))return handleLiffPromotionPurchase(request,env);

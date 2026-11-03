@@ -136,9 +136,6 @@ tag = "v3-remembered-login-device"
 new_sqlite_classes = ["RememberedLoginDevice"]
 
 # Live moved directly from v3 to v5; do not invent an unapplied v4 migration.
-[[durable_objects.bindings]]
-name = "CUSTOMER_REQUEST_MUTATION"
-class_name = "CustomerRequestMutationCoordinator"
 
 [[migrations]]
 tag = "v5-customer-request-mutation"

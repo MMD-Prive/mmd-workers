@@ -10,14 +10,12 @@ class BlackCardConfigTest(unittest.TestCase):
         config = tomllib.loads((ROOT / 'wrangler.merged.toml').read_text())
         self.assertEqual(config['main'], 'index.session-paid-projection-wrapper.js')
         self.assertEqual(config['triggers']['crons'], ['*/5 * * * *'])
-        bindings = [b for b in config['d1_databases'] if b['binding'] == 'BLACKCARD_DB']
-        self.assertEqual(bindings, [{
-            'binding': 'BLACKCARD_DB', 'database_name': 'mmd-blackcard-companion-preferences',
-            'database_id': '18880ae8-2bf6-4c6a-8cc0-70c5d998324d', 'migrations_dir': 'migrations',
-        }])
+        # This Console release deliberately holds the optional Black Card store.
+        bindings = [b for b in config.get('d1_databases', []) if b['binding'] == 'BLACKCARD_DB']
+        self.assertEqual(bindings, [])
         self.assertNotIn('BLACKCARD_SALES_ENABLED', config['vars'])
         self.assertNotIn('BLACKCARD_PREFERENCE_RETENTION_DAYS', config['vars'])
-        self.assertEqual(config['vars']['BLACKCARD_PREFERENCE_TEXT_RETENTION_DAYS'], '90')
+        self.assertNotIn('BLACKCARD_PREFERENCE_TEXT_RETENTION_DAYS', config['vars'])
         self.assertIn('wrangler.merged.toml', (ROOT.parent / '.github/workflows/deploy-payments-worker.yml').read_text())
         for name in ['wrangler.toml', 'wrangler.merged.toml']:
             parsed = tomllib.loads((ROOT / name).read_text())

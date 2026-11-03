@@ -2,16 +2,15 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import adminWorker, {
+import adminWorker, { normalizeNext, renderAdminLogin } from "./src/admin-login-hero-worker.js";
+import {
   APPROVED_ADMIN_LOGIN_APPLE_TOUCH_ICON,
   APPROVED_ADMIN_LOGIN_FAVICON,
   ADMIN_LOGIN_SESSION_PATH,
   APPROVED_ADMIN_LOGIN_HERO,
   APPROVED_ADMIN_LOGIN_LOGO,
   SIGIL_ADMIN_LOGIN_PAGE_PATH,
-  normalizeNext,
-  renderAdminLogin,
-} from "./src/admin-login-hero-worker.js";
+} from "./src/admin-login-hero-worker-core.js";
 import { handleKenjiControlRequest } from "./src/kenji-control-endpoints.js";
 
 const request = (method = "GET") => new Request("https://www.mmdbkk.com/internal/admin/login", { method });
