@@ -25,15 +25,15 @@ function fixture(){
 }
 
 test('actual rendered browser script filters Thai and English without network access',()=>{
-  const f=fixture();assert.equal(f.cards.length,11);assert.equal(f.count.textContent,'11 เครื่องมือ');
+  const f=fixture();assert.equal(f.cards.length,15);assert.equal(f.count.textContent,'15 เครื่องมือ');
   assert.deepEqual(f.filter('สลิป').map(x=>x.href),['/internal/ceo/payment-slip-inbox']);
   assert.deepEqual(f.filter('  MEMORY   LINE ').map(x=>x.href),['/internal/admin/member-intelligence']);
   assert.equal(f.filter('คอนเฟิร์ม').length,2);
   assert.deepEqual(f.filter('CEO').map(x=>x.href),['/internal/ceo','/internal/ceo/kenji-control']);
   assert.deepEqual(f.filter('Kenji').map(x=>x.href),['/internal/admin/kenji','/internal/ceo/kenji-control']);
   assert.equal(f.filter('<script>alert(1)</script>').length,0);assert.equal(f.empty.hidden,false);
-  assert.equal(f.filter(' ').length,11);assert.equal(f.empty.hidden,true);
-  f.input.value='';f.events.search();assert.equal(f.count.textContent,'11 เครื่องมือ');
+  assert.equal(f.filter(' ').length,15);assert.equal(f.empty.hidden,true);
+  f.input.value='';f.events.search();assert.equal(f.count.textContent,'15 เครื่องมือ');
 });
 
 test('launcher is accessible and separates references from gated operational destinations',()=>{
@@ -56,3 +56,4 @@ test('launcher is accessible and separates references from gated operational des
   assert.match(flow,/aria-label="ลำดับการทำงานหลังบ้าน"/);
   assert.doesNotMatch(flow,/href="\/(ceo|kenji)"|client_id=|session_id=/);
  });
+
