@@ -17,7 +17,7 @@ export function renderOwnerMyMmdRecoveryPage(initialQuery = '') {
 <section class="rc-searchbox" aria-label="ค้นหาสมาชิก"><form data-form>
 <label for="recovery-query">ค้นหาสมาชิกหรือคำขอ</label><div class="rc-search"><input id="recovery-query" name="q" value="${query}" placeholder="ชื่อลูกค้า / Client ID / IMR-…" aria-describedby="recovery-help" autocomplete="off" maxlength="120" required><button class="rc-button rc-primary" type="submit">ตรวจสถานะ</button></div>
 <p class="rc-help" id="recovery-help">ใช้ข้อมูลที่มีอยู่ได้เลย ไม่ต้องให้ลูกค้าเปิด LINE เพื่อช่วยตรวจ</p></form>
-<nav class="rc-tools" aria-label="ทางลัดการตรวจสมาชิก"><button class="rc-link" type="button" data-inbox>คำขอ Recovery ล่าสุด</button><a href="/internal/admin/member-intelligence">ค้นหาข้อมูลสมาชิก</a></nav></section>
+<nav class="rc-tools" aria-label="ทางลัดการตรวจสมาชิก"><a class="rc-link" href="/internal/admin/my-mmd/recovery" data-inbox>คำขอ Recovery ล่าสุด</a><a href="/internal/admin/member-intelligence">ค้นหาข้อมูลสมาชิก</a></nav></section>
 <div class="rc-toolbar"><h2 data-heading>คำขอ Recovery ล่าสุด</h2><p class="rc-muted" data-readtime></p></div>
 <p class="rc-sr" data-announcement role="status" aria-live="polite" aria-atomic="true"></p>
 <section class="rc-result" data-result tabindex="-1" aria-label="ผลการตรวจ" aria-busy="true"><div class="rc-state"><p>กำลังเตรียมข้อมูล…</p></div></section>
@@ -153,7 +153,7 @@ function recoveryClient() {
     navigate(rec(q) ? { client_id: q } : requestId(q) ? { request_id: q.toUpperCase() } : { q: q });
   });
   input.addEventListener('input', function() { input.setCustomValidity(''); });
-  document.querySelector('[data-inbox]').addEventListener('click', function() { input.value = ''; navigate({ inbox: '1' }); });
+  document.querySelector('[data-inbox]').addEventListener('click', function(e) { e.preventDefault(); input.value = ''; navigate({ inbox: '1' }); });
   result.addEventListener('click', function(e) {
     var retry = e.target.closest('[data-retry]'); if (retry) { load(lastScope, true); return; }
     var choice = e.target.closest('[data-client]'); if (choice && rec(choice.dataset.client)) { input.value = choice.dataset.client; navigate({ client_id: choice.dataset.client }); }
