@@ -32,3 +32,7 @@ jobs:
           node --check admin-worker/src/owner-my-mmd-recovery-diagnostic.js
           node --check admin-worker/src/owner-my-mmd-recovery-page.js
           node --experimental-global-webcrypto --test admin-worker/owner-my-mmd-recovery-diagnostic.test.mjs admin-worker/owner-my-mmd-recovery-page.test.mjs
+      - name: Exercise deployed script after bundling with function name preservation
+        run: |
+          npx --yes esbuild@0.25.12 admin-worker/src/owner-my-mmd-recovery-page.js --bundle --keep-names --minify --platform=node --format=esm --outfile=admin-worker/src/owner-recovery-bundled.mjs
+          RECOVERY_PAGE_MODULE=./src/owner-recovery-bundled.mjs node --test admin-worker/owner-my-mmd-recovery-page.test.mjs

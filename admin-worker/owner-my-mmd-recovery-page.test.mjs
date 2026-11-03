@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { renderOwnerMyMmdRecoveryPage } from './src/owner-my-mmd-recovery-page.js';
+const { renderOwnerMyMmdRecoveryPage } = await import(process.env.RECOVERY_PAGE_MODULE || './src/owner-my-mmd-recovery-page.js');
 
 const client = 'recFixture123456';
 const fixture = (overrides = {}) => ({ ok: true, customer: { display_name: 'สมาชิกทดสอบ', canonical_client_id: client }, membership: { label: 'SVIP', lifecycle: 'active', active_through: '2028-09-19' }, recovery: { state: 'reconciled', terminal: true, pending_review_count: 0 }, points: { status: 'verified', value: 1250 }, ...overrides });
