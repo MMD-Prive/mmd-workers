@@ -127,6 +127,24 @@ class ReleaseContract(unittest.TestCase):
             self.run_release(api)
         self.assertEqual(api.calls, [])
 
+    def test_metadata_reads_use_existing_role_credentials_only(self):
+        import io
+        seen = []
+        class Reply(io.BytesIO):
+            headers = {"Content-Type": "application/json"}
+        class Opener:
+            def open(self, request, timeout):
+                seen.append((request.get_method(), request.get_header("Authorization")))
+                return Reply(b'{"success":true,"result":{}}')
+        api = r.Api("synthetic-worker", "synthetic-routes", "synthetic-r2")
+        api.opener = Opener()
+        api("GET", r.root(r.ORDER[0]) + "/settings")
+        api("GET", f"/zones/{r.ZONE}/workers/routes")
+        api("GET", f"/accounts/{r.ACCOUNT}/r2/buckets/mmd-line-slip-evidence/lifecycle")
+        self.assertEqual(seen, [("GET", "Bearer synthetic-worker"), ("GET", "Bearer synthetic-routes"), ("GET", "Bearer synthetic-r2")])
+        with self.assertRaisesRegex(RuntimeError, "routes-read credential unavailable"):
+            r.Api("synthetic-worker")("GET", f"/zones/{r.ZONE}/workers/routes")
+
     def test_routes_settings_secrets_and_business_posts_are_not_transport_capabilities(self):
         api = r.Api("synthetic")
         for route in [r.root(r.ORDER[0]) + "/settings", r.root(r.ORDER[0]) + "/secrets", "/anything-business"]:
