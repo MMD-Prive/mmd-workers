@@ -16,7 +16,12 @@ const clean = (value, max = 2000) => String(value ?? "").trim().slice(0, max);
 const html = (value) => clean(value, 5000).replace(/[&<>"']/g, (ch) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[ch]));
 
 function amountText(value, max = 80) {
-  return clean(value, max).replace(/[,\s]+/g, "").replace(/[^0-9.]/g, "").replace(/(\..*)\./g, "$1");
+  const raw = String(value ?? "").trim();
+  if (!raw || raw.length > max || !/^(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d{1,2})?$/.test(raw)) return "";
+  const normalized = raw.replace(/,/g, "");
+  const [whole, fraction = ""] = normalized.split(".");
+  const minor = BigInt(whole + fraction.padEnd(2, "0"));
+  return minor > 0n && minor <= BigInt(Number.MAX_SAFE_INTEGER) ? normalized : "";
 }
 
 function currencyText(value) {
@@ -238,7 +243,9 @@ export async function handleRefundOpsInternalIntake(request, env = {}) {
     : null;
   const accountChanged = Boolean(prior?.fingerprint && prior.fingerprint !== accountFingerprint);
 
-  const refundAmount = amountText(body.refund_amount_due || body.amount_to_refund || body.refund_amount || body.amount || "");
+  const rawRefundAmount = body.refund_amount_due ?? body.amount_to_refund ?? body.refund_amount ?? body.amount ?? "";
+  const refundAmount = amountText(rawRefundAmount);
+  if (String(rawRefundAmount).trim() && !refundAmount) return json({ ok:false, error:"refund_amount_invalid", message:"ระบุยอดคืนเป็นจำนวนเงินมากกว่า 0 และมีทศนิยมไม่เกิน 2 ตำแหน่ง" }, 400);
   const refundCurrency = currencyText(body.refund_currency || body.currency || "THB");
   const payload = {
     schema: "mmd_refund_bank_detail_v1",
@@ -680,7 +687,10 @@ async function handleReceiptUpload(request, env) {
   if (!bucket) return json({ ok:false, error:"private_bucket_missing" }, 503);
 
   const payload = parsePayload(record);
-  const ownerRefundAmount = amountText(form.get("refund_amount") || form.get("amount_to_refund") || "") || payloadRefundAmount(payload);
+  const rawOwnerRefundAmount = form.get("refund_amount") ?? form.get("amount_to_refund") ?? "";
+  const parsedOwnerRefundAmount = amountText(rawOwnerRefundAmount);
+  if (String(rawOwnerRefundAmount).trim() && !parsedOwnerRefundAmount) return json({ ok:false, error:"refund_amount_invalid", message:"ระบุยอดคืนเป็นจำนวนเงินมากกว่า 0 และมีทศนิยมไม่เกิน 2 ตำแหน่ง" }, 400);
+  const ownerRefundAmount = parsedOwnerRefundAmount || payloadRefundAmount(payload);
   const ownerRefundCurrency = currencyText(form.get("refund_currency") || payload.refund_currency || "THB");
   const ownerRefundNote = clean(form.get("refund_note"), 500) || clean(payload.refund_reason || "", 500);
   const ownerRefundReference = clean(form.get("refund_reference"), 160);
@@ -909,7 +919,7 @@ function refundUploadResultHtml(payload = {}, status = 200, returnPath = REFUND_
        ${customerJobUrl ? `<p><strong>Customer job/confirm URL</strong><br><a href="${html(customerJobUrl)}">${html(customerJobUrl)}</a></p>` : ""}
        ${adminUrl ? `<p><strong>Admin Job URL</strong><br><a href="${html(adminUrl)}">${html(adminUrl)}</a></p>` : ""}
        ${modelUrl ? `<p><strong>Model Job/App URL</strong><br><a href="${html(modelUrl)}">${html(modelUrl)}</a></p>` : ""}`
-    : `<p class="danger">${html(payload?.error || "upload_failed")}</p>`;
+    : `<p class="danger">${html(payload?.message || payload?.error || "upload_failed")}</p>`;
   return `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title} · Refund Ops</title><style>
   body{margin:0;background:#0b0a09;color:#f4efe6;font:15px/1.55 system-ui;padding:24px}.wrap{max-width:720px;margin:auto}.card{border:1px solid #2f2a23;background:#151310;border-radius:18px;padding:18px}a{color:#f7e7c3;word-break:break-all}.btn{display:inline-block;margin-top:12px;border:1px solid #6f6048;background:#d5b36b;color:#15110b;border-radius:12px;padding:10px 14px;font-weight:800;text-decoration:none}.danger{color:#ffbd9e}</style></head><body><main class="wrap"><section class="card"><h1>${title}</h1>${detail}<a class="btn" href="${html(returnPath)}">กลับ Refund เคสนี้</a></section></main></body></html>`;
 }
@@ -922,7 +932,7 @@ function pageHtml(initialItem = null) {
 </style></head><body><main class="wrap"><div class="top"><div><div class="sub">OWNER OPS</div><h1>Refund Accounts</h1><div class="sub">รูปบัญชีจาก LINE → ใส่ยอดคืน → Copy → โอน → อัปโหลดสลิปกลับ → HYPE รวมลิงก์พร้อมส่งให้เปอร์</div></div><a class="btn" href="/internal/admin/control-room">Control Room</a></div>${directUpload}<div id="list" class="grid"><div class="empty">${loadingLabel}</div></div></main><script>
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=v=>{const n=Number(String(v||'').replace(/,/g,''));return Number.isFinite(n)&&n>0?n.toLocaleString('th-TH')+' บาท':'ยังไม่ระบุยอดคืน'};
-async function api(path,opts={}){const c=new AbortController();const t=setTimeout(()=>c.abort(),10000);try{const r=await fetch('/v1/admin/refunds'+path,{credentials:'include',cache:'no-store',...opts,signal:opts.signal||c.signal});const p=await r.json().catch(()=>({}));if(!r.ok||p.ok===false)throw new Error(p.error||r.status);return p}catch(e){if(e?.name==='AbortError')throw new Error('หมดเวลารอข้อมูล กรุณากดโหลดใหม่');throw e}finally{clearTimeout(t)}}
+async function api(path,opts={}){const c=new AbortController();const t=setTimeout(()=>c.abort(),10000);try{const r=await fetch('/v1/admin/refunds'+path,{credentials:'include',cache:'no-store',...opts,signal:opts.signal||c.signal});const p=await r.json().catch(()=>({}));if(!r.ok||p.ok===false)throw new Error(p.message||p.error||r.status);return p}catch(e){if(e?.name==='AbortError')throw new Error('หมดเวลารอข้อมูล กรุณากดโหลดใหม่');throw e}finally{clearTimeout(t)}}
 async function copy(v){await navigator.clipboard.writeText(v)}
 async function detail(id,btn){const box=document.querySelector('[data-detail="'+CSS.escape(id)+'"]');if(!box)return;if(box.dataset.loaded==='1'){box.classList.toggle('open');return}btn.disabled=true;try{const p=await api('/detail?inbox_id='+encodeURIComponent(id));box.innerHTML='<div class="muted">'+esc(p.detail.bank_name||'')+'</div><div>'+esc(p.detail.account_name||'')+'</div><div class="num">'+esc(p.detail.account_number||'')+'</div><div class="actions"><button data-copy-name>Copy ชื่อ</button><button class="primary" data-copy-number>Copy เลขบัญชี</button><button data-copy-all>Copy พร้อมยอด</button></div>';box.querySelector('[data-copy-name]').onclick=()=>copy(p.detail.account_name||'');box.querySelector('[data-copy-number]').onclick=()=>copy(p.detail.account_number||'');box.querySelector('[data-copy-all]').onclick=()=>{const card=box.closest('[data-card]');const amount=card.querySelector('[data-refund-amount]').value.trim();copy(['โอนคืนลูกค้า','ธนาคาร: '+(p.detail.bank_name||''),'ชื่อบัญชี: '+(p.detail.account_name||''),'เลขบัญชี: '+(p.detail.account_number||''),amount?'ยอดคืน: '+money(amount):''].filter(Boolean).join(String.fromCharCode(10)));};box.dataset.loaded='1';box.classList.add('open');}finally{btn.disabled=false}}
 async function upload(id,file,card){if(!file)return;const amount=card.querySelector('[data-refund-amount]').value.trim();const note=card.querySelector('[data-refund-note]').value.trim();const ref=card.querySelector('[data-refund-ref]').value.trim();if(!amount){card.querySelector('[data-up-status]').innerHTML='<span class="danger">กรุณาใส่ยอดคืนก่อนอัปโหลดสลิป</span>';return}const fd=new FormData();fd.append('inbox_id',id);fd.append('file',file);fd.append('refund_amount',amount);fd.append('refund_currency','THB');fd.append('refund_note',note);fd.append('refund_reference',ref);card.querySelector('[data-up-status]').textContent='กำลังอัปโหลด…';try{const p=await api('/receipt',{method:'POST',body:fd});card.classList.add('done');card.querySelector('[data-up-status]').textContent='อัปโหลดสลิปแล้ว ✓';const receipt=p.customer_receipt_url||p.confirmation_url||'';const customer=p.customer_job_confirm_url||'';const admin=p.admin_job_url||'';const model=p.model_job_app_url||'';if(receipt||customer||admin||model){card.querySelector('[data-confirm]').innerHTML=[receipt?'<strong>Customer receipt URL</strong><br><a target="_blank" rel="noreferrer" href="'+esc(receipt)+'">'+esc(receipt)+'</a>':'',customer?'<br><strong>Customer job/confirm URL</strong><br><a target="_blank" rel="noreferrer" href="'+esc(customer)+'">'+esc(customer)+'</a>':'',admin?'<br><strong>Admin Job URL</strong><br><a target="_blank" rel="noreferrer" href="'+esc(admin)+'">'+esc(admin)+'</a>':'',model?'<br><strong>Model Job/App URL</strong><br><a target="_blank" rel="noreferrer" href="'+esc(model)+'">'+esc(model)+'</a>':'','<div class="actions"><button data-copy-confirm>Copy Customer URL</button><button data-copy-model>Copy Model URL</button></div>'].join('');const cc=card.querySelector('[data-copy-confirm]');if(cc)cc.onclick=()=>copy(customer||receipt);const cm=card.querySelector('[data-copy-model]');if(cm)cm.onclick=()=>copy(model);}}catch(e){card.querySelector('[data-up-status]').textContent='อัปโหลดไม่สำเร็จ · '+e.message}}
