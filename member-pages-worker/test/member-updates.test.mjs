@@ -47,6 +47,16 @@ test('valid empty published feed succeeds without inventing content',async()=>{
   async()=>({lineUserId:'verified',memberId:'M1',memberExists:true}));
  assert.equal(response.status,200);assert.deepEqual((await response.json()).items,[]);
 });
+test('CMS uses manual redirect mode and rejects 3xx without following Location',async()=>{
+ for(const status of [301,302,303,307,308]){
+  let calls=0;
+  await assert.rejects(listMmdNowItems({WEBFLOW_CMS_TOKEN:'fixture',WEBFLOW_CMS_HTTP:{fetch:async request=>{
+   calls++;assert.equal(request.redirect,'manual');assert.equal(new URL(request.url).hostname,'api.webflow.com');
+   return new Response(null,{status,headers:{location:'https://untrusted.invalid/private'}});
+  }}},true),/cms_unavailable/);
+  assert.equal(calls,1);
+ }
+});
 test('read diagnostics contain only status and fixed outcome, never identity or upstream exception',async()=>{
  const original=console.info,logs=[];console.info=(...args)=>logs.push(args);
  try {
