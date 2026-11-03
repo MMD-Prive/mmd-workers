@@ -87,7 +87,7 @@ test('10:00 promotion schedule leaves daily model and 20:00 Standard times uncha
   const morning = await run(f, '2026-11-03', '10:00');
   assert.equal(morning.results[0].slot, 'promotion');
   assert.equal(morning.results[0].sent, 1);
-  assert.equal(f.bucket.read('plans/2026-11-03/promotion.json').destination, 'preview');
+  assert.equal(f.bucket.read('plans/2026-11-03/promotion.json').destinations[0], 'preview');
   const afterMorning = f.sends.length;
 
   const model = await run(f, '2026-11-03', '16:30');
@@ -101,9 +101,9 @@ test('10:00 promotion schedule leaves daily model and 20:00 Standard times uncha
   assert.equal(f.sends.length, afterMorning + 4);
 
   assert.equal((await run(f, '2026-11-06', '10:00')).results[0].slot, 'promotion');
-  assert.equal(f.bucket.read('plans/2026-11-06/promotion.json').destination, 'premium');
+  assert.equal(f.bucket.read('plans/2026-11-06/promotion.json').destinations[0], 'premium');
   assert.equal((await run(f, '2026-11-10', '10:00')).results[0].slot, 'promotion');
-  assert.equal(f.bucket.read('plans/2026-11-10/promotion.json').destination, 'standard');
+  assert.equal(f.bucket.read('plans/2026-11-10/promotion.json').destinations[0], 'standard');
   assert.equal((await run(f, '2026-11-10', '20:00')).status, 'not_due');
 });
 
