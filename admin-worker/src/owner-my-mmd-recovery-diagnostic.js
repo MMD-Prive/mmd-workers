@@ -1,5 +1,7 @@
 import { renderOwnerMyMmdRecoveryPage as renderPage } from "./owner-my-mmd-recovery-page.js";
 import { resolveLiveCanonicalClient } from "./kenji-lv5-live-context.js";
+import { handleCreateSessionClientLineageRequest } from "./create-session-client-lineage-runtime.js";
+import { resolveOwnerRecoveryIdentity } from "./owner-recovery-identity.js";
 
 export const OWNER_MY_MMD_RECOVERY_PAGE_PATH = "/internal/admin/my-mmd/recovery";
 export const OWNER_MY_MMD_RECOVERY_API_PATH = "/v1/admin/my-mmd/recovery-diagnostic";
@@ -73,22 +75,24 @@ export async function handleOwnerMyMmdRecoveryDiagnostic(request, env = {}, acto
   }
   if (!query && !clientId) return json({ ok: false, error: "query_required" }, 400);
 
-  const identity = await resolveLiveCanonicalClient(env, clientId
+  const identity = await resolveOwnerRecoveryIdentity(env, clientId
     ? { canonical_client_id: clientId }
-    : { client_query: query }).catch(() => null);
+    : { client_query: query }, { resolve: resolveLiveCanonicalClient, lookup: handleCreateSessionClientLineageRequest });
 
   if (!identity || identity.status !== "resolved" || !recordId(identity?.client?.canonical_client_id)) {
     return json({
       ok: false,
-      state: "unresolved",
+      state: identity?.status === "unavailable" ? "unavailable" : "unresolved",
       error: identity?.reason || "canonical_client_unresolved",
       choices: Array.isArray(identity?.choices)
         ? identity.choices.slice(0, 12).map((item) => ({
             client_id: recordId(item.client_id) || null,
             display_name: clean(item.display_name, 120) || null,
+            matched_on: clean(item.matched_on, 80) || null,
+            matched_value: clean(item.matched_value, 120) || null,
           }))
         : [],
-    }, identity?.reason?.includes("multiple") || identity?.reason?.includes("ambiguous") ? 409 : 404);
+    }, identity?.status === "unavailable" ? 503 : identity?.choices?.length || identity?.reason?.includes("multiple") || identity?.reason?.includes("ambiguous") ? 409 : 404);
   }
 
   const lineUserId = lineId(identity.client.line_user_id);
@@ -212,4 +216,5 @@ function json(payload, status = 200) {
     },
   });
 }
+
 

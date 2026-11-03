@@ -63,6 +63,10 @@ const RECOVERY_CLIENT = String.raw`function recoveryClient() {
   function errorView(b) {
     var code = b.error || 'unavailable';
     var errors = {
+      per_rename_not_resolved: ['ไม่พบสมาชิกจากชื่อนี้', 'ลองใช้ชื่ออื่น หรือเปิดค้นหาข้อมูลสมาชิกเพื่อตรวจชื่อเดิมและ Client ID', 'warn'],
+      identity_resolution_unavailable: ['ยังอ่านข้อมูลตัวตนไม่ได้', 'แหล่งข้อมูลลูกค้ายังไม่พร้อม ลองอีกครั้ง ผลนี้ไม่ได้หมายความว่าไม่พบลูกค้า', 'bad'],
+      identity_search_unavailable: ['ยังค้นข้อมูลสมาชิกไม่ได้', 'ระบบค้นหายังอ่านข้อมูลไม่สำเร็จ กรุณาลองอีกครั้ง', 'bad'],
+      identity_search_incomplete: ['ยังค้นข้อมูลได้ไม่ครบ', 'บางแหล่งข้อมูลยังอ่านไม่ครบ จึงยังยืนยันผลค้นหาครั้งนี้ไม่ได้ ลองอีกครั้ง', 'warn'],
       canonical_client_line_identity_missing: ['ยังไม่พบ LINE ที่ผูกกับระเบียนนี้', 'ระบบพบระเบียนลูกค้า แต่ยังอ่านสมาชิก Points และประวัติผ่าน LINE ที่ยืนยันไม่ได้ เปิด Customer 360 เพื่อตรวจการเชื่อมตัวตนก่อน', 'warn'],
       canonical_client_unresolved: ['ยังระบุสมาชิกไม่ได้', 'ลองใช้ชื่ออื่นหรือ Client ID จาก Customer 360 เพื่อระบุระเบียนให้ชัดเจน', 'warn'],
       owner_required: ['ต้องใช้บัญชี Owner', 'บัญชีปัจจุบันไม่มีสิทธิ์อ่านผลตรวจหน้านี้', 'bad'],
@@ -73,9 +77,9 @@ const RECOVERY_CLIENT = String.raw`function recoveryClient() {
       query_required: ['ระบุข้อมูลเพื่อค้นหา', 'ใส่ชื่อลูกค้า Client ID หรือเลขคำขอ IMR แล้วตรวจอีกครั้ง', 'warn']
     };
     var choices = Array.isArray(b.choices) ? b.choices.filter(function(c) { return rec(c.client_id); }) : [];
-    var info = choices.length ? ['พบหลายระเบียน กรุณาเลือกสมาชิก', 'ตรวจชื่อและ Client ID ให้ตรงก่อนเปิดผลการตรวจ', 'warn'] : (errors[code] || ['ยังยืนยันข้อมูลไม่ได้', 'ระบบยังอ่านข้อมูลไม่สำเร็จ ลองตรวจอีกครั้ง หรือเปิดรายละเอียดเพื่อหาสาเหตุ', 'warn']);
+    var info = choices.length ? ['กรุณาเลือกสมาชิกที่ต้องการตรวจ', 'พบชื่อที่เกี่ยวข้อง ตรวจชื่อ ชื่อที่ค้นพบ และ Client ID ให้ตรงคนก่อนเปิดผลการตรวจ', 'warn'] : (errors[code] || ['ยังยืนยันข้อมูลไม่ได้', 'ระบบยังอ่านข้อมูลไม่สำเร็จ ลองตรวจอีกครั้ง หรือเปิดรายละเอียดเพื่อหาสาเหตุ', 'warn']);
     var actions = (code === 'owner_required' ? '<a class="rc-button" href="/internal/admin/login">เข้าสู่ระบบ Owner</a>' : '<button class="rc-button" type="button" data-retry>ลองอีกครั้ง</button>');
-    result.innerHTML = customer(b.customer) + state(info[0], info[1], info[2], actions) + (choices.length ? '<div class="rc-choices">' + choices.map(function(c) { return '<button class="rc-button rc-choice" data-client="' + esc(c.client_id) + '"><span>' + esc(c.display_name || 'สมาชิก MMD') + '</span><span class="rc-id">' + esc(c.client_id) + '</span></button>'; }).join('') + '</div>' : '') + diagnostic(code);
+    result.innerHTML = customer(b.customer) + state(info[0], info[1], info[2], actions) + (choices.length ? '<div class="rc-choices">' + choices.map(function(c) { return '<button class="rc-button rc-choice" data-client="' + esc(c.client_id) + '"><span>' + esc(c.display_name || 'สมาชิก MMD') + '</span>' + (c.matched_value ? '<span>พบจากชื่อ: ' + esc(c.matched_value) + '</span>' : '') + '<span class="rc-id">' + esc(c.client_id) + '</span></button>'; }).join('') + '</div>' : '') + diagnostic(code);
     return info[0];
   }
   function identityView(i, compact) {
@@ -163,3 +167,4 @@ const RECOVERY_CLIENT = String.raw`function recoveryClient() {
   input.value = client || ref || q || '';
   load(client ? { client_id: client } : ref ? { request_id: ref } : q ? { q: q } : { inbox: '1' }, false);
 }`;
+
