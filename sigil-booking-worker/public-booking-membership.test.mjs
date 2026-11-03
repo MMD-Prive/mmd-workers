@@ -1,0 +1,23 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import runtime from './src/runtime-index.js';
+import {authorizePublicBooking,paidPublicMembership} from './src/public-booking-membership.js';
+import {resolveBookingViewer} from './src/customer-discovery-policy.js';
+import {resolveMemberEntitlements} from '../auth-worker/src/member-entitlement-resolver.js';
+const id='rec'+'A'.repeat(14), entitlement='rec'+'E'.repeat(14), memberId='mmd_fixture';
+const hash=async value=>Buffer.from(await crypto.subtle.digest('SHA-256',new TextEncoder().encode('mmd-discovery-member-v1:'+value))).toString('hex');
+const req=(path='/sigil/api/booking/intake',cookie=true)=>new Request('https://sigil.mmdbkk.com'+path,{method:'POST',headers:{'content-type':'application/json',...(cookie?{cookie:'__Secure-mmd_discovery_session='+'a'.repeat(64)}:{})},body:JSON.stringify({lane:'public',client_contact:'victim@example.com',member_record_id:id,resolver_payload_json:{canonical_identity:{per_rename:'FORGED'},entitlement_snapshot:{access:{public_service_access:true}}}})});
+async function fixture(capability='public_member',opts={}) {
+ const env={AIRTABLE_API_KEY:'fixture',AIRTABLE_BASE_ID:'fixture',AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES:'s'.repeat(32),MEMBER_PAGES_WORKER:{fetch:async()=>Response.json({ok:true,memberId,memberRef:await hash(opts.wrongIdentity?'other':memberId),perRename:{source:'linked_per_rename_index_v1',per_rename:'Trusted'}})}};
+ const calls=[];const fetch=async (input,init={})=>{const url=new URL(typeof input==='string'?input:input.url);calls.push({url,method:init.method||'GET'});assert.equal(init.method||'GET','GET','reject path must not write');
+ if(opts.outage)return new Response('',{status:503});
+ if(url.pathname.endsWith('/Members/'+id)) return Response.json({id,fields:{member_id:memberId,'MMD — Member Entitlements':[entitlement]}});
+ if(url.pathname.endsWith('/Members')) {assert.equal(url.searchParams.get('filterByFormula'),'{member_id}="mmd_fixture"');return Response.json({records:opts.duplicate?[{id},{id:'rec'+'B'.repeat(14)}]:[{id}]});}
+ return Response.json({records:[{id:entitlement,fields:{member:[id],capability,member_status:'active',access_status:opts.expired?'expired':'active',...(opts.expired?{expire_at:'2020-01-01'}:{})}}]});};
+ return {env,fetch,calls};
+}
+test('public/elite/private paid capability qualifies but Guest Pass and unknown do not',()=>{for(const capability of ['public_member','elite','private_standard','private_premium','vip','svip','black_card','guest_pass','invented','red_card']){const s=resolveMemberEntitlements([{fields:{capability,member_status:'active',access_status:'active'}}]);assert.equal(paidPublicMembership(s),!['guest_pass','invented','red_card'].includes(capability));}});
+test('valid session is bound to exact schema field and fresh inverse-linked entitlement',async t=>{const f=await fixture();t.mock.method(globalThis,'fetch',f.fetch);const result=await authorizePublicBooking(req(),f.env);assert.equal(result.ok,true);assert.equal(result.viewer.perRename.per_rename,'Trusted');assert.equal(f.calls.length,3);});
+for(const [name,capability,opts,status] of [['Guest Pass','guest_pass',{},403],['expired','public_member',{expired:true},403],['identity mismatch','public_member',{wrongIdentity:true},403],['duplicate','public_member',{duplicate:true},503],['outage','public_member',{outage:true},503]])test(name+' rejects before draft writes and notifications',async t=>{const f=await fixture(capability,opts);t.mock.method(globalThis,'fetch',f.fetch);for(const path of ['/sigil/api/booking/intake','/sigil/api/client/resolve']) {const res=await runtime.fetch(req(path),f.env,{});assert.equal(res.status,status);assert.ok(f.calls.every(c=>!c.url.pathname.includes('Booking')));}});
+test('signed out and forged browser identity reject without external calls',async t=>{t.mock.method(globalThis,'fetch',()=>{throw Error('unexpected call');});for(const path of ['/sigil/api/booking/intake','/sigil/api/client/resolve']) {const response=await runtime.fetch(req(path,false),{},{});assert.equal(response.status,401);assert.equal((await response.json()).error,'login_required');}});
+test('missing binding is outage, invalid session is login, old member deployment is outage',async()=>{assert.equal((await resolveBookingViewer(req(),{})).status,503);const f=await fixture();f.env.MEMBER_PAGES_WORKER.fetch=async()=>new Response('',{status:401});assert.equal((await resolveBookingViewer(req(),f.env)).status,401);f.env.MEMBER_PAGES_WORKER.fetch=async()=>Response.json({ok:true,memberRef:await hash(memberId)});assert.equal((await resolveBookingViewer(req(),f.env)).status,503);});

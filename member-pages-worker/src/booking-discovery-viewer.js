@@ -1,3 +1,4 @@
+import { resolveBookingPerRename } from "./booking-customer-identity.js";
 import { readMemberAppSession } from "./member-app-api-runtime.js";
 
 export const DISCOVERY_VIEWER_PATH = "/__internal/booking/discovery-viewer";
@@ -16,17 +17,24 @@ export async function handleDiscoveryViewer(request, env = {}, readSession = rea
     let sourceRequest = request;
     const alias = cookieValue(request, "__Secure-mmd_discovery_session");
     if (alias) {
-      if (!/^[a-f0-9]{64}$/.test(alias) || !env.LIFF_IDENTITY_KV?.get) return respond({ ok: false }, 401);
+      if (!/^[a-f0-9]{64}$/.test(alias)) return respond({ ok: false }, 401);
+      if (!env.LIFF_IDENTITY_KV?.get) return respond({ok:false},503);
       const record = await env.LIFF_IDENTITY_KV.get("booking-discovery:" + alias, "json");
       if (!record || record.expires_at <= Date.now() || !/^[a-f0-9]{64}$/.test(record.session_token || "")) return respond({ ok: false }, 401);
       sourceRequest = new Request(request.url, { headers: { cookie: "__Host-mmd_liff_session=" + record.session_token } });
     }
-    const session = await readSession(sourceRequest, env);
+    const session = await readSession(sourceRequest, env, {throwOnUnavailable:new URL(request.url).searchParams.get("context") === "booking"});
     const status = String(session?.memberProfile?.membership_status || session?.memberProfile?.status || "").toLowerCase();
+    if (new URL(request.url).searchParams.get("context") === "booking" && session?.lineUserId && (session.memberExists !== true || !session.memberId)) return respond({ok:false,error:"public_membership_required"},403);
     if (!session?.lineUserId || session.memberExists !== true || !session.memberId || session.readGraceOnly === true
       || ["blocked", "suspended", "revoked", "pending_review"].includes(status)) return respond({ ok: false }, 401);
     const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode("mmd-discovery-member-v1:" + session.memberId));
     const memberRef = [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("");
+    if (new URL(request.url).searchParams.get("context") === "booking") {
+      // Additional identity stays behind this route's service-secret check.
+      const perRename = await resolveBookingPerRename(env, session.lineUserId).catch(() => null);
+      return respond({ ok: true, memberRef, memberId: session.memberId, perRename }, 200);
+    }
     return respond({ ok: true, memberRef }, 200);
   } catch { return respond({ ok: false }, 503); }
 }
@@ -51,7 +59,9 @@ export async function attachDiscoverySession(request, env, response, readSession
   try {
     const source = new Request(request.url, { headers: { cookie: "__Host-mmd_liff_session=" + match[1] } });
     const session = await readSession(source, env);
-    if (!session?.lineUserId || !session.memberId || session.memberExists !== true || session.readGraceOnly === true) return response;
+    // The alias proves a verified login, not paid membership. A nonmember needs
+    // this alias to receive the booking-specific signup response instead of a login loop.
+    if (!session?.lineUserId || session.readGraceOnly === true) return response;
     const status = String(session.memberProfile?.membership_status || session.memberProfile?.status || "").toLowerCase();
     if (["blocked", "suspended", "revoked", "pending_review"].includes(status)) return response;
     const bytes = new Uint8Array(32);

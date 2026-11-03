@@ -473,7 +473,7 @@ test("SIGIL Search intake requires budget, strips customer-supplied storage URLs
 });
 
 
-test("Public Model search and intake reject a budget below 5,000 THB", async () => {
+test("Public Model search and intake reject a budget below 4,500 THB", async () => {
   const originalFetch = globalThis.fetch;
   let fetchCount = 0;
   globalThis.fetch = async () => {
@@ -481,7 +481,7 @@ test("Public Model search and intake reject a budget below 5,000 THB", async () 
     return Response.json({ records: [] });
   };
   try {
-    const searchResponse = await worker.fetch(new Request("https://sigil.mmdbkk.com/sigil/api/models/search?scope=public&search_mode=search&budget_thb=4999"), {
+    const searchResponse = await worker.fetch(new Request("https://sigil.mmdbkk.com/sigil/api/models/search?scope=public&search_mode=search&budget_thb=4499"), {
       AIRTABLE_API_KEY: "test-key",
       AIRTABLE_BASE_ID: "test-base",
     });
@@ -495,12 +495,12 @@ test("Public Model search and intake reject a budget below 5,000 THB", async () 
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        booking_ref: "public_budget_4999",
+        booking_ref: "public_budget_4499",
         search_mode: "search",
         lane: "public",
         model_scope: "public",
         customer_lane: "both",
-        budget_thb: 4999,
+        budget_thb: 4499,
         suppress_telegram_notify: true,
       }),
     }), {
