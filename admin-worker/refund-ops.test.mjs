@@ -230,6 +230,22 @@ test("owner receipt upload requires amount, completes task, calls LINE notifier,
     assert.equal(missingAmountResponse.status, 400);
     assert.equal((await missingAmountResponse.json()).error, "refund_amount_required");
 
+    const originalAmountPayload = record.fields.payload_json;
+    record.fields.payload_json = JSON.stringify({ ...JSON.parse(originalAmountPayload), refund_amount_due: "4500" });
+    for (const invalidAmount of ["-4500", "abc4500", "1.2.3", "0", "1.001", "1,00", "999999999999999999999"]) {
+      const invalid = new FormData();
+      invalid.append("inbox_id", "refund_receipt_test");
+      invalid.append("refund_amount", invalidAmount);
+      invalid.append("file", new File([new Uint8Array([1])], "receipt.jpg", { type:"image/jpeg" }));
+      const response = await handleRefundOpsRequest(new Request("https://www.mmdbkk.com/v1/admin/refunds/receipt", { method:"POST", body:invalid }), e, { isAuthed:async () => true });
+      assert.equal(response.status, 400, invalidAmount);
+      assert.equal((await response.json()).error, "refund_amount_invalid");
+      assert.equal(objects.size, 0);
+      assert.equal(lineCalls.length, 0);
+      assert.equal(record.fields.status, "new");
+    }
+
+    record.fields.payload_json = originalAmountPayload;
     const form = new FormData();
     form.append("inbox_id", "refund_receipt_test");
     form.append("refund_amount", "4,500");
