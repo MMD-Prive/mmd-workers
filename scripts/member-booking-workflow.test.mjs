@@ -18,7 +18,7 @@ test('retired SIGIL workflow cannot deploy on main or mutate production even if 
 
 test('runtime-only SIGIL policy requires explicit owner input',()=>{assert.match(workflow,/APPROVED_SOURCE_MAP_POLICY/);assert.match(workflow,/inputs\.approved_source_map_policy == 'local-evidence-only-not-uploaded'/);});
 
-test('PR review runs exact head tests/build without production credentials or owner environment',()=>{
+test('PR review validates head guards and immutable historical artifacts without production credentials',()=>{
  const review=workflow.slice(workflow.indexOf('  review:'),workflow.indexOf('  owner-policy:'));
  assert.match(review,/if: github\.event_name == 'pull_request'/);
  assert.match(review,/ref: \$\{\{ github\.event\.pull_request\.head\.sha \}\}/);
@@ -31,4 +31,18 @@ test('PR review runs exact head tests/build without production credentials or ow
  assert.match(owner,/if: github\.event_name == 'workflow_dispatch'/);
  const release=workflow.slice(workflow.indexOf('\n  release:'));
  assert.match(release,/needs: owner-policy/);
+});
+
+
+test('legacy artifact review stays pinned while PR-head workflow and owner guards remain mandatory',()=>{
+ const review=workflow.slice(workflow.indexOf('  review:'),workflow.indexOf('  owner-policy:'));
+ const headGuards=review.indexOf('name: Validate PR-head workflow and owner guards');
+ const legacyCheckout=review.indexOf('name: Check out immutable legacy Booking source');
+ assert.ok(headGuards>0 && legacyCheckout>headGuards);
+ assert.match(review.slice(headGuards,legacyCheckout),/run: node --test scripts\/member-booking-workflow\.test\.mjs scripts\/member-booking-owner-approval\.test\.mjs scripts\/member-booking-route-inventory\.test\.mjs/);
+ assert.match(review,/ref: b5b4c1744927551f93a94534fde7b99ef1c571b4\n          path: legacy-booking-source\n          persist-credentials: false/);
+ assert.match(review,/run: cmp scripts\/member-booking-release-contract\.json legacy-booking-source\/scripts\/member-booking-release-contract\.json/);
+ assert.match(review,/name: Run offline Booking and release guard regressions\n        working-directory: legacy-booking-source\n        run: node --test/);
+ assert.match(review,/name: Verify pinned runtime bytes offline\n        working-directory: legacy-booking-source\n/);
+ assert.doesNotMatch(review,/continue-on-error:|--test-skip-pattern|if:.*false|\|\| true/);
 });

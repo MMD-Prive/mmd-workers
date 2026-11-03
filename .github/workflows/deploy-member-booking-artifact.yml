@@ -65,11 +65,25 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: '22'
+      # This job preserves the historical v5 -> v6 artifact review. Current
+      # Public booking behavior is tested by sigil-customer-access-ci.yml.
+      - name: Validate PR-head workflow and owner guards
+        run: node --test scripts/member-booking-workflow.test.mjs scripts/member-booking-owner-approval.test.mjs scripts/member-booking-route-inventory.test.mjs
+      - name: Check out immutable legacy Booking source
+        uses: actions/checkout@v5
+        with:
+          ref: b5b4c1744927551f93a94534fde7b99ef1c571b4
+          path: legacy-booking-source
+          persist-credentials: false
+      - name: Verify historical contract is unchanged
+        run: cmp scripts/member-booking-release-contract.json legacy-booking-source/scripts/member-booking-release-contract.json
       - name: Run offline Booking and release guard regressions
+        working-directory: legacy-booking-source
         run: node --test member-pages-worker/test/liff-member-oauth-host-return.test.mjs scripts/member-booking-release.test.mjs scripts/member-booking-owner-approval.test.mjs scripts/member-booking-workflow.test.mjs member-pages-worker/test/liff-member-booking-return.test.mjs scripts/member-booking-route-inventory.test.mjs
       - name: Install pinned build tool outside the checkout
         run: npm install --prefix "$RUNNER_TEMP/booking-build-tools" --ignore-scripts --no-audit --no-fund esbuild@0.27.3
       - name: Verify pinned runtime bytes offline
+        working-directory: legacy-booking-source
         env:
           ESBUILD_BIN: ${{ runner.temp }}/booking-build-tools/node_modules/.bin/esbuild
         run: node --input-type=module -e 'import {buildSigilBooking} from "./scripts/member-booking-build.mjs"; buildSigilBooking({esbuild:process.env.ESBUILD_BIN});'
