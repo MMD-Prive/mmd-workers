@@ -37,7 +37,7 @@ export async function handlePublicJobBoardV2Request(request, env = {}) {
       requireStore(env);
       return await handleBroadcastOwnerBridge(request, env, {
         createJobRecord, ownerJobView, getJson, putJson, jobKey, shortJobKey,
-        reserveShortCode, applyOwnerConfirmedJobCorrections,
+        reserveShortCode, applyOwnerConfirmedJobCorrections, listApplications,
       });
     } catch (error) {
       return json({ ok: false, error: safeCode(error), outcome: "uncertain" }, statusFor(error));
