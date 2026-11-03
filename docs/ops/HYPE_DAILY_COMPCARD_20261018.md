@@ -25,7 +25,7 @@ All business dates and times use Asia/Bangkok (UTC+7).
 - Existing D-1 model reconfirm: 16:00, handled by the existing reconfirm runtime.
 - Model card: 16:30, one model each day, routed to that category's approved rooms.
 - Until 22 October: Promotion at 20:00, one room each day. 18 October starts with Premium.
-- From 23 October 2026: Promotion at 20:00 on Tuesday and Friday only.
+- From 23 October 2026: Promotion at 10:00 on Tuesday and Friday only.
   The other five evenings use a separate Standard compcard slot at 20:00,
   routed to Premium and Standard. The normal 16:30 model slot stays daily.
 - The existing events-worker cron remains `*/15 * * * *`.
