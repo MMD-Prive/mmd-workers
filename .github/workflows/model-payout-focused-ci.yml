@@ -1,0 +1,41 @@
+name: Model payout focused CI
+
+on:
+  pull_request:
+    paths:
+      - "admin-worker/src/model-payout-adjustments.js"
+      - "admin-worker/src/model-payout-operation.js"
+      - "admin-worker/model-payout-adjustments.test.mjs"
+      - "admin-worker/model-payout-outcomes.test.mjs"
+      - "admin-worker/partner-owner-console.test.mjs"
+      - ".github/workflows/model-payout-focused-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  payout-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Focused payout, dependent audit and preserved lifecycle contracts
+        run: node --test admin-worker/model-payout-adjustments.test.mjs admin-worker/model-payout-outcomes.test.mjs admin-worker/partner-owner-console.test.mjs admin-worker/job-orchestrator-owner-ops.test.mjs
+      - name: Install pinned local R2 runtime only
+        run: npm install --prefix "$RUNNER_TEMP/payout-tools" --no-save miniflare@4.20260317.3
+      - name: Repeat payout outcomes with native local R2 (synthetic authority only)
+        env:
+          PAYOUT_NATIVE_R2: '1'
+          PAYOUT_TOOLS_DIR: ${{ runner.temp }}/payout-tools
+        run: node --test admin-worker/model-payout-outcomes.test.mjs
+      - name: Syntax and whitespace checks
+        run: |
+          node --check admin-worker/src/model-payout-adjustments.js
+          node --check admin-worker/src/model-payout-operation.js
+          git diff --check HEAD^ HEAD

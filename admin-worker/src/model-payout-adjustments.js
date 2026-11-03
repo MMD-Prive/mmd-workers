@@ -1,3 +1,5 @@
+import { payoutOperationHash, readPayoutOperation, withPayoutOperation } from "./model-payout-operation.js";
+
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const DEFAULT_SESSIONS_TABLE = "tblC98mKWbzmPuNzX";
 const DEFAULT_ADJUSTMENTS_TABLE = "tbl2624vwyWkOeP0y";
@@ -43,8 +45,12 @@ export async function handleModelPayoutAdjustments(request, env = {}, actor = nu
     return json({ ok: false, error: "airtable_not_ready" }, 503);
   }
 
-  if (method === "GET") return handleGet(url, env);
-  return handlePost(request, env, actor);
+  try {
+    if (method === "GET") return await handleGet(url, env);
+    return await handlePost(request, env, actor);
+  } catch {
+    return json({ ok: false, error: "payout_upstream_unavailable", retryable: false }, 503);
+  }
 }
 
 async function handleGet(url, env) {
@@ -69,6 +75,12 @@ export async function readModelPayoutAdjustmentAudit(env, sessionIdInput) {
     .sort((a, b) => String(a.created_at || "").localeCompare(String(b.created_at || "")));
   const sessionProjection = safeSessionProjection(session.record);
   const integrity = reconcileAdjustmentChain(sessionProjection.current_payout_thb, projected);
+  const operation = await readPayoutOperation(env.LINE_SLIP_EVIDENCE, sessionId);
+  if (operation.review_required) {
+    integrity.ok = false; integrity.needs_reconciliation = true;
+    integrity.issues.push({ code: "model_payout_operation_unresolved", severity: "high" });
+    integrity.issue_count = integrity.issues.length;
+  }
 
   return {
     status: 200,
@@ -77,6 +89,7 @@ export async function readModelPayoutAdjustmentAudit(env, sessionIdInput) {
       session: sessionProjection,
       adjustments: projected.slice().reverse(),
       integrity,
+      operation,
       policy: {
         customer_amount_affected: false,
         payment_verification_affected: false,
@@ -111,85 +124,105 @@ async function handlePost(request, env, actor) {
     return json({ ok: false, error: "note_required_for_other" }, 400);
   }
 
-  const idempotencyKey = callerKey || `mpa_${crypto.randomUUID().replace(/-/g, "")}`;
+  if (typeof body.idempotency_key !== "string" || !callerKey || body.idempotency_key.trim().length > 180) return json({ ok: false, error: "idempotency_key_required" }, 400);
+  const idempotencyKey = callerKey;
+  const identity = await payoutOperationHash([sessionId, direction, adjustmentType, amount, note]);
+  return withPayoutOperation(env.LINE_SLIP_EVIDENCE, sessionId, callerKey, identity, async (operation) => {
 
-  const existing = await findAdjustmentByIdempotency(env, idempotencyKey);
-  if (!existing.ok) return json({ ok: false, error: "adjustment_lookup_unavailable" }, 503);
-  if (existing.record) {
-    const projected = safeAdjustmentProjection(existing.record);
-    if (projected.session_id !== sessionId) {
-      return json({ ok: false, error: "idempotency_key_conflict" }, 409);
+    const existing = await findAdjustmentByIdempotency(env, idempotencyKey);
+    if (!existing.ok) return json({ ok: false, error: "adjustment_lookup_unavailable" }, 503);
+    if (existing.record) {
+      const projected = safeAdjustmentProjection(existing.record);
+      const f = existing.record.fields || {};
+      if (f.source !== SOURCE || f.idempotency_key !== idempotencyKey || projected.session_id !== sessionId || projected.direction !== direction || projected.adjustment_type !== adjustmentType || projected.amount_thb !== amount || projected.note !== note) {
+        return json({ ok: false, error: "idempotency_key_conflict" }, 409);
+      }
+      // A historical ledger row alone does not prove that its Session PATCH committed.
+      if (!operation.completed) return json({ ok: false, error: "payout_legacy_outcome_unproven", review_required: true }, 409);
+      const session = await findCanonicalSession(env, sessionId);
+      if (!session.ok) return json({ ok: false, error: session.error }, session.status);
+      if (linkedRecordIds(session.record.fields?.["Canonical Model"]).length !== 1 || JSON.stringify(linkedRecordIds(f.Session)) !== JSON.stringify([session.record.id]) || JSON.stringify(linkedRecordIds(f.Model)) !== JSON.stringify(linkedRecordIds(session.record.fields?.["Canonical Model"]))) return json({ ok: false, error: "payout_identity_conflict" }, 409);
+      const history = await listAdjustments(env, sessionId);
+      if (!history.ok) return json({ok:false,error:"adjustment_lookup_unavailable"},503);
+      const rows=history.records.map(safeAdjustmentProjection).sort((a,b)=>a.created_at.localeCompare(b.created_at));
+      if (!reconcileAdjustmentChain(money(session.record.fields?.pay_model_thb), rows).ok) return json({ok:false,error:"payout_reconciliation_required",review_required:true},409);
+      return json({ok:true,replayed:true,adjustment:projected,session:safeSessionProjection(session.record)},200);
     }
+    if (operation.completed) return json({ ok: false, error: "payout_ledger_missing", review_required: true }, 409);
+
     const session = await findCanonicalSession(env, sessionId);
+    if (!session.ok) return json({ ok: false, error: session.error }, session.status);
+
+    const fields = session.record.fields || {};
+    const current = money(fields.pay_model_thb);
+    if (current === null) return json({ ok: false, error: "model_payout_missing" }, 409);
+
+    const modelIds = linkedRecordIds(fields["Canonical Model"]);
+    if (modelIds.length !== 1) {
+      return json({ ok: false, error: "canonical_model_link_required" }, 409);
+    }
+
+    const history = await listAdjustments(env, sessionId);
+    if (!history.ok) return json({ ok: false, error: "adjustment_lookup_unavailable" }, 503);
+    const chain = history.records.map(safeAdjustmentProjection).sort((a,b)=>a.created_at.localeCompare(b.created_at));
+    if (!reconcileAdjustmentChain(current,chain).ok) return json({ ok: false, error: "payout_reconciliation_required", review_required: true }, 409);
+
+    const signed = direction === "deduct" ? -amount : amount;
+    const next = current + signed;
+    if (!Number.isInteger(next) || next < 0 || next > 100000000) {
+      return json({ ok: false, error: "resulting_payout_invalid" }, 409);
+    }
+
+    const now = new Date().toISOString();
+    const adjustmentId = `mpa_${crypto.randomUUID().replace(/-/g, "")}`;
+    const recordFields = {
+      adjustment_id: adjustmentId,
+      Session: [session.record.id],
+      Model: modelIds,
+      session_id: sessionId,
+      model_name: clean(fields.model_name || fields["Assigned Model"], 180),
+      direction,
+      adjustment_type: adjustmentType,
+      amount_thb: amount,
+      payout_before_thb: current,
+      payout_after_thb: next,
+      note,
+      created_by: clean(actor?.id || actor?.email || actor?.role || "admin", 180),
+      created_at: now,
+      source: SOURCE,
+      idempotency_key: idempotencyKey,
+    };
+
+    await operation.stage("creating_ledger");
+    const created = await createAdjustment(env, recordFields);
+    if (!created.ok || !created.record?.id || Object.entries(recordFields).some(([key,value]) => !sameWrittenValue(created.record.fields?.[key], value))) return json({ ok: false, error: "adjustment_create_unconfirmed" }, 503);
+    // Recheck before writing: catches an external edit observed after our ledger intent.
+    const beforePatch = await findCanonicalSession(env, sessionId);
+    if (!beforePatch.ok || beforePatch.record.id !== session.record.id || money(beforePatch.record.fields?.pay_model_thb) !== current || JSON.stringify(linkedRecordIds(beforePatch.record.fields?.["Canonical Model"])) !== JSON.stringify(modelIds)) return json({ ok:false,error:"payout_revision_conflict" },503);
+    await operation.stage("patching_session");
+
+    const patched = await patchSessionPayout(env, session.record.id, next);
+    if (!patched.ok || patched.record?.id !== session.record.id || money(patched.record?.fields?.pay_model_thb) !== next) return json({ ok:false,error:"session_payout_update_unconfirmed" },503);
+    const readback = await findCanonicalSession(env, sessionId);
+    const ledger = await findAdjustmentByIdempotency(env, idempotencyKey);
+    if (!readback.ok || readback.record.id !== session.record.id || money(readback.record.fields?.pay_model_thb) !== next || JSON.stringify(linkedRecordIds(readback.record.fields?.["Canonical Model"])) !== JSON.stringify(modelIds) || !ledger.ok || ledger.record?.id !== created.record.id || Object.entries(recordFields).some(([key,value]) => !sameWrittenValue(ledger.record.fields?.[key], value))) return json({ok:false,error:"payout_readback_unconfirmed"},503);
+
     return json({
       ok: true,
-      replayed: true,
-      adjustment: projected,
-      session: session.ok ? safeSessionProjection(session.record) : null,
-    }, 200);
-  }
+      replayed: false,
+      adjustment: safeAdjustmentProjection(created.record),
+      session: safeSessionProjection(readback.record),
+      policy: {
+        customer_amount_affected: false,
+        payment_verification_affected: false,
+      },
+    }, 201);
+  });
+}
 
-  const session = await findCanonicalSession(env, sessionId);
-  if (!session.ok) return json({ ok: false, error: session.error }, session.status);
-
-  const fields = session.record.fields || {};
-  const current = money(fields.pay_model_thb);
-  if (current === null) return json({ ok: false, error: "model_payout_missing" }, 409);
-
-  const modelIds = linkedRecordIds(fields["Canonical Model"]);
-  if (modelIds.length !== 1) {
-    return json({ ok: false, error: "canonical_model_link_required" }, 409);
-  }
-
-  const signed = direction === "deduct" ? -amount : amount;
-  const next = current + signed;
-  if (!Number.isInteger(next) || next < 0 || next > 100000000) {
-    return json({ ok: false, error: "resulting_payout_invalid" }, 409);
-  }
-
-  const now = new Date().toISOString();
-  const adjustmentId = `mpa_${crypto.randomUUID().replace(/-/g, "")}`;
-  const recordFields = {
-    adjustment_id: adjustmentId,
-    Session: [session.record.id],
-    Model: modelIds,
-    session_id: sessionId,
-    model_name: clean(fields.model_name || fields["Assigned Model"], 180),
-    direction,
-    adjustment_type: adjustmentType,
-    amount_thb: amount,
-    payout_before_thb: current,
-    payout_after_thb: next,
-    note,
-    created_by: clean(actor?.id || actor?.email || actor?.role || "admin", 180),
-    created_at: now,
-    source: SOURCE,
-    idempotency_key: idempotencyKey,
-  };
-
-  const created = await createAdjustment(env, recordFields);
-  if (!created.ok) return json({ ok: false, error: "adjustment_create_failed" }, created.status || 503);
-
-  const patched = await patchSessionPayout(env, session.record.id, next);
-  if (!patched.ok || money(patched.record?.fields?.pay_model_thb) !== next) {
-    const cleanup = await deleteAdjustment(env, created.record.id);
-    return json({
-      ok: false,
-      error: cleanup.ok ? "session_payout_update_failed" : "adjustment_rollback_required",
-      adjustment_id: adjustmentId,
-    }, 503);
-  }
-
-  return json({
-    ok: true,
-    replayed: false,
-    adjustment: safeAdjustmentProjection(created.record),
-    session: safeSessionProjection(patched.record),
-    policy: {
-      customer_amount_affected: false,
-      payment_verification_affected: false,
-    },
-  }, 201);
+function sameWrittenValue(actual, expected) {
+  // Airtable omits empty text fields from its record response.
+  return expected === "" && actual === undefined || JSON.stringify(actual) === JSON.stringify(expected);
 }
 
 async function findCanonicalSession(env, sessionId) {
@@ -201,6 +234,7 @@ async function findCanonicalSession(env, sessionId) {
   if (!result.ok) return { ok: false, status: 503, error: "session_lookup_unavailable" };
   if (result.records.length === 0) return { ok: false, status: 404, error: "session_not_found" };
   if (result.records.length > 1) return { ok: false, status: 409, error: "session_identity_conflict" };
+  if (result.records[0].fields.session_id !== sessionId) return { ok: false, status: 409, error: "session_identity_conflict" };
   return { ok: true, status: 200, record: result.records[0] };
 }
 
@@ -228,17 +262,6 @@ async function createAdjustment(env, fields) {
   });
 }
 
-async function deleteAdjustment(env, recordId) {
-  const apiKey = clean(env.AIRTABLE_API_KEY);
-  const baseId = clean(env.AIRTABLE_BASE_ID);
-  const url = `${AIRTABLE_API}/${encodeURIComponent(baseId)}/${encodeURIComponent(adjustmentsTable(env))}/${encodeURIComponent(recordId)}`;
-  const response = await fetch(url, {
-    method: "DELETE",
-    headers: { authorization: `Bearer ${apiKey}` },
-  });
-  return { ok: response.ok, status: response.status };
-}
-
 async function patchSessionPayout(env, recordId, amount) {
   return airtableWrite(env, sessionsTable(env), `/${encodeURIComponent(recordId)}`, {
     method: "PATCH",
@@ -258,8 +281,8 @@ async function airtableList(env, table, { maxRecords = 10, filterByFormula = "" 
     headers: { authorization: `Bearer ${apiKey}` },
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) return { ok: false, status: response.status, records: [] };
-  return { ok: true, status: 200, records: Array.isArray(data.records) ? data.records : [] };
+  if (!response.ok || !Array.isArray(data.records) || data.offset || (maxRecords === 100 && data.records.length >= 100) || data.records.some(record => !record?.id || !record.fields || typeof record.fields !== "object")) return { ok: false, status: 503, records: [] };
+  return { ok: true, status: 200, records: data.records };
 }
 
 async function airtableWrite(env, table, suffix, init) {
@@ -282,7 +305,7 @@ async function airtableWrite(env, table, suffix, init) {
 function reconcileAdjustmentChain(currentPayout, adjustments) {
   const issues = [];
   const rows = Array.isArray(adjustments) ? adjustments : [];
-  const number = (value) => Number.isFinite(Number(value)) ? Number(value) : null;
+  const number = (value) => value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value)) ? Number(value) : null;
   let expected = rows.length ? number(rows[0]?.payout_before_thb) : number(currentPayout);
   const startingPayout = expected;
 
@@ -365,8 +388,8 @@ function selectName(value) {
 }
 
 function signedMoney(value, direction, amount) {
-  const direct = Number(value);
-  if (Number.isInteger(direct)) return direct;
+  const direct = !["number", "string"].includes(typeof value) || value === "" ? null : Number(value);
+  if (direct !== null && Number.isSafeInteger(direct)) return direct;
   const base = money(amount);
   if (base === null) return null;
   return clean(selectName(direction)).toLowerCase() === "deduct" ? -base : base;
@@ -374,8 +397,9 @@ function signedMoney(value, direction, amount) {
 
 function money(value) {
   if (value === undefined || value === null || String(value).trim() === "") return null;
+  if (!["number", "string"].includes(typeof value)) return null;
   const number = Number(value);
-  return Number.isInteger(number) && number >= 0 && number <= 100000000 ? number : null;
+  return Number.isSafeInteger(number) && number >= 0 && number <= 100000000 ? number : null;
 }
 
 function sessionsTable(env) {
