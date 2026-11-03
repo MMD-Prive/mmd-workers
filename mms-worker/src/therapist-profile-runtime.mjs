@@ -1,4 +1,5 @@
 import { PROFILE_OPERATION_CONTEXT } from "./therapist-profile-operation-context.mjs";
+import { profileWritePaused, profileWritePauseResponse } from './therapist-profile-write-pause.mjs';
 import { linkedServiceZoneCodes, loadMmsServiceZoneIndex, MAX_COVERAGE_ZONES } from "./service-zones-runtime.mjs";
 import { isTherapistPhotoContent } from "./therapist-photo-content.mjs";
 
@@ -22,6 +23,7 @@ export function isMmsTherapistProfileRequest(pathname = "") {
 }
 
 export async function handleMmsTherapistProfileRequest(request, env = {}) {
+  if (profileWritePaused(request, env)) return profileWritePauseResponse();
   const url = new URL(request.url);
   const path = normalizePath(url.pathname);
   const method = String(request.method || "GET").toUpperCase();
