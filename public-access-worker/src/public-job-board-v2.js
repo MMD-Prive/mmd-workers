@@ -292,10 +292,13 @@ async function receiveViewerEvent(request, env) {
 async function renderApplication(request, env, jobId) {
   const job = await requireJob(env, jobId, { publicOnly: true });
   const anon = await requireAnonymousSession(request, env);
-  const gate = await requireModelBoardGate(request, env);
+  const gate = await modelBoardGateFromCookie(request, env);
+  if (!gate && job.public.world !== "public") throw httpError(401, "model_login_required");
   await enforceViewerAccess(env, anon.id, job);
   if (job.public.world === "private" && !(await hasPrivateReveal(request, env, job.id, anon.id))) throw httpError(403, "job_brief_not_opened");
-  return html(pageShell(`สนใจงานนี้ · ${job.public.title}`, shortFormMarkup(job.id, job.public.title, esc).replace('</form>', `</form><a class="back" href="https://www.mmdbkk.com/sigil/model/dashboard/photos?source=job_board&job_id=${encodeURIComponent(job.id)}">อัปเดตรูปปัจจุบัน →</a>`) + shortFormScript(job.id)));
+  const form = shortFormMarkup(job.id, job.public.title, esc);
+  const content = gate ? form.replace('</form>', `</form><a class="back" href="https://www.mmdbkk.com/sigil/model/dashboard/photos?source=job_board&job_id=${encodeURIComponent(job.id)}">อัปเดตรูปปัจจุบัน →</a>`) : form;
+  return html(pageShell(`สนใจงานนี้ · ${job.public.title}`, content + shortFormScript(job.id)));
 }
 
 async function createInterest(request, env, jobId) {
@@ -303,11 +306,11 @@ async function createInterest(request, env, jobId) {
   const job = await requireJob(env, jobId, { publicOnly: true });
   const input = await readJson(request);
   const anon = await requireAnonymousSession(request, env);
-  const gate = await requireModelBoardGate(request, env);
+  const gate = await modelBoardGateFromCookie(request, env);
+  const fastLane = input.fast_lane === true;
+  if (!gate && (job.public.world !== "public" || input.form_version !== SHORT_FORM_VERSION || fastLane)) throw httpError(401, "model_login_required");
   await enforceViewerAccess(env, anon.id, job);
   if (job.public.world === "private" && !(await hasPrivateReveal(request, env, job.id, anon.id))) throw httpError(403, "job_brief_not_opened");
-
-  const fastLane = input.fast_lane === true;
   const actorHash = await sha256(fastLane ? `${job.id}:${gate.model_record_id}` : `${job.id}:${anon.id}`);
   const dedupe = await getJson(env, dedupeKey(job.id, actorHash));
   if (dedupe?.application_ref) {
@@ -328,12 +331,18 @@ async function createInterest(request, env, jobId) {
         verified_model_record_id: gate.model_record_id,
         claim: null,
       }
-    : {
+    : gate ? {
         identity_class: "VERIFIED_LINE_MODEL",
         workflow_status: "existing_model_unbound",
         public_status: "received",
         verified_model_record_id: gate.model_record_id,
         claim: clean(input.existing_model_claim, 160) || null,
+      } : {
+        identity_class: "UNVERIFIED_CANDIDATE",
+        workflow_status: "new_candidate",
+        public_status: "received",
+        verified_model_record_id: null,
+        claim: null,
       };
   const application = {
     schema: "mmd_public_job_board_v2.application",
@@ -380,7 +389,7 @@ async function createInterest(request, env, jobId) {
     status: identity.public_status,
     media_required_count: 0,
     media_recommended_count: job.public.media_requirements.count,
-    interest_detail: job.public.confidentiality ? job.protected.deeper_interest_detail : "",
+    interest_detail: gate && job.public.confidentiality ? job.protected.deeper_interest_detail : "",
   }, 201);
 }
 
@@ -1083,8 +1092,26 @@ async function enforceModelBoardGate(request, env, parts = []) {
     });
   }
 
-  // Public reads and private teasers are safe projections. Application,
-  // reveal and interest still require the signed canonical Model gate.
+  // Only the compact application for an open Public job may proceed without
+  // a linked Model. Private reveal and all other actions retain the Model gate.
+  if (parts.length >= 2 && parts[0] && !["internal", "events", "data"].includes(parts[0])) {
+    const isForm = request.method === "GET" && parts.length === 2 && parts[1] === "apply";
+    const isInterest = request.method === "POST" && parts.length === 2 && parts[1] === "interest";
+    const isApplication = parts[1] === "applications" && ((request.method === "POST" && parts.length === 4 && ["upload-grant", "submit"].includes(parts[3])) || (request.method === "PUT" && parts.length === 5 && parts[3] === "uploads"));
+    if (isForm || isInterest || isApplication) {
+      const job = await requireJob(env, parts[0], { publicOnly: true });
+      if (job.public.world === "public" && await readAnonymousSession(request, env)) {
+        if (isApplication) {
+          const { application } = await requireOwnedApplication(request, env, job.id, parts[2]);
+          if (application.form_version !== SHORT_FORM_VERSION || application.identity?.identity_class !== "UNVERIFIED_CANDIDATE") throw httpError(401, "model_login_required");
+        }
+        return null;
+      }
+    }
+  }
+
+  // Public reads and private teasers are safe projections. Private reveal
+  // and other protected actions require the signed canonical Model gate.
   if (request.method === "GET" && (parts.length === 0 || (parts.length === 1 && parts[0] !== "events"))) return null;
 
   const next = requestedBoardNext(url, parts);
