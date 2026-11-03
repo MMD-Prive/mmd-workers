@@ -1,0 +1,13 @@
+{
+  "name": "mmd-console-scoped-browser-regressions",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node run.mjs",
+    "test:outage": "node run.mjs outage",
+    "test:races": "node run.mjs races"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
+}

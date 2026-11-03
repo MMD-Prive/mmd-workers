@@ -3,6 +3,7 @@
 // Only GET requests are issued. Nothing here writes to Airtable, payments, or any other store.
 import { classifyModelRef } from "../model-reconfirm-guard.js";
 import { addDays, clean, firstText, ictDate, normalizeJobDate } from "./util.js";
+import { readPaymentCashReceipt } from "../../../shared/payment-cash-receipt.mjs";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const DEFAULT_SESSIONS_TABLE = "tblC98mKWbzmPuNzX";
@@ -23,7 +24,9 @@ export function paymentFieldMap(env = {}) {
     paymentStatus: clean(env.AT_PAYMENTS__PAYMENT_STATUS, 60) || "fldEJ1hmm7KwWuI6q",
     verification: clean(env.AT_PAYMENTS__VERIFICATION_STATUS, 60) || "fldJ7a0Ube9F0bmRy",
     depositStatus: clean(env.AT_PAYMENTS__DEPOSIT_STATUS, 60) || "fldD0mQWTfdmyBAeT",
-    amountReceived: clean(env.AT_PAYMENTS__AMOUNT_RECEIVED, 60) || "fld5rTIVEF1DXwfe2",
+    amount: clean(env.AT_PAYMENTS__AMOUNT, 60) || "fldvCSwrUW8OMAooS",
+    stage: clean(env.AT_PAYMENTS__PAYMENT_STAGE, 60) || "fldrr9g8ZZjqAbdKQ",
+    type: clean(env.AT_PAYMENTS__PAYMENT_TYPE, 60) || "fldydUWHhqVLMkNSC",
   };
 }
 
@@ -125,8 +128,7 @@ export async function collectPayments(env = {}, sessionIds = []) {
 
 export function normalizePayment(record = {}, map = paymentFieldMap()) {
   const f = record.fields || {};
-  const amountRaw = f[map.amountReceived];
-  const amount = amountRaw === undefined || amountRaw === null || amountRaw === "" ? null : Number(amountRaw);
+  const receipt = readPaymentCashReceipt(record, {amountField: map.amount, verificationField: map.verification, statusField: map.paymentStatus, stageField: map.stage, typeField: map.type});
   return {
     record_id: clean(record.id, 40),
     payment_ref: firstText(f[map.ref]),
@@ -134,7 +136,8 @@ export function normalizePayment(record = {}, map = paymentFieldMap()) {
     payment_status: firstText(f[map.paymentStatus]),
     verification_status: firstText(f[map.verification]),
     deposit_status: firstText(f[map.depositStatus]),
-    amount_thb: Number.isFinite(amount) ? amount : null,
+    amount_thb: receipt.amount_thb,
+    cash_receipt_status: receipt.status,
   };
 }
 

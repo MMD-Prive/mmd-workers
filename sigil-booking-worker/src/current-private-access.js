@@ -8,7 +8,7 @@ const ENTITLEMENT_FIELDS = ["member", "capability", "entitlement_level", "packag
 
 // Booking/session handles locate a draft; only the existing verified member
 // session can bind its stored Members record to this caller.
-export async function currentPrivateAccess(request, env, memberRecordId, verifiedViewerRef) {
+export async function currentPrivateAccess(request, env, memberRecordId, verifiedViewerRef, { throwOnUnavailable = false } = {}) {
   const denied = { snapshot: resolveMemberEntitlements([]), viewerRef: "", allowedFolders: [] };
   try {
     if (!/^rec[A-Za-z0-9]{14,24}$/.test(memberRecordId || "")) return denied;
@@ -62,16 +62,33 @@ export async function currentPrivateAccess(request, env, memberRecordId, verifie
     }
     const snapshot = resolveMemberEntitlements(owned);
     return { snapshot, viewerRef, allowedFolders: allowedCustomerModelFolders(snapshot) };
-  } catch { return denied; }
+  } catch (error) { if (throwOnUnavailable) throw error; return denied; }
 }
 
 async function read(env, path, qs) {
   if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) throw new Error("private_access_unavailable");
   const encoded = path.split("/").map(encodeURIComponent).join("/");
   const response = await fetch(`https://api.airtable.com/v0/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${encoded}${qs ? "?" + qs : ""}`, {
-    headers: { Authorization: `Bearer ${env.AIRTABLE_API_KEY}` },
+    headers: { Authorization: `Bearer ${env.AIRTABLE_API_KEY}` }, signal: AbortSignal.timeout(5000),
   });
   if (!response.ok) throw new Error("private_access_unavailable");
   return response.json();
 }
 function clean(value) { return String(value ?? "").trim(); }
+
+// Service caller supplies the already verified business identity, never browser fields.
+export async function currentPrivateContext(request, env, memberId, viewerRef) {
+  const denied = { memberRecordId: '', allowedFolders: [], snapshot: null };
+  try {
+    let recordId = /^mmd_rec_(rec[A-Za-z0-9]{14,24})$/.exec(memberId || '')?.[1] || '';
+    if (!recordId) {
+      const qs = new URLSearchParams({ filterByFormula: `{member_id}=${JSON.stringify(String(memberId))}`, maxRecords: '2' });
+      const result = await read(env, env.AIRTABLE_TABLE_MEMBERS_ID || env.AIRTABLE_TABLE_MEMBERS || 'Members', qs);
+      if (!Array.isArray(result.records) || result.records.length !== 1) return denied;
+      recordId = result.records[0].id;
+    }
+    const access = await currentPrivateAccess(request, env, recordId, viewerRef);
+    return access.allowedFolders.length && access.snapshot?.capability_state?.active?.includes('private_premium')
+      ? { ...access, memberRecordId: recordId } : denied;
+  } catch { return denied; }
+}

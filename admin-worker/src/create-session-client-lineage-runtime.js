@@ -506,8 +506,9 @@ function buildLineageSummary(member, entitlement) {
 }
 
 function resolveRelatedMember(client, memberIndexes, entitlementIndexes, clientRecordId) {
-  const directlyLinked = memberIndexes.byClientRecordId.get(clientRecordId);
-  if (directlyLinked) return directlyLinked;
+  // Members.Clients is the inverse of Clients.Assigned Member Host.
+  // A hosting relationship alone is not evidence that both records identify
+  // the same customer. Require a canonical entitlement or shared identity.
 
   const directEntitlements = entitlementIndexes.byClientRecordId.get(clientRecordId) || [];
   for (const entitlement of directEntitlements) {
@@ -1068,4 +1069,5 @@ function json(data, status = 200) {
     },
   });
 }
+
 

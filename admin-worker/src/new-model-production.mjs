@@ -206,7 +206,9 @@ export async function draftReviewQueue(env,input={},deps={}){
   if(input.cursor&&(typeof input.cursor!=='string'||input.cursor.length>500))fail('queue_cursor_invalid');
   const params=new URLSearchParams({pageSize:'100',filterByFormula:"AND({request_status}='pending_review',OR({request_type}='new_model_creation_proposal',{request_type}='model_matching_exception'))"});if(input.cursor)params.set('offset',input.cursor);
   const page=await (deps.registry||registry)(env,'?'+params);if(!Array.isArray(page.records))fail('review_registry_unavailable');
-  const items=[],members=new Set(),models=new Set(),scopes=new Set();for(const r of page.records){const p=fieldsOf(r);if(!deps.allowedRootIds?.includes(p?.source?.root_id))continue;const g=draftGroup(r,deps.allowedRootIds),scope=p.source.root_id+'|'+p.source.folder_id;if(p.media.review_record_ids.some(id=>members.has(id))||(g.isModel&&(models.has(p.draft_registration.model_record_id)||scopes.has(scope))))fail('draft_review_state_changed');for(const id of p.media.review_record_ids)members.add(id);if(g.isModel){models.add(p.draft_registration.model_record_id);scopes.add(scope);}items.push(groupItem(g));}
+  const items=[],groups=[],members=new Set(),models=new Set(),scopes=new Set();for(const r of page.records){const p=fieldsOf(r);if(!deps.allowedRootIds?.includes(p?.source?.root_id))continue;const g=draftGroup(r,deps.allowedRootIds),scope=p.source.root_id+'|'+p.source.folder_id;if(p.media.review_record_ids.some(id=>members.has(id))||(g.isModel&&(models.has(p.draft_registration.model_record_id)||scopes.has(scope))))fail('draft_review_state_changed');for(const id of p.media.review_record_ids)members.add(id);if(g.isModel){models.add(p.draft_registration.model_record_id);scopes.add(scope);}groups.push(g);items.push(groupItem(g));}
+  // Read latest persisted outcomes, not media approvals. Bound concurrent R2 reads.
+  let next=0;await Promise.all(Array.from({length:Math.min(6,groups.length)},async()=>{for(;;){const i=next++;if(i>=groups.length)return;const g=groups[i];if(!g.isModel)continue;const {log}=await readModelInspection(env,g,deps),last=log.entries.at(-1);Object.assign(items[i],{inspection_result:last?.result||'unreviewed',inspection_count:log.entries.length,inspection_updated_at:last?.at||null});}}));
   return {items,cursor:page.offset||null,publication:false,read_only:true};
 }
 async function readDraftTable(env,kind,ids,deps){
@@ -217,7 +219,7 @@ async function readDraftTable(env,kind,ids,deps){
   const page=deps.readTable?await deps.readTable(kind,ids):table?await registry({...env,AIRTABLE_TABLE_MODEL_REVIEW_REQUESTS:table},'?'+params):await (deps.registry||registry)(env,'?'+params);
   if(!Array.isArray(page.records)||page.offset||page.records.length!==ids.length||!sameIds(page.records.map(r=>r.id),ids))fail('draft_review_state_changed');return new Map(page.records.map(r=>[r.id,r]));
 }
-export async function draftReviewDetail(env,input,deps={}){
+async function loadDraftReview(env,input,deps={}){
   if(!recordId(input.record_id))fail('review_id_invalid');
   const g=draftGroup(await (deps.registry||registry)(env,'/'+input.record_id),deps.allowedRootIds||[]),{p,isModel}=g;
   const reviews=await readDraftTable(env,'reviews',p.media.review_record_ids,deps);
@@ -240,5 +242,38 @@ export async function draftReviewDetail(env,input,deps={}){
   }
   if(isModel&&!sameIds(media.map(m=>reviews.get(m.id)).map(r=>fieldsOf(r).review_draft.registration.media_asset_record_id),p.draft_registration.media_asset_record_ids))fail('draft_review_state_changed');
   const candidates=!isModel?(Array.isArray(p.evidence?.registry_candidates)?p.evidence.registry_candidates:[]).slice(0,20).map(c=>({id:recordId(c.id)?c.id:null,name:String(c.name||''),key:String(c.key||''),source_path:String(c.path||''),folder_id:driveId(c.folder_id)?c.folder_id:null,status:String(c.status||'')})):[];
-  return {item:groupItem(g),model,media,evidence:{source_folder_id:p.source.folder_id,source_path:p.source.folder_path,observed_paths:Array.isArray(p.source.observed_media_paths)?p.source.observed_media_paths.filter(x=>typeof x==='string'&&x.length<=2048).slice(0,100):[p.source.folder_path],recorded_at:p.created_at,identity_verified:false,summary:isModel?'ชื่อจากป้ายโฟลเดอร์ ยังต้องตรวจตัวตนและอนุมัติโปรไฟล์':p.summary_th,reason:isModel?null:p.reason,canonical_folder_lookup:!isModel?p.evidence?.canonical_folder_lookup||null:null,registry_candidates:candidates},read_only:true,publication:false};
+  const audit=isModel?await readModelInspection(env,g,deps):null;
+  return {group:g,audit,detail:{item:groupItem(g),model,media,inspection:audit?await inspectionView(g,audit.log):null,evidence:{source_folder_id:p.source.folder_id,source_path:p.source.folder_path,observed_paths:Array.isArray(p.source.observed_media_paths)?p.source.observed_media_paths.filter(x=>typeof x==='string'&&x.length<=2048).slice(0,100):[p.source.folder_path],recorded_at:p.created_at,identity_verified:false,summary:isModel?'ชื่อจากป้ายโฟลเดอร์ ยังต้องตรวจตัวตนและอนุมัติโปรไฟล์':p.summary_th,reason:isModel?null:p.reason,canonical_folder_lookup:!isModel?p.evidence?.canonical_folder_lookup||null:null,registry_candidates:candidates},read_only:true,publication:false}};
+}
+export async function draftReviewDetail(env,input,deps={}){return (await loadDraftReview(env,input,deps)).detail;}
+
+// Inspection evidence is an independent private ledger, never an approval field.
+const inspectionResults=new Set(['checked_pending_approval','needs_more_evidence','needs_correction']);
+const operationId=value=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value);
+const INSPECTION_LIMIT=100,INSPECTION_BYTES=256000;
+async function readModelInspection(env,g,deps){
+  const bucket=deps.inspectionBucket||storage(env),key=PREFIX+'model-inspections/'+g.record.id+'.json',object=await bucket.get(key);
+  const log=object?await (async()=>{if(object.size>INSPECTION_BYTES)fail('inspection_history_invalid');try{return await object.json();}catch{fail('inspection_history_invalid');}})():{schema:'mmd.draft_model_inspection.v1',group_id:g.record.id,proposal_id:g.p.proposal_id,model_id:g.p.draft_registration.model_record_id,entries:[]};
+  if(log?.schema!=='mmd.draft_model_inspection.v1'||log.group_id!==g.record.id||log.proposal_id!==g.p.proposal_id||log.model_id!==g.p.draft_registration.model_record_id||!Array.isArray(log.entries)||log.entries.length>INSPECTION_LIMIT||Object.keys(log).some(k=>!['schema','group_id','proposal_id','model_id','entries'].includes(k)))fail('inspection_history_invalid');
+  const seen=new Set();for(const e of log.entries){if(!e||!operationId(e.operation_id)||seen.has(e.operation_id)||!inspectionResults.has(e.result)||typeof e.reason!=='string'||!e.reason.trim()||e.reason.length>1000||typeof e.actor!=='string'||!e.actor||e.actor.length>120||typeof e.at!=='string'||!Number.isFinite(Date.parse(e.at))||!/^[a-f0-9]{64}$/.test(e.submission_revision||'')||!/^[a-f0-9]{64}$/.test(e.source_revision||'')||Object.keys(e).some(k=>!['operation_id','result','reason','actor','at','submission_revision','source_revision'].includes(k)))fail('inspection_history_invalid');seen.add(e.operation_id);}
+  return {bucket,key,etag:object?.etag,log};
+}
+async function inspectionView(g,log){
+  const history=log.entries.map(({operation_id,result,reason,actor,at})=>({operation_id,result,reason,actor,at}));
+  return {revision:await hash(JSON.stringify([g.record.fields.payload_json,log])),current:history.at(-1)||null,history,can_save:true,history_limit:INSPECTION_LIMIT};
+}
+export async function saveDraftInspection(env,input,actor,deps={}){
+  if(!recordId(input.record_id)||!operationId(input.operation_id)||!/^[a-f0-9]{64}$/.test(input.revision||'')||!inspectionResults.has(input.result)||typeof input.reason!=='string'||!input.reason.trim()||input.reason.trim().length>1000)fail('inspection_input_invalid');
+  const {group:g,audit}=await loadDraftReview(env,input,deps);if(!g.isModel)fail('inspection_model_invalid');
+  const reason=input.reason.trim(),reviewer=String(actor.id||'owner').slice(0,120),prior=audit.log.entries.find(e=>e.operation_id===input.operation_id);
+  if(prior){if(prior.result!==input.result||prior.reason!==reason||prior.actor!==reviewer||prior.submission_revision!==input.revision)fail('inspection_conflict');return {inspection:await inspectionView(g,audit.log),already_saved:true,pending_review:true,publication:false};}
+  const view=await inspectionView(g,audit.log);if(view.revision!==input.revision)fail('inspection_conflict');if(audit.log.entries.length>=INSPECTION_LIMIT)fail('inspection_history_full');
+  const entry={operation_id:input.operation_id,result:input.result,reason,actor:reviewer,at:new Date().toISOString(),submission_revision:input.revision,source_revision:await hash(g.record.fields.payload_json)},log={...audit.log,entries:[...audit.log.entries,entry]},body=JSON.stringify(log);
+  if(new TextEncoder().encode(body).length>INSPECTION_BYTES)fail('inspection_history_full');
+  // R2 conditional writes serialize concurrent saves without touching Airtable.
+  const written=await audit.bucket.put(audit.key,body,{onlyIf:audit.etag?{etagMatches:audit.etag}:{etagDoesNotMatch:'*'},httpMetadata:{contentType:'application/json',cacheControl:'private, no-store'}});
+  if(!written)fail('inspection_conflict');
+  const verified=await readModelInspection(env,g,deps);
+  if(JSON.stringify(verified.log.entries.slice(0,log.entries.length))!==JSON.stringify(log.entries))fail('inspection_save_unverified');
+  return {inspection:await inspectionView(g,verified.log),already_saved:false,pending_review:true,publication:false};
 }

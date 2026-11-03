@@ -1,5 +1,7 @@
 // A derived Session cache only. Payments remain the money authority.
 import { BALANCE_FIELDS as F, readVerifiedSessionBalance } from './verified-session-balance.js';
+import { sessionBalanceView } from '../shared/session-balance-view.mjs';
+import {reportFieldMap, reportUnavailableFields, reportVerifiedFields} from './session-report-projection.js';
 const text = value => String(value?.name ?? value ?? '').trim();
 const code = value => text(value).toLowerCase();
 const ids = value => Array.isArray(value) ? value.map(v => text(v?.id ?? v)).sort() : [];
@@ -78,14 +80,16 @@ function snapshot(session, summary) {
   return JSON.stringify({ id: session.id, sid: summary.session_id, clients: clientIds(f),
     lane: laneFields.map(k => code(f[k])), total: summary.total_amount_thb,
     state: code(f[F.sessionStatus] ?? f['Session Status']),
+    credit: [summary.credit_claim_id,summary.paid_credit_thb,summary.bonus_credit_thb],
     ledger: summary.records.map(({ record, ...p }) => ({ ...p,
       clients: ids(record.fields?.fldcrLuJijj7xr0y8 ?? record.fields?.Client ?? record.fields?.client),
       lane: code(record.fields?.fldB16bQWf4sVt7Ep ?? record.fields?.model_work_lane),
     })).sort((a, b) => a.id.localeCompare(b.id)),
   });
 }
-async function readSnapshot(env, sessionId, anchor) {
+async function readSnapshot(env, sessionId, anchor, reportRequired = false) {
   const session = await sessionFor(env, sessionId);
+  if (reportRequired && /hold|paused|blocked/.test(code(session.fields[F.sessionStatus] ?? session.fields['Session Status']))) fail('report_session_on_hold');
   const scope = sessionProjectionScope(session);
   if (scope !== 'mmd') return { skipped: result('skipped', scope === 'excluded' ? 'excluded_lane' : 'unknown_job_lane') };
   if (/^(?:cancelled|canceled|rejected|void|refunded|reversed)(?:_|$)/.test(code(session.fields[F.sessionStatus] ?? session.fields['Session Status']))) fail('projection_session_not_payable');
@@ -109,14 +113,29 @@ async function readSnapshot(env, sessionId, anchor) {
 }
 
 // Private implementation: the per-session coordinator is the only new writer.
-async function reconcile(env, task) {
+async function reconcile(env, task, onReportTarget) {
   env = boundedEnv(env);
-  const first = await readSnapshot(env, task.session_id, task.payment_ref);
+  const reportMap = reportFieldMap(env);
+  if(task.report_read&&!reportMap){
+    const current=await sessionFor(env,task.session_id);
+    if(/hold|paused|blocked/.test(code(current.fields[F.sessionStatus]??current.fields['Session Status'])))fail('report_session_on_hold');
+  }
+  let reportSession;
+  if (reportMap) {
+    reportSession = await sessionFor(env, task.session_id);
+    if (sessionProjectionScope(reportSession) !== 'mmd') return result('skipped', 'report_scope_not_mmd');
+    onReportTarget(reportSession.id, reportMap);
+    await writeReport(env, reportSession.id, reportUnavailableFields(reportMap, task.session_id));
+    if (/hold|paused|blocked/.test(code(reportSession.fields[F.sessionStatus] ?? reportSession.fields['Session Status']))) fail('report_session_on_hold');
+  }
+  const reportRequired = Boolean(task.report_read || reportMap);
+  const first = await readSnapshot(env, task.session_id, task.payment_ref, reportRequired);
   if (first.skipped) return first.skipped;
   // Verify the complete ledger and scope again before the absolute assignment.
-  const fresh = await readSnapshot(env, task.session_id, task.payment_ref);
+  const fresh = await readSnapshot(env, task.session_id, task.payment_ref, reportRequired);
   if (fresh.skipped || fresh.fingerprint !== first.fingerprint) fail('projection_snapshot_changed', true);
-  const sum = fresh.summary.verified_paid_thb;
+  const balance = sessionBalanceView(fresh.summary, task.session_id);
+  const sum = balance.verified_paid_thb;
   const old = fresh.session.fields[F.paidSum] ?? fresh.session.fields.paid_received_sum;
   let changed = false;
   if (old === null || old === undefined || Number(old) !== sum) {
@@ -124,43 +143,71 @@ async function reconcile(env, task) {
     await request(env, url, { method: 'PATCH', body: JSON.stringify({ fields: { [F.paidSum]: sum }, typecast: false }) });
     changed = true;
   }
-  const after = await readSnapshot(env, task.session_id, task.payment_ref);
+  const after = await readSnapshot(env, task.session_id, task.payment_ref, reportRequired);
   if (after.skipped || after.fingerprint !== fresh.fingerprint) fail('projection_changed_after_write', true);
   if (Number(after.session.fields[F.paidSum] ?? after.session.fields.paid_received_sum) !== sum) fail('projection_write_not_visible', true);
-  return result(changed ? 'updated' : 'unchanged', '', { session_id: task.session_id, paid_received_sum: sum,
-    remaining_amount_thb: after.summary.remaining_amount_thb, verified_payment_count: after.summary.records.filter(p => p.verified && serviceStages.has(p.stage)).length });
+  if (reportMap) {
+    if (reportSession.id !== after.session.id) fail('report_session_identity_changed');
+    const fields = reportVerifiedFields(reportMap, after.summary);
+    await writeReport(env, reportSession.id, fields);
+    const verified = await readSnapshot(env, task.session_id, task.payment_ref, reportRequired);
+    if (verified.skipped || verified.fingerprint !== after.fingerprint || Object.entries(fields).some(([key, value]) => verified.session.fields[key] !== value)) fail('report_changed_after_write', true);
+  }
+  return result(changed ? 'updated' : 'unchanged', '', { ...sessionBalanceView(after.summary, task.session_id), paid_received_sum: sum,
+    verified_payment_count: after.summary.records.filter(p => p.verified && serviceStages.has(p.stage)).length });
+}
+
+async function writeReport(env, id, fields) {
+  const url = urlFor(env, id);
+  await request(env, url, {method: 'PATCH', body: JSON.stringify({fields, typecast: false})});
 }
 
 // No public HTTP route is added. All cache writers for one job share this object.
 export class SessionPaidProjectionState {
   constructor(state, env) { this.state = state; this.env = env; }
   async fetch(request) {
-    if (request.method !== 'POST' || new URL(request.url).pathname !== '/reconcile') return Response.json({ error: 'not_found' }, { status: 404 });
+    const reportRead = new URL(request.url).pathname === '/report';
+    if (request.method !== 'POST' || !['/reconcile','/report'].includes(new URL(request.url).pathname)) return Response.json({ error: 'not_found' }, { status: 404 });
     const body = await request.json().catch(() => null);
     if (!validSid(body?.session_id) || text(body?.payment_ref).length > 180) return Response.json({ error: 'invalid_projection_task' }, { status: 400 });
     return this.state.blockConcurrencyWhile(async () => {
       const bound = await this.state.storage.get('session_id');
       if (bound && bound !== body.session_id) return Response.json({ error: 'projection_session_conflict' }, { status: 409 });
       await this.state.storage.put('session_id', body.session_id);
-      const task = { session_id: body.session_id, payment_ref: text(body.payment_ref), attempts: 0 };
+      const task = { session_id: body.session_id, payment_ref: text(body.payment_ref), attempts: 0, report_read: reportRead };
       // Alarm is durable before any Airtable write; an interrupted/ambiguous
       // PATCH is recovered by fresh absolute reconciliation, never an increment.
       await this.state.storage.put('pending', task);
       await this.state.storage.setAlarm(Date.now() + 60000);
-      return Response.json(await this.process(task));
+      const answer = await this.process(task);
+      if (reportRead) {
+        const available = ['updated','unchanged'].includes(answer.status);
+        return Response.json({status: available ? 'verified' : 'unavailable', session_id: body.session_id,
+          balance: available ? sessionBalanceView(answer, body.session_id) : null}, {status: available ? 200 : 503, headers: {'cache-control':'no-store'}});
+      }
+      return Response.json(answer);
     });
   }
   async process(task) {
     task = { ...task, attempts: Number(task.attempts || 0) + 1 };
     await this.state.storage.put('pending', task);
+    let reportTarget;
+    // Durable invalidation precedes reads/writes, including recovery after restart.
+    await this.state.storage.put('last_result', result('unavailable', 'reconciling', {balance: null}));
     try {
-      const answer = await reconcile(this.env, task);
+      const answer = await reconcile(this.env, task, (id, map) => { reportTarget = {id, map}; });
       await this.state.storage.put('last_result', answer);
       await this.state.storage.delete('pending'); await this.state.storage.deleteAlarm();
       return answer;
     } catch (e) {
-      const retry = e.transient && task.attempts < 6;
-      const answer = result(retry ? 'retry_scheduled' : 'needs_review', text(e.message), { retry_exhausted: Boolean(e.transient && !retry) });
+      let invalidation = 'not_attempted';
+      if (reportTarget) {
+        try { await writeReport(boundedEnv(this.env), reportTarget.id, reportUnavailableFields(reportTarget.map, task.session_id)); invalidation = 'confirmed'; }
+        catch { invalidation = 'unconfirmed'; }
+      }
+      const transient = e.transient || invalidation === 'unconfirmed';
+      const retry = transient && task.attempts < 6;
+      const answer = result(retry ? 'retry_scheduled' : 'needs_review', text(e.message), {balance: null, report_status: 'unavailable', report_invalidation: invalidation, retry_exhausted: Boolean(transient && !retry) });
       await this.state.storage.put('last_result', answer);
       if (retry) await this.state.storage.setAlarm(Date.now() + Math.min(60000 * 2 ** (task.attempts - 1), 3600000));
       else { await this.state.storage.delete('pending'); await this.state.storage.deleteAlarm(); }

@@ -1,5 +1,6 @@
 import delegatedWorker from "./admin-dashboard-model-link-wrapper.js";
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
+import { readPaymentCashReceipt } from "../../shared/payment-cash-receipt.mjs";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const DEFAULT_BASE_ID = "appsV1ILPRfIjkaYg";
@@ -42,7 +43,6 @@ const CREDIT = {
 const PAYMENT = {
   ref: "fldOO6SY49iDw8VBZ",
   client: "fldcrLuJijj7xr0y8",
-  amountReceived: "fld5rTIVEF1DXwfe2",
   verification: "fldJ7a0Ube9F0bmRy",
   sessionId: "fld2wdhBvc8xrV6y5",
   depositStatus: "fldD0mQWTfdmyBAeT",
@@ -177,12 +177,12 @@ function officialPaymentState(payment) {
   const officialEvidence = Boolean(officialAt || officialRef || officialBy);
   const approved = APPROVED_VERIFICATION.has(verification)
     || (depositStatus === "official_verified" && officialEvidence);
-  const received = numberValue(field(payment, PAYMENT.amountReceived));
+  const receipt = readPaymentCashReceipt(payment, {requireOfficialEvidence: true, allowLegacyOfficial: true, allowConfirmed: true});
   return {
-    approved: approved && officialEvidence,
+    approved: approved && officialEvidence && receipt.status === 'verified',
     verification,
     depositStatus,
-    receivedThb: received === null ? 0 : Math.max(0, received),
+    receivedThb: receipt.amount_thb,
     officialAt,
     officialRef,
     officialBy,

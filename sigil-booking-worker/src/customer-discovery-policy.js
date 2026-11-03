@@ -38,3 +38,30 @@ export async function resolveDiscoveryViewer(request, env = {}) {
   } catch { return ""; }
   finally { clearTimeout(timeout); }
 }
+
+// Unlike search's anonymous fallback, booking needs a precise login/outage result.
+export async function resolveBookingViewer(request, env = {}) {
+  const cookies = String(request.headers.get("cookie") || "").split(";").map(v => v.trim())
+    .filter(v => v.startsWith(SESSION_COOKIE + "=") || v.startsWith(DISCOVERY_COOKIE + "="));
+  if (!cookies.length) return { ok: false, error: "login_required", status: 401 };
+  const unavailable = { ok: false, error: "membership_status_unavailable", status: 503 };
+  if (cookies.length > 2 || cookies.some(v => v.length > 4096) || new Set(cookies.map(v => v.split("=")[0])).size !== cookies.length) return { ok: false, error: "login_required", status: 401 };
+  const secret = String(env.AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES || "");
+  if (!env.MEMBER_PAGES_WORKER?.fetch || secret.length < 32) return unavailable;
+  const controller = new AbortController(); let timer;
+  try {
+    return await Promise.race([(async () => {
+      const response = await env.MEMBER_PAGES_WORKER.fetch(new Request("https://member-pages.internal/__internal/booking/discovery-viewer?context=booking", {
+        headers: {cookie:cookies.join("; "), "x-mmd-booking-service-secret":secret}, signal:controller.signal,
+      }));
+      if (response.status === 401) return { ok:false, error:"login_required", status:401 };
+      if (response.status === 403) return {ok:false,error:"public_membership_required",status:403};
+      if (!response.ok) return unavailable;
+      const data = await response.json();
+      if (data.ok !== true || !MEMBER_REF.test(data.memberRef || "") || typeof data.memberId !== "string" || !data.memberId.trim() || data.memberId.length > 160) return unavailable;
+      const name = data.perRename?.source === "linked_per_rename_index_v1" && typeof data.perRename.per_rename === "string" ? data.perRename.per_rename.trim().slice(0,160) : "";
+      return {ok:true, memberRef:data.memberRef, memberId:data.memberId, perRename:name && !/U[0-9a-f]{32}/i.test(name) ? {per_rename:name, source:"linked_per_rename_index_v1"} : null};
+    })(), new Promise(resolve => { timer=setTimeout(() => { controller.abort(); resolve(unavailable); },5000); })]);
+  } catch { return unavailable; }
+  finally { clearTimeout(timer); controller.abort(); }
+}

@@ -125,6 +125,18 @@ export function isVerifiedClientCreditRecord(record) {
 
   if (verificationStatus !== VERIFIED_CREDIT_STATUS || !amountsValid) return false;
 
+  if (creditAuthority === 'double_moment_coordinator' || ['v2','v3'].includes(policyVersion)) {
+    if(['Original Amount THB','Available Amount THB','Applied Amount THB','Reserved Amount THB','Verified Amount THB','Backing Payment Amount THB','Minimum Service Amount THB','Bonus Sequence'].some(key=>typeof fields[key]!=='number'||!Number.isFinite(fields[key])||fields[key]<0))return false;
+    const expected=creditType==='paid_credit'?10000:creditType==='bonus_credit'?3500:0;
+    return ['v2','v3'].includes(policyVersion) && creditAuthority==='double_moment_coordinator'
+      && verificationSource===VERIFIED_CREDIT_SOURCE && campaignId===DOUBLE_MOMENT_CAMPAIGN
+      && campaignClaimId.length>0 && [1,2].includes(bonusSequence) && originalAmount===expected && expected>0
+      && backingPaymentAmount===DOUBLE_MOMENT_PAID_AMOUNT && minimumServiceAmount===DOUBLE_MOMENT_MINIMUM_SERVICE
+      && (creditType!=='paid_credit'||verifiedAmount===expected)
+      && Number.isFinite(Date.parse(fields['Issued At'])) && Number.isFinite(Date.parse(fields['Expires At']))
+      && availableAmount+appliedAmount+reservedAmount===expected;
+  }
+
   if (creditType === "bonus_credit") {
     return creditAuthority === CAMPAIGN_CREDIT_SOURCE
       && verificationSource === VERIFIED_CREDIT_SOURCE
@@ -149,7 +161,7 @@ function safeCredit(record, now) {
   const hasInvalidExpiry = !!expiryValue && !Number.isFinite(expiryMs);
   if (ACTIVE_STATUSES.has(status)) {
     if (hasInvalidExpiry) status = "unknown";
-    else if (expiryMs !== null && now > expiryMs) status = "expired";
+    else if (expiryMs !== null && (fields['Policy Version']==='v3'?now>=expiryMs:now>expiryMs)) status = "expired";
   }
   const creditType = normalized(fields["Credit Type"]) || null;
   // A historical carry-forward record can be legitimate without carrying the
@@ -175,6 +187,8 @@ function safeCredit(record, now) {
     reservedAmountThb: Math.max(0, asNumber(fields["Reserved Amount THB"]) || 0),
     creditType: normalized(fields["Credit Type"]) || "carried_forward_deposit",
     campaignId: clean(fields["Campaign ID"], 120) || null,
+    campaignClaimId: clean(fields['Campaign Claim ID'],160) || null,
+    policyVersion: clean(fields['Policy Version'],80) || null,
     bonusSequence: asNumber(fields["Bonus Sequence"]),
     minimumServiceAmountThb: Math.max(0, asNumber(fields["Minimum Service Amount THB"]) || 0),
     issuedAt: clean(fields["Issued At"], 80) || clean(fields["Created At"], 80) || null,
@@ -186,6 +200,17 @@ function safeCredit(record, now) {
   };
 }
 export function verifiedCreditsFromRecords(records = [], now = Date.now()) {
+  const sets=new Map();
+  for(const row of records){
+    const f=creditFields(row);
+    if(!['v2','v3'].includes(f['Policy Version'])&&f['Credit Authority']!=='double_moment_coordinator')continue;
+    if(!isVerifiedClientCreditRecord(row))throw Error('DOUBLE_MOMENT_CREDIT_UNCONFIRMED');
+    const group=sets.get(f['Campaign Claim ID'])||[];group.push(row);sets.set(f['Campaign Claim ID'],group);
+  }
+  for(const [claim,rows] of sets){
+    const expected=new Set(['paid:1','paid:2','bonus:1','bonus:2'].map(s=>claim+':'+s));
+    if(rows.length!==4||rows.some(r=>!expected.delete(r.fields.credit_id))||expected.size||new Set(rows.map(r=>r.fields['Expires At'])).size!==1||new Set(rows.map(r=>r.fields['Issued At'])).size!==1||new Set(rows.map(r=>r.fields['Policy Version'])).size!==1)throw Error('DOUBLE_MOMENT_CREDIT_UNCONFIRMED');
+  }
   const items = records
     .filter(isVerifiedClientCreditRecord)
     .map((record) => safeCredit(record, now))
@@ -206,6 +231,7 @@ export function verifiedCreditsFromRecords(records = [], now = Date.now()) {
 }
 async function readCredits(env, clientId) {
   const records = await listAirtable(env, CLIENT_CREDITS_TABLE, { pageSize: 100, filterByFormula: `{client_record_id}=${formulaString(clientId)}` });
+  for(const row of records)if(['v2','v3'].includes(row.fields?.['Policy Version'])&&JSON.stringify(row.fields.Client)!==JSON.stringify([clientId]))throw Error('DOUBLE_MOMENT_OWNER_UNCONFIRMED');
   return verifiedCreditsFromRecords(records);
 }
 export function isMemberClientCreditsRequest(request) {

@@ -44,7 +44,7 @@ export function customerModelExcluded(recordId) {
 }
 
 export default {
-  async fetch(req, env, ctx) {
+  async fetch(req, env, ctx, memberContext = null) {
     const url = new URL(req.url);
     const path = normalizePath(url.pathname);
     const method = req.method.toUpperCase();
@@ -58,13 +58,13 @@ export default {
         return withCors(json({ ok: true, worker: "sigil-booking-worker", lock: LOCK, analytics: authorityRuntimeHealth(env, "sigil-booking-worker", ctx), ts: Date.now() }), cors);
       }
       if (method === "POST" && path === "/sigil/api/client/resolve") {
-        return withCors(json(await handleClientResolve(req, env)), cors);
+        return withCors(json(await handleClientResolve(req, env, memberContext)), cors);
       }
       if ((method === "GET" || method === "POST") && path === "/sigil/api/models/search") {
-        return withCors(json(await handleModelSearch(req, env, url)), cors);
+        return withCors(json(await handleModelSearch(req, env, url, memberContext)), cors);
       }
       if (method === "POST" && path === "/sigil/api/booking/intake") {
-        return withCors(json(await handleBookingIntake(req, env, ctx)), cors);
+        return withCors(json(await handleBookingIntake(req, env, ctx, memberContext)), cors);
       }
       return withCors(json({ ok: false, error: "not_found", path }, 404), cors);
     } catch (error) {
@@ -74,7 +74,7 @@ export default {
   }
 };
 
-async function handleClientResolve(req, env) {
+async function handleClientResolve(req, env, memberContext = null) {
   const body = await safeJson(req);
   requireAirtable(env);
 
@@ -83,7 +83,7 @@ async function handleClientResolve(req, env) {
   const clientNickname = str(body.client_nickname || body.client_name || body.name);
   const clientContact = str(body.client_contact || body.email || body.phone || body.contact);
   const lineOrMemberId = str(body.line_or_member_id || body.line_note || body.member_id || body.line_id);
-  const access = await resolveMemberAccess(env, { clientNickname, clientContact, lineOrMemberId });
+  const access = memberContext?.publicAccess || await resolveMemberAccess(env, { clientNickname, clientContact, lineOrMemberId });
 
   await upsertBookingRequest(env, bookingRef, {
     "Request ID": bookingRef,
@@ -103,7 +103,7 @@ async function handleClientResolve(req, env) {
     access_scope: access.access_scope,
     "Private Allowed": access.can_search_private_models,
     "Raw Safety Note": "Booking access check only. Private data is not exposed to browser unless active member is resolved by worker.",
-    resolver_payload_json: safeStringify({ kind: "client_resolve", access, saved_at: new Date().toISOString() })
+    resolver_payload_json: safeStringify({ kind: "client_resolve", access, ...(memberContext?.publicBookingOwner ? {public_booking_owner:memberContext.publicBookingOwner} : {}), saved_at: new Date().toISOString() })
   });
 
   return {
@@ -120,7 +120,7 @@ async function handleClientResolve(req, env) {
   };
 }
 
-async function handleModelSearch(req, env, url) {
+async function handleModelSearch(req, env, url, memberContext = null) {
   const body = req.method.toUpperCase() === "POST" ? await safeJson(req) : {};
   const queryInput = Object.fromEntries(url.searchParams.entries());
   const intent = safeSearchIntent({ ...queryInput, ...body });
@@ -144,7 +144,9 @@ async function handleModelSearch(req, env, url) {
   // Booking may browse using Create Job's scope filters without a remembered name.
   // The same server access and model projection gates below still apply.
 
-  const storedAccess = await lookupStoredBookingAccess(env, { bookingRef, sessionId });
+  const storedAccess = memberContext?.memberRecordId
+    ? { member_record_id: memberContext.memberRecordId }
+    : await lookupStoredBookingAccess(env, { bookingRef, sessionId });
   const viewerRef = await resolveDiscoveryViewer(req, env);
   const current = scope === "private" || scope === "booking"
     ? await currentPrivateAccess(req, env, storedAccess.member_record_id, viewerRef)
@@ -174,7 +176,9 @@ async function handleModelSearch(req, env, url) {
     };
   }
 
-  const records = q ? await searchModels(env, q, 40) : await listModels(env, 500);
+  const selectedId = /^rec[A-Za-z0-9]{14,24}$/.test(memberContext?.selectedModelId || "") ? memberContext.selectedModelId : "";
+  const records = selectedId ? await airtableListByFormula(env, env.AIRTABLE_TABLE_MODELS_ID || env.AIRTABLE_TABLE_MODELS || "Models", `RECORD_ID()=${formulaText(selectedId)}`, 2)
+    : q ? await searchModels(env, q, 40) : await listModels(env, 500);
   const baseModels = records
     .map((record) => sanitizeModelForBooking(record, {
       scope,
@@ -228,7 +232,7 @@ async function handleModelSearch(req, env, url) {
   };
 }
 
-async function handleBookingIntake(req, env, ctx) {
+async function handleBookingIntake(req, env, ctx, memberContext = null) {
   const body = await safeJson(req);
   requireAirtable(env);
 
@@ -274,6 +278,7 @@ async function handleBookingIntake(req, env, ctx) {
   const modelQuery = str(body.model_search_query || body.model_id_or_name || intent.preferred_model_name || body.preference_text);
   const resolverPayload = {
     ...incomingResolver,
+    public_booking_owner: memberContext?.publicBookingOwner || undefined,
     filters: { ...(incomingResolver.filters || {}), service_options: serviceOptions, profile_filters: intent.profile_filters },
     service_options: serviceOptions,
     kind: intent.mode === "search" ? "sigil_search_customer_intake_v1" : "sigil_booking_customer_intake_v1",
@@ -336,7 +341,7 @@ async function handleBookingIntake(req, env, ctx) {
     member_status: normalizeMemberStatus(body.member_status),
     access_scope: normalizeAccessScope(body.access_scope),
     lane: intakeScope,
-    job_class: intakeScope === "public" ? "travel" : normalizeJobClass(body.job_class),
+    job_class: intakeScope === "public" ? "travel" : memberContext?.ownerMetadata ? "private_review" : normalizeJobClass(body.job_class),
     model_scope: intakeScope,
     model_search_query: modelQuery,
     resolved_model_key: str(body.resolved_model_key),
@@ -348,7 +353,7 @@ async function handleBookingIntake(req, env, ctx) {
   const nextUrl = buildNextUrl(env, body, { bookingRef, sessionId });
   const telegram = bool(body.suppress_telegram_notify)
     ? { ok: false, skipped: true, reason: "silent_booking_intent_collection" }
-    : await notifyBookingDraft(env, { body, fields, rec, bookingRef, sessionId, nextUrl });
+    : await notifyBookingDraft(env, { body, fields, rec, bookingRef, sessionId, nextUrl, trustedIdentity: memberContext?.bookingIdentity });
 
   queueAuthorityEvent(ctx, env, {
     event: "booking_received",
@@ -909,7 +914,7 @@ function buildNextUrl(env, body, ids) {
   return u.toString();
 }
 
-async function notifyBookingDraft(env, { body, fields, rec, bookingRef, sessionId, nextUrl }) {
+async function notifyBookingDraft(env, { body, fields, rec, bookingRef, sessionId, nextUrl, trustedIdentity }) {
   if (token(env.TELEGRAM_NOTIFY_ENABLED || "true") === "false") return { ok: false, skipped: true, reason: "disabled" };
   const endpoint = str(env.TELEGRAM_INTERNAL_SEND_URL || env.TELEGRAM_NOTIFY_URL);
   const chatId = str(env.TELEGRAM_BOOKING_CHAT_ID || env.TELEGRAM_INTERNAL_CHAT_ID || env.TELEGRAM_ADMIN_CHAT_ID);
@@ -917,7 +922,7 @@ async function notifyBookingDraft(env, { body, fields, rec, bookingRef, sessionI
 
   const threadId = str(env.TG_THREAD_BOOKING_DRAFT || env.TELEGRAM_BOOKING_THREAD_ID || env.TELEGRAM_THREAD_ID);
   const adminUrl = buildAdminBookingUrl(env, bookingRef, rec?.id || "");
-  const text = buildBookingTelegramText({ body, fields });
+  const text = buildBookingTelegramText({ body, fields, trustedIdentity });
   const draftMode = token(body.search_mode || body.mode || fields["Source"]) === "sigil_search" || token(body.search_mode || body.mode) === "search" ? "search" : "booking";
   const payload = compact({
     chat_id: chatId,

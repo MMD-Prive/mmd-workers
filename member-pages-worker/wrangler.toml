@@ -1,5 +1,6 @@
 name = "member-pages-worker"
-main = "src/runtime-index.js"
+keep_vars = true
+main = "src/model-console-live-entrypoint.js"
 compatibility_date = "2026-06-20"
 workers_dev = true
 # Explicitly keep this implementation Worker service-only in production.
@@ -18,8 +19,8 @@ database_name = "mmd-member-reply-snapshots"
 database_id = "bb7895c6-b2c9-4246-a1e5-2e98cf9599a8"
 
 [vars]
-# LIFF renewal card (PACKAGE view). Off until the owner has tried it on a real phone.
-LIFF_RENEWAL_CARD_ENABLED = "false"
+# Preserve the observed production renewal-card setting.
+LIFF_RENEWAL_CARD_ENABLED = "true"
 # Requires LINE mobile acceptance before customer purchases.
 LIFF_PROMOTION_PURCHASE_ENABLED = "false"
 # Secret AUTH_SERVICE_MEMBER_TO_PAYMENTS is provisioned separately; never public.
@@ -125,6 +126,15 @@ new_sqlite_classes = ["PrivatePreviewGate"]
 [[migrations]]
 tag = "v3-remembered-login-device"
 new_sqlite_classes = ["RememberedLoginDevice"]
+
+# Live moved directly from v3 to v5; do not invent an unapplied v4 migration.
+[[durable_objects.bindings]]
+name = "CUSTOMER_REQUEST_MUTATION"
+class_name = "CustomerRequestMutationCoordinator"
+
+[[migrations]]
+tag = "v5-customer-request-mutation"
+new_sqlite_classes = ["CustomerRequestMutationCoordinator"]
 
 # Required before deployment:
 # - secret LINE_LOGIN_CHANNEL_ID (existing CARE BACK channel audience)

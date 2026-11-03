@@ -5,6 +5,8 @@ import {
 } from "./index.js";
 import { parseSigilMembershipPaymentComponents } from "./sigil-membership-payment-components.js";
 import { constantTimeEqual, formulaValue, httpError } from "./lib/payment-primitives.js";
+import { parseMarkedJson } from "./confirmation-details.js";
+import { beginDoubleMomentDiscount, executeDoubleMomentMutation } from "./double-moment-discount-lane.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 export const CONFIRM_LINK_PATH = "/v1/confirm/link";
@@ -86,6 +88,10 @@ export async function handleCanonicalConfirmLink(request, env) {
   let attemptedWrite = null;
   try {
     requireAirtable(env);
+    if (env.DOUBLE_MOMENT_COORDINATOR && !env.DOUBLE_MOMENT_DISCOUNT_EXECUTOR && body.session_id) {
+      const existing = await findOne(env, sessionsTable(env), "session_id", body.session_id);
+      if (existing?.id) return executeDoubleMomentMutation(env, existing.fields || {}, body.session_id, request, "manual");
+    }
 
     const sessionId = text(body.session_id || makeId("sess"), 180);
     const held = body.operational_status === "pending_client_link";
@@ -351,6 +357,13 @@ function paymentsTable(env) {
 async function upsertRecord(env, { table, lookupFieldName, lookupValue, fields }) {
   const existing = await findOne(env, table, lookupFieldName, lookupValue);
   if (existing?.id) {
+    let discountLane;
+    if (table === sessionsTable(env)) {
+      const pricing = parseMarkedJson(fields[SESSION_FIELDS.note] || fields[SESSION_FIELDS.notes] || "", "SIGIL Pricing v1");
+      if (pricing && (pricing.discount_mode !== "none" || Number(pricing.discount_thb) > 0)) {
+        discountLane = await beginDoubleMomentDiscount(env, existing.fields || {}, lookupValue, "manual-discount:" + lookupValue + ":" + JSON.stringify(pricing));
+      }
+    }
     const updated = await airtableRequest(
       env,
       `${encodeURIComponent(table)}/${encodeURIComponent(existing.id)}`,
@@ -359,6 +372,7 @@ async function upsertRecord(env, { table, lookupFieldName, lookupValue, fields }
         body: JSON.stringify({ fields, typecast: false }),
       },
     );
+    await discountLane?.complete();
     return { ok: true, mode: "update", record_id: updated?.id || existing.id };
   }
 
@@ -388,6 +402,7 @@ async function airtableRequest(env, pathOrUrl, init = {}, absolute = false) {
     : `${AIRTABLE_API}/${encodeURIComponent(clean(env.AIRTABLE_BASE_ID))}/${pathOrUrl}`;
   const request = new Request(url, {
     ...init,
+    signal: init.signal || (env.DOUBLE_MOMENT_DISCOUNT_EXECUTOR ? AbortSignal.timeout(8000) : undefined),
     headers: {
       Authorization: `Bearer ${clean(env.AIRTABLE_API_KEY)}`,
       "Content-Type": "application/json",

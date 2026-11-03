@@ -1,6 +1,7 @@
 /** Customer service balance from verified Payment rows, never planned deposits.
  * Read-only projection. Does not create/verify Payments or advance job state.
  */
+import {readSessionCreditBalance,sessionNeedsCreditRead,sessionCreditIdentity} from './double-moment-balance.js';
 export const BALANCE_FIELDS = Object.freeze({
   sessionId: 'fldLTq2kZbyRv22IA', total: 'fldhwC79ndbnEXSZz',
   sessionStatus: 'fldmwuvOaiCFdzzRa', paidSum: 'fldAdtXEaedGdfOKc',
@@ -115,7 +116,21 @@ export async function readVerifiedSessionBalance(env, session) {
     const data = await res.json().catch(() => null);
     if (!Array.isArray(data?.records)) throw balanceError('balance_ledger_unavailable', 503);
     rows.push(...data.records);
-    if (!data.offset) return calculateVerifiedSessionBalance(session, rows, env);
+    if (!data.offset) {
+      const summary=calculateVerifiedSessionBalance(session, rows, env);
+      if(!sessionNeedsCreditRead(env,session))return {...summary,paid_credit_thb:0,bonus_credit_thb:0,credit_applied_thb:0,credit_claim_id:null};
+      const identity=sessionCreditIdentity(session);
+      for(const {record} of summary.records){
+        const f=record.fields||{};
+        for(const key of ['Client','fldcrLuJijj7xr0y8'])if(f[key]!==undefined&&JSON.stringify(f[key])!==JSON.stringify([identity.client_record_id]))throw balanceError('balance_payment_client_mismatch');
+      }
+      const credit=await readSessionCreditBalance(env,session);
+      const applied=credit.paid_credit_thb+credit.bonus_credit_thb;
+      const remainingCents=Math.round(summary.total_amount_thb*100)-Math.round(summary.verified_paid_thb*100)-applied*100;
+      return {...summary,paid_credit_thb:credit.paid_credit_thb,bonus_credit_thb:credit.bonus_credit_thb,credit_applied_thb:applied,credit_claim_id:credit.claim_id||null,
+        remaining_amount_thb:Math.max(0,remainingCents)/100,
+        overpaid_amount_thb:Math.max(0,-remainingCents)/100};
+    }
     if (typeof data.offset !== 'string' || offsets.has(data.offset)) throw balanceError('balance_ledger_pagination_invalid', 503);
     offsets.add(data.offset);
     url.searchParams.set('offset', data.offset);
@@ -154,6 +169,9 @@ export function customerBalanceProjection(summary, activeRecord, finalRef, env =
       schema: 'verified_session_balance_v1', total_amount_thb: summary.total_amount_thb,
       verified_paid_thb: summary.verified_paid_thb,
       verified_deposit_thb: summary.verified_deposit_thb,
+      paid_credit_thb: summary.paid_credit_thb ?? 0,
+      bonus_credit_thb: summary.bonus_credit_thb ?? 0,
+      credit_applied_thb: summary.credit_applied_thb ?? 0,
       remaining_amount_thb: summary.remaining_amount_thb,
     },
   };

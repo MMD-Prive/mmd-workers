@@ -1,4 +1,4 @@
-import { stageMedia, storage, readBytes, reviewQueue, reviewMedia, reviewModels, saveReviewDraft, draftReviewQueue, draftReviewDetail, PREFIX, hash } from './new-model-production.mjs';
+import { stageMedia, storage, readBytes, reviewQueue, reviewMedia, reviewModels, saveReviewDraft, draftReviewQueue, draftReviewDetail, saveDraftInspection, PREFIX, hash } from './new-model-production.mjs';
 // Owner-triggered private staging and review intake. Never publishes media.
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
 import { isOwnerActor } from "./owner-my-mmd-recovery-diagnostic.js";
@@ -152,7 +152,7 @@ export async function handleModelMediaFlushPreview(request, env = {}, deps = {})
   const actor = await (deps.readActor || readCredentialBoundAdminActor)(request, env);
   if (!isOwnerActor(actor)) return respond({ ok: false, error: "owner_required" }, 403);
   const input = await request.json().catch(() => null);
-  if (!input || !["preview_all", "stage_all", "review_queue", "review_media", "review_models", "review_save", "review_draft_queue", "review_draft_detail"].includes(input.action) || Object.keys(input).some(k => !({preview_all:['action'],stage_all:['action','run_id'],review_queue:['action','cursor'],review_media:['action','record_id'],review_models:['action','query'],review_save:['action','record_id','revision','visibility','model_id'],review_draft_queue:['action','cursor'],review_draft_detail:['action','record_id']}[input.action]||[]).includes(k)) || (input.run_id && !/^[a-f0-9-]{36}$/.test(input.run_id))) {
+  if (!input || !["preview_all", "stage_all", "review_queue", "review_media", "review_models", "review_save", "review_draft_queue", "review_draft_detail", "review_draft_save"].includes(input.action) || Object.keys(input).some(k => !({preview_all:['action'],stage_all:['action','run_id'],review_queue:['action','cursor'],review_media:['action','record_id'],review_models:['action','query'],review_save:['action','record_id','revision','visibility','model_id'],review_draft_queue:['action','cursor'],review_draft_detail:['action','record_id'],review_draft_save:['action','record_id','revision','operation_id','result','reason']}[input.action]||[]).includes(k)) || (input.run_id && !/^[a-f0-9-]{36}$/.test(input.run_id))) {
     return respond({ ok: false, error: "preview_action_required" }, 400);
   }
   const sourceRoots = deps.sourceRoots || MODEL_MEDIA_SOURCE_ROOTS.filter(source => source.lane === "catalogue");
@@ -160,9 +160,9 @@ export async function handleModelMediaFlushPreview(request, env = {}, deps = {})
     const options={allowedRootIds:sourceRoots.map(source=>source.id),cursor:input.cursor,...deps.reviewDeps};
     try {
       if(input.action==='review_media')return await reviewMedia(env,input,options);
-      const result=input.action==='review_queue'?await reviewQueue(env,options):input.action==='review_models'?await reviewModels(env,input,options):input.action==='review_draft_queue'?await draftReviewQueue(env,input,options):input.action==='review_draft_detail'?await draftReviewDetail(env,input,options):await saveReviewDraft(env,input,actor,options);
+      const result=input.action==='review_queue'?await reviewQueue(env,options):input.action==='review_models'?await reviewModels(env,input,options):input.action==='review_draft_queue'?await draftReviewQueue(env,input,options):input.action==='review_draft_detail'?await draftReviewDetail(env,input,options):input.action==='review_draft_save'?await saveDraftInspection(env,input,actor,options):await saveReviewDraft(env,input,actor,options);
       return respond({ok:true,...result});
-    }catch(e){const code=e.code||'review_unavailable';return respond({ok:false,error:code},/conflict|busy|not_pending|state_changed/.test(code)?409:/invalid/.test(code)?400:503);}
+    }catch(e){const code=e.code||'review_unavailable';return respond({ok:false,error:code},/conflict|busy|not_pending|state_changed|history_full/.test(code)?409:/invalid/.test(code)?400:503);}
   }
   // Never silently switch to a fallback Google account when OAuth is unavailable.
   if (env.COMPCARD_DRIVE_OWNER_EMAIL && !owner(env.COMPCARD_DRIVE_OWNER_EMAIL)) {

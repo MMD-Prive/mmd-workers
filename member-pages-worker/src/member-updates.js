@@ -39,7 +39,11 @@ export async function listMmdNowItems(env, live) {
   }throw Error('cms_incomplete');
 }
 export async function handleMemberUpdates(request, env, readSession) {
-  const respond=(body,status=200)=>Response.json(body,{status,headers:HEADERS});
+  const respond=(body,status=200)=>{
+    // Fixed vocabulary only: no session, CMS payload, exception text or URL.
+    console.info('member_updates_read', {status, outcome:body.ok === true ? 'published_projection' : body.error.code});
+    return Response.json(body,{status,headers:HEADERS});
+  };
   if(request.method!=='GET')return respond({ok:false,error:{code:'METHOD_NOT_ALLOWED'}},405);
   const session=await readSession(request,env);
   if(!session?.lineUserId || session.memberExists!==true || !session.memberId)return respond({ok:false,error:{code:'MEMBER_SESSION_REQUIRED'}},401);

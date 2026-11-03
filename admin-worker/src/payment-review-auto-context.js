@@ -1,3 +1,4 @@
+import {readVerifiedPaymentBalance} from './verified-payment-balance.js';
 const API="https://api.airtable.com/v0";
 const PROOFS="tblfJfM4Sqag9zrLi", MEMBERS="tblgWc5VRon5o8Mhk", SESSIONS="Sessions", INBOX="MMD — Console Inbox", MATRIX="tblS6iRgPjYLBqZJh";
 const ALLOWED=new Set(["mmd_member","elite","red_card","standard","premium"]);
@@ -39,8 +40,29 @@ async function proofByMoney(env,ref,amount){const rs=await list(env,env.AIRTABLE
 async function recentTexts(env,lineId,proof){const rs=await list(env,env.AIRTABLE_SYNC_TABLE||INBOX,{filter:`{line_user_id}='${fv(lineId)}'`,max:30});const at=Date.parse(proof.createdTime||proof.fields?.created_at||"");const lo=Number.isFinite(at)?at-86400000:0,hi=Number.isFinite(at)?at+600000:Number.MAX_SAFE_INTEGER;return rs.map(r=>{let p={};try{p=JSON.parse(r.fields?.payload_json||"{}")}catch{}const t=Date.parse(p.received_at||r.fields?.received_at||r.createdTime||"");return{t,v:[p.raw_text,r.fields?.raw_text,r.fields?.admin_note].map(clean).filter(Boolean)}}).filter(x=>!Number.isFinite(x.t)||(x.t>=lo&&x.t<=hi)).sort((a,b)=>(b.t||0)-(a.t||0)).flatMap(x=>x.v).slice(0,16)}
 async function matrixFor(env,lineId){const h=await sha(`line_ofc:${lineId}`),rs=await list(env,env.AIRTABLE_TABLE_KENJI_CONVERSATION_MATRIX_ID||MATRIX,{filter:`{conversation_id_hash}='${fv(h)}'`,max:2});if(rs.length>1)throw err(409,"operator_context_auto_match_ambiguous");return rs[0]?.fields||{}}
 async function memberByLine(env,lineId){const ids=new Map();for(const f of ["line_id","line_user_id","LINE User ID"]){try{for(const r of await list(env,env.AIRTABLE_TABLE_MEMBERS_ID||env.AIRTABLE_TABLE_MEMBERS||MEMBERS,{filter:`{${f}}='${fv(lineId)}'`,max:2}))if(r.id)ids.set(r.id,r);if(ids.size>1)throw err(409,"operator_context_auto_match_ambiguous")}catch(e){if(e.status===409)throw e;if(e.status!==422)throw e}}return ids.size===1?[...ids.values()][0]:null}
-async function sessionCandidates(env,{amount,stage,texts,proofAt}){const cutoff=new Date((Date.parse(proofAt)||Date.now())-120*86400000).toISOString();const rs=await list(env,env.AIRTABLE_TABLE_SESSIONS_ID||env.AIRTABLE_TABLE_SESSIONS||SESSIONS,{filter:`IS_AFTER(CREATED_TIME(),'${cutoff}')`,max:100,ids:true}),ctx=norm((texts||[]).join(" "));return rs.map(r=>{const f=r.fields||{},sid=text(f[SF.id],180);if(!sid)return null;const client=text(f[SF.client],180),model=text(f[SF.model],180),pricing=marked(f[SF.note]||f[SF.notes]),vals=stageAmounts(stage,f,pricing),exact=vals.some(v=>v!=null&&Math.abs(v-amount)<.009);let score=exact?5:0;if(client&&ctx.includes(norm(client)))score+=2;if(model&&ctx.includes(norm(model)))score+=2;if(stage)score++;if(/paid|verified|completed/.test(norm(f[SF.payStatus]))&&stage!=="tips")score-=3;return{id:r.id,session_id:sid,client_name:client,model_name:model,score}}).filter(Boolean).sort((a,b)=>b.score-a.score)}
-function stageAmounts(stage,f,p){const a=money(f[SF.amount]),d=money(f[SF.due]);if(stage==="deposit")return[money(p.deposit_due_thb),d,a];if(stage==="final")return[money(p.balance_thb),d];if(stage==="full")return[money(p.net_price_thb),d,a];return[d,a]}
+async function sessionCandidates(env,{amount,stage,texts,proofAt}){
+  const cutoff=new Date((Date.parse(proofAt)||Date.now())-120*86400000).toISOString();
+  const rs=await list(env,env.AIRTABLE_TABLE_SESSIONS_ID||env.AIRTABLE_TABLE_SESSIONS||SESSIONS,{filter:`IS_AFTER(CREATED_TIME(),'${cutoff}')`,max:100,ids:true}),ctx=norm((texts||[]).join(" "));
+  const candidates=rs.filter(r=>[r.fields?.[SF.client],r.fields?.[SF.model]].some(v=>text(v,180)&&ctx.includes(norm(text(v,180)))));
+  if(candidates.length>12)throw err(409,'operator_context_auto_match_ambiguous');
+  const result=[];
+  for(const r of candidates){
+    const f=r.fields||{},sid=text(f[SF.id],180);if(!sid)continue;
+    const client=text(f[SF.client],180),model=text(f[SF.model],180),vals=await serviceStageAmounts(env,stage,f),exact=vals.some(v=>v!=null&&Math.abs(v-amount)<.009);
+    let score=exact?5:0;if(client&&ctx.includes(norm(client)))score+=2;if(model&&ctx.includes(norm(model)))score+=2;if(stage)score++;if(/paid|verified|completed/.test(norm(f[SF.payStatus]))&&stage!=="tips")score-=3;
+    result.push({id:r.id,session_id:sid,client_name:client,model_name:model,score});
+  }
+  return result.sort((a,b)=>b.score-a.score);
+}
+export async function serviceStageAmounts(env,stage,fields){
+  if(stage==='final'||stage==='full'){
+    const balance=await readVerifiedPaymentBalance(env,fields[SF.id]);
+    if(balance.total_amount_thb!==money(fields[SF.amount]))throw err(409,'job_balance_changed');
+    return balance.remaining_amount_thb>0?[balance.remaining_amount_thb]:[];
+  }
+  if(stage==='deposit')return [money(marked(fields[SF.note]||fields[SF.notes]).deposit_due_thb),money(fields[SF.amount])].filter(v=>v!==null);
+  return []; // Tips need explicit context, never a job's cached balance.
+}
 function marked(v){const s=clean(v),i=s.indexOf("SIGIL Pricing v1");if(i<0)return{};const x=s.slice(i),a=x.indexOf("{"),b=x.lastIndexOf("}");if(a<0||b<=a)return{};try{return JSON.parse(x.slice(a,b+1))}catch{return{}}}
 
 function packageFromText(v){const t=norm(v);if(/red\s*card|redcard|เรด\s*การ์ด/.test(t))return"red_card";if(/premium|พรีเมียม/.test(t))return"premium";if(/standard|สแตนดาร์ด/.test(t))return"standard";if(/elite|อีลิท|อีลีท/.test(t))return"elite";if(/mmd\s*member|public\s*member|สมาชิก\s*mmd/.test(t))return"mmd_member";return""}

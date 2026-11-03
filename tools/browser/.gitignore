@@ -1,0 +1,4 @@
+node_modules/
+playwright/
+report-outage-browser-server.json
+*.log

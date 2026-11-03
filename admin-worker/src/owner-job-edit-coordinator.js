@@ -32,9 +32,11 @@ export class JobEditJournal {
       await this.storage.put('pending',journal);
     }
     const {data,plan}=journal;
+    const unchangedSettlement=current=>data.balance&&current.balance&&['session_id','verified_paid_thb','verified_deposit_thb','paid_credit_thb','bonus_credit_thb','credit_applied_thb'].every(key=>current.balance[key]===data.balance[key]);
     // GETs and comparisons exclude fields owned by unrelated workflows. A stale
     // lifecycle/payment acknowledgement is still included in the session revision.
     let current=await loadJob(this.env,body.session_id);
+    if(!unchangedSettlement(current))return reply({ok:false,error:'edit_settlement_changed_review_required'},409);
     const matches=(record,patch)=>Object.entries(patch).every(([k,v])=>JSON.stringify(record.fields[k]??(v===false?false:null))===JSON.stringify(v===''?null:v));
     const beforeJob=await revision(current.job)===await revision(data.job);
     const beforeSession=await revision(current.session)===await revision(data.session);
@@ -42,9 +44,11 @@ export class JobEditJournal {
     if(!((beforeJob||afterJob)&&(beforeSession||afterSession)))return reply({ok:false,error:'edit_conflict_requires_review'},409);
     if(!afterJob)await at(this.env,'jobs',{id:data.job.id,patch:plan.jobPatch});
     current=await loadJob(this.env,body.session_id);
+    if(!unchangedSettlement(current))return reply({ok:false,error:'edit_settlement_changed_review_required'},409);
     if(!matches(current.job,plan.jobPatch)||(!matches(current.session,plan.sessionPatch)&&await revision(current.session)!==await revision(data.session)))return reply({ok:false,error:'edit_conflict_requires_review'},409);
     if(!matches(current.session,plan.sessionPatch))await at(this.env,'sessions',{id:data.session.id,patch:plan.sessionPatch});
     const final=await loadJob(this.env,body.session_id);
+    if(!unchangedSettlement(final))return reply({ok:false,error:'edit_settlement_changed_review_required'},409);
     if(!matches(final.job,plan.jobPatch)||!matches(final.session,plan.sessionPatch))return reply({ok:false,error:'edit_recovery_required'},503);
     const result={ok:true,session_id:body.session_id,amount:plan.amount,payout:plan.payout,paid:plan.paid,remaining:plan.remaining,notification_sent:false,payment_verification_changed:false};
     const summary=d=>({model_id:d.session.fields[S.model]?.[0],model_name:d.session.fields[S.name],amount:d.session.fields[S.amount],payout:d.session.fields[S.payout]});

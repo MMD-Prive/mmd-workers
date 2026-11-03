@@ -1,0 +1,96 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {createCheckoutRuntime} from './fixtures/customer-checkout-runtime.mjs';
+import {REPORT_FIELDS,readSessionReport} from '../../../payments-worker/session-report-projection.js';
+import {SID} from '../../../payments-worker/test-fixtures/double-moment-checkout.mjs';
+test('total Airtable outage hides previously verified money; restart and eight recovery reads do not duplicate writes',async t=>{
+ const map=Object.fromEntries(Object.keys(REPORT_FIELDS).map((k,i)=>[k,'fld'+String(i).padStart(14,'0')]));
+ const s=await createCheckoutRuntime(t,{reportFieldIds:map,ownerReport:true}),origin='https://mmdbkk.com';
+ assert.equal((await s.send(s.body)).status,200);
+ const login=await s.dispatch(origin+'/internal/admin/login/session',{method:'POST',redirect:'manual',headers:{origin,'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({credential:'synthetic-owner',next:'/internal/admin/double-moment'}).toString()});
+ assert.equal(login.status,303);const cookie=login.headers.get('set-cookie').split(';')[0];
+ const read=()=>s.dispatch(origin+'/v1/admin/double-moment/context?session_id='+SID,{headers:{cookie}});
+ const first=await read();assert.equal(first.status,200);assert.equal((await first.json()).balance.remaining_amount_thb,6500);
+ const fields=s.f.rows.sessions[0].fields,before=JSON.stringify({payments:s.f.rows.payments,credits:s.f.rows.credits}),stored=JSON.stringify(fields);
+ const original=s.f.fetch;let down=true,blocked=0;
+ s.f.fetch=async req=>{if(down){blocked++;return Response.json({error:'synthetic_total_airtable_outage'},{status:503});}return original(req);};
+ const assertUnavailable=async()=>{const r=await read();assert.equal(r.status,503);assert.match(r.headers.get('cache-control'),/no-store/);const body=await r.json();assert.equal(body.balance,null);assert.equal(body.remaining_amount_thb,undefined);return body;};
+ await assertUnavailable();await s.restart();
+ await Promise.all(Array.from({length:8},()=>assertUnavailable()));
+ assert.ok(blocked>0);assert.equal(JSON.stringify(fields),stored,'remote stale row cannot be cleared during total outage');
+ assert.equal(fields[map.status],'verified','do not pretend remote invalidation succeeded');
+ down=false;
+ const replies=await Promise.all(Array.from({length:8},async()=>{const r=await read();assert.equal(r.status,200);return (await r.json()).balance;}));
+ assert.equal(new Set(replies.map(b=>JSON.stringify(b))).size,1);
+ assert.ok(replies.every(b=>b.verified_paid_thb===5000&&b.paid_credit_thb===10000&&b.bonus_credit_thb===3500&&b.remaining_amount_thb===6500));
+ assert.equal(JSON.stringify({payments:s.f.rows.payments,credits:s.f.rows.credits}),before);
+ assert.equal(s.f.rows.payments.filter(p=>p.fields.payment_stage==='final').length,1);
+ assert.equal(readSessionReport(fields,map,SID).status,'verified');
+});
+for(const boundary of ['invalidation','verified-response'])test('real entrypoints stop mid-flight HOLD at '+boundary+' and eight retries after restart',async t=>{
+ const map=Object.fromEntries(Object.keys(REPORT_FIELDS).map((k,i)=>[k,'fld'+String(i).padStart(14,'0')]));
+ const s=await createCheckoutRuntime(t,{reportFieldIds:map,ownerReport:true}),origin='https://mmdbkk.com';
+ assert.equal((await s.send(s.body)).status,200);
+ const login=await s.dispatch(origin+'/internal/admin/login/session',{method:'POST',redirect:'manual',headers:{origin,'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({credential:'synthetic-owner',next:'/internal/admin/double-moment'}).toString()});
+ assert.equal(login.status,303);const cookie=login.headers.get('set-cookie').split(';')[0];
+ const read=()=>s.dispatch(origin+'/v1/admin/double-moment/context?session_id='+SID,{headers:{cookie}});
+ assert.equal((await read()).status,200);
+ const before=JSON.stringify({payments:s.f.rows.payments,credits:s.f.rows.credits});
+ const original=s.f.fetch;let injected=0,verifiedWrites=0;
+ s.f.fetch=async req=>{
+  const fields=req.method==='PATCH'?(await req.clone().json()).fields:{};
+  const response=await original(req);
+  if(fields[map.status]==='verified')verifiedWrites++;
+  if(!injected&&fields[map.status]===(boundary==='invalidation'?'unavailable':'verified')){
+   injected++;s.f.rows.sessions[0].fields['Session Status']='Hold';
+   if(boundary==='verified-response')throw Error('synthetic response lost after report write');
+  }
+  return response;
+ };
+ const first=await read();assert.equal(first.status,503);assert.equal((await first.json()).balance,null);assert.equal(injected,1);
+ assert.equal(readSessionReport(s.f.rows.sessions[0].fields,map,SID).balance,null);
+ const atHold=verifiedWrites;
+ await s.restart();
+ const replies=await Promise.all(Array.from({length:8},async()=>{const r=await read();return {status:r.status,body:await r.json()};}));
+ assert.ok(replies.every(r=>r.status===503&&r.body.balance===null));assert.equal(verifiedWrites,atHold);
+ assert.equal(atHold,boundary==='invalidation'?0:1);
+ assert.equal(JSON.stringify({payments:s.f.rows.payments,credits:s.f.rows.credits}),before);
+ s.f.rows.sessions[0].fields['Session Status']='confirmed';
+ const recovered=await Promise.all(Array.from({length:8},async()=>{const r=await read();assert.equal(r.status,200);return (await r.json()).balance;}));
+ assert.ok(recovered.every(b=>b.verified_paid_thb===5000&&b.paid_credit_thb===10000&&b.bonus_credit_thb===3500&&b.remaining_amount_thb===6500));
+ assert.equal(JSON.stringify({payments:s.f.rows.payments,credits:s.f.rows.credits}),before);
+});
+test('actual Payments coordinator separates report credits, clears on outage and recovers after restart without duplicate allocation',async t=>{
+ const map=Object.fromEntries(Object.keys(REPORT_FIELDS).map((k,i)=>[k,'fld'+String(i).padStart(14,'0')]));
+ const s=await createCheckoutRuntime(t,{reportFieldIds:map});
+ assert.equal((await s.send(s.body)).status,200);assert.ok(['updated','unchanged'].includes((await s.cache()).status));
+ const fields=s.f.rows.sessions[0].fields;
+ let view=readSessionReport(fields,map,SID);assert.equal(view.status,'verified');
+ assert.equal(view.balance.verified_paid_thb,5000);assert.equal(view.balance.paid_credit_thb,10000);assert.equal(view.balance.bonus_credit_thb,3500);assert.equal(view.balance.remaining_amount_thb,6500);
+ s.f.failCredits();const unavailable=await s.cache();assert.equal(unavailable.balance,null);assert.equal(readSessionReport(fields,map,SID).balance,null);
+ await s.restart();assert.equal((await s.cache()).balance,null);
+ s.f.failCredits(false);const responses=await Promise.all(Array.from({length:8},()=>s.cache()));assert.ok(responses.every(r=>r.paid_received_sum===5000&&r.remaining_amount_thb===6500));
+ assert.equal(s.f.rows.payments.filter(p=>p.fields.payment_stage==='final').length,1);assert.equal(s.f.rows.credits.reduce((n,r)=>n+r.fields['Applied Amount THB'],0),13500);
+});
+test('actual owner page/API requires login and refreshes price, payment, credit and HOLD through Payments',async t=>{
+ const map=Object.fromEntries(Object.keys(REPORT_FIELDS).map((k,i)=>[k,'fld'+String(i).padStart(14,'0')]));
+ const s=await createCheckoutRuntime(t,{reportFieldIds:map,ownerReport:true}),origin='https://mmdbkk.com';
+ const login=await s.dispatch(origin+'/internal/admin/login/session',{method:'POST',redirect:'manual',headers:{origin,'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({credential:'synthetic-owner',next:'/internal/admin/double-moment'}).toString()});assert.equal(login.status,303);
+ const cookie=login.headers.get('set-cookie').split(';')[0],url=origin+'/v1/admin/double-moment/context?session_id='+SID;
+ assert.equal((await s.dispatch(url)).status,401);
+ const read=async()=>{const r=await s.dispatch(url,{headers:{cookie}});assert.match(r.headers.get('cache-control'),/no-store/);return {status:r.status,data:await r.json()};};
+ const page=await s.dispatch(origin+'/internal/admin/double-moment',{headers:{cookie}});assert.equal(page.status,200);assert.match(await page.text(),/sessionReportPanel/);
+ assert.equal((await read()).data.balance.remaining_amount_thb,20000);
+ s.f.rows.sessions[0].fields.amount_thb=26000;s.f.rows.sessions[0].fields['Total Amount']=26000;
+ assert.equal((await read()).data.balance.remaining_amount_thb,21000);
+ s.f.rows.payments.find(p=>p.fields.payment_stage==='deposit').fields.Amount=6000;
+ assert.equal((await read()).data.balance.verified_paid_thb,6000);
+ // Restore the approved job amounts before applying its real entitlement flow.
+ s.f.rows.sessions[0].fields.amount_thb=25000;s.f.rows.sessions[0].fields['Total Amount']=25000;s.f.rows.payments.find(p=>p.fields.payment_stage==='deposit').fields.Amount=5000;
+ assert.equal((await s.send(s.body)).status,200);assert.equal((await read()).data.balance.remaining_amount_thb,6500);
+ s.f.failCredits();let r=await read();assert.equal(r.status,503);assert.equal(r.data.balance,null);
+ s.f.failCredits(false);s.f.rows.sessions[0].fields['Session Status']='Hold';r=await read();assert.equal(r.status,503);assert.equal(r.data.balance,null);
+ s.f.rows.sessions[0].fields['Session Status']='confirmed';assert.equal((await read()).data.balance.remaining_amount_thb,6500);
+ const replies=await Promise.all(Array.from({length:8},()=>read()));assert.ok(replies.every(r=>r.status===200&&r.data.balance.remaining_amount_thb===6500));
+ assert.equal(s.f.rows.payments.filter(p=>p.fields.payment_stage==='final').length,1);
+});

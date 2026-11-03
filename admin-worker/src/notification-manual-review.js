@@ -3,6 +3,7 @@ import {withSessionCompletionLock} from '../../shared/session-completion.mjs';
 import {deliverPayoutJournal} from './model-payout-destination.js';
 import {deliverOwnerTravelJournal} from './model-travel-owner.js';
 import {deliverAftercareOwner} from '../../events-worker/src/owner-aftercare-notification.js';
+import {deliverReconfirmOwnerJournal,RECONFIRM_OWNER_LANE} from './model-reconfirm-owner-delivery.js';
 
 export const MANUAL_REVIEW_PATH='/v1/admin/jobs/notification-review';
 const root='payment-notifications/v1/';
@@ -10,6 +11,7 @@ const lanes={
   'model-payout-instructions':{deliver:(env,j,c,validate)=>deliverPayoutJournal(env,j,undefined,c,validate)},
   'model-travel-owner':{deliver:deliverOwnerTravelJournal},
   'customer-aftercare-owner':{deliver:deliverAftercareOwner,completion:true},
+  [RECONFIRM_OWNER_LANE]:{deliver:deliverReconfirmOwnerJournal,completion:true},
 };
 const fail=(error,status=409)=>Object.assign(new Error(error),{status});
 const storage=(env,lane)=>lanes[lane]?.completion?(env.SESSION_COMPLETION_STATE||env.PRIVATE_MODEL_MEDIA):env.PRIVATE_MODEL_MEDIA;
@@ -46,6 +48,7 @@ export async function listNotificationReviews(env,{lane='model-payout-instructio
 export async function resolveNotificationReview(env,body,actor){
   if(!actor?.id||!['owner','admin','super_admin','superadmin'].includes(actor.role))throw fail('owner_admin_session_required',403);
   const {lane,id,decision,snapshot}=body||{},note=String(body?.note||'').trim();
+  if(lane===RECONFIRM_OWNER_LANE&&body?.inspection_confirmed!==true)throw fail('telegram_inspection_required',400);
   if(!lanes[lane]||! /^[a-f0-9]{64}$/.test(id||'')||!['received','not_received'].includes(decision)||note.length<5||note.length>500)
     throw fail('review_evidence_required',400);
   const bucket=storage(env,lane),key=receiptKey(lane,id);

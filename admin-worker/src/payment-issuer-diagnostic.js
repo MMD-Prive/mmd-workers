@@ -2,6 +2,7 @@ import { KBANK_SANDBOX_MODE, KBANK_STATUS_MODE, requestKbankSandboxDiagnostic } 
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
 import { paymentIssuerTransport, requestPaymentsConfirmLink, requestPaymentsConfirmationReissue } from "./payments-issuer-transport.js";
 import { SIGIL_SYSTEM_LOGO } from "./sigil-system-logo.js";
+import { readVerifiedPaymentBalance } from './verified-payment-balance.js';
 
 export const PAYMENT_ISSUER_DIAGNOSTIC_PATH = "/v1/admin/payment-issuer-diagnostic";
 export const ISSUE_EXISTING_SESSION_MODE = "issue_existing_session";
@@ -152,6 +153,16 @@ async function handleIssueExistingSession(env, body) {
   if (!session?.id) return json({ ok: false, error: "session_not_found" }, 404);
   const fields = session.fields || {};
 
+  if (reissue) {
+    try {
+      const balance = await readVerifiedPaymentBalance(env, sessionId);
+      if (balance.total_amount_thb !== fields[SESSION_FIELDS.amountThb]) return json({ok:false,stage:'reissue_preflight',error:'job_balance_changed'},409);
+      if (balance.verified_paid_thb > 0 || balance.credit_applied_thb > 0) return json({ok:false,stage:'reissue_preflight',error:'use_credit_aware_final_checkout'},409);
+    } catch {
+      return json({ok:false,stage:'reissue_preflight',error:'verified_balance_unavailable'},503);
+    }
+  }
+
   const existingPaymentRef = text(fields[SESSION_FIELDS.paymentRef], 200);
   const existingCustomerUrl = safeConfirmationUrl(fields[SESSION_FIELDS.customerUrl], "/sigil/confirm/job-confirmation");
   const existingModelUrl = safeConfirmationUrl(fields[SESSION_FIELDS.modelUrl], "/sigil/confirm/job-model");
@@ -218,7 +229,7 @@ async function handleIssueExistingSession(env, body) {
     endTime = requiredText(fields[SESSION_FIELDS.endTime], "end_time");
     locationName = requiredText(fields[SESSION_FIELDS.locationName], "location_name");
     // An outstanding balance is not the job total used to calculate a deposit.
-    amountThb = positiveNumber(fields[SESSION_FIELDS.amountThb] ?? fields[SESSION_FIELDS.customerAmountDueThb], "amount_thb");
+    amountThb = positiveNumber(fields[SESSION_FIELDS.amountThb], "amount_thb");
   } catch (error) {
     return json({ ok: false, stage: "preflight", error: safeError(error, "session_data_incomplete") }, error?.status || 409);
   }

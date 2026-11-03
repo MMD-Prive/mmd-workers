@@ -4,6 +4,10 @@
 
 name = "admin-worker"
 main = "src/admin-login-hero-worker.js"
+keep_vars = true
+
+# Preserve the existing production namespace used by availability snapshots.
+kv_namespaces = [{ binding = "SIGIL_AVAILABILITY_SNAPSHOTS", id = "5489a27c5ad94e4d80944a524d624cb2" }]
 
 triggers = { crons = ["*/5 * * * *"] }
 compatibility_date = "2026-01-01"
@@ -1046,6 +1050,11 @@ entrypoint = "MemberResolverDiagnosticEntrypoint"
 # Identity is resolved in admin-worker first; member-pages-worker owns points/coupon truth.
 [[services]]
 binding = "MEMBER_PAGES_MEMBER_WALLET"
+service = "member-pages-worker"
+
+# Preserve the current live owner request/recovery service bridge.
+[[services]]
+binding = "MEMBER_PAGES_REQUESTS"
 service = "member-pages-worker"
 
 # Bounded customer-safe MMD Shop order projection for HYPE.

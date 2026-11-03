@@ -17,6 +17,7 @@ import { checkReconfirmFreshness, reconfirmRevision, reconfirmSnapshot } from ".
 import { CANONICAL_MODEL_FIELD, canonicalModelIds } from "./model-current-session.js";
 import { normalizeSessionState } from "./modelSessionContractV1.js";
 import { buildModelJobBoardBroadcastLink } from "../../shared/model-job-board-links.mjs";
+import { sendReconfirmOwnerOnce } from './model-reconfirm-owner-delivery.js';
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 
@@ -413,7 +414,7 @@ async function runReconfirmSteps(env, record, reconfirm, now, counters, guard = 
 
   if (Number.isFinite(overdueMs) && now >= overdueMs && !reconfirm.ops_alerted_at && reconfirm.status !== "acknowledged" && reconfirm.notified_at) {
     if (!await freshForDispatch(env, record, now, counters)) return;
-    const alert = await sendOpsReconfirmOverdue(env, record);
+    const alert = await sendOpsReconfirmOverdue(env, record, now);
     if (alert.ok) {
       const patched = await patchReconfirm(env, record, {
         status: "overdue",
@@ -859,7 +860,7 @@ async function pushModelReconfirm(env, sessionRecord, reminder) {
   return response.ok || response.status === 409 && response.headers.has("x-line-accepted-request-id") ? { ok: true } : { ok: false, error: `line_push_http_${response.status}` };
 }
 
-async function sendOpsReconfirmOverdue(env, sessionRecord) {
+async function sendOpsReconfirmOverdue(env, sessionRecord, now) {
   const destination = resolveOwnerDestination(env);
   if (!destination) return { ok: false, error: "owner_destination_missing" };
 
@@ -878,7 +879,15 @@ async function sendOpsReconfirmOverdue(env, sessionRecord) {
     "งานยังไม่ถูกยกเลิก และยังไม่แจ้งลูกค้าว่างานมีปัญหา",
   ].join("\n");
 
-  return sendOwnerFallback(env, destination, { text, sessionId, intent: "model_reconfirm_overdue" });
+  const revision=await reconfirmRevision(reconfirmSnapshot(fields));
+  const schedule=buildReconfirmSchedule(sessionJobDate(env,fields));
+  return sendReconfirmOwnerOnce(env,{destination,sessionId,overdueAt:schedule?.overdue_at,revision,text,now,validate:async()=>{
+    const fresh=await findSessionBySessionId(env,sessionId);
+    const current=fresh.record?.fields||{};
+    return fresh.ok&&fresh.record.id===sessionRecord.id&&RECONFIRM_LIFECYCLE_STATES.has(sessionLifecycleState(env,current))&&
+      !clean(current[reconfirmFields(env).acknowledgedAt])&&
+      await reconfirmRevision(reconfirmSnapshot(current))===revision;
+  }});
 }
 
 async function resolveModelLineUserId(env, sessionFieldsValue) {

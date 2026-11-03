@@ -1,3 +1,4 @@
+import {doubleMomentTestDeadline} from './double-moment-test-access.js';
 import { resolvePersistedShopBrand, SHOP_BRANDS, shopPaymentThreads } from "../shared/shop-brand-context.mjs";
 import { classifyPaymentOpsRoute, membershipInferenceLabel, paymentPresentationLane } from "../shared/payment-intelligence.mjs";
 import { verifyConfirmToken } from "./index.js";
@@ -132,7 +133,8 @@ export async function mintCustomerToken(env, { session_id, payment_ref, payment_
   if (!env.PAY_SESSIONS_KV) throw new Error("missing_pay_sessions_kv");
 
   const iat = Math.floor(Date.now() / 1000);
-  const exp = iat + tokenTtl(env);
+  const testDeadline = await doubleMomentTestDeadline(env,session_id);
+  const exp = Math.min(iat + tokenTtl(env),testDeadline ?? Infinity);
   const claims = {
     kind: "customer_confirm",
     role: "customer",

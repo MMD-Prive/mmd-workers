@@ -1,4 +1,5 @@
 import delegatedWorker from "./cancellation-credit-recovery.js";
+import { readCredentialBoundAdminActor } from './credential-bound-admin-session.js';
 import { COMPLETION_OWNER_PAGE, completionOwnerPage } from "./session-completion-owner-page.js";
 import { OWNER_TRAVEL_PATH, ownerTravelResponse } from "./model-travel-owner.js";
 import { MANUAL_REVIEW_PATH, listNotificationReviews, resolveNotificationReview } from './notification-manual-review.js';
@@ -108,6 +109,8 @@ export function canonicalizeDashboardJobLinks(payload = {}) {
   };
 }
 async function readOwnerActor(request, env, ctx) {
+  const verified = await readCredentialBoundAdminActor(request, env);
+  if (verified && OWNER_ROLES.has(clean(verified.role, 80).toLowerCase())) return verified;
   const cookie = clean(request.headers.get("cookie"), 12000);
   if (!cookie) return null;
   const url = new URL(AUTH_ME_PATH, request.url);

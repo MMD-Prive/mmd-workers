@@ -29,9 +29,10 @@ const JOB_HOLD = new Set(["hold", "paused", "blocked"]);
 const JOB_DONE = new Set(["completed", "finished", "done", "closed"]);
 const JOB_CANCELLED = new Set(["cancelled", "canceled"]);
 
-const PAY_STATUS_SETTLED = new Set(["paid", "deposit_paid"]);
-const PAY_STATUS_KNOWN = new Set(["pending", "paid", "deposit_paid", "tips_paid"]);
-const VERIFY_KNOWN = new Set(["pending", "verified", "rejected"]);
+const PAY_STATUS_SETTLED = new Set(["paid", "deposit_paid", "deposit", "partial_payment", "full_payment"]);
+const PAY_STATUS_KNOWN = new Set(["pending", ...PAY_STATUS_SETTLED, "tips_paid", "refunded", "failed"]);
+const VERIFY_APPROVED = new Set(["verified", "official_verified", "approved"]);
+const VERIFY_KNOWN = new Set(["pending", "pending_review", "notified", ...VERIFY_APPROVED, "rejected", "failed"]);
 
 export function classifyJobState(session) {
   const raw = session.state || session.status;
@@ -53,8 +54,13 @@ export function classifyPaymentRecord(record) {
   if (!PAY_STATUS_KNOWN.has(status)) return { state: "review_required", reason: `unknown payment status '${clean(status, 40)}'` };
   if (status === "tips_paid") return { state: "tips" };
   if (verification && !VERIFY_KNOWN.has(verification)) return { state: "review_required", reason: `unknown verification status '${clean(verification, 40)}'` };
-  if (verification === "rejected") return { state: "rejected" };
-  if (PAY_STATUS_SETTLED.has(status)) return verification === "verified" ? { state: "verified" } : { state: "awaiting_verification" };
+  if (["rejected", "failed"].includes(verification) || ["refunded", "failed"].includes(status)) return { state: "rejected" };
+  if (record.cash_receipt_status === 'review_required') return { state: "review_required", reason: "cash receipt unavailable" };
+  if (PAY_STATUS_SETTLED.has(status)) {
+    if (!VERIFY_APPROVED.has(verification)) return { state: "awaiting_verification" };
+    if (typeof record.amount_thb !== 'number' || !Number.isFinite(record.amount_thb) || record.amount_thb <= 0 || record.cash_receipt_status === 'not_verified') return { state: "review_required", reason: "cash receipt unavailable" };
+    return { state: "verified" };
+  }
   return { state: "pending" };
 }
 
