@@ -4,6 +4,9 @@ on:
   pull_request:
     paths:
       - "admin-worker/src/refund-ops.js"
+      - "admin-worker/src/refund-receipt-journal.js"
+      - "admin-worker/refund-delivery-outcomes.test.mjs"
+      - "admin-worker/refund-line-fallback.test.mjs"
       - "admin-worker/refund-ops.test.mjs"
       - "member-dashboard-chat-worker/src/index.js"
       - "member-dashboard-chat-worker/test/refund-receipt-notify.test.mjs"
@@ -13,6 +16,9 @@ on:
       - main
     paths:
       - "admin-worker/src/refund-ops.js"
+      - "admin-worker/src/refund-receipt-journal.js"
+      - "admin-worker/refund-delivery-outcomes.test.mjs"
+      - "admin-worker/refund-line-fallback.test.mjs"
       - "admin-worker/refund-ops.test.mjs"
       - "member-dashboard-chat-worker/src/index.js"
       - "member-dashboard-chat-worker/test/refund-receipt-notify.test.mjs"
@@ -31,4 +37,15 @@ jobs:
         with:
           node-version: "22"
       - name: Run Refund Ops and LINE receipt tests
-        run: node --test admin-worker/refund-ops.test.mjs member-dashboard-chat-worker/test/refund-receipt-notify.test.mjs
+        run: node --test admin-worker/refund-line-fallback.test.mjs admin-worker/refund-delivery-outcomes.test.mjs admin-worker/refund-ops.test.mjs member-dashboard-chat-worker/test/refund-receipt-notify.test.mjs
+      - name: Build complete admin-worker entrypoint (no deploy)
+        run: npm exec --yes --package=esbuild@0.27.3 -- esbuild admin-worker/src/admin-login-hero-worker.js --bundle --format=esm --platform=browser --target=es2022 '--external:cloudflare:*' '--external:node:*' --sourcemap=external --metafile=refund-bundles/admin.meta.json --outfile=refund-bundles/admin-worker.js
+      - name: Build complete member-dashboard-chat-worker entrypoint (no deploy)
+        run: npm exec --yes --package=esbuild@0.27.3 -- esbuild member-dashboard-chat-worker/src/guide-notification-entry.mjs --bundle --format=esm --platform=browser --target=es2022 '--external:cloudflare:*' '--external:node:*' --sourcemap=external --metafile=refund-bundles/member.meta.json --outfile=refund-bundles/member-dashboard-chat-worker.js
+      - name: Record bundle hashes
+        run: sha256sum refund-bundles/*.js > refund-bundles/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: refund-full-bundles-${{ github.event.pull_request.head.sha || github.sha }}
+          path: refund-bundles/
+          retention-days: 7

@@ -15,6 +15,17 @@ const TOKEN = "airtable-token";
 const LINE_ID = "U" + "a".repeat(32);
 
 function env(extra = {}) {
+  // Keep older receipt fixtures; model persistent R2 conditional journal writes.
+  if (extra.LINE_SLIP_EVIDENCE) {
+    const original=extra.LINE_SLIP_EVIDENCE, journal=new Map();let revision=0;
+    extra={...extra,LINE_SLIP_EVIDENCE:{...original,
+      async get(key){if(!key.startsWith('owner-refund-operations/'))return original.get?.(key);const value=journal.get(key);return value?{etag:value.etag,text:async()=>value.body}:null;},
+      async put(key,body,options){if(!key.startsWith('owner-refund-operations/')){const result=await original.put?.(key,body,options);return result||{etag:'synthetic-receipt-etag'};}const old=journal.get(key),condition=options?.onlyIf;
+        if(condition?.etagMatches&&old?.etag!==condition.etagMatches||condition?.etagDoesNotMatch==='*'&&old)return null;
+        const value={body,etag:'journal-'+(++revision)};journal.set(key,value);return {etag:value.etag};
+      }
+    }};
+  }
   return {
     AIRTABLE_BASE_ID: BASE_ID,
     AIRTABLE_API_KEY: TOKEN,
@@ -658,7 +669,7 @@ test("targeted native refund POST keeps the case URL on the result page", async 
     );
     assert.equal(response.status, 200);
     const body = await response.text();
-    assert.match(body, /อัปโหลดสลิปสำเร็จ/);
+    assert.match(body, /บันทึกสลิปแล้ว/);
     assert.match(
       body,
       /href="\/internal\/admin\/refunds\?inbox_id=refund_manual_man_20260929_pay_mulcs8o4&amp;action=upload">กลับ Refund เคสนี้<\/a>/,
@@ -810,7 +821,7 @@ test("Refund Ops recovery completes an orphan R2 receipt without asking owner to
 });
 
 
-test("recovery retries failed LINE delivery without sending duplicate HYPE Telegram", async () => {
+test("legacy failed LINE delivery needs reconciliation without duplicating HYPE Telegram", async () => {
   const originalFetch = globalThis.fetch;
   const inboxId = "refund_retry_line_only";
   const key = `owner-refund-receipts/2026/09/${encodeURIComponent(inboxId)}/receipt.jpg`;
@@ -836,6 +847,7 @@ test("recovery retries failed LINE delivery without sending duplicate HYPE Teleg
         receipt_byte_size:420000,
         customer_receipt_delivery_status:"failed",
         customer_receipt_delivery_reason:"line_push_failed",
+        customer_receipt_delivery_http_status:429,
         owner_telegram_delivery_status:"sent",
         owner_telegram_message_id:3234,
       }),
@@ -899,16 +911,17 @@ test("recovery retries failed LINE delivery without sending duplicate HYPE Teleg
     assert.equal(payload.ok, true);
     assert.equal(payload.recovered, false);
     assert.equal(payload.delivery_retried, true);
-    assert.equal(payload.line_notification.sent, true);
+    assert.equal(payload.line_notification.sent, false);
+    assert.equal(payload.review_required, true);
     assert.equal(payload.owner_telegram.sent, true);
     assert.equal(payload.owner_telegram.skipped, true);
     assert.equal(payload.owner_telegram.reason, "already_sent");
     assert.equal(payload.owner_telegram.message_id, 3234);
-    assert.equal(lineCalls, 1);
+    assert.equal(lineCalls, 0);
     assert.equal(telegramCalls, 0);
 
     const stored = JSON.parse(record.fields.payload_json);
-    assert.equal(stored.customer_receipt_delivery_status, "sent");
+    assert.equal(stored.customer_receipt_delivery_status, "unknown");
     assert.equal(stored.owner_telegram_delivery_status, "sent");
     assert.equal(stored.owner_telegram_message_id, 3234);
   } finally {
@@ -939,7 +952,8 @@ test("recovery persists LINE 429 quota diagnosis without duplicating HYPE", asyn
         receipt_uploaded_at:"2026-09-29T09:06:02.950Z",
         receipt_mime_type:"image/jpeg",
         receipt_byte_size:420000,
-        customer_receipt_delivery_status:"failed",
+        customer_receipt_delivery_status:"skipped",
+        customer_receipt_delivery_http_status:429,
         owner_telegram_delivery_status:"sent",
         owner_telegram_message_id:3235,
       }),
