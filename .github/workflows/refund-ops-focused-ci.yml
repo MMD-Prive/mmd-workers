@@ -4,18 +4,32 @@ on:
   pull_request:
     paths:
       - "admin-worker/src/refund-ops.js"
+      - "admin-worker/src/refund-receipt-journal.js"
+      - "admin-worker/refund-delivery-outcomes.test.mjs"
+      - "admin-worker/refund-line-fallback.test.mjs"
       - "admin-worker/refund-ops.test.mjs"
       - "member-dashboard-chat-worker/src/index.js"
       - "member-dashboard-chat-worker/test/refund-receipt-notify.test.mjs"
+      - "scripts/refund-read-live-baselines.py"
+      - "scripts/refund-read-live-baselines.test.py"
+      - "scripts/refund-build-preserved.mjs"
+      - "scripts/refund-preserved-runtime.test.mjs"
       - ".github/workflows/refund-ops-focused-ci.yml"
   push:
     branches:
       - main
     paths:
       - "admin-worker/src/refund-ops.js"
+      - "admin-worker/src/refund-receipt-journal.js"
+      - "admin-worker/refund-delivery-outcomes.test.mjs"
+      - "admin-worker/refund-line-fallback.test.mjs"
       - "admin-worker/refund-ops.test.mjs"
       - "member-dashboard-chat-worker/src/index.js"
       - "member-dashboard-chat-worker/test/refund-receipt-notify.test.mjs"
+      - "scripts/refund-read-live-baselines.py"
+      - "scripts/refund-read-live-baselines.test.py"
+      - "scripts/refund-build-preserved.mjs"
+      - "scripts/refund-preserved-runtime.test.mjs"
       - ".github/workflows/refund-ops-focused-ci.yml"
 
 permissions:
@@ -27,8 +41,69 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
       - name: Run Refund Ops and LINE receipt tests
-        run: node --test admin-worker/refund-ops.test.mjs member-dashboard-chat-worker/test/refund-receipt-notify.test.mjs
+        run: node --test admin-worker/refund-line-fallback.test.mjs admin-worker/refund-delivery-outcomes.test.mjs admin-worker/refund-ops.test.mjs member-dashboard-chat-worker/test/refund-receipt-notify.test.mjs
+      - name: Verify GET-only snapshot guards
+        run: PYTHONDONTWRITEBYTECODE=1 python3 scripts/refund-read-live-baselines.test.py
+
+  read-live-baselines:
+    needs: refund-ops
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'codex/refund-delivery-outcome-guard-v7'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Read pinned live Worker modules and maps (GET only)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: python3 scripts/refund-read-live-baselines.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: refund-live-baselines-${{ github.event.pull_request.head.sha }}
+          path: refund-live-baselines/
+          retention-days: 3
+
+  preserved-bundles:
+    needs: [refund-ops, read-live-baselines]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/download-artifact@v4
+        with:
+          name: refund-live-baselines-${{ github.event.pull_request.head.sha }}
+          path: refund-live-baselines
+      - name: Install pinned local build and fixture tools (no Cloudflare credentials)
+        run: npm install --prefix "$RUNNER_TEMP/refund-tools" --no-save esbuild@0.27.3 @jridgewell/sourcemap-codec@1.6.0 miniflare@4.20260317.3
+      - name: Assemble only Refund delta over exact live modules and maps
+        env:
+          REFUND_TOOLS_DIR: ${{ runner.temp }}/refund-tools
+        run: node scripts/refund-build-preserved.mjs
+      - name: Verify preserved interfaces, overlays, RPC and persisted outcomes
+        env:
+          REFUND_TOOLS_DIR: ${{ runner.temp }}/refund-tools
+        run: node --test scripts/refund-preserved-runtime.test.mjs
+      - name: Record candidate module/map hashes
+        run: sha256sum refund-bundles/*/*.js refund-bundles/*/*.map > refund-bundles/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: refund-preserved-bundles-${{ github.event.pull_request.head.sha }}
+          path: refund-bundles/
+          retention-days: 7
