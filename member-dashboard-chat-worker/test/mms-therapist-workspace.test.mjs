@@ -219,15 +219,15 @@ test('bare LIFF endpoint and callbacks use native login', async () => {
     assert.equal(res.status,200);assert.match(await res.text(),/data-login="true"/);
   }
 });
-function loginHarness({url=origin+path+'/login?invite=test-invite', saved=null, loggedIn=true, token='valid-token', error=null, unavailableStorage=false, initNever=false, fastTimeout=false}={}) {
+function loginHarness({url=origin+path+'/login?invite=test-invite', saved=null, loggedIn=true, token='valid-token', error=null, unavailableStorage=false, initNever=false, fastTimeout=false, initError=false, authResponse=null, networkError=false}={}) {
   const ids=['notice','entry','workspace','line-login','greeting','readiness','availability','save-availability','refresh','retry','offers','jobs','profile','offer-list','job-list','profile-form','display-name','intro','base-zone','coverage-zones','zone-status','visibility','courses','photos','upload','save-photos','add-course','logout','detail','save-profile','profile-save-status','verified-services','profile-info','profile-courses','profile-zones','profile-photos','zone-search','zone-summary','retry-zones','course-empty'];
   const els=Object.fromEntries(ids.map(id=>[id,new Element()]));
   const data=new Map(saved||[]), requests=[], redirects=[];let logouts=0;
   const parsed=new URL(url);
   const context={document:{getElementById:id=>els[id],querySelector:()=>({dataset:{login:'true'}}),querySelectorAll:()=>[]},
-    fetch:async(url,options={})=>{requests.push({url,options});if(url.endsWith('/me'))return Response.json({ok:false,error:{code:'THERAPIST_SESSION_REQUIRED'}},{status:401});return error?Response.json({ok:false,error:{code:error}},{status:401}):Response.json({ok:true,data:{}});},
-    window:{sessionStorage:{getItem(k){if(unavailableStorage)throw Error();return data.get(k)||null;},setItem(k,v){if(unavailableStorage)throw Error();data.set(k,v);},removeItem(k){data.delete(k);}},liff:{async init(){if(initNever)await new Promise(()=>{});},isLoggedIn:()=>loggedIn,getIDToken:()=>token,logout(){logouts++;},login(o){redirects.push(o.redirectUri);}}},
-    location:{href:url,hash:parsed.hash,pathname:parsed.pathname,assign(u){redirects.push(u);},replace(u){redirects.push(u);}},history:{replaceState(){}},URL,URLSearchParams,Response,Date,Map,Set,Array,Object,Number,String,JSON,AbortController,setTimeout:fastTimeout?(fn,ms)=>ms===12000?setImmediate(fn):setTimeout(fn,ms):setTimeout,clearTimeout,crypto:globalThis.crypto};
+    fetch:async(url,options={})=>{requests.push({url,options});if(networkError==='abort')throw new DOMException('fixture abort','AbortError');if(networkError)throw new TypeError('fixture network');if(authResponse)return authResponse();if(url.endsWith('/me'))return Response.json({ok:false,error:{code:'THERAPIST_SESSION_REQUIRED'}},{status:401});return error?Response.json({ok:false,error:{code:error}},{status:401}):Response.json({ok:true,data:{therapist_id:"mmst_fixture_owner"}});},
+    window:{sessionStorage:{getItem(k){if(unavailableStorage)throw Error();return data.get(k)||null;},setItem(k,v){if(unavailableStorage)throw Error();data.set(k,v);},removeItem(k){data.delete(k);}},liff:{async init(){if(initError)throw new Error('private SDK detail must not be displayed');if(initNever)await new Promise(()=>{});},isLoggedIn:()=>loggedIn,getIDToken:()=>token,logout(){logouts++;},login(o){redirects.push(o.redirectUri);}}},
+    location:{href:url,hash:parsed.hash,pathname:parsed.pathname,assign(u){redirects.push(u);},replace(u){redirects.push(u);}},history:{replaceState(){}},URL,URLSearchParams,Response,Date,Map,Set,Array,Object,Number,String,JSON,AbortController,DOMException,setTimeout:fastTimeout?(fn,ms)=>ms===12000?setImmediate(fn):setTimeout(fn,ms):setTimeout,clearTimeout,crypto:globalThis.crypto};
   vm.runInNewContext('('+therapistClient.toString()+')(45)',context);
   return {els,data,requests,redirects,get logouts(){return logouts;}};
 }
@@ -343,3 +343,10 @@ test('malformed profile does not advance progress to ready before schema validat
  const h=clientHarness({graphics:{begin(){return 1;},received(){},ready(){ready++;},fail(){failed++;},failCurrent(){}},responses:{profile:()=>Response.json({ok:true,data:{display_name:'Incomplete fixture'}})}});
  await settle();const before=ready;await h.tabs[2].click();assert.equal(ready,before);assert.equal(failed,1);assert.equal(h.els['save-profile'].disabled,true);
 });
+
+test('LIFF init failure stays at login with safe actionable copy',async()=>{const h=loginHarness({initError:true});await settle();assert.match(h.els.notice.textContent,/Mini App/);assert.doesNotMatch(h.els.notice.textContent,/private SDK/);assert.equal(h.requests.length,0);});
+test('LINE verification outage retries without logout or losing invite',async()=>{const h=loginHarness({error:'LINE_VERIFY_UNAVAILABLE'});await settle();assert.match(h.els.notice.textContent,/ระบบตรวจบัญชี LINE ยังไม่พร้อม/);assert.equal(h.logouts,0);assert.equal(h.redirects.length,0);await h.els['line-login'].click();assert.equal(h.requests.length,2);assert.ok(h.data.has('mms-therapist-invite-v1'));});
+for(const [name,response] of [['html',()=>new Response('<html>unavailable</html>',{status:503})],['null',()=>Response.json(null)],['missing identity',()=>Response.json({ok:true,data:{}})]])test('malformed auth '+name+' never enters profile',async()=>{const h=loginHarness({authResponse:response});await settle();assert.match(h.els.notice.textContent,/ตอบข้อมูลไม่ครบ/);assert.equal(h.redirects.length,0);assert.ok(h.data.has('mms-therapist-invite-v1'));});
+test('auth network error retains retry and invitation',async()=>{const h=loginHarness({networkError:true});await settle();assert.match(h.els.notice.textContent,/เชื่อมต่อระบบยืนยันบัญชีไม่ได้/);assert.equal(h.logouts,0);assert.ok(h.data.has('mms-therapist-invite-v1'));});
+
+test("native AbortError uses auth timeout copy instead of numeric DOMException code",async()=>{const h=loginHarness({networkError:"abort"});await settle();assert.match(h.els.notice.textContent,/ใช้เวลานานเกินไป/);assert.equal(h.logouts,0);assert.equal(h.redirects.length,0);});

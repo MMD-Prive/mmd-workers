@@ -330,3 +330,9 @@ test("revoked or unlinked Therapist cannot use an otherwise valid bound session"
     } finally { restore(); }
   }
 });
+
+for(const status of [429,500,503])test(`LINE verifier ${status} is unavailable, not an invalid identity`,async()=>{
+ const original=globalThis.fetch;let calls=0;
+ globalThis.fetch=async(input,init)=>{calls++;assert.equal(new URL(String(input)).origin,'https://api.line.me');assert.ok(init.signal);return new Response('',{status});};
+ try{const req=jsonRequest(AUTH_LINE,{id_token:'synthetic-fixture'});let response;try{response=await handleMmsTherapistAuthRequest(req,env);}catch(e){response=therapistAuthErrorResponse(e,req,env);}assert.equal(response.status,503);assert.equal((await response.json()).error.code,'LINE_VERIFY_UNAVAILABLE');assert.equal(calls,1);assert.equal(response.headers.get('set-cookie'),null);}finally{globalThis.fetch=original;}
+});
