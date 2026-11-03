@@ -36,7 +36,7 @@ Read-only inspection of the local helper confirms its narrowly guarded 10211 fal
 
 The local workflow is triggered by matching changes pushed to `main`. Before any future merge, establish a separately approved deployment hold/approval gate or a proven candidate separation; do not assume merge and deploy are operationally independent in the current workflow. No workflow change or dispatch is performed here.
 
-The existing workflow also has optional Therapist secret initialization and Telegram secret rotation paths. Both must remain false for this scoped release; do not invoke those paths or touch the Telegram Worker. The helper's existing migration-allowance flag is not a new approval from Boss Per. No workflow dispatch, rerun or live API was used here.
+The existing workflow also has optional Therapist secret initialization and Telegram secret rotation paths. Both must remain false for this scoped release; do not invoke those paths or touch the Telegram Worker. The helper's existing migration-allowance flag is not a new approval from Boss Per. No workflow dispatch, rerun or production write was performed. Read-only status calls are recorded below.
 
 Check the exact approved Wrangler version when preparing release. Official documentation checked 2026-11-03 states that lifecycle changes are atomic, require the non-versioned deployment path and should be separated from unrelated business changes. Older Wrangler can report 10211 on version upload; fail closed if actual tool behavior differs. Do not upgrade dependencies merely to bypass a migration rejection.
 
