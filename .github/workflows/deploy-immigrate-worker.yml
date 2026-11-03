@@ -290,17 +290,35 @@ jobs:
 
       - name: Verify latest Control Room in production
         shell: bash
+        env:
+          ADMIN_SMOKE_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}
         run: |
           set -euo pipefail
+          test -n "${ADMIN_SMOKE_CREDENTIAL:-}"
+          echo "::add-mask::$ADMIN_SMOKE_CREDENTIAL"
+          cookie="$(mktemp)"
           headers="$(mktemp)"
           body="$(mktemp)"
-          trap 'rm -f "$headers" "$body"' EXIT
+          trap 'rm -f "$cookie" "$headers" "$body"' EXIT
+
+          # mock=1 does not bypass the credential-bound admin gate.
+          login_code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
+            -D "$headers" -o "$body" -c "$cookie" -w '%{http_code}' \
+            -X POST -H 'Origin: https://mmdbkk.com' \
+            -H 'Content-Type: application/x-www-form-urlencoded' \
+            --data-urlencode "credential=$ADMIN_SMOKE_CREDENTIAL" \
+            --data-urlencode 'next=/internal/admin/control-room' \
+            'https://mmdbkk.com/internal/admin/login/session')"
+          if [ "$login_code" != "303" ] || ! grep -qi '^set-cookie: mmd_admin_gate_v1=' "$headers"; then
+            echo "Control Room smoke login failed (HTTP $login_code)" >&2
+            exit 1
+          fi
 
           verified=0
           for attempt in 1 2 3 4 5 6 7 8; do
             : > "$headers"
             : > "$body"
-            code="$(curl -sS -D "$headers" -o "$body" -w '%{http_code}' \
+            code="$(curl -sS -b "$cookie" -D "$headers" -o "$body" -w '%{http_code}' \
               "https://mmdbkk.com/internal/admin/control-room?mock=1&deploy=${GITHUB_SHA}&attempt=${attempt}")"
 
             if [ "$code" = "200" ] \
