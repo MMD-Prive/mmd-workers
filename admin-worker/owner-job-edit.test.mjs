@@ -64,3 +64,13 @@ test('active worker routes the owner editor API and rejects partners before Airt
  const r=await worker.fetch(await authReq(h.env),h.env,{});assert.equal(r.status,200);assert.equal((await r.json()).job.model_name,'Film IT');
  const denied=await worker.fetch(await authReq(h.env,{role:'mms_partner'}),h.env,{});assert.equal(denied.status,403);assert.equal(h.calls.length,0);
 });
+
+test('observed payout adjustment invalidates editor revision and cannot be overwritten',async()=>{
+ const h=setup(),b={...body(),revision:await revision(h.data)};
+ h.data.session.fields[S.payout]+=500;
+ const result=await h.coordinator.fetch(post(b));assert.equal(result.status,409);assert.equal((await result.json()).error,'job_changed_reload');assert.deepEqual(h.calls,[]);assert.equal(h.data.session.fields[S.payout],9000);
+});
+for(const state of ['payout_pending','closed'])test('editor cannot rewrite '+state+' payout snapshot',async()=>{
+ const h=setup();h.data.session.fields[S.state]=state;const b={...body(),revision:await revision(h.data)};
+ assert.equal((await h.coordinator.fetch(post(b))).status,409);assert.deepEqual(h.calls,[]);
+});

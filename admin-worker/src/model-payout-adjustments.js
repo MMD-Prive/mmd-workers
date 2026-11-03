@@ -153,6 +153,9 @@ async function handlePost(request, env, actor) {
     const session = await findCanonicalSession(env, sessionId);
     if (!session.ok) return json({ ok: false, error: session.error }, session.status);
 
+    const evidence = await adjustmentEvidenceGuard(env, sessionId, session.record.fields);
+    if (evidence) return evidence;
+
     const fields = session.record.fields || {};
     const current = money(fields.pay_model_thb);
     if (current === null) return json({ ok: false, error: "model_payout_missing" }, 409);
@@ -199,6 +202,8 @@ async function handlePost(request, env, actor) {
     // Recheck before writing: catches an external edit observed after our ledger intent.
     const beforePatch = await findCanonicalSession(env, sessionId);
     if (!beforePatch.ok || beforePatch.record.id !== session.record.id || money(beforePatch.record.fields?.pay_model_thb) !== current || JSON.stringify(linkedRecordIds(beforePatch.record.fields?.["Canonical Model"])) !== JSON.stringify(modelIds)) return json({ ok:false,error:"payout_revision_conflict" },503);
+    const evidenceBeforePatch = await adjustmentEvidenceGuard(env, sessionId, beforePatch.record.fields);
+    if (evidenceBeforePatch) return evidenceBeforePatch;
     await operation.stage("patching_session");
 
     const patched = await patchSessionPayout(env, session.record.id, next);
@@ -431,4 +436,22 @@ function json(body, status = 200) {
       "cache-control": "no-store, private",
     },
   });
+}
+
+// Payout Evidence is a transfer snapshot, not another adjustable total. Do not
+// rewrite paid evidence or silently invalidate a pending transfer instruction.
+async function adjustmentEvidenceGuard(env, sessionId, sessionFields) {
+  const u=new URL(`${AIRTABLE_API}/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/tblMvsl7qYozD05e5`);
+  u.searchParams.set("returnFieldsByFieldId","true");
+  u.searchParams.set("filterByFormula",`AND({fldwmqaIq9QubX9Uy}="${escapeFormula(sessionId)}",{fldgITP2xFiS2YHCG}="session_payout")`);
+  u.searchParams.set("maxRecords","2");
+  const r=await fetch(u,{headers:{authorization:`Bearer ${env.AIRTABLE_API_KEY}`}});
+  const p=await r.json().catch(()=>null);
+  if(!r.ok||!Array.isArray(p?.records)||p.offset||p.records.some(x=>!x?.id||!x.fields||x.fields.fldwmqaIq9QubX9Uy!==sessionId||x.fields.fldgITP2xFiS2YHCG!=="session_payout"))return json({ok:false,error:"payout_evidence_unavailable"},503);
+  const state=clean(sessionFields?.model_session_state||sessionFields?.fld57fhdWqIcOy4Jp).toLowerCase();
+  if(p.records.length>1)return json({ok:false,error:"payout_evidence_ambiguous",review_required:true},409);
+  const raw=p.records[0]?.fields?.fldy2TgwO7Ayp6uhh;
+  const status=clean(raw?.name||raw).toLowerCase();
+  if(["payout_pending","closed"].includes(state)||p.records.length&&status!=="payout_under_review")return json({ok:false,error:"payout_evidence_requires_review",review_required:true},409);
+  return null;
 }
