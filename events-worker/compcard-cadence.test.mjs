@@ -76,6 +76,37 @@ test('a week has two promotions and five Standard evenings with no Preview model
   assert.equal(f.sends.filter(row => row.card.kind === 'text').length, 2);
 });
 
+test('10:00 promotion schedule leaves daily model and 20:00 Standard times unchanged without replay', async () => {
+  const f = fixture({ inventory: cards(4) });
+  f.env.HYPE_PROMOTION_SEND_AT_ICT = '10:00';
+  f.env.HYPE_STANDARD_SEND_AT_ICT = '20:00';
+
+  assert.equal((await run(f, '2026-11-03', '09:59')).status, 'not_due');
+  assert.equal(f.sends.length, 0);
+
+  const morning = await run(f, '2026-11-03', '10:00');
+  assert.equal(morning.results[0].slot, 'promotion');
+  assert.equal(morning.results[0].sent, 1);
+  assert.equal(f.bucket.read('plans/2026-11-03/promotion.json').destination, 'preview');
+  const afterMorning = f.sends.length;
+
+  const model = await run(f, '2026-11-03', '16:30');
+  assert.equal(model.results[0].slot, 'model');
+  assert.equal(f.sends.length, afterMorning + 2);
+  assert.equal((await run(f, '2026-11-03', '20:00')).status, 'not_due');
+  assert.equal(f.sends.length, afterMorning + 2);
+
+  const standard = await run(f, '2026-11-04', '20:00');
+  assert.equal(standard.results[0].slot, 'standard');
+  assert.equal(f.sends.length, afterMorning + 4);
+
+  assert.equal((await run(f, '2026-11-06', '10:00')).results[0].slot, 'promotion');
+  assert.equal(f.bucket.read('plans/2026-11-06/promotion.json').destination, 'premium');
+  assert.equal((await run(f, '2026-11-10', '10:00')).results[0].slot, 'promotion');
+  assert.equal(f.bucket.read('plans/2026-11-10/promotion.json').destination, 'standard');
+  assert.equal((await run(f, '2026-11-10', '20:00')).status, 'not_due');
+});
+
 test('promotion rooms advance by eligible promotion dates and Double remains continuous', async () => {
   const f = fixture({ inventory: [] });
   for (const date of ['2026-10-23', '2026-10-27', '2026-10-30', '2026-11-03', '2026-11-06', '2026-11-10']) await run(f, date);
