@@ -1,3 +1,4 @@
+import { JOB_BOARD_READABLE_CSS } from './job-board-readable.mjs';
 import { jobBoardCandidateReview } from '../../admin-worker/src/job-board-candidate-review.js';
 export interface InternalPageEnv {
   ADMIN_WORKER_BASE_URL?: string;
@@ -352,7 +353,7 @@ const jobBoardScript = `(() => {
 })();`;
 
 export function renderJobBoardPage(): Response {
-  return page("MMD Job Board", `<section class="mmdop" data-job-board-owner="separate-v1"><main class="mmdop__shell">
+  return page("MMD Job Board", `<section class="mmdop" id="mmd-job-board-workspace" data-job-board-owner="separate-v1"><main class="mmdop__shell">
     ${topbar("Job Board")}
     <section class="hero">
       <div class="kicker">Recruitment / Open Opportunity</div>
@@ -394,6 +395,7 @@ export function renderJobBoardPage(): Response {
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button class="btn soft" id="job-board-copy" type="button" disabled>Copy Link</button><button class="btn" id="job-board-open" type="button" disabled>เปิดประกาศ</button></div>
     </section>
   ${jobBoardCandidateReview()}
+  <style id="job-board-readable-v1">${JOB_BOARD_READABLE_CSS}</style>
   </main><script>${jobBoardScript}</script></section>`);
 }
 
