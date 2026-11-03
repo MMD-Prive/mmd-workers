@@ -58,9 +58,11 @@ def safe_bindings(bindings):
 
 
 class Api:
-    def __init__(self, token):
+    def __init__(self, token, routes_token=None, r2_token=None):
         require(bool(token), "existing Cloudflare credential missing")
         self.token = token
+        self.routes_token = routes_token
+        self.r2_token = r2_token
         self.opener = urllib.request.build_opener(snapshot.NoRedirect())
 
     def __call__(self, method, route, body=None, content_type=None, raw=False):
@@ -72,7 +74,13 @@ class Api:
                 allowed_read |= suffix in ["", "/settings", "/schedules", "/deployments?per_page=100", "/versions?per_page=100"] or bool(re.fullmatch(r"/(?:versions|deployments)/[a-f0-9-]{36}", suffix))
         allowed_write = route in [r + s for r in roots for s in ["/versions", "/deployments"]]
         require(method == "GET" and allowed_read or method == "POST" and allowed_write, "outside code-only API scope")
-        headers = {"Authorization": "Bearer " + self.token}
+        role, credential = "worker", self.token
+        if route.startswith(f"/zones/{ZONE}/"):
+            role, credential = "routes-read", self.routes_token
+        elif route.startswith(f"/accounts/{ACCOUNT}/r2/"):
+            role, credential = "lifecycle-read", self.r2_token
+        require(bool(credential), "existing " + role + " credential unavailable")
+        headers = {"Authorization": "Bearer " + credential}
         if body is not None:
             if not isinstance(body, bytes):
                 body = json.dumps(body).encode()
@@ -92,7 +100,7 @@ class Api:
                 codes = [e.get('code') for e in json.loads(error.read()).get('errors', [])]
             except Exception:
                 codes = []
-            raise RuntimeError(f"Cloudflare {method} HTTP {error.code} codes={codes}; no write retry") from None
+            raise RuntimeError(f"Cloudflare {method} {role} HTTP {error.code} codes={codes}; no write retry") from None
 
 
 def root(worker):
@@ -254,7 +262,8 @@ if __name__ == "__main__":
         require(subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip() == os.environ["APPROVED_SHA"], "checkout differs from approval")
         token = re.sub(r"[\r\n\u2028\u2029]", "", os.environ.get("CLOUDFLARE_API_TOKEN", "")).strip()
         worker = os.environ.get("TARGET_WORKER")
-        result = release(Api(token), worker, "refund-preserved-input", "refund-release/" + worker, os.environ["APPROVED_SHA"], os.environ.get("PEER_VERSION"))
+        clean = lambda name: re.sub(r"[\r\n\u2028\u2029]", "", os.environ.get(name, "")).strip()
+        result = release(Api(token, clean("CLOUDFLARE_ROUTES_API_TOKEN"), clean("CLOUDFLARE_R2_API_TOKEN")), worker, "refund-preserved-input", "refund-release/" + worker, os.environ["APPROVED_SHA"], os.environ.get("PEER_VERSION"))
         if os.environ.get("GITHUB_OUTPUT"):
             with open(os.environ["GITHUB_OUTPUT"], "a") as output:
                 output.write("version=" + result["version_id"] + "\n")
