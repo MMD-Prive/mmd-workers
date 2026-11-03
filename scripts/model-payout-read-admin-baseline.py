@@ -8,7 +8,8 @@ from datetime import datetime, timezone
 
 VERSION = '801082ba-69db-4713-93cc-ffd7290987f3'
 WORKER = 'admin-worker'
-NAME = 'admin-login-hero-worker.js'
+# The #1697 release metadata uploads the generated artifact under this module name.
+NAME = 'worker.js'
 PHASE = 'start'
 EXPECTED_JS = '32e7363a82297db746dc620ae0c2bf6b19164a5f78a5aa72320c25bdcec68926'
 spec = importlib.util.spec_from_file_location('reader', Path(__file__).with_name('refund-read-live-baselines.py'))
