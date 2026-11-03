@@ -6,17 +6,21 @@ export function createCustomerProgress({ render, request, timeoutMs = 15000, mut
     panels.add(panel);
     const active = [...tasks.values()].filter(t => t.panel === panel);
     const all = [...tasks.values()];
+    const entry = all.filter(t => !t.optional);
+    const entryErrors = [...failures.values()].flatMap(entries => [...entries.values()]).some(e => !e.optional);
     render(panel, { pending:active.length, confirmedPercent:active.length ? Math.min(...active.map(t => t.stage)) * 50 : 0,
       error:Boolean(failures.get(panel)?.size), overallPending:all.length,
       overallPercent:all.length ? Math.min(...all.map(t => t.stage)) * 50 : 0,
-      overallError:[...failures.values()].some(entries => entries.size > 0), reset });
+      overallError:[...failures.values()].some(entries => entries.size > 0),
+      entryPending:entry.length, entryPercent:entry.length ? Math.min(...entry.map(t => t.stage)) * 50 : 0,
+      entryError:entryErrors, optionalError:Boolean(failures.get(panel)?.size) && [...failures.get(panel).values()].every(e => e.optional), reset });
   }
   function finish(id, panel, failed) {
     const task = tasks.get(id);
     tasks.delete(id);
     if (!failures.has(panel)) failures.set(panel, new Map());
     const errors = failures.get(panel);
-    if (failed) errors.set(task.key, {floor:nextId, scope:task.scope});
+    if (failed) errors.set(task.key, {floor:nextId, scope:task.scope, optional:task.optional});
     else if (id > (errors.get(task.key)?.floor ?? Infinity)) errors.delete(task.key);
     publish(panel);
   }
@@ -32,7 +36,10 @@ export function createCustomerProgress({ render, request, timeoutMs = 15000, mut
   }
   async function fetchWithProgress(url, init = {}) {
     const path = String(url).split('?')[0];
-    const panel = /history/.test(path) ? 'history-panel' : /credit/.test(path) ? 'credits'
+    const method = (init.method || 'GET').toUpperCase();
+    const preview = method === 'GET' && path === '/api/member/app/history/preview';
+    const updates = method === 'GET' && ['/api/v1/member/updates/list', '/api/member/app/updates'].includes(path);
+    const panel = updates ? 'digital-news-progress' : /history/.test(path) ? 'history-panel' : /credit/.test(path) ? 'credits'
       : /coupon|care-back\/wallet/.test(path) ? 'coupons' : /care|wish/.test(path) ? 'care'
       : /customer.request|evidence/.test(path) ? 'my-requests'
       : /renewal/.test(path) ? 'package' : /catalog|purchase/.test(path) ? 'signup'
@@ -41,7 +48,7 @@ export function createCustomerProgress({ render, request, timeoutMs = 15000, mut
     const bootstrap = /\/liff\/(?:welcome-context|start|logout)$/.test(path)
       || (path === '/member/api/liff/public-membership/catalog' && (init.method || 'GET').toUpperCase() === 'GET');
     const current = () => epoch === generation && (bootstrap || memberEpoch === memberGeneration);
-    tasks.set(id, { panel, stage:0, scope:bootstrap ? 'bootstrap' : 'member', key:(init.method || 'GET').toUpperCase() + ':' + String(url) }); publish(panel);
+    tasks.set(id, { panel, stage:0, optional:preview || updates, scope:bootstrap ? 'bootstrap' : 'member', key:method + ':' + String(url) }); publish(panel);
     const controller = new AbortController();
     const abort = () => controller.abort();
     if (init.signal?.aborted) abort();
@@ -51,6 +58,9 @@ export function createCustomerProgress({ render, request, timeoutMs = 15000, mut
     let failed = false;
     try {
       const response = await request(url, { ...init, signal:controller.signal });
+      // Authentication failures are critical even on an optional read.
+      if (current() && [401, 403].includes(response.status)) tasks.get(id).optional = false;
+      if (current() && preview && response.status === 404) tasks.get(id).optional = false;
       if (current()) { tasks.get(id).stage = 1; publish(panel); }
       // Keep the bar and existing serialized session lane until the body is read.
       // No claimed byte percentage: Content-Length may describe compressed data.
@@ -70,6 +80,13 @@ export function createCustomerProgress({ render, request, timeoutMs = 15000, mut
         for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
         if (!current()) throw new Error("customer_response_stale");
         failed = !response.ok;
+        if (preview && response.status === 404) {
+          try {
+            const body = JSON.parse(new TextDecoder().decode(bytes));
+            if (body.ok === false && body.error === 'history_evidence_missing' && body.data === null) { failed = false; tasks.get(id).optional = true; }
+            else tasks.get(id).optional = false;
+          } catch { tasks.get(id).optional = false; }
+        }
         return new Response(response.status === 204 ? null : bytes, {
           status:response.status, statusText:response.statusText, headers:response.headers,
         });
@@ -101,6 +118,8 @@ export function createCustomerProgress({ render, request, timeoutMs = 15000, mut
 }
 
 export function renderCustomerProgress(panel, state) {
+  state = { ...state, overallPending:state.entryPending ?? state.overallPending,
+    overallPercent:state.entryPercent ?? state.overallPercent, overallError:state.entryError ?? state.overallError };
   const boot = document.getElementById('customer-boot-progress');
   const bootBar = document.getElementById('hype-progress');
   const bootRetry = document.getElementById('customer-boot-retry');
@@ -135,6 +154,6 @@ export function renderCustomerProgress(panel, state) {
   node.hidden = !state.pending && !state.error;
   node.querySelector('progress').hidden = !state.pending;
   node.querySelector('span').textContent = state.pending
-    ? (state.confirmedPercent === 50 ? '50% · ความคืบหน้าขั้นตอน · กำลังอ่านข้อมูล' : '0% · กำลังรอข้อมูล') : state.error ? 'รับข้อมูลไม่สำเร็จครับ เปิดหน้าใหม่เพื่อตรวจสอบอีกครั้ง โดยไม่ส่งรายการเดิมซ้ำอัตโนมัติ' : '';
-  node.querySelector('button').hidden = !state.error || state.pending > 0;
+    ? (state.confirmedPercent === 50 ? '50% · ความคืบหน้าขั้นตอน · กำลังอ่านข้อมูล' : '0% · กำลังรอข้อมูล') : state.error ? (state.optionalError ? 'ข้อมูลเสริมส่วนนี้ยังไม่พร้อมครับ ไม่กระทบสถานะสมาชิกที่ยืนยันแล้ว' : 'รับข้อมูลไม่สำเร็จครับ เปิดหน้าใหม่เพื่อตรวจสอบอีกครั้ง โดยไม่ส่งรายการเดิมซ้ำอัตโนมัติ') : '';
+  node.querySelector('button').hidden = !state.error || state.pending > 0 || state.optionalError;
 }
