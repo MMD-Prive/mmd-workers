@@ -1,3 +1,4 @@
+import { SHORT_FORM_VERSION, SHORT_MEDIA_LIMIT, shortMediaSlot, shortProfile, shortFormMarkup, shortFormScript } from "./job-interest-short-form.js";
 import { handleBroadcastOwnerBridge } from "./broadcast-owner-store.js";
 import { buildModelJobBoardBroadcastLink, buildModelJobBoardMiniAppLink, resolveModelJobBoardNext } from "../../shared/model-job-board-links.mjs";
 
@@ -294,8 +295,7 @@ async function renderApplication(request, env, jobId) {
   const gate = await requireModelBoardGate(request, env);
   await enforceViewerAccess(env, anon.id, job);
   if (job.public.world === "private" && !(await hasPrivateReveal(request, env, job.id, anon.id))) throw httpError(403, "job_brief_not_opened");
-  const script = linkedInterestScript(job.id);
-  return html(pageShell(`สนใจงานนี้ · ${job.public.title}`, `<main><a class="back" href="${PREFIX}/${encodeURIComponent(job.id)}">← กลับไปอ่านบรีฟ</a><section class="detail"><p class="eyebrow">MY MODEL · MODEL POOL</p><h1>${esc(job.public.title)}</h1><p>โปรไฟล์ของคุณเชื่อมกับพี่เปอร์ไว้แล้วครับ งานนี้ไม่ต้องกรอกข้อมูลใหม่</p><p>ถ้ารูปปัจจุบันยังไม่มีหรืออยากอัปเดต สามารถส่งรูปให้ MMD ตรวจได้ก่อนตอบรับงาน</p><a class="back" href="https://www.mmdbkk.com/sigil/model/dashboard/photos?source=job_board&job_id=${encodeURIComponent(job.id)}">อัปเดตรูปปัจจุบัน →</a><p>กดด้านล่างเพื่อบอกพี่เปอร์ว่าคุณสนใจและสะดวกรับงานนี้</p><button class="primary" type="button" data-linked-interest>สนใจงานนี้ · ส่งให้พี่เปอร์</button><p data-status role="status"></p><small>Model record · ${esc(gate.model_record_id)}</small></section></main>${script}`));
+  return html(pageShell(`สนใจงานนี้ · ${job.public.title}`, shortFormMarkup(job.id, job.public.title, esc).replace('</form>', `</form><a class="back" href="https://www.mmdbkk.com/sigil/model/dashboard/photos?source=job_board&job_id=${encodeURIComponent(job.id)}">อัปเดตรูปปัจจุบัน →</a>`) + shortFormScript(job.id)));
 }
 
 async function createInterest(request, env, jobId) {
@@ -310,7 +310,13 @@ async function createInterest(request, env, jobId) {
   const fastLane = input.fast_lane === true;
   const actorHash = await sha256(fastLane ? `${job.id}:${gate.model_record_id}` : `${job.id}:${anon.id}`);
   const dedupe = await getJson(env, dedupeKey(job.id, actorHash));
-  if (dedupe?.application_ref) throw httpError(409, "job_interest_already_exists");
+  if (dedupe?.application_ref) {
+    if (input.form_version === SHORT_FORM_VERSION && !fastLane) {
+      const existing = await requireApplication(env, job.id, dedupe.application_ref);
+      if (existing.form_version === SHORT_FORM_VERSION && existing.submission_status === "draft") return json({ ok: true, application_ref: existing.application_ref, resumed: true }, 200);
+    }
+    throw httpError(409, "job_interest_already_exists");
+  }
 
   const applicationRef = makeRef("APP");
   const now = new Date().toISOString();
@@ -341,6 +347,7 @@ async function createInterest(request, env, jobId) {
     owner_decision: null,
     applicant: fastLane ? { model_record_id: gate.model_record_id, fast_lane: true } : null,
     uploads: [],
+    ...(input.form_version === SHORT_FORM_VERSION ? { form_version: SHORT_FORM_VERSION } : {}),
     ...(fastLane ? { media_status: "profile_on_file" } : {}),
     controls: { auto_bind: false, auto_rate: false, auto_book: false, auto_reply: false },
   };
@@ -379,13 +386,15 @@ async function createInterest(request, env, jobId) {
 
 async function createUploadGrant(request, env, jobId, applicationRef) {
   requireWriteOrigin(request, env);
-  await requireOwnedApplication(request, env, jobId, applicationRef);
+  const { application } = await requireOwnedApplication(request, env, jobId, applicationRef);
   const job = await requireJob(env, jobId, { publicOnly: true });
   const input = await readJson(request);
-  const slot = boundedInt(input.slot, 1, job.public.media_requirements.count);
+  if (application.submission_status === "submitted") throw httpError(409, "application_already_submitted");
+  const short = application.form_version === SHORT_FORM_VERSION;
+  const slot = boundedInt(input.slot, 1, short ? 10 : job.public.media_requirements.count);
   const contentType = clean(input.content_type, 80).toLowerCase();
-  const size = boundedInt(input.size, 1, MAX_IMAGE_BYTES);
-  if (!IMAGE_TYPES.has(contentType)) throw httpError(415, "image_type_not_allowed");
+  const size = boundedInt(input.size, 1, short ? SHORT_MEDIA_LIMIT : MAX_IMAGE_BYTES);
+  if (short ? !shortMediaSlot(slot, contentType) : !IMAGE_TYPES.has(contentType)) throw httpError(415, "image_type_not_allowed");
   const exp = Math.floor(Date.now() / 1000) + 10 * 60;
   const tokenValue = await signToken(env, { typ: "upload", job_id: job.id, application_ref: applicationRef, slot, content_type: contentType, size, exp });
   return json({ ok: true, upload: { method: "PUT", url: `${PREFIX}/${encodeURIComponent(job.id)}/applications/${encodeURIComponent(applicationRef)}/uploads/${slot}?token=${encodeURIComponent(tokenValue)}`, expires_at: new Date(exp * 1000).toISOString() } });
@@ -399,14 +408,30 @@ async function acceptUpload(request, env, jobId, applicationRef, slotRaw) {
   const grant = await verifyToken(env, tokenValue, "upload");
   if (grant.job_id !== jobId || grant.application_ref !== applicationRef || Number(grant.slot) !== slot) throw httpError(403, "upload_grant_scope_mismatch");
   const contentType = clean(request.headers.get("content-type"), 80).toLowerCase();
-  const bytes = await request.arrayBuffer();
+  const limit = Number(grant.size);
+  if (!Number.isInteger(limit) || limit < 1 || limit > SHORT_MEDIA_LIMIT) throw httpError(413, "image_payload_invalid");
+  const reader = request.body?.getReader();
+  if (!reader) throw httpError(400, "upload_grant_payload_mismatch");
+  const chunks = []; let total = 0;
+  while (true) {
+    const { done, value } = await reader.read(); if (done) break;
+    total += value.byteLength;
+    if (total > limit) { await reader.cancel(); throw httpError(413, "image_payload_invalid"); }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0; for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
   if (contentType !== grant.content_type || bytes.byteLength !== Number(grant.size)) throw httpError(400, "upload_grant_payload_mismatch");
-  if (bytes.byteLength < 1 || bytes.byteLength > MAX_IMAGE_BYTES || !IMAGE_TYPES.has(contentType)) throw httpError(413, "image_payload_invalid");
-  const digest = await sha256Bytes(bytes);
-  const key = mediaKey(jobId, applicationRef, slot, IMAGE_TYPES.get(contentType));
-  await env.PUBLIC_ACCESS_EVIDENCE.put(key, bytes, { httpMetadata: { contentType }, customMetadata: { schema: "mmd_public_job_board_v2.private_media", job_id: jobId, application_ref: applicationRef, slot: String(slot), sha256: digest } });
   const application = await requireApplication(env, jobId, applicationRef);
-  application.uploads = [...application.uploads.filter((item) => Number(item.slot) !== slot), { slot, key, content_type: contentType, bytes: bytes.byteLength, sha256: digest }].sort((a, b) => a.slot - b.slot);
+  if (application.submission_status === "submitted") throw httpError(409, "application_already_submitted");
+  await requireJob(env, jobId, { publicOnly: true });
+  const short = application.form_version === SHORT_FORM_VERSION;
+  const slotMedia = short ? shortMediaSlot(slot, contentType) : null;
+  if (bytes.byteLength < 1 || bytes.byteLength > (short ? SHORT_MEDIA_LIMIT : MAX_IMAGE_BYTES) || (short ? !slotMedia : !IMAGE_TYPES.has(contentType))) throw httpError(413, "image_payload_invalid");
+  const digest = await sha256Bytes(bytes);
+  const key = mediaKey(jobId, applicationRef, slot, short ? slotMedia.extension : IMAGE_TYPES.get(contentType));
+  await env.PUBLIC_ACCESS_EVIDENCE.put(key, bytes, { httpMetadata: { contentType }, customMetadata: { schema: "mmd_public_job_board_v2.private_media", job_id: jobId, application_ref: applicationRef, slot: String(slot), sha256: digest } });
+  application.uploads = [...application.uploads.filter((item) => Number(item.slot) !== slot), { slot, ...(short ? { kind: slotMedia.kind } : {}), key, content_type: contentType, bytes: bytes.byteLength, sha256: digest }].sort((a, b) => a.slot - b.slot);
   application.updated_at = new Date().toISOString();
   await putJson(env, applicationKey(jobId, applicationRef), application);
   return json({ ok: true, upload_ref: `${applicationRef}:${slot}`, private: true });
@@ -417,6 +442,22 @@ async function submitApplication(request, env, jobId, applicationRef) {
   const { application } = await requireOwnedApplication(request, env, jobId, applicationRef);
   const job = await requireJob(env, jobId, { publicOnly: true });
   const input = await readJson(request);
+  if (application.form_version === SHORT_FORM_VERSION) {
+    if (input.form_version !== SHORT_FORM_VERSION) throw httpError(400, "form_version_mismatch");
+    const result = shortProfile(input);
+    if (result.error) throw httpError(400, result.error);
+    if (!application.uploads.some(item => Number(item.slot) >= 1 && Number(item.slot) <= 8)) throw httpError(400, "current_photo_required");
+    if (application.uploads.length > 10 || application.uploads.some(item => !shortMediaSlot(Number(item.slot), item.content_type))) throw httpError(400, "media_count_exceeded");
+    if (application.submission_status !== "submitted") {
+      application.applicant = result.profile;
+      application.media_status = "media_received";
+      application.workflow_status = "candidate_pending_owner";
+      application.submission_status = "submitted";
+      application.updated_at = new Date().toISOString();
+      await putJson(env, applicationKey(jobId, applicationRef), application);
+    }
+    return json({ ok: true, application_ref: applicationRef, status: "ได้รับข้อมูลสำหรับงานนี้แล้วครับ", media_status: application.media_status, auto_bound: false, auto_reply: false });
+  }
   const gender = token(input.gender);
   const customerScope = token(input.customer_scope);
   if (!GENDERS.has(gender)) throw httpError(400, "gender_invalid");
