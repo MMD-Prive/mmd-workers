@@ -7,6 +7,7 @@ const row=(id=client,name='Per remembered')=>({fields:{source_record_id:'owner:'
 function envFor(pages=[{records:[row()]}], direct=[{id:client}], clientLine=uid) {
  let n=0;return {AIRTABLE_API_KEY:'fixture',AIRTABLE_BASE_ID:'fixture',AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES:'s'.repeat(32),AIRTABLE_HTTP:{fetch:async request=>{
  const u=new URL(request.url);assert.equal(request.method,'GET');
+ if(u.pathname.endsWith('/Members'))return Response.json({records:[{id:'rec'+'M'.repeat(14),fields:{line_id:uid,member_id:'mmd_fixture'}}]});
  if(u.pathname.includes('tblwn6')) {assert.equal(u.searchParams.get('filterByFormula'),`{line_user_id}="${uid}"`);return Response.json(pages[n++]);}
  if(u.pathname.includes('tblOs8') || u.pathname.includes('tbl1u0'))return Response.json({records:[]});
  if(u.pathname.endsWith('/'+client))return Response.json({id:client,fields:{line_user_id:clientLine}});

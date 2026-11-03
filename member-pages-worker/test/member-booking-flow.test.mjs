@@ -13,7 +13,7 @@ async function fixture(run){
  const native=globalThis.fetch;
  globalThis.fetch=async(url,init={})=>{assert.equal(init.method||'GET','GET','test must not call a real write');assert.equal(new URL(url).hostname,'api.airtable.com');return Response.json({records:rows});};
  const env={AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES:secret,AIRTABLE_API_KEY:'fixture',AIRTABLE_BASE_ID:'fixture'};
- env.MEMBER_PAGES_WORKER={fetch:async r=>{const s=sessions[r.headers.get('cookie')?.split('=').at(-1)];return s?Response.json({ok:true,memberRef:await digest('mmd-discovery-member-v1:'+s.memberId)}):Response.json({ok:false},{status:401});}};
+ env.MEMBER_PAGES_WORKER={fetch:async r=>{const s=sessions[r.headers.get('cookie')?.split('=').at(-1)];return s?Response.json({ok:true,identity_binding_verified:true,memberRef:await digest('mmd-discovery-member-v1:'+s.memberId)}):Response.json({ok:false},{status:401});}};
  const delegate=async (r,context)=>{
   calls.push(new URL(r.url).pathname);
   if(new URL(r.url).pathname.endsWith('/search'))return Response.json({ok:searchOk,discovery_scope:'public',visibility_enforced:searchOk,items:available?[{model_id:model,scope:'public',display_name:'Fixture',primary_media_id:''}]:[]});
@@ -63,7 +63,7 @@ test('service delegates actual SIGIL search/media policy and actual intake with 
  const {default:runtime}=await import('../../sigil-booking-worker/src/runtime-index.js');
  const rows=[],native=globalThis.fetch;let writes=0;
  const env={AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES:secret,AIRTABLE_API_KEY:'fixture',AIRTABLE_BASE_ID:'fixture',AIRTABLE_TABLE_BOOKING_REQUESTS_ID:'Bookings',AIRTABLE_TABLE_MODELS_ID:'Models',AIRTABLE_TABLE_MODEL_OFFER_RULES:'Rules',AIRTABLE_TABLE_MODEL_MEDIA_ID:'Media',AIRTABLE_TABLE_MEMBERS_ID:'Members',AIRTABLE_TABLE_ENTITLEMENTS_ID:'Entitlements',TELEGRAM_NOTIFY_ENABLED:'false'};
- env.MEMBER_PAGES_WORKER={fetch:async()=>Response.json({ok:true,memberId:'member_a',memberRef:await digest('mmd-discovery-member-v1:member_a')})};
+ env.MEMBER_PAGES_WORKER={fetch:async()=>Response.json({ok:true,identity_binding_verified:true,memberId:'member_a',memberRef:await digest('mmd-discovery-member-v1:member_a')})};
  globalThis.fetch=async(input,init={})=>{
   const url=new URL(input instanceof URL?input:typeof input==='string'?input:input.url);assert.equal(url.hostname,'api.airtable.com');const table=decodeURIComponent(url.pathname.split('/')[3]||'');
   if((init.method||'GET')!=='GET'){assert.equal(table,'Bookings');writes++;const fields=JSON.parse(init.body).fields;const row={id:'recBookingFixture',fields};rows.push(row);return Response.json(row);}
@@ -91,7 +91,7 @@ test('actual Private flow reuses exact session/member lookup and current entitle
  const rows=[],native=globalThis.fetch,recordId='recMemberFixture01',entId='recEntitlement0001';let capability='private_premium',lifecycle='active',writes=0,blockedModel=false;
  const env={AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES:secret,AIRTABLE_API_KEY:'fixture',AIRTABLE_BASE_ID:'fixture',AIRTABLE_TABLE_BOOKING_REQUESTS_ID:'Bookings',AIRTABLE_TABLE_MODELS_ID:'Models',AIRTABLE_TABLE_MEMBERS_ID:'Members',AIRTABLE_TABLE_ENTITLEMENTS_ID:'Entitlements',AIRTABLE_TABLE_MODEL_OFFER_RULES:'Rules',AIRTABLE_TABLE_MODEL_MEDIA_ID:'Media',TELEGRAM_NOTIFY_ENABLED:'false'};
  const member={id:recordId,fields:{member_id:'member_a',status:'active','MMD — Member Entitlements':[entId]}};
- env.MEMBER_PAGES_WORKER={fetch:async r=>Response.json({ok:true,memberRef:await digest('mmd-discovery-member-v1:member_'+r.headers.get('cookie')?.split('=').at(-1))})};
+ env.MEMBER_PAGES_WORKER={fetch:async r=>Response.json({ok:true,identity_binding_verified:true,memberRef:await digest('mmd-discovery-member-v1:member_'+r.headers.get('cookie')?.split('=').at(-1))})};
  globalThis.fetch=async(input,init={})=>{
   const url=new URL(input instanceof URL?input:typeof input==='string'?input:input.url);assert.equal(url.hostname,'api.airtable.com');const table=decodeURIComponent(url.pathname.split('/')[3]||'');
   if((init.method||'GET')!=='GET'){assert.equal(table,'Bookings');writes++;const fields=JSON.parse(init.body).fields;const row={id:'recBookingFixture',fields};rows.push(row);return Response.json(row);}

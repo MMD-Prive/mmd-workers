@@ -49,7 +49,9 @@ export async function currentPrivateAccess(request, env, memberRecordId, verifie
         if (!Array.isArray(result.records) || result.records.length > 100) return denied;
         for (const row of result.records) {
           if (!expectedIds.has(row.id)) continue;
-          if (found.has(row.id) || !Array.isArray(row.fields?.member) || !row.fields.member.includes(memberRecordId)) return denied;
+          // A linked entitlement must have exactly one canonical owner. An inverse
+          // link to A does not authorize an ambiguous/shared [A, B] record.
+          if (found.has(row.id) || !Array.isArray(row.fields?.member) || row.fields.member.length !== 1 || row.fields.member[0] !== memberRecordId) return denied;
           found.set(row.id, row);
         }
         offset = clean(result.offset);

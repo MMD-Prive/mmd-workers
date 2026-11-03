@@ -7,7 +7,7 @@ test('authenticated Public intake notifies only the trusted Per Rename and actua
  const memberId='member_verified',recordId='recMemberFixture01',entitlementId='recEntitlement0001';
  const memberRef=Buffer.from(await crypto.subtle.digest('SHA-256',new TextEncoder().encode('mmd-discovery-member-v1:'+memberId))).toString('hex');
  const writes=[],notifications=[];
- const env={AIRTABLE_API_KEY:'fixture',AIRTABLE_BASE_ID:'fixture',AIRTABLE_TABLE_MEMBERS_ID:'Members',AIRTABLE_TABLE_ENTITLEMENTS_ID:'Entitlements',AIRTABLE_TABLE_BOOKING_REQUESTS_ID:'Bookings',AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES:'fixture-service-secret-at-least-32-characters',TELEGRAM_NOTIFY_ENABLED:'true',TELEGRAM_INTERNAL_SEND_URL:'https://telegram.fixture.invalid/internal/send',TELEGRAM_BOOKING_CHAT_ID:'fixture-chat',MEMBER_PAGES_WORKER:{fetch:async()=>Response.json({ok:true,memberId,memberRef,perRename:{source:'linked_per_rename_index_v1',per_rename:'Trusted Owner Name'}})}};
+ const env={AIRTABLE_API_KEY:'fixture',AIRTABLE_BASE_ID:'fixture',AIRTABLE_TABLE_MEMBERS_ID:'Members',AIRTABLE_TABLE_ENTITLEMENTS_ID:'Entitlements',AIRTABLE_TABLE_BOOKING_REQUESTS_ID:'Bookings',AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES:'fixture-service-secret-at-least-32-characters',TELEGRAM_NOTIFY_ENABLED:'true',TELEGRAM_INTERNAL_SEND_URL:'https://telegram.fixture.invalid/internal/send',TELEGRAM_BOOKING_CHAT_ID:'fixture-chat',MEMBER_PAGES_WORKER:{fetch:async()=>Response.json({ok:true,identity_binding_verified:true,memberId,memberRef,perRename:{source:'linked_per_rename_index_v1',per_rename:'Trusted Owner Name'}})}};
  t.mock.method(globalThis,'fetch',async(input,init={})=>{
   const url=new URL(typeof input==='string'?input:input.url);
   if(url.hostname==='telegram.fixture.invalid'){
