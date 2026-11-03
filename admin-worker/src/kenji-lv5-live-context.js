@@ -1,3 +1,4 @@
+import { readOriginalBookingEvidence, bookingEvidenceAdvisory } from "../../shared/original-booking-evidence.mjs";
 import { resolveMemberEntitlements } from "../../auth-worker/src/member-entitlement-resolver.js";
 import {
   buildKenjiLv5OperationalContext,
@@ -627,6 +628,7 @@ async function readHypeObservation(env, input = {}) {
 export function buildKenjiLv5LiveFanInProjection({
   identityResolution = {},
   client360 = {},
+  bookingConfirmations = {},
   entitlement = {},
   calendar = {},
   credit = {},
@@ -699,6 +701,7 @@ export function buildKenjiLv5LiveFanInProjection({
       telegram_identity_present: Boolean(telegramId(client.telegram_user_id)),
     },
     client_360_live: client360.data || null,
+    original_booking_confirmations: bookingEvidenceAdvisory(resolved ? bookingConfirmations : {}),
     entitlement_live: entitlementProjected,
     calendar_live: {
       date: cal.date,
@@ -737,8 +740,9 @@ export async function resolveKenjiLv5LiveContext(env = {}, input = {}) {
 
   const client = identityResolution.client;
   const date = bangkokDate(intent);
-  const [client360, entitlement, calendarResult, credit, hype] = await Promise.all([
+  const [client360, bookingConfirmations, entitlement, calendarResult, credit, hype] = await Promise.all([
     readClient360(env, client.canonical_client_id),
+    readOriginalBookingEvidence(env, client.canonical_client_id),
     readEntitlement(env, client),
     readAdminCalendar(env, date)
       .then((data) => ({ ...(data || {}), ok: true }))
@@ -750,6 +754,7 @@ export async function resolveKenjiLv5LiveContext(env = {}, input = {}) {
   return buildKenjiLv5LiveFanInProjection({
     identityResolution,
     client360,
+    bookingConfirmations,
     entitlement,
     calendar: calendarResult,
     credit,
