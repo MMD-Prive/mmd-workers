@@ -1,3 +1,4 @@
+import { jobBoardCandidateReview } from '../../admin-worker/src/job-board-candidate-review.js';
 export interface InternalPageEnv {
   ADMIN_WORKER_BASE_URL?: string;
   PUBLIC_WEB_BASE_URL?: string;
@@ -392,6 +393,7 @@ export function renderJobBoardPage(): Response {
       <div class="links"><div class="linkRow"><div><span>ส่งลิงก์นี้ให้โมเดล</span><a id="job-board-link" href="#" target="_blank" rel="noreferrer"></a></div></div></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button class="btn soft" id="job-board-copy" type="button" disabled>Copy Link</button><button class="btn" id="job-board-open" type="button" disabled>เปิดประกาศ</button></div>
     </section>
+  ${jobBoardCandidateReview()}
   </main><script>${jobBoardScript}</script></section>`);
 }
 
