@@ -286,7 +286,8 @@ test("owner receipt upload requires amount, completes task, calls LINE notifier,
   }
 });
 
-test("refund receipt upload sends owner Telegram completed pack with customer, admin, and model URLs", async () => {
+for (const modelName of ["Film J", null]) {
+test("refund completed pack uses only the recorded model: " + (modelName || "unknown"), async () => {
   const originalFetch = globalThis.fetch;
   const objects = new Map();
   const telegramCalls = [];
@@ -303,7 +304,7 @@ test("refund receipt upload sends owner Telegram completed pack with customer, a
         purpose:"refund",
         job_id:"JOB-FILM-J-20260929",
         session_id:"sess_film_j",
-        model_name:"Film J",
+        ...(modelName ? { model_name: modelName } : {}),
         customer_name:"คุณ SVIP",
         refund_amount_due:"4500",
         refund_currency:"THB",
@@ -381,7 +382,7 @@ test("refund receipt upload sends owner Telegram completed pack with customer, a
     assert.equal(filmJUrl.hostname, "miniapp.line.me");
     assert.equal(filmJUrl.pathname, "/2010864854-N34SgCqq/");
     assert.equal(filmJUrl.searchParams.get("source"), "refund_completed_pack");
-    assert.equal(filmJUrl.searchParams.get("model_alias"), "Film J");
+    assert.equal(filmJUrl.searchParams.get("model_alias"), modelName);
     assert.equal(filmJUrl.searchParams.get("lang"), "th");
     assert.equal(filmJUrl.searchParams.get("return_to"), "/sigil/confirm/job-model?t=film-j-signed");
     assert.equal(filmJUrl.searchParams.has("intent"), false);
@@ -395,13 +396,13 @@ test("refund receipt upload sends owner Telegram completed pack with customer, a
     assert.match(sent.text, /HYPE · REFUND COMPLETED/);
     assert.match(sent.text, /Customer receipt URL/);
     assert.match(sent.text, /Admin job URL/);
-    assert.match(sent.text, /Model job\/app URL for Film J/);
+    assert.ok(sent.text.includes("Model job/app URL for " + (modelName || "โมเดลของงานนี้")));
     assert.match(sent.text, /ส่งเฉพาะ Model job\/app URL ให้น้อง/);
     assert.equal(sent.reply_markup.inline_keyboard.length, 4);
     assert.equal(sent.reply_markup.inline_keyboard[0][0].text, "Customer receipt");
     assert.equal(sent.reply_markup.inline_keyboard[1][0].text, "Customer job/confirm");
     assert.equal(sent.reply_markup.inline_keyboard[2][0].text, "Open admin job");
-    assert.equal(sent.reply_markup.inline_keyboard[3][0].text, "Send to Film J");
+    assert.equal(sent.reply_markup.inline_keyboard[3][0].text, "Send to " + (modelName || "โมเดลของงานนี้"));
     const stored = JSON.parse(record.fields.payload_json);
     assert.equal(stored.owner_telegram_delivery_status, "sent");
     assert.equal(stored.owner_telegram_message_id, 99);
@@ -413,6 +414,8 @@ test("refund receipt upload sends owner Telegram completed pack with customer, a
     globalThis.fetch = originalFetch;
   }
 });
+
+}
 
 
 test("refund owner page renders a clickable upload trigger and well-formed reference field", async () => {
@@ -1006,3 +1009,4 @@ test("recovery persists LINE 429 quota diagnosis without duplicating HYPE", asyn
     globalThis.fetch=originalFetch;
   }
 });
+
