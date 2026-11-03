@@ -1,0 +1,38 @@
+{
+  "status": "PROPOSAL_ONLY_NOT_APPLIED",
+  "configSha256": "eba5dba0708969a7544692e0d47d2704df8d12b63122b8bb15dabe845d3233fd",
+  "head": "32f4260760a0a65516ebcbf060986dfa273fc957",
+  "binding": {
+    "name": "MMS_THERAPIST_PROFILES",
+    "class_name": "MmsTherapistProfileCoordinator"
+  },
+  "migration": {
+    "tag": "v6-mms-therapist-profile",
+    "new_sqlite_classes": [
+      "MmsTherapistProfileCoordinator"
+    ]
+  },
+  "tagProvisional": true,
+  "actualConfigurationChanged": false,
+  "liveNamespacesRead": false,
+  "liveMigrationTagRead": false,
+  "validation": {
+    "bindingAdds": 1,
+    "migrationAdds": 1,
+    "existingBindingsUnchanged": true,
+    "existingMigrationsUnchanged": true,
+    "otherKeysUnchanged": true,
+    "productionVerified": false
+  },
+  "patchApplyCheck": "PASS, read-only",
+  "prohibited": [
+    "new routes",
+    "secret changes",
+    "existing namespace replacement",
+    "migration history rewrite",
+    "namespace deletion",
+    "R2 backfill",
+    "exports lifecycle conversion"
+  ],
+  "head_is": "PR base commit, not a deployed version"
+}

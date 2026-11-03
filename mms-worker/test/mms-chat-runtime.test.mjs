@@ -1,3 +1,5 @@
+import {memoryR2Object,r2ConditionMatches} from "./helpers/profile-coordinator-fixture.mjs";
+import {handleMmsTherapistProfileRequest} from "../src/therapist-profile-runtime.mjs";
 import assert from 'node:assert/strict';
 import { sqliteTest as test } from './helpers/mms-chat-fixture.mjs';
 import { maybeHandleMmsChat } from '../src/mms-chat-runtime.mjs';
@@ -216,4 +218,28 @@ test('private test pair chats both ways with matching off and a hidden offline p
     assert.equal(JSON.stringify(f.record), original);
     assert.ok(f.calls.every(c => !c.init?.method || c.init.method === 'GET'));
   } finally { f.restore(); }
+});
+
+test('directory candidate captured before owner commit uses the new coherent name, zones and manifest',async()=>{
+ const f=fixture();
+ try {
+  await accept(f.env);
+  f.zones.push({id:'recZone000000002',fields:{'Zone Code':'BKK-NEW','Province Code':'BKK','Province TH':'กรุงเทพฯ','Zone Name TH':'เขตจำลองใหม่',Active:true}});
+  const objects=new Map([[`therapist-dashboard/v1/${THERAPIST.id}/profile.json`,JSON.stringify(f.manifest)]]);
+  f.env.MMS_PRIVATE_UPLOADS={async get(k){return memoryR2Object(objects.get(k));},async put(k,v,o={}){if(!r2ConditionMatches(objects.get(k),o))return null;objects.set(k,v);return memoryR2Object(v,o);}};
+  const previous=globalThis.fetch;let changed=false;
+  globalThis.fetch=async(input,init={})=>{
+   const url=new URL(String(input));
+   if(init.method==='PATCH'){Object.assign(f.record.fields,JSON.parse(init.body).fields);return Response.json(f.record);}
+   const response=await previous(input,init);
+   if(!changed&&url.searchParams.has('pageSize')){
+    changed=true;
+    const update=await handleMmsTherapistProfileRequest(new Request(ORIGIN+'/male-massage/therapists/api/auth/profile',{method:'PUT',headers:{Origin:ORIGIN,Cookie:cookie(f.env),'Content-Type':'application/json','X-Profile-Revision':'0','X-Profile-Operation-Id':crypto.randomUUID()},body:JSON.stringify({display_name:'Updated fixture',intro:'Updated introduction',base_service_zone_code:'BKK-NEW',coverage_service_zone_codes:['BKK-NEW']})}),f.env);
+    assert.equal(update.status,200);
+   }
+   return response;
+  };
+  const response=await call(f.env,'/therapists?zone=BKK-NEW');assert.equal(response.status,200);
+  const entry=(await response.json()).data.therapists[0];assert.ok(entry);assert.equal(entry.display_name,'Updated fixture');assert.equal(entry.intro,'Updated introduction');assert.deepEqual(entry.zones,['BKK-NEW']);
+ }finally{f.restore();}
 });

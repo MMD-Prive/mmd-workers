@@ -1,4 +1,5 @@
 import { MMS_MAX_COVERAGE_ZONES } from "../../shared/mms-service-zone-policy.mjs";
+export const MAX_COVERAGE_ZONES = MMS_MAX_COVERAGE_ZONES;
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const PUBLIC_PATH = "/mms/api/service-zones";
 const APP_PATH = "/male-massage/therapists/api/app/service-zones";
@@ -65,6 +66,7 @@ export async function loadMmsServiceZoneIndex(env = {}) {
   for (const record of records) {
     const projected = zoneProjection(record);
     if (!projected.code) continue;
+    if(byCode.has(projected.code)||byRecordId.has(String(record.id||"")))throw serviceZoneError(503,"SERVICE_ZONE_CATALOG_CONFLICT");
     byRecordId.set(String(record.id || ""), projected);
     byCode.set(projected.code, { ...projected, record_id: String(record.id || "") });
   }
@@ -95,7 +97,7 @@ async function listActiveServiceZones(env) {
     if (!response.ok) throw serviceZoneError(503, `AIRTABLE_SERVICE_ZONES_${response.status}`);
     const payload = await response.json().catch(() => null);
     if (!payload || !Array.isArray(payload.records)) throw serviceZoneError(503, "AIRTABLE_SERVICE_ZONES_INVALID_RESPONSE");
-    records.push(...payload.records);
+    records.push(...payload.records.filter(record=>record?.fields?.Active===true));
     offset = clean(payload.offset, 240);
     if (!offset) break;
   }
@@ -220,5 +222,6 @@ export const mmsServiceZoneContract = Object.freeze({
   paths: Object.freeze([PUBLIC_PATH, APP_PATH]),
   province_order: PROVINCE_ORDER,
   canonical_table: "MMS Service Zones",
+  max_coverage_zones: MAX_COVERAGE_ZONES,
   selection: Object.freeze({ customer: "one active service zone", therapist_base: "one active service zone", therapist_coverage: "one or more active service zones" }),
 });

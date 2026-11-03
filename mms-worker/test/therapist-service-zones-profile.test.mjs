@@ -1,4 +1,5 @@
-import test from "node:test";
+import test, {beforeEach} from "node:test";
+import {memoryProfileNamespace,memoryR2Object,r2ConditionMatches} from "./helpers/profile-coordinator-fixture.mjs";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 
@@ -38,6 +39,8 @@ const env = {
   MMS_PRIVATE_UPLOADS: { async get() { return null; }, async put() { return {etag:"fixture-write"}; } },
 };
 
+beforeEach(()=>{env.MMS_THERAPIST_PROFILES=memoryProfileNamespace(env);});
+
 function sessionCookie() {
   const now = Math.floor(Date.now() / 1000);
   const encoded = Buffer.from(JSON.stringify({ v: 1, role: "mms_therapist", therapist_id: THERAPIST_ID, line_binding: createHmac('sha256', SECRET).update('mms-therapist-line-binding-v1.server-side-hash-only').digest('hex'), iat: now, exp: now + 600 })).toString("base64url");
@@ -47,7 +50,8 @@ function sessionCookie() {
 
 function installFetchMock() {
   const originalFetch = globalThis.fetch;
-  const patches = [];
+  const patches = [],objects=new Map();
+  env.MMS_PRIVATE_UPLOADS={async get(k){return memoryR2Object(objects.get(k));},async put(k,v,o={}){if(!r2ConditionMatches(objects.get(k),o))return null;objects.set(k,v);return memoryR2Object(v,o);}};
   globalThis.fetch = async (input, init = {}) => {
     const url = new URL(String(input));
     if (url.pathname.endsWith("/" + env.AIRTABLE_SERVICE_ZONES_TABLE_ID)) return Response.json({ records: zones });
@@ -66,6 +70,8 @@ async function call(method, body) {
   const request = new Request(ORIGIN + "/male-massage/therapists/api/auth/profile", {
     method,
     headers: {
+      "X-Profile-Operation-Id":crypto.randomUUID(),
+      "X-Profile-Revision":String(env.MMS_THERAPIST_PROFILES.revision(THERAPIST_ID)),
       Origin: ORIGIN,
       Cookie: sessionCookie(),
       ...(body ? { "Content-Type": "application/json" } : {}),
@@ -164,15 +170,15 @@ test('course validation and R2 failure produce no fabricated success',async()=>{
     for(const course of [{name:'',duration_minutes:90,price_thb:4500},{name:'Aroma',duration_minutes:35,price_thb:4500},{name:'Aroma',duration_minutes:90,price_thb:-1}]){
       assert.equal((await call('PUT',{courses:[course]})).status,400);
     }assert.equal(writes,0);
-    const onlyR2=await call('PUT',{intro:'Fixture intro'});assert.equal(onlyR2.status,503);assert.equal((await onlyR2.json()).error.code,'PROFILE_SAVE_UNCONFIRMED');
-    const partial=await call('PUT',{display_name:'Fixture updated',intro:'Fixture intro'});assert.equal(partial.status,503);assert.equal((await partial.json()).error.code,'PROFILE_PARTIALLY_SAVED');assert.equal(mock.patches.length,1);
+    const onlyR2=await call('PUT',{intro:'Fixture intro'});assert.equal(onlyR2.status,503);assert.equal((await onlyR2.json()).error.code,'PROFILE_SAVE_INCOMPLETE');
+    const partial=await call('PUT',{display_name:'Fixture updated',intro:'Fixture intro'});assert.equal(partial.status,409);assert.equal((await partial.json()).error.code,'PROFILE_OPERATION_PENDING');assert.equal(mock.patches.length,0);
   }finally{env.MMS_PRIVATE_UPLOADS=storage;mock.restore();}
 });
 test('uncertain Airtable write stops before R2 and directs readback',async()=>{
   const original=globalThis.fetch,storage=env.MMS_PRIVATE_UPLOADS;let puts=0;
   env.MMS_PRIVATE_UPLOADS={async get(){return null;},async put(){puts++;}};
   globalThis.fetch=async(input,init={})=>{if(init.method==='PATCH')throw Error('fixture lost response');return Response.json({records:[therapist]});};
-  try{const res=await call('PUT',{display_name:'Fixture name',intro:'Fixture intro'});assert.equal(res.status,503);assert.equal((await res.json()).error.code,'PROFILE_SAVE_UNCONFIRMED');assert.equal(puts,0);}
+  try{const res=await call('PUT',{display_name:'Fixture name',intro:'Fixture intro'});assert.equal(res.status,503);assert.equal((await res.json()).error.code,'PROFILE_OPERATION_UNCERTAIN');assert.equal(puts,0);}
   finally{globalThis.fetch=original;env.MMS_PRIVATE_UPLOADS=storage;}
 });
 test('unchanged profile does not rewrite storage',async()=>{
@@ -183,7 +189,7 @@ test('unchanged profile does not rewrite storage',async()=>{
 });
 test('photos and existing courses survive an unrelated update; read/write retry uses actual stored state',async()=>{
   const mock=installFetchMock(),storage=env.MMS_PRIVATE_UPLOADS;
-  let manifest={version:1,intro:'',profile_visibility:'hidden',courses:[{name:'Women Massage',duration_minutes:90,price_thb:4500}],photos:[{id:'ph_'+'a'.repeat(24),key:'fixture/photo',file_name:'fixture.jpg'}],public_photo_ids:[]};
+  let manifest={version:1,intro:'',profile_visibility:'hidden',courses:[{name:'Women Massage',duration_minutes:90,price_thb:4500}],photos:[{id:'ph_'+'a'.repeat(24),key:`therapist-dashboard/v1/${THERAPIST_ID}/photos/ph_${'a'.repeat(24)}`,file_name:'fixture.jpg'}],public_photo_ids:[]};
   env.MMS_PRIVATE_UPLOADS={async get(){return {etag:"fixture-read",text:async()=>JSON.stringify(manifest)};},async put(key,value){manifest=JSON.parse(value);return {etag:"fixture-write"};}};
   try{assert.equal((await call('PUT',{intro:'Updated intro'})).status,200);assert.equal(manifest.photos.length,1);assert.equal(manifest.courses[0].price_thb,4500);const res=await call('GET');assert.equal((await res.json()).data.intro,'Updated intro');}
   finally{mock.restore();env.MMS_PRIVATE_UPLOADS=storage;}

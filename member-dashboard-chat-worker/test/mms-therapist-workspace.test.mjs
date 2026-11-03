@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
+import {fixture as profileFixture, IDS as profileIds, key as profileKey} from '../../mms-worker/test/helpers/therapist-profile-fixture.mjs';
+import {maybeHandleMmsServiceZones} from '../../mms-worker/src/service-zones-runtime.mjs';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { maybeHandleTherapistWorkspace, renderTherapistWorkspace, therapistClient, THERAPIST_AI_LOGO_PATH } from '../src/mms-therapist-workspace.js';
@@ -147,19 +149,18 @@ class Element {
   querySelector(){return this.submit || null;}
   async click(){if(!this.disabled){if(this.onclick)await this.onclick();if(this.listeners.click)await this.listeners.click();}}
 }
-function clientHarness({access={therapist_id:'fixture-A',can_open:true,matching_enabled:true,verified_skills:['Sport'],availability_status:'Available',display_name:'Boss'},failure=null,responses={},graphics=null}={}) {
-  const ids=['notice','entry','workspace','line-login','greeting','readiness','availability','save-availability','refresh','retry','offers','jobs','profile','offer-list','job-list','profile-form','display-name','intro','base-zone','coverage-zones','zone-status','visibility','courses','photos','upload','save-photos','add-course','logout','detail','save-profile','profile-save-status','verified-services','profile-info','profile-courses','profile-zones','profile-photos','zone-search','zone-summary','retry-zones','course-empty'];
-  const els=Object.fromEntries(ids.map(id=>[id,new Element()]));els.workspace.hidden=true;
-  els['profile-form'].submit=new Element('button');
+function clientHarness({access={therapist_id:'recTestTherapist',can_open:true,matching_enabled:true,verified_skills:['Sport'],availability_status:'Available',display_name:'Boss'},failure=null,profileOverride={},respond=null,responses={},graphics=null}={}) {
+  const ids=['notice','entry','workspace','line-login','greeting','readiness','availability','save-availability','refresh','retry','offers','jobs','profile','offer-list','job-list','profile-form','display-name','intro','base-zone','coverage-zones','zone-status','visibility','courses','photos','upload','save-photos','add-course','logout','detail','zone-retry','zone-toggle','zone-editor','zone-conflict','zone-conflict-copy','zone-conflict-confirm','zone-summary','zone-search','zone-search-state','profile-state','profile-fields','profile-submit'];
+  const els=Object.fromEntries(ids.map(id=>[id,new Element()]));els.workspace.hidden=true;els['profile-form'].hidden=true;
+  els['profile-form'].submit=els['profile-submit']||new Element('button');
   const tabs=['offers','jobs','profile'].map(tab=>{const el=new Element('button');el.dataset.tab=tab;return el;});
   const jobId='mmsjob_'+'a'.repeat(24);let state='OFFERED';const calls=[];
   let failed=false;
   const context={document:{getElementById:id=>els[id],createElement:tag=>new Element(tag),querySelector:()=>({dataset:{login:'false'}}),querySelectorAll:selector=>selector==='[data-tab]'?tabs:[]},fetch:async(url,options={})=>{
-    calls.push({url,options});let data;
-    const override=responses[url.split('/').at(-1)]; if(override) return await override(url,options);
+    calls.push({url,options});const response=await respond?.(url,options);if(response!==undefined)return response;const override=responses[url.split('/').at(-1)];if(override)return override(url,options);let data;
     if(url.endsWith('/access'))data=access;
     else if(url.endsWith('/availability'))data={...access,availability_status:JSON.parse(options.body).availability_status};
-    else if(url.endsWith('/profile'))data={therapist_id:access.therapist_id,display_name:'Boss',intro:'',profile_visibility:'hidden',service_zones:{base_service_zone_code:'BKK-PATHUMWAN',coverage_service_zone_codes:['BKK-PATHUMWAN']},courses:[],photos:[]};
+    else if(url.endsWith('/profile'))data={therapist_id:'recTestTherapist',limits:{coverage_service_zones:45,courses:8},display_name:'Boss',intro:'',profile_visibility:'hidden',service_zone_conflicts:{unresolved_base_count:0,unresolved_coverage_count:0,base_not_in_coverage:false},service_zones:{base_service_zone_code:'BKK-PATHUMWAN',coverage_service_zone_codes:['BKK-PATHUMWAN']},courses:[],photos:[],...profileOverride};
     else if(url.endsWith('/service-zones'))data={zones:[{code:'BKK-PATHUMWAN',label_th:'ปทุมวัน',province_label_th:'กรุงเทพฯ'},{code:'BKK-SILOM',label_th:'สีลม',province_label_th:'กรุงเทพฯ'}]};
     else if(url.endsWith('/offers'))data=[{jobId,state,serviceLabel:'Sport',expiresAt:new Date(Date.now()+60000).toISOString()}];
     else if(url.endsWith('/jobs'))data=state==='OFFERED'?[]:[{jobId,state,serviceLabel:'Sport'}];
@@ -170,8 +171,11 @@ function clientHarness({access={therapist_id:'fixture-A',can_open:true,matching_
     else throw new Error('unmocked '+url);
     return Response.json({ok:true,data});
   },Response,URLSearchParams,Date,Map,Set,Array,Object,Number,String,JSON,setTimeout,clearTimeout,AbortController,crypto:globalThis.crypto,location:{assign(){},replace(){},pathname:path+'/app',href:origin+path+'/app',hash:''},history:{replaceState(){}},window:{confirm:()=>true,MmsGraphics:graphics}};
-  vm.runInNewContext('('+therapistClient.toString()+')(45)',context);
-  return {els,tabs,calls,jobId,access,get state(){return state;}};
+  const pendingRequests=new Set(),originalClientFetch=context.fetch;
+  context.fetch=(...args)=>{const promise=originalClientFetch(...args);pendingRequests.add(promise);return promise.finally(()=>pendingRequests.delete(promise));};
+  async function idle(){do{await Promise.allSettled([...pendingRequests]);await settle();}while(pendingRequests.size);}
+  vm.runInNewContext('('+therapistClient.toString()+')()',context);
+  return {els,tabs,calls,jobId,idle,access,get state(){return state;}};
 }
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
 function findButton(panel,label){return panel.children.find(el=>el.tag==='button'&&el.textContent===label);}
@@ -201,16 +205,150 @@ test('profile saves service area codes through the authenticated profile API',as
   const h=clientHarness();await settle();await h.tabs[2].click();
   assert.equal(h.els['base-zone'].value,'BKK-PATHUMWAN');
   assert.match(h.els['zone-status'].textContent,/สูงสุด 45 เขต/);
-  h.els['base-zone'].value='BKK-SILOM'; h.els['base-zone'].onchange();
+  h.els['base-zone'].value='BKK-SILOM';
   const checkboxes=h.els['coverage-zones'].querySelectorAll('[data-service-zone]');
   checkboxes.find(check=>check.dataset.serviceZone==='BKK-SILOM').checked=true;
   await h.els['profile-form'].onsubmit({preventDefault(){}}); await settle();
   const call=h.calls.filter(item=>item.url.endsWith('/profile')&&item.options.method==='PUT').at(-1);
   assert.deepEqual(JSON.parse(call.options.body).base_service_zone_code,'BKK-SILOM');
   assert.deepEqual(JSON.parse(call.options.body).coverage_service_zone_codes,['BKK-PATHUMWAN','BKK-SILOM']);
-  assert.match(h.els.notice.textContent,/บันทึกโปรไฟล์/);
+  assert.match(h.els.notice.textContent,/บันทึกโปรไฟล์แล้ว/);
 });
 
+
+test('name-only profile save omits canonical zones and never sends matching or availability',async()=>{
+  const h=clientHarness();await settle();await h.tabs[2].click();
+  h.els['display-name'].value='Edited local fixture';
+  await h.els['profile-form'].onsubmit({preventDefault(){}});await settle();
+  const payload=JSON.parse(h.calls.find(c=>c.url.endsWith('/profile')&&c.options.method==='PUT').options.body);
+  assert.equal(payload.display_name,'Edited local fixture');
+  for(const field of ['base_service_zone_code','coverage_service_zone_codes','matching_enabled','availability_status','verified_skills'])assert.equal(Object.hasOwn(payload,field),false);
+});
+test('profile tab navigation preserves an unsaved course draft without fetching again',async()=>{
+  const h=clientHarness();await settle();await h.tabs[2].click();h.els['display-name'].value='Unsaved';
+  await h.tabs[0].click();await h.tabs[2].click();assert.equal(h.els['display-name'].value,'Unsaved');
+  assert.equal(h.calls.filter(c=>c.url.endsWith('/profile')).length,1);
+});
+
+for(const profileOverride of [{therapist_id:'different-owner'},{courses:[{name:'Bad',duration_minutes:0,price_thb:4500}]},{courses:null}])test('invalid or cross-account profile response is not presented as an editable empty profile '+JSON.stringify(profileOverride),async()=>{
+  const h=clientHarness({profileOverride});await settle();await h.tabs[2].click();
+  assert.equal(h.els['profile-form'].hidden,true);
+  assert.equal(h.els.notice.className,'error');
+  assert.equal(h.calls.some(c=>c.options.method==='PUT'),false);
+});
+
+
+for (const profileOverride of [
+  {service_zones:null,service_zone_conflicts:null},
+  {limits:{photos:12,courses:8}},
+]) test('unknown zone snapshot or legacy limit locks only zone writes '+JSON.stringify(profileOverride),async()=>{
+  const h=clientHarness({profileOverride});await settle();await h.tabs[2].click();
+  assert.equal(h.els['profile-form'].hidden,false,'ordinary profile remains editable');
+  assert.equal(h.els['base-zone'].dataset.ready,'false');
+  assert.equal(h.els['zone-toggle'].disabled,true);
+  assert.equal(h.els['zone-retry'].hidden,false);
+  h.els['base-zone'].value='BKK-SILOM';
+  for(const el of h.els['coverage-zones'].querySelectorAll('[data-service-zone]'))el.checked=el.dataset.serviceZone==='BKK-SILOM';
+  h.els['display-name'].value='Name draft';await h.els['add-course'].click();
+  const course=h.els.courses.children[0];for(const el of course.querySelectorAll('[data-field]'))el.value=({name:'Women Massage',duration_minutes:'90',price_thb:'4500'})[el.dataset.field];
+  h.els['profile-form'].onsubmit({preventDefault(){}});await settle();
+  const body=JSON.parse(h.calls.find(c=>c.options.method==='PUT').options.body);
+  assert.equal(body.display_name,'Name draft');assert.equal(body.courses[0].price_thb,4500);
+  assert.equal(Object.hasOwn(body,'base_service_zone_code'),false);
+  assert.equal(Object.hasOwn(body,'coverage_service_zone_codes'),false);
+});
+
+test('zone recovery reads saved baseline without replacing unrelated unsaved draft',async()=>{
+  const profileOverride={service_zones:null,service_zone_conflicts:null};
+  const h=clientHarness({profileOverride});await settle();await h.tabs[2].click();
+  h.els['display-name'].value='Unsaved name';h.els.intro.value='Unsaved intro';await h.els['add-course'].click();
+  for(const el of h.els.courses.children[0].querySelectorAll('[data-field]'))el.value=({name:'Aroma Therapy Oil Massage',duration_minutes:'90',price_thb:'4500'})[el.dataset.field];
+  profileOverride.service_zones={base_service_zone_code:'BKK-PATHUMWAN',coverage_service_zone_codes:['BKK-PATHUMWAN']};
+  profileOverride.service_zone_conflicts={unresolved_base_count:0,unresolved_coverage_count:0,base_not_in_coverage:false};
+  await h.els['zone-retry'].click();
+  assert.equal(h.els['base-zone'].dataset.ready,'true');assert.equal(h.els['base-zone'].value,'BKK-PATHUMWAN');
+  assert.equal(h.els['display-name'].value,'Unsaved name');assert.equal(h.els.intro.value,'Unsaved intro');
+  assert.equal(h.els.courses.children[0].querySelectorAll('[data-field]')[0].value,'Aroma Therapy Oil Massage');
+});
+
+test('catalog changing after profile read cannot silently discard saved zones',async()=>{
+  const h=clientHarness({profileOverride:{service_zones:{base_service_zone_code:'BKK-REMOVED',coverage_service_zone_codes:['BKK-REMOVED']}}});
+  await settle();await h.tabs[2].click();assert.equal(h.els['base-zone'].dataset.ready,'false');
+  h.els['profile-form'].onsubmit({preventDefault(){}});await settle();
+  const body=JSON.parse(h.calls.find(c=>c.options.method==='PUT').options.body);assert.equal(Object.hasOwn(body,'coverage_service_zone_codes'),false);
+});
+
+test('known inactive links need explicit replacement confirmation; unrelated edits preserve them',async()=>{
+  const h=clientHarness({profileOverride:{service_zone_conflicts:{unresolved_base_count:0,unresolved_coverage_count:1,base_not_in_coverage:false}}});
+  await settle();await h.tabs[2].click();
+  h.els['profile-form'].onsubmit({preventDefault(){}});await settle();
+  assert.equal(Object.hasOwn(JSON.parse(h.calls.find(c=>c.options.method==='PUT').options.body),'coverage_service_zone_codes'),false);
+  for(const el of h.els['coverage-zones'].querySelectorAll('[data-service-zone]'))el.checked=true;
+  const before=h.calls.filter(c=>c.options.method==='PUT').length;
+  h.els['profile-form'].onsubmit({preventDefault(){}});await settle();assert.equal(h.calls.filter(c=>c.options.method==='PUT').length,before);
+  h.els['zone-conflict-confirm'].checked=true;h.els['profile-form'].onsubmit({preventDefault(){}});await settle();
+  assert.equal(h.calls.filter(c=>c.options.method==='PUT').length,before+1);
+});
+
+for(const status of [401,403])for(const malformed of [false,true])test('profile denial clears private fields and prevents stale edits '+status+' malformed='+malformed,async()=>{
+  let denied=false;const h=clientHarness({respond:(url)=>denied&&url.endsWith('/profile')?(malformed?new Response('<html>Access denied</html>',{status}):Response.json({ok:false,error:{code:'THERAPIST_ACCESS_DENIED'}},{status})):undefined});
+  await settle();await h.tabs[2].click();h.els.intro.value='Private draft';
+  denied=true;h.els['profile-form'].onsubmit({preventDefault(){}});await settle();
+  assert.equal(h.els.workspace.hidden,true);assert.equal(h.els['profile-form'].hidden,true);assert.equal(h.els.intro.value,'');
+});
+
+for(const pendingMethod of ['GET','PUT'])test('late account A profile response cannot replace account B '+pendingMethod,async()=>{
+  const access={therapist_id:'recTestTherapist',can_open:true,matching_enabled:false,verified_skills:[],availability_status:'Paused',display_name:'Fixture A'};
+  let release,held=false;
+  const data=(id)=>({therapist_id:id,display_name:id,intro:id,profile_visibility:'hidden',limits:{coverage_service_zones:45},courses:[],photos:[],service_zones:null});
+  const h=clientHarness({access,respond:(url,options)=>{
+    if(!url.endsWith('/profile'))return;
+    const owner=access.therapist_id;
+    if(owner==='recTestTherapist'&&(options.method||'GET')===pendingMethod&&!held){held=true;return new Promise(resolve=>{release=()=>resolve(Response.json({ok:true,data:data(owner)}));});}
+    return Response.json({ok:true,data:data(owner)});
+  }});
+  await settle();const initial=h.tabs[2].click();await settle();
+  if(pendingMethod==='PUT'){await initial;h.els.intro.value='Private A draft';h.els['profile-form'].onsubmit({preventDefault(){}});await settle();}
+  access.therapist_id='fixture-b';access.display_name='Fixture B';await h.els.refresh.click();
+  assert.equal(h.els['display-name'].value,'fixture-b');release();await settle();await initial;
+  assert.equal(h.els['display-name'].value,'fixture-b');assert.equal(h.els.intro.value,'fixture-b');
+  assert.equal(h.els.notice.textContent.includes('บันทึกโปรไฟล์แล้ว'),false);
+});
+
+test('client payload reaches real profile handler and readback with 45 zones and lost acknowledgement retry',async(t)=>{
+  const f=profileFixture(t), peer=f.objects.get(profileKey(profileIds[1]));
+  const access={therapist_id:profileIds[0],can_open:true,matching_enabled:false,manual_review_only:true,verified_skills:['Aroma Therapy Oil Massage'],availability_status:'Unavailable',display_name:'Local fixture'};
+  const h=clientHarness({access,respond:async(url,options)=>{
+    if(url.endsWith('/service-zones'))return maybeHandleMmsServiceZones(new Request(origin+url),f.env);
+    if(!url.endsWith('/profile'))return;
+    const {status,...body}=await f.call(options.method||'GET',options.body?JSON.parse(options.body):undefined,{strict:true,headers:options.headers});
+    return Response.json(body,{status});
+  }});
+  await settle();await h.tabs[2].click();assert.equal(h.els['base-zone'].dataset.ready,'true');
+  assert.equal(h.els['coverage-zones'].querySelectorAll('[data-service-zone]').filter(c=>c.checked).length,45);
+  f.failure.catalog=true;
+  // Force a fresh profile read, then recover only zones without losing course draft.
+  await h.els['zone-retry'].click();assert.equal(h.els['base-zone'].dataset.ready,'false');
+  h.els['display-name'].value='Local name draft';h.els.intro.value='Local intro draft';
+  for(const el of h.els.courses.children[0].querySelectorAll('[data-field]'))el.value=({name:'Aroma Therapy Oil Massage',duration_minutes:'90',price_thb:'4500'})[el.dataset.field];
+  f.failure.catalog=false;await h.els['zone-retry'].click();assert.equal(h.els['display-name'].value,'Local name draft');
+  const changed=h.els['coverage-zones'].querySelectorAll('[data-service-zone]');
+  changed.find(c=>c.dataset.serviceZone==='BKK-ZONE44').checked=false;changed.find(c=>c.dataset.serviceZone==='BKK-ZONE45').checked=true;
+  f.failure.put='after';h.els['profile-form'].onsubmit({preventDefault(){}});
+  await h.idle();
+  assert.match(h.els.notice.textContent,/บันทึกข้อมูลได้ไม่ครบ/);assert.equal(h.els['display-name'].value,'Local name draft');
+  f.failure.put=null;h.els['profile-form'].onsubmit({preventDefault(){}});
+  await h.idle();
+  assert.match(h.els.notice.textContent,/บันทึกโปรไฟล์แล้ว/);
+  const result=await f.call();assert.equal(result.status,200);assert.equal(result.data.display_name,'Local name draft');
+  assert.equal(result.data.service_zones.coverage_service_zone_codes.length,45);
+  assert.ok(result.data.service_zones.coverage_service_zone_codes.includes('BKK-ZONE45'));
+  assert.ok(!result.data.service_zones.coverage_service_zone_codes.includes('BKK-ZONE44'));
+  assert.equal(result.data.courses[0].price_thb,4500);assert.equal(result.data.courses[0].duration_minutes,90);
+  assert.equal(result.data.photos.length,1);assert.equal(f.objects.get(profileKey(profileIds[1])),peer);
+  assert.equal(f.records[0].fields['Matching Enabled'],false);assert.equal(f.records[0].fields['Manual Review Only'],true);
+  assert.equal(f.records[0].fields['Availability Status'],'Unavailable');
+});
 
 test('bare LIFF endpoint and callbacks use native login', async () => {
   const env={MMS_THERAPIST_UI_SOURCE:'native'};
@@ -305,6 +443,27 @@ test('choosing LINE again after logout never reuses the prior access invite', as
   assert.equal(h.requests.length,0);
 });
 
+test('revision conflict retains visible draft and sends its original backend revision',async()=>{
+ let conflicting=false;
+ const h=clientHarness({profileOverride:{profile_revision:7},respond:(url,options)=>conflicting&&url.endsWith('/profile')&&options.method==='PUT'?Response.json({ok:false,error:{code:'PROFILE_REVISION_CONFLICT'}},{status:409}):undefined});
+ await settle();await h.tabs[2].click();h.els['display-name'].value='Unsaved concurrent name';h.els.intro.value='Keep draft';conflicting=true;
+ h.els['profile-form'].onsubmit({preventDefault(){}});await settle();await settle();
+ const put=h.calls.find(c=>c.options.method==='PUT');assert.equal(put.options.headers['X-Profile-Revision'],'7');assert.match(put.options.headers['X-Profile-Operation-Id'],/^[0-9a-f-]{36}$/);
+ assert.equal(h.els['display-name'].value,'Unsaved concurrent name');assert.equal(h.els.intro.value,'Keep draft');assert.match(h.els.notice.textContent,/ข้อมูลเปลี่ยนจากอีกหน้าจอ/);assert.equal(h.els['profile-fields'].disabled,false);
+});
+
+test('unknown acknowledgement client retry preserves operation ID, body and base revision',async()=>{
+ let attempts=0;
+ const h=clientHarness({profileOverride:{profile_revision:4},respond:(url,options)=>{
+  if(url.endsWith('/profile')&&options.method==='PUT'){attempts++;return Response.json({ok:false,error:{code:'PROFILE_SAVE_INCOMPLETE'}},{status:503});}
+ }});
+ await settle();await h.tabs[2].click();h.els.intro.value='Same operation';
+ h.els['profile-form'].onsubmit({preventDefault(){}});await settle();await settle();
+ h.els['profile-form'].onsubmit({preventDefault(){}});await settle();await settle();
+ const calls=h.calls.filter(c=>c.options.method==='PUT');assert.equal(attempts,2);assert.equal(calls[0].options.headers['X-Profile-Operation-Id'],calls[1].options.headers['X-Profile-Operation-Id']);assert.equal(calls[0].options.headers['X-Profile-Revision'],'4');assert.equal(calls[0].options.body,calls[1].options.body);assert.equal(h.els.intro.value,'Same operation');
+});
+
+// Current-main auth/progress/privacy regressions retained across renderer update.
 test('saving courses without changing zones omits zone replacement fields',async()=>{
  const h=clientHarness();await settle();await h.tabs[2].click();h.els.intro.value='Fixture intro';await h.els['profile-form'].onsubmit({preventDefault(){}});await settle();
  const body=JSON.parse(h.calls.find(c=>c.url.endsWith('/profile')&&c.options.method==='PUT').options.body);
@@ -312,16 +471,16 @@ test('saving courses without changing zones omits zone replacement fields',async
 });
 test('catalog 503 keeps course editing and original zone links intact with explicit retry',async()=>{
  let fail=true;const h=clientHarness({responses:{'service-zones':()=>fail?Response.json({ok:false,error:{code:'UNAVAILABLE'}},{status:503}):Response.json({ok:true,data:{zones:[{code:'BKK-PATHUMWAN',label_th:'ปทุมวัน'}]}})}});
- await settle();await h.tabs[2].click();assert.equal(h.els['save-profile'].disabled,false);assert.equal(h.els['base-zone'].dataset.ready,'false');assert.equal(h.els['retry-zones'].hidden,false);
+ await settle();await h.tabs[2].click();assert.equal(h.els['profile-fields'].disabled,false);assert.equal(h.els['base-zone'].dataset.ready,'false');assert.equal(h.els['zone-retry'].hidden,false);
  await h.els['profile-form'].onsubmit({preventDefault(){}});await settle();const body=JSON.parse(h.calls.find(c=>c.options.method==='PUT').options.body);assert.equal(Object.hasOwn(body,'coverage_service_zone_codes'),false);
- fail=false;await h.els['retry-zones'].click();assert.equal(h.els['base-zone'].dataset.ready,'true');
+ fail=false;await h.els['zone-retry'].click();assert.equal(h.els['base-zone'].dataset.ready,'true');
 });
 test('malformed 200 profile stays uneditable instead of becoming empty courses',async()=>{
- const h=clientHarness({responses:{profile:()=>Response.json({ok:true,data:{display_name:'Fixture'}})}});await settle();await h.tabs[2].click();assert.equal(h.els['save-profile'].disabled,true);assert.equal(h.els.notice.className,'error');assert.equal(h.calls.some(c=>c.options.method==='PUT'),false);
+ const h=clientHarness({responses:{profile:()=>Response.json({ok:true,data:{display_name:'Fixture'}})}});await settle();await h.tabs[2].click();assert.equal(h.els['profile-form'].hidden,true);assert.equal(h.els.notice.className,'error');assert.equal(h.calls.some(c=>c.options.method==='PUT'),false);
 });
 test('profile belonging to a different account clears private state',async()=>{
- const h=clientHarness({access:{therapist_id:'fixture-A',can_open:true,matching_enabled:false},responses:{profile:()=>Response.json({ok:true,data:{therapist_id:'fixture-B',display_name:'Private B',courses:[],photos:[]}})}});
- await settle();await h.tabs[2].click();assert.equal(h.els.workspace.hidden,true);assert.equal(h.els['display-name'].value,'');assert.equal(h.els['base-zone'].dataset.ready,'false');assert.equal(h.els['save-profile'].disabled,true);assert.equal(h.els.greeting.textContent,'');
+ const h=clientHarness({access:{therapist_id:'recTestTherapist',can_open:true,matching_enabled:false},responses:{profile:()=>Response.json({ok:true,data:{therapist_id:'fixture-B',display_name:'Private B',courses:[],photos:[]}})}});
+ await settle();await h.tabs[2].click();assert.equal(h.els.workspace.hidden,true);assert.equal(h.els['display-name'].value,'');assert.equal(h.els['base-zone'].dataset.ready,'false');assert.equal(h.els['profile-form'].hidden,true);assert.equal(h.els.greeting.textContent,'');
 });
 test('old delayed catalog cannot repopulate profile after logout',async()=>{
  let release;const wait=new Promise(resolve=>release=resolve);
@@ -330,18 +489,18 @@ test('old delayed catalog cannot repopulate profile after logout',async()=>{
  assert.equal(h.els['coverage-zones'].children.length,0);assert.equal(h.els['base-zone'].children.length,0);assert.equal(h.els['display-name'].value,'');assert.equal(h.els.workspace.hidden,true);
 });
 test('uncertain save retains draft and requests readback without claiming unchanged backend',async()=>{
- const h=clientHarness({responses:{profile:(url,opt)=>opt.method==='PUT'?Response.json({ok:false,error:{code:'PROFILE_PARTIALLY_SAVED'}},{status:503}):Response.json({ok:true,data:{therapist_id:'fixture-A',display_name:'Fixture',courses:[],photos:[],service_zones:null}})}});
- await settle();await h.tabs[2].click();h.els.intro.value='Unsaved fixture';await h.els['profile-form'].onsubmit({preventDefault(){}});await settle();assert.equal(h.els.intro.value,'Unsaved fixture');assert.match(h.els['profile-save-status'].textContent,/บางส่วน.*รีเฟรช/);assert.doesNotMatch(h.els.notice.textContent,/ข้อมูลเดิมยังอยู่|บันทึกโปรไฟล์แล้ว/);
+ const h=clientHarness({responses:{profile:(url,opt)=>opt.method==='PUT'?Response.json({ok:false,error:{code:'PROFILE_PARTIALLY_SAVED'}},{status:503}):Response.json({ok:true,data:{therapist_id:'recTestTherapist',display_name:'Fixture',courses:[],photos:[],service_zones:null}})}});
+ await settle();await h.tabs[2].click();h.els.intro.value='Unsaved fixture';await h.els['profile-form'].onsubmit({preventDefault(){}});await settle();assert.equal(h.els.intro.value,'Unsaved fixture');assert.match(h.els.notice.textContent,/บางส่วน.*รีเฟรช/);assert.doesNotMatch(h.els.notice.textContent,/ข้อมูลเดิมยังอยู่|บันทึกโปรไฟล์แล้ว/);
 });
 test('course entry precedes the collapsed zone picker and has direct section controls',()=>{
- const html=renderTherapistWorkspace();assert.ok(html.indexOf('id="profile-courses"')<html.indexOf('id="coverage-zones"'));assert.match(html,/<details id="zone-picker">/);assert.match(html,/data-profile-tab="courses"/);assert.match(html,/id="zone-search" type="search"/);assert.match(html,/id="upload" type="file"/);
+ const html=renderTherapistWorkspace();assert.ok(html.indexOf('id="profile-courses"')<html.indexOf('id="coverage-zones"'));assert.match(html,/id="zone-editor" hidden/);assert.match(html,/data-profile-section="courses"/);assert.match(html,/id="zone-search" type="search"/);assert.match(html,/id="upload" type="file"/);
 });
 
 
 test('malformed profile does not advance progress to ready before schema validation',async()=>{
  let ready=0,failed=0;
  const h=clientHarness({graphics:{begin(){return 1;},received(){},ready(){ready++;},fail(){failed++;},failCurrent(){}},responses:{profile:()=>Response.json({ok:true,data:{display_name:'Incomplete fixture'}})}});
- await settle();const before=ready;await h.tabs[2].click();assert.equal(ready,before);assert.equal(failed,1);assert.equal(h.els['save-profile'].disabled,true);
+ await settle();const before=ready;await h.tabs[2].click();assert.equal(ready,before);assert.equal(failed,1);assert.equal(h.els['profile-form'].hidden,true);
 });
 
 test('LIFF init failure stays at login with safe actionable copy',async()=>{const h=loginHarness({initError:true});await settle();assert.match(h.els.notice.textContent,/Mini App/);assert.doesNotMatch(h.els.notice.textContent,/private SDK/);assert.equal(h.requests.length,0);});
@@ -350,3 +509,8 @@ for(const [name,response] of [['html',()=>new Response('<html>unavailable</html>
 test('auth network error retains retry and invitation',async()=>{const h=loginHarness({networkError:true});await settle();assert.match(h.els.notice.textContent,/เชื่อมต่อระบบยืนยันบัญชีไม่ได้/);assert.equal(h.logouts,0);assert.ok(h.data.has('mms-therapist-invite-v1'));});
 
 test("native AbortError uses auth timeout copy instead of numeric DOMException code",async()=>{const h=loginHarness({networkError:"abort"});await settle();assert.match(h.els.notice.textContent,/ใช้เวลานานเกินไป/);assert.equal(h.logouts,0);assert.equal(h.redirects.length,0);});
+
+for(const data of [undefined,{zones:[]}])test('current-main invalid zone catalog never advances progress to ready '+JSON.stringify(data),async()=>{
+ let ready=0,failed=0;const h=clientHarness({graphics:{begin(){return 1;},received(){},ready(){ready++;},fail(){failed++;},failCurrent(){}},responses:{'service-zones':()=>Response.json({ok:true,...(data===undefined?{}:{data})})}});
+ await settle();const before=ready;await h.tabs[2].click();assert.equal(ready,before+1);assert.equal(failed,1);assert.equal(h.els['base-zone'].dataset.ready,'false');assert.equal(h.els['profile-form'].hidden,false);
+});

@@ -158,3 +158,5 @@ export default {
     return response;
   },
 };
+
+export { MmsTherapistProfileCoordinator } from "./therapist-profile-coordinator.mjs";
