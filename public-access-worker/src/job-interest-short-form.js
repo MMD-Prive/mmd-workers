@@ -94,5 +94,5 @@ export function mountShortInterest(jobId, version, maxBytes) {
 }
 
 export function shortFormScript(jobId) {
-  return `<script>(${mountShortInterest.toString()})(${JSON.stringify(jobId)},${JSON.stringify(SHORT_FORM_VERSION)},${SHORT_MEDIA_LIMIT});</script>`;
+  return `<script>(()=>{const __name=(value)=>value;(${mountShortInterest.toString()})(${JSON.stringify(jobId)},${JSON.stringify(SHORT_FORM_VERSION)},${SHORT_MEDIA_LIMIT});})();</script>`;
 }
