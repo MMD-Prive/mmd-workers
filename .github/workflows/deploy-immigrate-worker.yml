@@ -409,7 +409,7 @@ jobs:
             for attempt in 1 2 3 4 5 6 7 8; do
               : > "$board_body"
               : > "$board_headers"
-              board_code="$(curl -sS -D "$board_headers" -o "$board_body" -w '%{http_code}' "$origin/internal/admin/jobs/job-board?mock=1&deploy=${GITHUB_SHA}&attempt=${attempt}")"
+              board_code="$(curl -sS -b "$cookie" -D "$board_headers" -o "$board_body" -w '%{http_code}' "$origin/internal/admin/jobs/job-board?mock=1&deploy=${GITHUB_SHA}&attempt=${attempt}")"
               if [ "$board_code" = "200" ]                 && grep -q 'data-job-board-owner="separate-v1"' "$board_body"                 && grep -q 'id="job-board-form"' "$board_body"                 && grep -q 'name="board_text" maxlength="1000"' "$board_body"                 && grep -q 'name="customer_gender"' "$board_body"                 && grep -q 'name="budget_disclosure_approved"' "$board_body"                 && grep -q '/v1/admin/job-board/publish' "$board_body"                 && ! grep -q 'id="job-client-query"' "$board_body"                 && ! grep -q 'id="job-model-query"' "$board_body"; then
                 echo "Separate Job Board verified for $origin on attempt $attempt"
                 board_verified=1
@@ -440,17 +440,28 @@ jobs:
 
       - name: Verify MMD Create Session Owner v14 in production
         shell: bash
+        env:
+          ADMIN_SMOKE_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}
         run: |
           set -euo pipefail
+          test -n "${ADMIN_SMOKE_CREDENTIAL:-}"
+          echo "::add-mask::$ADMIN_SMOKE_CREDENTIAL"
+          cookie="$(mktemp)"
           headers="$(mktemp)"
           body="$(mktemp)"
-          trap 'rm -f "$headers" "$body"' EXIT
+          trap 'rm -f "$cookie" "$headers" "$body"' EXIT
+
+          login_code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS -D "$headers" -o "$body" -c "$cookie" -w '%{http_code}' -X POST -H "Origin: https://mmdbkk.com" -H 'Content-Type: application/x-www-form-urlencoded' --data-urlencode "credential=$ADMIN_SMOKE_CREDENTIAL" --data-urlencode 'next=/internal/admin/jobs/create-session' "https://mmdbkk.com/internal/admin/login/session")"
+          if [ "$login_code" != "303" ] || ! grep -qi '^set-cookie: mmd_admin_gate_v1=' "$headers"; then
+            echo "Protected Create Session smoke login failed (HTTP $login_code)" >&2
+            exit 1
+          fi
 
           verified=0
           for attempt in 1 2 3 4 5 6 7 8; do
             : > "$headers"
             : > "$body"
-            code="$(curl -sS -D "$headers" -o "$body" -w '%{http_code}' \
+            code="$(curl -sS -b "$cookie" -D "$headers" -o "$body" -w '%{http_code}' \
               "https://mmdbkk.com/internal/admin/jobs/create-session?mock=1&deploy=${GITHUB_SHA}&attempt=${attempt}")"
 
             if [ "$code" = "200" ] \
@@ -487,16 +498,28 @@ jobs:
       - name: Verify extensionless MMD Create Session core in production
         shell: bash
         working-directory: .
+        env:
+          ADMIN_SMOKE_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}
         run: |
           set -euo pipefail
+          test -n "${ADMIN_SMOKE_CREDENTIAL:-}"
+          echo "::add-mask::$ADMIN_SMOKE_CREDENTIAL"
           for origin in https://mmdbkk.com https://www.mmdbkk.com; do
+            cookie="$(mktemp)"
+            body="$(mktemp)"
             headers="$(mktemp)"
             core="$(mktemp)"
+          login_code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS -D "$headers" -o "$body" -c "$cookie" -w '%{http_code}' -X POST -H "Origin: $origin" -H 'Content-Type: application/x-www-form-urlencoded' --data-urlencode "credential=$ADMIN_SMOKE_CREDENTIAL" --data-urlencode 'next=/internal/admin/jobs/create-session' "$origin/internal/admin/login/session")"
+          if [ "$login_code" != "303" ] || ! grep -qi '^set-cookie: mmd_admin_gate_v1=' "$headers"; then
+            echo "Protected Create Session smoke login failed (HTTP $login_code)" >&2
+            exit 1
+          fi
+
             verified=0
             for attempt in 1 2 3 4 5 6 7 8; do
               : > "$headers"
               : > "$core"
-              core_code="$(curl -sS -D "$headers" -o "$core" -w '%{http_code}' "$origin/internal/admin/jobs/create-session/core?deploy=${GITHUB_SHA}&attempt=${attempt}")"
+              core_code="$(curl -sS -b "$cookie" -D "$headers" -o "$core" -w '%{http_code}' "$origin/internal/admin/jobs/create-session/core?deploy=${GITHUB_SHA}&attempt=${attempt}")"
               if [ "$core_code" = "200" ] \
                 && grep -Eiq '^x-mmd-create-session-core:[[:space:]]*worker-owned' "$headers" \
                 && grep -Eiq '^x-mmd-create-session-core-route:[[:space:]]*extensionless-v1' "$headers" \
@@ -519,7 +542,7 @@ jobs:
               echo "--- first 240 body bytes ---" >&2
               head -c 240 "$core" >&2 || true
               echo >&2
-              rm -f "$headers" "$core"
+              rm -f "$cookie" "$body" "$headers" "$core"
               exit 1
             fi
             rm -f "$headers" "$core"
