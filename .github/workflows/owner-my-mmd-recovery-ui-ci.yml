@@ -5,6 +5,8 @@ on:
     paths:
       - 'admin-worker/src/owner-my-mmd-recovery*.js'
       - 'admin-worker/src/owner-recovery-identity.js'
+      - 'admin-worker/src/create-session-client-lineage-runtime.js'
+      - 'admin-worker/create-session-client-lineage-runtime.test.mjs'
       - 'admin-worker/owner-recovery-identity.test.mjs'
       - 'admin-worker/owner-my-mmd-recovery*.test.mjs'
       - '.github/workflows/owner-my-mmd-recovery-ui-ci.yml'
@@ -13,6 +15,8 @@ on:
     paths:
       - 'admin-worker/src/owner-my-mmd-recovery*.js'
       - 'admin-worker/src/owner-recovery-identity.js'
+      - 'admin-worker/src/create-session-client-lineage-runtime.js'
+      - 'admin-worker/create-session-client-lineage-runtime.test.mjs'
       - 'admin-worker/owner-recovery-identity.test.mjs'
       - 'admin-worker/owner-my-mmd-recovery*.test.mjs'
       - '.github/workflows/owner-my-mmd-recovery-ui-ci.yml'
@@ -35,7 +39,7 @@ jobs:
         run: |
           node --check admin-worker/src/owner-my-mmd-recovery-diagnostic.js
           node --check admin-worker/src/owner-my-mmd-recovery-page.js
-          node --experimental-global-webcrypto --test admin-worker/owner-recovery-identity.test.mjs admin-worker/owner-my-mmd-recovery-diagnostic.test.mjs admin-worker/owner-my-mmd-recovery-page.test.mjs
+          node --experimental-global-webcrypto --test admin-worker/create-session-client-lineage-runtime.test.mjs admin-worker/owner-recovery-identity.test.mjs admin-worker/owner-my-mmd-recovery-diagnostic.test.mjs admin-worker/owner-my-mmd-recovery-page.test.mjs
       - name: Exercise deployed script after bundling with function name preservation
         run: |
           npx --yes esbuild@0.25.12 admin-worker/src/owner-my-mmd-recovery-page.js --bundle --keep-names --minify --platform=node --format=esm --outfile=admin-worker/src/owner-recovery-bundled.mjs
