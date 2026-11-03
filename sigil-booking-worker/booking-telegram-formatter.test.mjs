@@ -4,6 +4,7 @@ import { buildBookingTelegramReplyMarkup, buildBookingTelegramText } from "./src
 
 test("renders compact booking alert with Thai date and QA/expired gates", () => {
   const text = buildBookingTelegramText({
+    trustedIdentity: {source:"linked_per_rename_index_v1",per_rename:"QA <Client>"},
     body: { client_name: "QA <Client>", city: "Bangkok", google_address: "TEST ONLY Bangkok", duration: "2 ชม." },
     fields: {
       client_nickname: "QA <Client>",
@@ -26,7 +27,7 @@ test("renders compact booking alert with Thai date and QA/expired gates", () => 
 
 test("handles missing fields without leaking undefined values", () => {
   const text = buildBookingTelegramText({ body: {}, fields: {} });
-  assert.match(text, /ลูกค้า:.*ไม่ระบุ/);
+  assert.match(text, /ลูกค้า:.*ไม่ทราบ Per Rename/);
   assert.match(text, /วันเวลา: ไม่ระบุ/);
   assert.doesNotMatch(text, /undefined|null/);
 });
@@ -41,3 +42,8 @@ test("rejects external, javascript, and token-bearing button URLs", () => {
   assert.equal(buildBookingTelegramReplyMarkup("javascript:alert(1)"), undefined);
   assert.equal(buildBookingTelegramReplyMarkup("https://sigil.mmdbkk.com/internal/admin/control-room?access_token=leak"), undefined);
 });
+
+ test("browser resolver identity is never trusted and budget is normalized stored intent",()=>{
+ const text=buildBookingTelegramText({body:{client_name:"Spoof",per_rename:"Spoof",budget:99999},fields:{resolver_payload_json:JSON.stringify({canonical_identity:{authority:"member-pages-canonical-client-v1",per_rename:"Spoof"},customer_search:{budget:{provided:true,max_thb:4500,min_thb:0}}})}});
+ assert.doesNotMatch(text,/Spoof|99,999/);assert.match(text,/4,500 บาท/);assert.match(text,/ไม่ทราบ Per Rename/);
+ });

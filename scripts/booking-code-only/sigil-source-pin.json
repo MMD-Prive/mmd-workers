@@ -1,0 +1,15 @@
+{
+  "source_commit": "82561437067dc06b751956376ba265fa7322cd34",
+  "source_tree": "83a93fc60ef2494ada52c0b40509d28edfdfe776",
+  "files": {
+    "sigil-booking-worker/src/entitlement-runtime-worker.js": "7a572d5d725989b4f1ba24f993b71d918f0094e03f4e0aeca91f2f1b8756a417",
+    "sigil-booking-worker/src/public-booking-owner.js": "2659c18eb250f41db274636af89995e20eea43745c1fca4a6a0dbaaa794cbb20",
+    "sigil-booking-worker/src/public-booking-membership.js": "752e10e2ae8469192556cfc16b6c9a7a2335636841b99182843c11f44a718180",
+    "sigil-booking-worker/src/current-private-access.js": "256f5f7df654816aefa7eca97ab0fb396433bfaab4ea7ff1ef1fce0d803267f6",
+    "sigil-booking-worker/src/customer-discovery-policy.js": "8055249e746a224ec63a2087a358b57ef28d9718752e32e56ffd4a0e7d7bcc2a",
+    "sigil-booking-worker/src/booking-telegram-formatter.js": "0a32c94e8032eea34d79d05a56690c81844f07609c44e8c7dc10576c95d638b0",
+    "sigil-booking-worker/src/customer-search-policy.js": "b6e20f7f49fce76b37c14c87b14ebc1086b37d482ae2e731a14b6272064b8318",
+    "sigil-booking-worker/src/index.js": "3eb6f295ee64babcfff3c2a3fa8757a5989e31e17ddcf40016b0e0fde7e55228",
+    "auth-worker/src/member-entitlement-resolver.js": "2e06992fcd9b40d8b375d6bae5aaeddef6e6b001f59c6e29dac254e051d0628d"
+  }
+}
