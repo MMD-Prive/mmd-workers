@@ -40,6 +40,10 @@ function installFetchMock({
 } = {}) {
   const previous = globalThis.fetch;
   const calls = [];
+  const journal=new Map();let revision=0;
+  const priorBucket=ENV.LINE_SLIP_EVIDENCE;
+  ENV.LINE_SLIP_EVIDENCE={async get(key){const x=journal.get(key);return x?{etag:x.etag,text:async()=>x.body}:null;},async put(key,body,{onlyIf={}}={}){const old=journal.get(key);if(onlyIf.etagDoesNotMatch==='*'&&old||onlyIf.etagMatches&&onlyIf.etagMatches!==old?.etag)return null;const etag='fixture-'+(++revision);journal.set(key,{body,etag});return {etag};}};
+
   let currentSession = { id: SESSION_RECORD, fields: { ...session } };
   let adjustment = existingAdjustment;
 
@@ -103,7 +107,7 @@ function installFetchMock({
     calls,
     get session() { return currentSession; },
     get adjustment() { return adjustment; },
-    restore() { globalThis.fetch = previous; },
+    restore() { globalThis.fetch = previous; ENV.LINE_SLIP_EVIDENCE=priorBucket; },
   };
 }
 
@@ -218,7 +222,7 @@ test("canonical Model link is required before payout can be changed", async () =
   }
 });
 
-test("same idempotency key never applies an adjustment twice", async () => {
+test("legacy ledger alone cannot prove an adjustment was applied", async () => {
   const existing = {
     id: "recExistingAdjust1",
     fields: {
@@ -251,15 +255,15 @@ test("same idempotency key never applies an adjustment twice", async () => {
         direction: "add",
         adjustment_type: "travel",
         amount_thb: 1000,
+        note: "ค่าเดินทาง",
         idempotency_key: "simba-travel-20260918-001",
       }),
       ENV,
       ACTOR,
     );
     const body = await response.json();
-    assert.equal(response.status, 200);
-    assert.equal(body.replayed, true);
-    assert.equal(body.session.current_payout_thb, 10000);
+    assert.equal(response.status, 409);
+    assert.equal(body.error, "payout_legacy_outcome_unproven");
     assert.equal(mock.calls.some((call) => call.method === "PATCH"), false);
     assert.equal(mock.calls.some((call) => call.method === "POST"), false);
   } finally {
@@ -267,7 +271,7 @@ test("same idempotency key never applies an adjustment twice", async () => {
   }
 });
 
-test("failed Session patch removes the provisional adjustment row", async () => {
+test("failed Session patch retains ledger and requires reconciliation", async () => {
   const mock = installFetchMock({ patchFails: true });
   try {
     const response = await handleModelPayoutAdjustments(
@@ -283,8 +287,9 @@ test("failed Session patch removes the provisional adjustment row", async () => 
     );
     const body = await response.json();
     assert.equal(response.status, 503);
-    assert.equal(body.error, "session_payout_update_failed");
-    assert.equal(mock.adjustment, null);
+    assert.equal(body.error, "payout_operation_unconfirmed");
+    assert.ok(mock.adjustment);
+    assert.equal(mock.calls.some(call=>call.method==="DELETE"),false);
     assert.equal(mock.session.fields.pay_model_thb, 9000);
   } finally {
     mock.restore();

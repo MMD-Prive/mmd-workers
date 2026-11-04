@@ -2,6 +2,18 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {currentPrivateMembershipPromotion as promo,applyMembershipPromotion as apply,privateRenewalTiming as timing,privateRenewalPriceEligible,privateRenewalBaseYears,isPrivateCareBackAnnouncementVisible as visible,addBangkokCalendarMonths} from './membership-promotion-policy.mjs';
 const renewal=(package_code,paid_at='2026-10-31T16:59:59.999Z')=>({package_code,paid_at,action:'renewal',existing_member:true,prior_expire_at:'2026-01-01T00:00:00Z'});
+test('4 November reconfirmation preserves old paid-time terms and selects tier bonuses only for new payments',()=>{
+ for(const code of ['standard','premium']) {
+  assert.equal(promo(renewal(code,'2026-11-04T08:59:59.999Z')).bonus_months,6);
+  const p=promo(renewal(code,'2026-11-04T09:00:00.000Z'));
+  assert.equal(p[code==='premium'?'bonus_years':'bonus_days'],code==='premium'?1:180);
+  assert.equal(p.bonus_months,undefined);
+  assert.equal(visible('2026-11-04T09:00:00Z'),false);
+  assert.equal(p.ends_before,'2026-11-01T00:00:00+07:00');
+  assert.equal(promo({...renewal(code,'2026-11-04T09:00:00Z'),action:'signup'}).bonus_months,6);
+  assert.equal(promo(renewal(code,'2026-12-31T17:00:00Z')),null);
+ }
+});
 test('October Bangkok cutoff is based on payment time, with tier-specific bonus',()=>{
  assert.equal(promo(renewal('standard')).bonus_days,180);assert.equal(promo(renewal('premium')).bonus_years,1);
  for(const code of ['standard','premium']) {assert.equal(promo(renewal(code,'2026-07-31T16:59:59Z')),null);}
@@ -27,7 +39,7 @@ test('November announcement cutoff is Bangkok midnight and does not gate Decembe
  assert.equal(visible('invalid','november'),false);
  assert.equal(visible('2026-10-31T16:59:59.999Z'),true);
  assert.equal(visible('2026-10-31T17:00:00Z'),false,'October-only callers cannot advertise stale terms in November');
- assert.equal(promo(renewal('premium','2026-11-30T17:00:00Z')).bonus_months,6);
+ assert.equal(promo(renewal('premium','2026-11-30T17:00:00Z')).bonus_years,1);
 });
 
 test('actual November payment selects new bonus while late verification preserves October payment terms',()=>{

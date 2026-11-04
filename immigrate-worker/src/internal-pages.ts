@@ -1,3 +1,5 @@
+import { JOB_BOARD_READABLE_CSS } from './job-board-readable.mjs';
+import { jobBoardCandidateReview } from '../../admin-worker/src/job-board-candidate-review.js';
 export interface InternalPageEnv {
   ADMIN_WORKER_BASE_URL?: string;
   PUBLIC_WEB_BASE_URL?: string;
@@ -351,12 +353,12 @@ const jobBoardScript = `(() => {
 })();`;
 
 export function renderJobBoardPage(): Response {
-  return page("MMD Job Board", `<section class="mmdop" data-job-board-owner="separate-v1"><main class="mmdop__shell">
+  return page("MMD Job Board", `<section class="mmdop" id="mmd-job-board-workspace" data-job-board-owner="separate-v1"><main class="mmdop__shell">
     ${topbar("Job Board")}
     <section class="hero">
       <div class="kicker">Recruitment / Open Opportunity</div>
       <h1>Job Board</h1>
-      <p>ใช้สำหรับประกาศหาคนทำงานเท่านั้น · ไม่ Lookup ลูกค้า ไม่เลือก Canonical Client และไม่แตะ flow ของ Create Job</p>
+      <p>ประกาศงาน · แชร์ลิงก์ · ดูผู้สนใจ</p>
       <div class="steps"><div class="step">01 ข้อมูลงาน</div><div class="step">02 เงื่อนไข</div><div class="step">03 Publish</div><div class="step">04 Copy Link</div></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><a class="btn" href="/internal/admin/jobs/create-job">← Create Job</a><a class="btn soft" href="/internal/admin/control-room">Control Room</a></div>
     </section>
@@ -364,20 +366,20 @@ export function renderJobBoardPage(): Response {
     <form class="card" id="job-board-form" style="margin-top:12px">
       <span class="label">Owner Composer</span><h2>สร้างประกาศงาน</h2>
       <div class="form">
-        <label class="field"><span>Public / Private</span><select name="world"><option value="public">Public · MMD</option><option value="private">Private · SIGIL</option></select></label>
-        <label class="field"><span>หัวข้อ</span><input class="input" name="title" maxlength="160" placeholder="งานกินข้าว · สุขุมวิท · งานลับ"></label>
-        <label class="field"><span>ค่าตอบแทนที่แสดง</span><input class="input" name="compensation" maxlength="120" placeholder="12,000 ถึงตัว"></label>
-        <label class="field"><span>วันที่</span><input class="input" name="date" maxlength="80" placeholder="พฤ 1 ต.ค. 69"></label>
-        <label class="field"><span>เวลา</span><input class="input" name="time" maxlength="80" placeholder="20:00"></label>
-        <label class="field"><span>ระยะเวลา</span><input class="input" name="duration" maxlength="80" placeholder="3 ชม. / Overnight"></label>
-        <label class="field"><span>พื้นที่</span><input class="input" name="area" maxlength="120" placeholder="สุขุมวิท / กรุงเทพฯ"></label>
-        <label class="field"><span>จำนวนลูกค้า</span><input class="input" name="customer_count" type="number" min="1" max="20" value="1"></label>
-        <label class="field"><span>เพศลูกค้าแบบ public-safe</span><select name="customer_gender"><option value="unspecified">ไม่ระบุ</option><option value="male">ชาย</option><option value="female">หญิง</option><option value="couple">คู่</option><option value="mixed">Mixed</option></select></label>
-        <label class="field"><span>จำนวนรูปที่ต้องส่ง</span><input class="input" name="media_count" type="number" min="1" max="12" value="8"></label>
+        <label class="field jb-world"><span>Public / Private</span><select name="world"><option value="public">Public · MMD</option><option value="private">Private · SIGIL</option></select></label>
+        <label class="field jb-media-count"><span>จำนวนรูปที่ต้องส่ง</span><input class="input" name="media_count" type="number" min="1" max="12" value="8"></label>
+        <label class="field jb-title"><span>หัวข้อ</span><input class="input" name="title" maxlength="160" placeholder="งานกินข้าว · สุขุมวิท · งานลับ"></label>
+        <label class="field jb-compensation"><span>ค่าตอบแทนที่แสดง</span><input class="input" name="compensation" maxlength="120" placeholder="12,000 ถึงตัว"></label>
+        <label class="field jb-date"><span>วันที่</span><input class="input" name="date" maxlength="80" placeholder="พฤ 1 ต.ค. 69"></label>
+        <label class="field jb-time"><span>เวลา</span><input class="input" name="time" maxlength="80" placeholder="20:00"></label>
+        <label class="field jb-duration"><span>ระยะเวลา</span><input class="input" name="duration" maxlength="80" placeholder="3 ชม. / Overnight"></label>
+        <label class="field jb-area"><span>พื้นที่</span><input class="input" name="area" maxlength="120" placeholder="สุขุมวิท / กรุงเทพฯ"></label>
+        <label class="field jb-count"><span>จำนวนลูกค้า</span><input class="input" name="customer_count" type="number" min="1" max="20" value="1"></label>
+        <label class="field jb-gender"><span>เพศลูกค้า</span><select name="customer_gender"><option value="unspecified">ไม่ระบุ</option><option value="male">ชาย</option><option value="female">หญิง</option><option value="couple">คู่</option><option value="mixed">Mixed</option></select></label>
         <label class="field wide"><span>ลักษณะที่ต้องการ</span><textarea class="textarea" name="required_appearance_profile" maxlength="600" placeholder="เช่น สูง หุ่นดี ลุคสะอาด มีโปรไฟล์"></textarea></label>
         <label class="field wide"><span>รายละเอียดลูกค้าแบบปลอดภัย</span><textarea class="textarea" name="safe_customer_description" maxlength="500" placeholder="ใส่เฉพาะสิ่งที่โมเดลจำเป็นต้องรู้ · ห้ามชื่อ/LINE/ข้อมูลระบุตัวลูกค้า"></textarea></label>
         <label class="field wide"><span>ข้อความลง Job Board</span><textarea class="textarea" name="board_text" maxlength="1000" required placeholder="รายละเอียดงานที่โมเดลเห็น"></textarea></label>
-        <label class="field wide"><span>Owner Note</span><textarea class="textarea" name="owner_note" maxlength="1200" placeholder="Internal only"></textarea></label>
+        <details class="wide jb-extra"><summary>เพิ่มโน้ตภายใน</summary><label class="field"><span>Owner Note</span><textarea class="textarea" name="owner_note" maxlength="1200" placeholder="Internal only"></textarea></label></details>
       </div>
       <div style="display:grid;gap:8px;margin-top:12px">
         <label style="display:flex;align-items:center;gap:8px"><input name="confidentiality" type="checkbox" style="width:auto"> Confidential 🔐 · ไม่เปิดรายละเอียดลูกค้าที่ระบุตัวได้</label>
@@ -392,6 +394,8 @@ export function renderJobBoardPage(): Response {
       <div class="links"><div class="linkRow"><div><span>ส่งลิงก์นี้ให้โมเดล</span><a id="job-board-link" href="#" target="_blank" rel="noreferrer"></a></div></div></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button class="btn soft" id="job-board-copy" type="button" disabled>Copy Link</button><button class="btn" id="job-board-open" type="button" disabled>เปิดประกาศ</button></div>
     </section>
+  ${jobBoardCandidateReview().replace('<form id="jb-search">', '<details class="jb-extra jb-id-search"><summary>ค้นหาด้วย Job ID</summary><form id="jb-search">').replace('</form><p id="jb-status"', '</form></details><p id="jb-status"')}
+  <style id="job-board-readable-v1">${JOB_BOARD_READABLE_CSS}</style>
   </main><script>${jobBoardScript}</script></section>`);
 }
 

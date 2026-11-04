@@ -1,7 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {handleMemberUpdates,listMmdNowItems,projectPublishedUpdates} from '../src/member-updates.js';
+import {handleMemberUpdates,isMemberUpdatesRequest,listMmdNowItems,projectPublishedUpdates} from '../src/member-updates.js';
 const published={id:'p',isDraft:false,isArchived:false,lastPublished:'2026-10-16T00:00:00Z',fieldData:{name:'News','short-summary':'Hello','news-content':'<script>bad()</script>','cover-image':{url:'https://cdn.prod.website-files.com/a.png'},'button-label':'Open','button-link':'javascript:alert(1)'}};
+test('same-origin alias and legacy path retain the same session and published-feed contract',async()=>{
+ for(const path of ['/api/member/app/updates','/api/v1/member/updates/list']){
+  let calls=0;
+  const env={WEBFLOW_CMS_TOKEN:'fixture',WEBFLOW_CMS_HTTP:{fetch:async()=>{calls++;return Response.json({items:[published],pagination:{total:1}});}}};
+  const req=new Request('https://mmdbkk.com'+path+'?limit=10');
+  assert.equal(isMemberUpdatesRequest(req),true);
+  const denied=await handleMemberUpdates(req,env,async()=>null);
+  assert.equal(denied.status,401);assert.equal((await denied.json()).error.code,'MEMBER_SESSION_REQUIRED');assert.equal(calls,0);
+  const allowed=await handleMemberUpdates(req,env,async()=>({lineUserId:'fixture',memberExists:true,memberId:'fixture-member'}));
+  assert.equal(allowed.status,200);assert.match(allowed.headers.get('cache-control'),/no-store/);
+  assert.deepEqual((await allowed.json()).items.map(item=>item.id),['p']);assert.equal(calls,2);
+ }
+ assert.equal(isMemberUpdatesRequest(new Request('https://mmdbkk.com/api/member/app/updates-extra')),false);
+});
 test('only live AND currently non-draft/non-archived published items are projected; rich text and unsafe CTA absent',()=>{
  const live=[published,{...published,id:'draft'},{...published,id:'archive'},{...published,id:'withdrawn'}];
  const staged=[published,{...published,id:'draft',isDraft:true},{...published,id:'archive',isArchived:true}];

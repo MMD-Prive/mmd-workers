@@ -2926,6 +2926,12 @@ async function handleServiceBoundRefundReceipt(request, env) {
     }, 502);
   }
 
+  // A server error/timeout can occur after LINE accepted the first push.
+  // Do not turn an unknown delivery into a second push via the image fallback.
+  if (!response.ok && (response.status >= 500 || response.status === 408)) {
+    return json({ok:false,error:"line_push_outcome_unknown",status:response.status,unknown:true,mode:imageEligible ? "image" : "secure_link"},502);
+  }
+
   if (!response.ok && imageEligible) {
     const fallbackText = buildRefundReceiptCustomerText({
       customerName,

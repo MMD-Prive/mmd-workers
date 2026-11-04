@@ -134,12 +134,9 @@ export function modelLiffDigitalBootstrapHtml({
     var exchangeBody=await exchange.json().catch(function(){return null});
     if(!exchange.ok||!exchangeBody||exchangeBody.ok!==true){
       if(${JSON.stringify(publicJobApplicant)}&&exchange.status===202&&exchangeBody&&exchangeBody.state==="identity_review_required"){
-        var intake=new URL("/sigil/model/dashboard","https://mmdbkk.com");
-        intake.searchParams.set("flow","apply");
-        intake.searchParams.set("intent","job_board");
-        intake.searchParams.set("source","job_board");
-        ${safeJobBoard.job_id ? `intake.searchParams.set("job_id",${JSON.stringify(safeJobBoard.job_id)});` : ""}
-        window.location.replace(intake.toString());return;
+        // Browsing the board establishes the anonymous Public-job session.
+        // Private access still requires the canonical Model gate.
+        window.location.replace("https://sigil.mmdbkk.com/public/api/jobs");return;
       }
       throw new Error(exchangeBody&&exchangeBody.error||"model_session_exchange_failed");
     }
@@ -188,12 +185,12 @@ export function modelLiffDigitalBootstrapHtml({
   const title = selectedJobMode
     ? "ลูกค้าเลือกคุณสำหรับงานนี้"
     : publicJobApplicant
-      ? "ส่งข้อมูลส่วนตัว"
+      ? "ที่นี่เปอร์ดูแลงานให้ครับ"
       : "เปิด MY MODEL";
   const copy = selectedJobMode
     ? (ownerAlias ? "งานนี้ส่งตรงถึง " + ownerAlias + " · เปิดรายละเอียดและตอบรับงานใน MY MODEL" : "งานนี้ส่งตรงถึงคุณ · เปิดรายละเอียดและตอบรับงานใน MY MODEL")
     : publicJobApplicant
-      ? "รบกวนอัปโหลดรูปปัจจุบันที่ชัดเจน"
+      ? "ฝากข้อมูลสั้น ๆ กับรูปปัจจุบันให้เปอร์รู้จักคุณหน่อยครับ จะได้คุยต่อเรื่องงานที่สนใจ"
       : "กำลังเปิดพื้นที่ทำงานของคุณ";
   const success = selectedJobMode
     ? "กำลังเปิดรายละเอียดงานที่เลือกคุณไว้…"
@@ -213,11 +210,11 @@ export function modelLiffDigitalBootstrapHtml({
   const initialPill = selectedJobMode ? "MY MODEL · SELECTED JOB" : publicJobApplicant ? "เริ่มต้น" : "MY MODEL";
   const readyPill = selectedJobMode ? "SELECTED JOB · READY" : publicJobApplicant ? "พร้อมเริ่ม" : "MY MODEL · READY";
   const kicker = selectedJobMode ? "SELECTED JOB" : publicJobApplicant ? "ยินดีต้อนรับ" : "MY MODEL";
-  const statusLead = selectedJobMode ? "กำลังเปิดงานของคุณ" : publicJobApplicant ? "ประกาศที่คุณเปิดมา" : "กำลังเปิดพื้นที่ทำงาน";
+  const statusLead = selectedJobMode ? "กำลังเปิดงานของคุณ" : publicJobApplicant ? "ข้อมูลที่ส่งให้เปอร์" : "กำลังเปิดพื้นที่ทำงาน";
   const statusHelp = selectedJobMode
     ? "นี่คืองานที่ลูกค้าเลือกคุณแล้ว · ไม่ใช่หน้าสมัครงาน และไม่ต้องสมัครเป็นโมเดลใหม่"
     : publicJobApplicant
-      ? "ต้องการแก้ไขหรือลบข้อมูล ติดต่อเปอร์"
+      ? "ข้อมูลและรูปใช้ประกอบการพิจารณางาน ไม่ได้เปิดเป็นโปรไฟล์สาธารณะ"
       : "กำลังเตรียมงานและโปรไฟล์ของคุณ";
   const pageTitle = selectedJobMode ? "MY MODEL · งานที่เลือกคุณ" : publicJobApplicant ? "MY MODEL · พี่เปอร์ดูแลงานให้" : "MY MODEL";
   const initOptions = primary ? `{liffId:${safeId}}` : `{liffId:${safeId},withLoginOnExternalBrowser:true}`;
@@ -243,7 +240,7 @@ export function modelLiffDigitalBootstrapHtml({
     <p class="mmd-digital-kicker">${kicker}</p>
     <h1 class="mmd-digital-title">${title}</h1>
     <p class="mmd-digital-sub">${copy}</p>
-    ${publicJobApplicant ? '<ol class="mmd-welcome-steps" aria-label="ขั้นตอนเริ่มต้น"><li><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="3"/><path d="M9 8h6M9 12h6M9 16h3"/></svg><span>ส่งข้อมูล</span></li><li><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></svg><span>เปอร์ตรวจ</span></li><li><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="7" width="18" height="14" rx="3"/><path d="M8 7V4h8v3M3 12h18M10 12v3h4v-3"/></svg><span>ดูงาน</span></li></ol>' : ''}
+    ${publicJobApplicant ? '<ol class="mmd-welcome-steps" aria-label="ขั้นตอนเริ่มต้น"><li><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="3"/><path d="M9 8h6M9 12h6M9 16h3"/></svg><span>ส่งข้อมูล</span></li><li><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></svg><span>เปอร์ดูให้</span></li><li><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="7" width="18" height="14" rx="3"/><path d="M8 7V4h8v3M3 12h18M10 12v3h4v-3"/></svg><span>คุยต่อ</span></li></ol>' : ''}
     <section class="mmd-digital-card" aria-live="polite">
       <div class="mmd-digital-row">
         <span class="mmd-digital-orb" aria-hidden="true"></span>
@@ -254,7 +251,7 @@ export function modelLiffDigitalBootstrapHtml({
       <div class="mmd-digital-meter" id="loading-meter" aria-hidden="true"><span></span></div>
     </section>
     <a class="mmd-digital-action" id="fallback" href=${safeFallback} ${publicJobApplicant ? "" : "hidden"}>${cta}</a>
-    ${publicJobApplicant ? '<small class="mmd-digital-detail">ต้องการสอบถามเป็นการส่วนตัว <a href="https://t.me/per_mmd" rel="noreferrer">ติดต่อเปอร์</a></small>' : ""}
+    ${publicJobApplicant ? '<small class="mmd-digital-detail">ยังไม่สะดวกส่งข้อมูลหรือรูป?<br><a href="https://t.me/per_mmd" rel="noreferrer">คุยกับเปอร์ทาง Telegram ก่อนได้ครับ</a><br>อยากแก้ไขหรือลบข้อมูลที่ส่งไว้ ก็คุยกับเปอร์ได้ที่นี่</small>' : ""}
     <small class="mmd-digital-detail" id="detail"></small>
   </main>
 </div>
@@ -271,11 +268,11 @@ export function modelLiffDigitalBootstrapHtml({
     status.textContent=${JSON.stringify(fail)};
     fallback.hidden=false;
     if(${JSON.stringify(selectedJobMode)})fallback.textContent="ลองเปิดงานอีกครั้ง";
-    detail.textContent=code;
+    detail.textContent=${JSON.stringify(publicJobApplicant)}?"ถ้ายังติดอยู่ ทักเปอร์ทาง Telegram ด้านล่างได้เลยครับ":code;
     if(code==="identity_review_required"){
-      status.textContent="MMD กำลังตรวจสอบการเชื่อมข้อมูลเดิม ไม่ต้องสมัครซ้ำครับ";
-      fallback.href="https://lin.ee/xRqsALs";
-      fallback.textContent="ให้ MMD ช่วยตรวจข้อมูลเดิม";
+      status.textContent=${JSON.stringify(publicJobApplicant)}?"เปอร์ขอเช็กข้อมูลเดิมให้ก่อนครับ ยังไม่ต้องสมัครซ้ำ":"MMD กำลังตรวจสอบการเชื่อมข้อมูลเดิม ไม่ต้องสมัครซ้ำครับ";
+      fallback.href=${JSON.stringify(publicJobApplicant)}?"https://t.me/per_mmd":"https://lin.ee/xRqsALs";
+      fallback.textContent=${JSON.stringify(publicJobApplicant)}?"คุยกับเปอร์ทาง Telegram":"ให้ MMD ช่วยตรวจข้อมูลเดิม";
     }
   }
   function loadSdk(){

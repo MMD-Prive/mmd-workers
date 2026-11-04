@@ -86,6 +86,7 @@ async function bridge(request, env, actor, path, body) {
   if (typeof env.PUBLIC_JOB_BOARD_WORKER?.fetch !== "function") return json({ ok: false, error: "public_job_board_binding_required", outcome: "uncertain" }, 503);
   try {
     const headers = { accept: "application/json", "x-mmd-owner-scope": await ownerScope(actor) };
+    if (request.headers.has("range")) headers.range = request.headers.get("range");
     if (body) {
       headers["content-type"] = "application/json";
       headers["idempotency-key"] = request.headers.get("idempotency-key");
@@ -93,6 +94,13 @@ async function bridge(request, env, actor, path, body) {
     const upstream = await env.PUBLIC_JOB_BOARD_WORKER.fetch(new Request(`https://public-job-board.internal/__internal/job-board/${path}`, {
       method: body ? "POST" : "GET", headers, ...(body ? { body: JSON.stringify(body) } : {}),
     }));
+    if (/^jobs\/[^/]+\/candidates\/[^/]+\/media\/\d+$/.test(path) && upstream.ok) {
+      const headers = new Headers({ "content-type": upstream.headers.get("content-type") || "application/octet-stream", "cache-control": "no-store, private", "x-content-type-options": "nosniff", "cross-origin-resource-policy": "same-origin" });
+      for (const name of ["accept-ranges", "content-range", "content-length"]) {
+        if (upstream.headers.has(name)) headers.set(name, upstream.headers.get(name));
+      }
+      return new Response(upstream.body, { status: upstream.status, headers });
+    }
     const data = await upstream.json();
     if (!data || typeof data !== "object") throw new Error("invalid_response");
     if (!upstream.ok || data.ok !== true) return json(data, upstream.status >= 400 ? upstream.status : 502);
@@ -112,6 +120,7 @@ export async function handleAdminBroadcastRead(request, env, actor) {
   const url = new URL(request.url);
   const suffix = url.pathname.slice(ADMIN_BROADCAST_READ_PREFIX.length);
   if (suffix === "" || suffix === "/") return bridge(request, env, actor, `jobs${url.search}`);
+  if (/^\/[A-Za-z0-9][A-Za-z0-9_-]{2,99}\/candidates(?:\/[A-Za-z0-9][A-Za-z0-9_-]{2,99}\/media\/(?:[1-9]|10))?$/.test(suffix)) return bridge(request, env, actor, `jobs${suffix}`);
   if (suffix === "/status") return bridge(request, env, actor, `status${url.search}`);
   if (/^\/[A-Za-z0-9][A-Za-z0-9_-]{2,99}$/.test(suffix)) return bridge(request, env, actor, `jobs${suffix}`);
   return json({ ok: false, error: "not_found" }, 404);

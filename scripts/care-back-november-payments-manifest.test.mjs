@@ -53,7 +53,18 @@ test('recovered production selector agrees with canonical paid-time policy acros
   for (const action of ['renewal', 'signup', 'other'])
   for (const existing_member of [true, false]) {
     const input = { package_code, paid_at, prior_expire_at, action, existing_member };
-    assert.deepEqual(promotion(input), canonicalPromotion(input), JSON.stringify(input));
+    const historical = promotion(input);
+    const current = canonicalPromotion(input);
+    if (action === 'renewal' && existing_member && ['standard','premium'].includes(package_code)
+      && Number.isFinite(Date.parse(prior_expire_at))
+      && Date.parse(paid_at) >= Date.parse('2026-11-04T16:00:00+07:00')
+      && Date.parse(paid_at) < Date.parse('2027-01-01T00:00:00+07:00')) {
+      // The pinned 1-Nov release is immutable historical evidence. The newly
+      // reconfirmed policy must intentionally diverge for new paid times only.
+      assert.equal(historical.bonus_months, 6);
+      assert.equal(current[package_code==='premium'?'bonus_years':'bonus_days'],package_code==='premium'?1:180);
+      assert.match(current.code,/^reconfirmed_/);
+    } else assert.deepEqual(historical, current, JSON.stringify(input));
   }
 });
 

@@ -299,7 +299,7 @@ test("job board Welcome is Per-led and keeps Public plus Private in one feed", a
   assert.doesNotMatch(html, /source_brief|owner_note|private-media/);
 });
 
-test("linked Model uses the fast lane instead of repeating an application", async () => {
+test("Model interest opens the compact form while existing fast-lane API remains valid", async () => {
   const testEnv = env();
   await ownerCreate(testEnv);
   const cookie = await anonymousCookie(testEnv);
@@ -318,9 +318,11 @@ test("linked Model uses the fast lane instead of repeating an application", asyn
 
   const apply = await call(testEnv, "/public/api/jobs/JOB-20261001-DEMO01/apply", { headers: { cookie: openedCookie } });
   const applyHtml = await apply.text();
-  assert.match(applyHtml, /โปรไฟล์ของคุณเชื่อมกับพี่เปอร์ไว้แล้วครับ/);
-  assert.match(applyHtml, /สนใจงานนี้ · ส่งให้พี่เปอร์/);
-  assert.doesNotMatch(applyHtml, /เพศสภาพ|รับงานกับลูกค้า|type="file"/);
+  assert.match(applyHtml, /data-short-interest/);
+  assert.match(applyHtml, /ชื่อเล่น/);
+  assert.match(applyHtml, /LINE หรือเบอร์โทรอย่างใดอย่างหนึ่ง/);
+  assert.equal((applyHtml.match(/data-slot="\d+"/g) || []).length, 10);
+  assert.doesNotMatch(applyHtml, /เพศสภาพ|รับงานกับลูกค้า|apply\/public-model|name="age"/);
   assert.doesNotMatch(applyHtml, /Verify|ยืนยันตัวตน|Identity review|สมัครสมาชิก/i);
 
   const interested = await call(testEnv, "/public/api/jobs/JOB-20261001-DEMO01/interest", {
@@ -682,4 +684,88 @@ test("anonymous Private teaser and interest require canonical Model login, not o
   assert.match(page, /แตะเพื่อดูรายละเอียด/);
   const data = await (await call(testEnv, "/public/api/jobs/data")).json();
   assert.equal(data.jobs.find(job => job.world === "private").compensation, "");
+});
+
+ test("short interest persists job-bound photos clip and compcard with one contact", async () => {
+  const testEnv = env();
+  await ownerCreate(testEnv);
+  const cookie = await anonymousCookie(testEnv);
+  const reveal = await call(testEnv, "/public/api/jobs/JOB-20261001-DEMO01/reveal", { method: "POST", headers: { cookie } });
+  const headers = { cookie: `${cookie}; ${reveal.headers.get("set-cookie").split(";", 1)[0]}` };
+  const base = "/public/api/jobs/JOB-20261001-DEMO01";
+  const form_version = "job-interest-short-v1";
+  const started = await call(testEnv, base + "/interest", { method: "POST", headers, body: { form_version } });
+  const { application_ref } = await started.json();
+  const appPath = base + "/applications/" + application_ref;
+  const resumed = await (await call(testEnv, base + "/interest", { method: "POST", headers, body: { form_version } })).json();
+  assert.equal(resumed.application_ref, application_ref);
+  const send = body => call(testEnv, appPath + "/submit", { method: "POST", headers, body: { form_version, ...body } });
+  assert.equal((await send({ nickname: "Test" })).status, 400);
+  assert.equal((await send({ nickname: "Test", phone: "0800000000" })).status, 400);
+  for (let slot = 1; slot <= 10; slot++) {
+    const content_type = slot === 9 ? "video/mp4" : "image/jpeg";
+    const grantResponse = await call(testEnv, appPath + "/upload-grant", { method: "POST", headers, body: { slot, content_type, size: 3 } });
+    assert.equal(grantResponse.status, 200, await grantResponse.clone().text());
+    const grant = await grantResponse.json();
+    const uploaded = await call(testEnv, grant.upload.url, { method: "PUT", headers: { ...headers, "content-type": content_type }, body: new Blob([new Uint8Array([1, 2, 3])]) });
+    assert.equal(uploaded.status, 200, await uploaded.text());
+  }
+  for (const body of [{ slot: 9, content_type: "image/jpeg", size: 3 }, { slot: 10, content_type: "video/mp4", size: 3 }, { slot: 11, content_type: "image/jpeg", size: 3 }, { slot: 1, content_type: "image/jpeg", size: 26 * 1024 * 1024 }]) {
+    const response = await call(testEnv, appPath + "/upload-grant", { method: "POST", headers, body });
+    assert.ok(response.status >= 400);
+  }
+  const sent = await send({ nickname: "Test", phone: "0800000000" });
+  assert.equal(sent.status, 200, await sent.clone().text());
+  const retry = await send({ nickname: "Changed", line_id: "changed" });
+  assert.equal(retry.status, 200);
+  const key = [...testEnv.PUBLIC_ACCESS_EVIDENCE.rows.keys()].find(key => key.endsWith(`/${application_ref}.json`));
+  const record = JSON.parse(new TextDecoder().decode(testEnv.PUBLIC_ACCESS_EVIDENCE.rows.get(key).bytes));
+  assert.equal(record.job_id, "JOB-20261001-DEMO01");
+  assert.equal(record.applicant.nickname, "Test");
+  assert.equal(record.applicant.line_id, "");
+  assert.equal(record.uploads.length, 10);
+  assert.equal(record.uploads[8].kind, "clip");
+  assert.equal(record.uploads[9].kind, "compcard");
+  assert.equal(record.controls.auto_bind, false);
+  assert.equal((await call(testEnv, appPath + "/upload-grant", { method: "POST", headers, body: { slot: 1, content_type: "image/jpeg", size: 3 } })).status, 409);
+});
+
+test("unlinked visitor can submit a short Public job interest without Model binding; Private remains gated", async () => {
+  const e = env();
+  await ownerCreate(e, { world: "public", confidentiality: true, deeper_interest_detail: "SECRET-BRIEF-NOT-PUBLIC" });
+  await ownerCreate(e, { id: "JOB-PRIVATE-TEST", world: "private", confidentiality: true });
+  const board = await call(e, "/public/api/jobs");
+  const cookie = board.headers.get("set-cookie").split(";", 1)[0];
+  const headers = { cookie };
+  const base = "/public/api/jobs/JOB-20261001-DEMO01";
+  const form = await call(e, base + "/apply", { headers });
+  assert.equal(form.status, 200);
+  assert.match(await form.text(), /data-short-interest/);
+  const start = await call(e, base + "/interest", { method: "POST", headers, body: { form_version: "job-interest-short-v1" } });
+  assert.equal(start.status, 201, await start.clone().text());
+  const startedData = await start.json();
+  assert.equal(startedData.interest_detail, "");
+  const { application_ref } = startedData;
+  const path = base + "/applications/" + application_ref;
+  const otherBoard = await call(e, "/public/api/jobs");
+  const otherCookie = otherBoard.headers.get("set-cookie").split(";", 1)[0];
+  const otherGrant = await call(e, path + "/upload-grant", { method: "POST", headers: { cookie: otherCookie }, body: { slot: 1, content_type: "image/jpeg", size: 3 } });
+  assert.equal(otherGrant.status, 403);
+  const otherSubmit = await call(e, path + "/submit", { method: "POST", headers: { cookie: otherCookie }, body: { form_version: "job-interest-short-v1", nickname: "Other", phone: "0800000000" } });
+  assert.equal(otherSubmit.status, 403);
+  const grantResponse = await call(e, path + "/upload-grant", { method: "POST", headers, body: { slot: 1, content_type: "image/jpeg", size: 3 } });
+  assert.equal(grantResponse.status, 200, await grantResponse.clone().text());
+  const grant = await grantResponse.json();
+  assert.equal((await call(e, grant.upload.url, { method: "PUT", headers: { ...headers, "content-type": "image/jpeg" }, body: new Blob([new Uint8Array([1, 2, 3])]) })).status, 200);
+  const done = await call(e, path + "/submit", { method: "POST", headers, body: { form_version: "job-interest-short-v1", nickname: "Test", line_id: "line-example" } });
+  assert.equal(done.status, 200, await done.clone().text());
+  const key = [...e.PUBLIC_ACCESS_EVIDENCE.rows.keys()].find(key => key.endsWith(`/${application_ref}.json`));
+  const record = JSON.parse(new TextDecoder().decode(e.PUBLIC_ACCESS_EVIDENCE.rows.get(key).bytes));
+  assert.equal(record.identity.identity_class, "UNVERIFIED_CANDIDATE");
+  assert.equal(record.identity.verified_model_record_id, null);
+  assert.equal(record.controls.auto_bind, false);
+  assert.equal(record.workflow_status, "candidate_pending_owner");
+  assert.equal((await call(e, "/public/api/jobs/JOB-PRIVATE-TEST/reveal", { method: "POST", headers })).status, 401);
+  assert.equal((await call(e, "/public/api/jobs/JOB-PRIVATE-TEST/apply", { headers })).status, 302);
+  assert.equal((await call(e, base + "/interest", { method: "POST", headers, body: { fast_lane: true } })).status, 401);
 });

@@ -1,0 +1,73 @@
+{
+  "version": "2026-11-04",
+  "assets": {
+    "welcome-room": "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aea58f775b6040470bc67a3_partner-welcome-room-v2.webp",
+    "referral-room": "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aea58f8008eb5da81658691_partner-referral-room-v2.webp",
+    "apply-folio": "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aea58f9905e0772fb71e5fd_partner-apply-folio-v2.webp",
+    "status-lounge": "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aea58f9a5d6a99600ab5ae1_partner-status-lounge-v2.webp",
+    "login-door": "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aea58faa5d6a99600ab5b0a_partner-login-door-v2.webp",
+    "dashboard-desk": "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aea58fa8ca310d316ca7b55_partner-dashboard-desk-v2.webp",
+    "selection-studio": "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aea58fa8ca310d316ca7bb9_partner-selection-studio-v2.webp",
+    "guide-folio": "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aea58fb45e7c10203fa8a9b_partner-guide-folio-v2.webp",
+    "yuki-welcome": "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aea58fb450ec5777c79beeb_partner-yuki-welcome-v2.webp",
+    "yuki-conversation": "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aea58fbbe3ee27ff0c03c32_partner-yuki-conversation-v2.webp",
+    "yuki-explanation": "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aea58fc4360b5d1f2ef3908_partner-yuki-explanation-v2.webp"
+  },
+  "pages": [
+    {
+      "path": "/partner/model/service-guide",
+      "assets": [
+        "guide-folio"
+      ]
+    },
+    {
+      "path": "/partner/referral",
+      "assets": [
+        "yuki-conversation",
+        "referral-room"
+      ]
+    },
+    {
+      "path": "/partner",
+      "assets": [
+        "yuki-welcome",
+        "welcome-room"
+      ]
+    },
+    {
+      "path": "/partner/apply",
+      "assets": [
+        "yuki-explanation",
+        "apply-folio"
+      ]
+    },
+    {
+      "path": "/partner/dashboard",
+      "assets": [
+        "dashboard-desk",
+        "status-lounge"
+      ]
+    },
+    {
+      "path": "/partner/login",
+      "assets": [
+        "login-door"
+      ]
+    },
+    {
+      "path": "/partner/status",
+      "assets": [
+        "status-lounge"
+      ]
+    }
+  ],
+  "terms": {
+    "path": "/partner/terms",
+    "primary": "existing approved Yuki",
+    "support": "guide-folio"
+  },
+  "selection": {
+    "path": "/partner/model-selection",
+    "primary": "selection-studio"
+  }
+}

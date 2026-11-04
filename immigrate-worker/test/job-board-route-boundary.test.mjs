@@ -60,3 +60,13 @@ test("Job Board client accepts the short /j/ broadcast link and the legacy login
   assert.ok(!re.test("https://evil.example/j/ABCDEF123456"));
   assert.ok(!re.test("https://mmdbkk.com/j/ABCDEF1234567"));
 });
+
+
+test("canonical Job Board renders the existing authenticated candidate review without route or gate changes", async () => {
+  const pages = await readFile(pagesUrl, "utf8");
+  const board = pages.slice(pages.indexOf("export function renderJobBoardPage"), pages.indexOf("export function renderCreateJobPage"));
+  assert.match(board, /\$\{jobBoardCandidateReview\(\)\.replace\(/);
+  assert.match(pages, /import \{ jobBoardCandidateReview \} from '\.\.\/\.\.\/admin-worker\/src\/job-board-candidate-review\.js'/);
+  const routes = await readFile(routesUrl, "utf8");
+  assert.match(routes, /pathname === "\/internal\/admin\/jobs\/job-board"[\s\S]*?requireAdminGate\(request, env\)[\s\S]*?return renderJobBoardPage\(\)/);
+});

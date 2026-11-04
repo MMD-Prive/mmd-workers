@@ -1,5 +1,5 @@
 // Presentation only. No identity, balance or business decision is made here.
-export function createCustomerProgress({ render, request, timeoutMs = 15000, mutationTimeoutMs = 120000 }) {
+export function createCustomerProgress({ render, request, diagnostic = () => {}, timeoutMs = 15000, mutationTimeoutMs = 120000 }) {
   let generation = 0, memberGeneration = 0, nextId = 0;
   const tasks = new Map(), panels = new Set(), failures = new Map();
   function publish(panel, reset = false) {
@@ -28,7 +28,10 @@ export function createCustomerProgress({ render, request, timeoutMs = 15000, mut
     memberGeneration++;
     if (!memberOnly) generation++;
     // Ignore late completion; do not abort/replay a business mutation on account reset.
-    for (const [id, task] of tasks) if (!memberOnly || task.scope === "member") tasks.delete(id);
+    for (const [id, task] of tasks) if (!memberOnly || task.scope === "member") {
+      task.diagnostic?.('reset');
+      tasks.delete(id);
+    }
     for (const errors of failures.values()) for (const [key, failure] of errors) {
       if (!memberOnly || failure.scope === 'member') errors.delete(key);
     }
@@ -38,7 +41,10 @@ export function createCustomerProgress({ render, request, timeoutMs = 15000, mut
     const path = String(url).split('?')[0];
     const method = (init.method || 'GET').toUpperCase();
     const preview = method === 'GET' && path === '/api/member/app/history/preview';
+    const history = method === 'GET' && ['/api/member/app/history', '/api/member/app/history/preview'].includes(path);
     const updates = method === 'GET' && ['/api/v1/member/updates/list', '/api/member/app/updates'].includes(path);
+    const diagnosticKind = method === 'POST' && path === '/member/api/liff/start' ? 'start'
+      : history ? 'history' : updates ? 'updates' : null;
     const panel = updates ? 'digital-news-progress' : /history/.test(path) ? 'history-panel' : /credit/.test(path) ? 'credits'
       : /coupon|care-back\/wallet/.test(path) ? 'coupons' : /care|wish/.test(path) ? 'care'
       : /customer.request|evidence/.test(path) ? 'my-requests'
@@ -48,16 +54,27 @@ export function createCustomerProgress({ render, request, timeoutMs = 15000, mut
     const bootstrap = /\/liff\/(?:welcome-context|start|logout)$/.test(path)
       || (path === '/member/api/liff/public-membership/catalog' && (init.method || 'GET').toUpperCase() === 'GET');
     const current = () => epoch === generation && (bootstrap || memberEpoch === memberGeneration);
-    tasks.set(id, { panel, stage:0, optional:preview || updates, scope:bootstrap ? 'bootstrap' : 'member', key:method + ':' + String(url) }); publish(panel);
+    const startedAt = Date.now();
+    let diagnosticCount = 0;
+    const emit = (phase) => {
+      if (!diagnosticKind || diagnosticCount >= 7) return;
+      diagnosticCount++;
+      const elapsed = Date.now() - startedAt;
+      try { diagnostic({ event:`loader.${diagnosticKind}.${phase}`, durationMs:Math.min(300000, Math.max(0, Number.isFinite(elapsed) ? elapsed : 0)), pending:Math.min(1000, Math.max(0, tasks.size)) }); } catch { /* diagnostics must never affect the request */ }
+    };
+    const task = { panel, stage:0, optional:preview || updates, scope:bootstrap ? 'bootstrap' : 'member', key:method + ':' + String(url), diagnostic:emit };
+    tasks.set(id, task); publish(panel);
+    emit('requested');
     const controller = new AbortController();
-    const abort = () => controller.abort();
+    const abort = () => { emit('signal_abort'); controller.abort(); };
     if (init.signal?.aborted) abort();
     init.signal?.addEventListener('abort', abort, { once:true });
     const readOnly = ["GET", "HEAD"].includes((init.method || "GET").toUpperCase());
-    const timer = setTimeout(abort, readOnly ? timeoutMs : mutationTimeoutMs);
+    const timer = setTimeout(() => { emit('timeout'); controller.abort(); }, readOnly ? timeoutMs : mutationTimeoutMs);
     let failed = false;
     try {
       const response = await request(url, { ...init, signal:controller.signal });
+      emit('headers');
       // Authentication failures are critical even on an optional read.
       if (current() && [401, 403].includes(response.status)) tasks.get(id).optional = false;
       if (current() && preview && response.status === 404) tasks.get(id).optional = false;
@@ -78,6 +95,7 @@ export function createCustomerProgress({ render, request, timeoutMs = 15000, mut
         } catch (error) { await reader.cancel().catch(() => {}); throw error; }
         const bytes = new Uint8Array(size); let offset = 0;
         for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+        emit('body_complete');
         if (!current()) throw new Error("customer_response_stale");
         failed = !response.ok;
         if (preview && response.status === 404) {
@@ -93,12 +111,15 @@ export function createCustomerProgress({ render, request, timeoutMs = 15000, mut
       }
       if (!current()) throw new Error("customer_response_stale");
       failed = !response.ok;
+      emit('body_complete');
       return response;
     } catch (error) { failed = true; throw error; }
     finally {
       clearTimeout(timer);
       init.signal?.removeEventListener('abort', abort);
+      if (!current()) emit('stale');
       if (current()) finish(id, panel, failed);
+      emit('settled');
     }
   }
   async function waitFor(operation, panel = 'home') {

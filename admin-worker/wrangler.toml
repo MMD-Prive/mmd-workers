@@ -13,6 +13,15 @@ triggers = { crons = ["*/5 * * * *"] }
 compatibility_date = "2026-01-01"
 workers_dev = true
 
+# Owner Social Media composer. Keep the route narrow; no publishing endpoints.
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/social-media*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/social-media*"
+zone_name = "mmdbkk.com"
+
 # LINE Notes evidence intake: own only this page and its existing import API.
 [[routes]]
 pattern = "mmdbkk.com/internal/ceo/line-notes-import*"
@@ -1551,4 +1560,3 @@ zone_name = "mmdbkk.com"
 [[routes]]
 pattern = "www.mmdbkk.com/v1/admin/compcards*"
 zone_name = "mmdbkk.com"
-

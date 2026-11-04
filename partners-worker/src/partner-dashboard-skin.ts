@@ -1,17 +1,17 @@
 // Presentation only. Images are approved public Webflow artwork, never Partner data.
 const asset = "https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90/";
-const office = asset + "6aafacd73ae8f604b01ab51e_Partner%2001.webp";
-const yuki = asset + "6aafacd62571b68a1a5c1737_Yuki%20Partner%2001.webp";
-const portrait = asset + "6aafacd69860715ea7ff4eb0_Yuki%20Partner%2003.webp";
+const office = "https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90/6aea58fa8ca310d316ca7b55_partner-dashboard-desk-v2.webp";
+const yuki = "https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90/6aea58fb450ec5777c79beeb_partner-yuki-welcome-v2.webp";
+const portrait = "https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90/6aea58fbbe3ee27ff0c03c32_partner-yuki-conversation-v2.webp";
 export const PARTNER_HERO_VIEWS = {
   home: { title: "Home & Jobs", image: yuki, position: "72% 15%", index: "01" },
   models: { title: "Models", image: portrait, position: "70% 12%", index: "02" },
-  agreements: { title: "Agreements", image: office, position: "center", index: "03" },
-  earnings: { title: "Earnings", image: office, position: "center", index: "04" },
+  agreements: { title: "Agreements", image: "https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90/6aea58fb45e7c10203fa8a9b_partner-guide-folio-v2.webp", position: "center", index: "03" },
+  earnings: { title: "Earnings", image: "https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90/6aea58f9905e0772fb71e5fd_partner-apply-folio-v2.webp", position: "center", index: "04" },
   performance: { title: "Performance", image: yuki, position: "72% 15%", index: "05" },
-  console: { title: "Partner Console", image: portrait, position: "70% 12%", index: "06" },
-  activity: { title: "ประวัติ / แจ้งเตือน", image: office, position: "center", index: "07" },
-  privacy: { title: "Private Vault", image: office, position: "center", index: "08" }
+  console: { title: "Partner Console", image: "https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90/6aea58fc4360b5d1f2ef3908_partner-yuki-explanation-v2.webp", position: "70% 12%", index: "06" },
+  activity: { title: "ประวัติ / แจ้งเตือน", image: "https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90/6aea58f9a5d6a99600ab5ae1_partner-status-lounge-v2.webp", position: "center", index: "07" },
+  privacy: { title: "Private Vault", image: "https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90/6aea58faa5d6a99600ab5b0a_partner-login-door-v2.webp", position: "center", index: "08" }
 } as const;
 
 export function renderPartnerDashboardHero(): string {

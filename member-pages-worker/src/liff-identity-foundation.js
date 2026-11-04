@@ -11,6 +11,7 @@ import { readMmsCustomerHistory } from "./mms-customer-history.js";
 import { fulfillmentStateFromOrder, publicMmdShopFulfillment, readMmdShopFulfillment } from "../../shared/mmd-shop-fulfillment.mjs";
 import { publicMmdShopReservation, readMmdShopReservation } from "../../shared/mmd-shop-stock-reservation.mjs";
 import { approvedLineChannelIds } from "./line-channel-audiences.js";
+import { createStartDiagnostics } from "./liff-start-diagnostics.js";
 
 const WORKER = "member-pages-worker";
 const VERSION = "20260828-care-back-benefits-wallet";
@@ -550,6 +551,19 @@ function forwardMmsResponse(upstream, cookies = []) {
 }
 
 export async function handleStart(request, env = {}) {
+  const diagnostic = createStartDiagnostics();
+  const aborted = () => diagnostic.disconnected();
+  request.signal.addEventListener('abort', aborted, {once:true});
+  if (request.signal.aborted) aborted();
+  try {
+    const response = await handleStartTimed(request, env, diagnostic);
+    diagnostic.complete(response.status);
+    return response;
+  } catch (error) { diagnostic.failed(); throw error; }
+  finally { request.signal.removeEventListener('abort', aborted); }
+}
+
+async function handleStartTimed(request, env, diagnostic) {
   if (request.method !== "POST") return methodNotAllowed("POST");
   const originFailure = requireSameOrigin(request, env);
   if (originFailure) return originFailure;
@@ -564,20 +578,20 @@ export async function handleStart(request, env = {}) {
   const idToken = singleIdToken(body);
   if (!idToken) return json({ ok: false, error: { code: "ID_TOKEN_REQUIRED", message: "id_token is required" } }, 400);
 
-  const verified = await verifyLineIdToken(idToken, env);
+  const verified = await diagnostic.step('verify_token', () => verifyLineIdToken(idToken, env));
   if (!verified.ok) return json({ ok: false, error: { code: verified.code, message: verified.message } }, verified.status);
 
   const identityKey = await keyedDigest(env, `identity:${verified.sub}`);
-  const memberState = await resolveMemberIdentity(env, verified.sub);
+  const memberState = await diagnostic.step('resolve_member', () => resolveMemberIdentity(env, verified.sub));
   if (!memberState.ok) {
     return json({ ok: false, error: { code: "MEMBER_RESOLUTION_FAILED", message: "Member identity could not be resolved safely." } }, 503);
   }
 
-  const pending = memberState.exists ? null : await getOrCreatePendingIdentity(env, identityKey);
+  const pending = memberState.exists ? null : await diagnostic.step('pending_identity', () => getOrCreatePendingIdentity(env, identityKey));
   const intent = normalizeIntent(body.intent);
   const liffIntent = normalizeLiffIntent(body.liff_intent ?? body.intent);
   const continuity = cleanContinuity(new URL(request.url).searchParams.get("t"));
-  const session = await issueSession(env, {
+  const session = await diagnostic.step('issue_session', () => issueSession(env, {
     line_user_id: verified.sub,
     verified_at: new Date().toISOString(),
     renewal_flow_status: "identity_linked",
@@ -600,12 +614,12 @@ export async function handleStart(request, env = {}) {
     next_screen_key: liffIntent === "unknown" ? "start_intent" : nextScreenForIntent(liffIntent, memberState.exists),
     continuity,
     recovery_binding: intent === "signup" || liffIntent === "signup" ? randomToken(24) : null,
-  });
+  }));
   let remembered;
   try {
-    await persistGatewayStart(env, gatewayStore, session.session);
-    await saveSession(env, session.hash, session.session, SESSION_TTL_SECONDS);
-    remembered = await issueOrReuseRememberedLogin(request, env, session.session);
+    await diagnostic.step('persist_gateway', () => persistGatewayStart(env, gatewayStore, session.session));
+    await diagnostic.step('save_session', () => saveSession(env, session.hash, session.session, SESSION_TTL_SECONDS));
+    remembered = await diagnostic.step('remembered_login', () => issueOrReuseRememberedLogin(request, env, session.session));
   } catch (error) {
     await env.LIFF_IDENTITY_KV.delete(`liff:session:${session.hash}`);
     return error instanceof RememberedLoginStorageError
@@ -615,7 +629,7 @@ export async function handleStart(request, env = {}) {
 
   const cookies = [sessionCookie(session.token, SESSION_TTL_SECONDS)];
   if (remembered) cookies.push(rememberedLoginCookie(remembered.token, remembered.expires_at));
-  return json({ ok: true, data: await safeSessionView(gatewayStore, session.session) }, 200, { cookies });
+  return json({ ok: true, data: await diagnostic.step('safe_view', () => safeSessionView(gatewayStore, session.session)) }, 200, { cookies });
 }
 
 export async function handleIntent(request, env = {}) {

@@ -2,7 +2,8 @@ import { readMemberHistoryPreload, recentServicesFromPreload } from "./member-hi
 import { serializeMemberWorlds } from "../../shared/member-worlds.mjs";
 import liffFoundation from "./liff-identity-foundation.js";
 import { fixedTierExpiry } from "./fixed-tier-expiry.js";
-import { readClientBackedHistoryResult } from "./member-app-client-history.js";
+import { readClientBackedHistoryResult, resolveCanonicalClientForLine } from "./member-app-client-history.js";
+import { readOriginalBookingEvidence, mergeOriginalBookingEvidence } from "../../shared/original-booking-evidence.mjs";
 import { handleMemberAppSessionApi, isMemberAppSessionPath } from "./member-app-session.js";
 import { handleMemberAppSessionExtensionApi, isMemberAppSessionExtensionPath } from "./member-app-session-extension.js";
 import {
@@ -1016,12 +1017,25 @@ async function adaptPoints(request, env, delegate) {
   });
 }
 
+export async function readSessionBookingEvidence(env, sessionSnapshot) {
+  if (!sessionSnapshot?.lineUserId) return { state: "unavailable", items: [] };
+  try {
+    const client = await resolveCanonicalClientForLine(env, sessionSnapshot.lineUserId);
+    if (!client?.id) return { state: "unavailable", items: [] };
+    const lineField = String(env.AIRTABLE_CLIENTS_LINE_USER_ID_FIELD || "line_user_id");
+    if (client.fields?.[lineField] && client.fields[lineField] !== sessionSnapshot.lineUserId) return { state: "unavailable", items: [] };
+    return readOriginalBookingEvidence(env, client.id);
+  } catch { return { state: "unavailable", items: [] }; }
+}
+
 async function adaptHistory(request, env, delegate) {
   const sessionSnapshot = await readMemberAppSession(request, env);
+  const evidence = await readSessionBookingEvidence(env, sessionSnapshot);
+  const withEvidence = items => mergeOriginalBookingEvidence(items, evidence.items);
   if (sessionSnapshot?.lineUserId && sessionSnapshot?.memberId) {
     const preload = await readMemberHistoryPreload(env, sessionSnapshot.lineUserId).catch(() => null);
     const recent = recentServicesFromPreload(preload, sessionSnapshot.memberId);
-    if (recent?.length) return Response.json(recent, { headers: { "cache-control": "no-store" } });
+    if (recent?.length) return Response.json(withEvidence(recent), { headers: { "cache-control": "no-store" } });
   }
   const result = await readUpstream(request, env, delegate, "/api/member/dashboard");
   if (!result.ok) return result.response;
@@ -1029,16 +1043,17 @@ async function adaptHistory(request, env, delegate) {
   const items = historyFromDashboard(data);
   if (items.length === 0 && sessionSnapshot?.lineUserId) {
     const linkedHistory = await readClientBackedHistoryResult(env, sessionSnapshot.lineUserId);
-    if (linkedHistory.items.length) return responseFrom(result.upstream, linkedHistory.items);
+    if (linkedHistory.items.length) return responseFrom(result.upstream, withEvidence(linkedHistory.items));
+    if (evidence.items.length) return responseFrom(result.upstream, withEvidence([]));
     if (linkedHistory.state !== "resolved") return responseFrom(result.upstream, { state: "checking", items: [] });
   }
-  if (items.length === 0) {
+  if (items.length === 0 && evidence.items.length === 0) {
     const legacyEvidence = await legacyEvidenceForRecoveryCheck(request, env);
     if (legacyEvidence?.display?.historicalServiceEvidence || legacyEvidence?.historyState === "unavailable") {
       return responseFrom(result.upstream, { state: "checking", items: [] });
     }
   }
-  if (items.length) return responseFrom(result.upstream, items);
+  if (items.length || evidence.items.length) return responseFrom(result.upstream, withEvidence(items));
   const complete = ["verified", "empty"].includes(data.history?.status)
     && ["verified_history", "empty"].includes(data.payment_history?.status);
   return responseFrom(result.upstream, { state: complete ? "resolved" : "checking", items: [] });

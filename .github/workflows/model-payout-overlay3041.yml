@@ -1,0 +1,216 @@
+name: Payout preserved overlay3041
+on:
+  pull_request:
+    paths:
+      - 'scripts/model-payout-overlay3041*'
+      - '.github/workflows/model-payout-overlay3041.yml'
+  workflow_dispatch:
+    inputs:
+      production_approved:
+        description: Owner approval for exact compatible admin artifact only
+        type: boolean
+        required: true
+        default: false
+      approved_sha:
+        description: Exact main SHA approved to execute release runner
+        type: string
+        required: true
+      approval_ref:
+        description: Owner authorization; no business/config writes or messages
+        type: string
+        required: true
+      reviewed_sha:
+        description: Exact successful artifact CI head
+        type: string
+        required: true
+      artifact_run_id:
+        description: Successful compatible-artifact CI run ID
+        type: string
+        required: true
+      artifact_id:
+        description: Exact compatible artifact ID approved by owner
+        type: string
+        required: true
+permissions:
+  contents: read
+  actions: read
+  deployments: read
+jobs:
+  contracts:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Scoped release/protection and existing payout contracts (no credentials)
+        run: |
+          PYTHONDONTWRITEBYTECODE=1 python3 scripts/model-payout-overlay3041-release.test.py
+          node --test scripts/admin-production-approval.test.mjs
+          node --test admin-worker/model-payout-adjustments.test.mjs admin-worker/model-payout-outcomes.test.mjs admin-worker/partner-owner-console.test.mjs admin-worker/job-orchestrator-owner-ops.test.mjs
+  read-baseline:
+    needs: contracts
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'codex/model-payout-overlay3041-release'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: GET-only exact1698 source (no journal/business reads)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python3 scripts/model-payout-overlay3041-read.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: payout-overlay3041-baseline-${{ github.event.pull_request.head.sha }}
+          path: payout-overlay-baseline/
+          retention-days: 7
+  candidate:
+    needs: read-baseline
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v4
+        with:
+          name: payout-overlay3041-baseline-${{ github.event.pull_request.head.sha }}
+          path: payout-overlay-baseline
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: 41725926614
+          name: payout-admin-baseline-be2b414ab2082d3d62a9882754673fec6f35ad0f
+          path: payout-old-baseline
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: 41725926614
+          name: payout-preserved-candidate-be2b414ab2082d3d62a9882754673fec6f35ad0f
+          path: payout-original
+      - name: Pinned offline assembly tools only (no production credentials)
+        run: npm install --prefix "$RUNNER_TEMP/payout-tools" --no-save acorn@8.15.0 @jridgewell/sourcemap-codec@1.6.0
+      - name: Preserve3041 overlay and enforce reviewed78788/map8f8e hashes
+        env:
+          PAYOUT_TOOLS_DIR: ${{ runner.temp }}/payout-tools
+        run: node scripts/model-payout-overlay3041-build.cjs
+      - name: Exact upload-file checksums
+        working-directory: payout-compatible
+        run: sha256sum worker.js admin-login-hero-worker.js.map manifest.json > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: payout-overlay3041-candidate-${{ github.event.pull_request.head.sha }}
+          path: payout-compatible/
+          retention-days: 7
+  runtime:
+    needs: candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v4
+        with:
+          name: payout-overlay3041-candidate-${{ github.event.pull_request.head.sha }}
+          path: payout-compatible
+      - name: Verify downloaded checksum manifest
+        working-directory: payout-compatible
+        run: sha256sum --check SHA256SUMS
+      - name: Pinned local fixture runtime only
+        run: npm install --prefix "$RUNNER_TEMP/payout-tools" --no-save miniflare@4.20260317.3
+      - name: Test downloaded full compiled closure, restart and concurrency
+        env:
+          PAYOUT_TOOLS_DIR: ${{ runner.temp }}/payout-tools
+          PAYOUT_BUNDLE_DIR: payout-compatible
+        run: node scripts/model-payout-overlay3041-runtime.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: payout-overlay3041-acceptance-${{ github.event.pull_request.head.sha }}
+          path: payout-artifact-fixture/result.json
+          retention-days: 7
+  production-approval:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify unchanged existing owner-only production protection (GET only)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APPROVAL_REF: ${{ inputs.approval_ref }}
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+        run: node scripts/admin-production-approval.mjs
+  release-admin:
+    needs: production-approval
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha
+    concurrency:
+      group: deploy-admin-worker-production
+      cancel-in-progress: false
+    environment: mmd-production-mutation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PRODUCTION_APPROVED: ${{ inputs.production_approved }}
+      APPROVED_SHA: ${{ inputs.approved_sha }}
+      APPROVAL_REF: ${{ inputs.approval_ref }}
+      REVIEWED_SHA: ${{ inputs.reviewed_sha }}
+      ARTIFACT_RUN_ID: ${{ inputs.artifact_run_id }}
+      ARTIFACT_ID: ${{ inputs.artifact_id }}
+      GH_TOKEN: ${{ github.token }}
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify exact approved artifact ID/run/source before download
+        run: |
+          python3 - <<'PY'
+          import importlib.util,os
+          s=importlib.util.spec_from_file_location('r','scripts/model-payout-overlay3041-release.py');m=importlib.util.module_from_spec(s);s.loader.exec_module(m)
+          m.gate(os.environ);print(m.verify_artifact(os.environ))
+          PY
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.artifact_run_id }}
+          name: payout-overlay3041-candidate-${{ inputs.reviewed_sha }}
+          path: payout-compatible
+      - name: Verify retained exact file checksums (no build)
+        working-directory: payout-compatible
+        run: sha256sum --check SHA256SUMS
+      - name: Upload/promote admin code only and attest exact readback (no business smoke)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ROUTES_API_TOKEN: ${{ secrets.CLOUDFLARE_ROUTES_API_TOKEN }}
+          CLOUDFLARE_R2_API_TOKEN: ${{ secrets.CLOUDFLARE_R2_API_TOKEN }}
+        run: python3 scripts/model-payout-overlay3041-release.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: payout-overlay3041-release-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+          path: payout-compatible-release/
+          retention-days: 30
