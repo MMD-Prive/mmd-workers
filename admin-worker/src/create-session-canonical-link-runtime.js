@@ -211,6 +211,18 @@ async function reconcileCanonicalLinks(env, body, canonical, ids) {
 
   const sessionPatch = {};
   if (ids.clientId) {
+    // MY MMD reads current Sessions by verified LINE identity. Copy only the
+    // canonical Client value, never a browser-supplied identity or display name.
+    const clientLine = clean(canonical.client?.fields?.line_user_id);
+    if (/^U[0-9a-f]{32}$/i.test(clientLine)) {
+      const sessionLine = clean(session.fields?.line_user_id);
+      const clients = session.fields?.[SESSION_FIELDS.client];
+      if ((sessionLine && sessionLine !== clientLine) ||
+          (clients != null && (!Array.isArray(clients) || clients.some(id => id !== ids.clientId)))) {
+        throw typedError(409, "created_session_owner_conflict");
+      }
+      if (!sessionLine) sessionPatch.line_user_id = clientLine;
+    }
     sessionPatch[SESSION_FIELDS.client] = [ids.clientId];
     sessionPatch[SESSION_FIELDS.clientSource] = clientSource;
   }
