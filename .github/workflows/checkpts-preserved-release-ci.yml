@@ -1,0 +1,81 @@
+name: Checkpts preserved release CI
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/checkpts-preserved-release.mjs'
+      - 'scripts/checkpts-preserved-release.test.mjs'
+      - 'scripts/checkpts-ci-prepare.mjs'
+      - 'scripts/checkpts-ci-prepare.test.mjs'
+      - '.github/workflows/checkpts-preserved-release-ci.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: checkpts-preserved-ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  mocked-artifact-tests:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      # Fixed read-only artifact: no Cloudflare credential and no live snapshot.
+      # A missing/expired artifact fails the job; never fall back to Production.
+      - name: Download exact historical LINE readback artifact
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: '13266408212'
+          merge-multiple: true
+          run-id: '41710503902'
+          repository: MMD-Prive/mmd-workers
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/checkpts-input
+      - name: Install pinned test-only tools
+        run: npm install --prefix "$RUNNER_TEMP/checkpts-tools" --no-save --ignore-scripts esbuild@0.27.3 @jridgewell/sourcemap-codec@1.6.0 miniflare@4.20260317.3
+      - name: Validate historical receipt and baseline bytes
+        run: node scripts/checkpts-ci-prepare.mjs "$RUNNER_TEMP/checkpts-input" "$RUNNER_TEMP/checkpts-review"
+      - name: Build Checkpts candidate offline from pinned merge
+        env:
+          CHECKPTS_TOOLS_DIR: ${{ runner.temp }}/checkpts-tools
+        run: node scripts/checkpts-preserved-release.mjs prepare "$RUNNER_TEMP/checkpts-review/baseline" "$RUNNER_TEMP/checkpts-review/candidate"
+      - name: Verify artifact-input rejection contracts
+        env:
+          CHECKPTS_CI_INPUT_DIR: ${{ runner.temp }}/checkpts-input
+        run: node --test scripts/checkpts-ci-prepare.test.mjs
+      - name: Run all 51 release tests with actual bundle and mocked services
+        shell: bash
+        env:
+          CHECKPTS_TOOLS_DIR: ${{ runner.temp }}/checkpts-tools
+          CHECKPTS_REVIEW_DIR: ${{ runner.temp }}/checkpts-review
+        run: |
+          set -euo pipefail
+          node --test --test-timeout=30000 --test-reporter=tap scripts/checkpts-preserved-release.test.mjs | tee "$RUNNER_TEMP/checkpts-review/test-results.tap"
+          node --input-type=module - "$RUNNER_TEMP/checkpts-review/test-results.tap" <<'JS'
+          import assert from 'node:assert/strict';
+          import {readFileSync} from 'node:fs';
+          const tap=readFileSync(process.argv[2],'utf8');
+          for(const line of ['# tests 51','# pass 51','# fail 0','# cancelled 0','# skipped 0'])assert.ok(tap.split(/\r?\n/).includes(line),'Incomplete suite: '+line);
+          JS
+      - name: Save test evidence only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: checkpts-ci-evidence-${{ github.event.pull_request.head.sha }}
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            ${{ runner.temp }}/checkpts-review/test-results.tap
+            ${{ runner.temp }}/checkpts-review/ci-provenance.json
+            ${{ runner.temp }}/checkpts-review/candidate/manifest.json
