@@ -1,0 +1,24 @@
+{
+  "schema": "care_back_november_policy_patch_v1",
+  "worker": "member-pages-worker",
+  "baseline_version": "57070c23-512b-4be4-b4df-378e272199e3",
+  "baseline_deployment": "ddafcc48-7fc9-4e9c-89a5-4572ddecf3c2",
+  "main_module": "worker.js",
+  "modules": [
+    {
+      "name": "worker.js",
+      "type": "esm",
+      "before_sha256": "4e406ab1cedd3d777333b5078e7d915755f5679d0996e6dd885217e10fe6cf49",
+      "after_sha256": "de6ae634a7199b2cfad2ffb20807c36a417ee456df61dfec5e3d27982f79394a",
+      "patches": [
+        {
+          "id": "renewal-shell-capacity",
+          "before": "html2.length > 1024 * 1024",
+          "after": "html2.length > 4 * 1024 * 1024",
+          "before_sha256": "56d6adc7fdc5eaffa13a38c34c9850a4b8bed614a78b6b718e405caec0d767cb",
+          "after_sha256": "700fc9b06b6e07e4c0cc787396f4a412c0af9dc5c0ae1beb1b670d30852cefa8"
+        }
+      ]
+    }
+  ]
+}
