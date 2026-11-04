@@ -123,7 +123,11 @@ test('the approved manifest contains unique matched models, pinned image bytes a
   });
   assert.equal(new Set(Object.values(doubleMoment.captions)).size, 1);
   assert.match(doubleMoment.captions.preview, /27,000 บาท/);
-  assert.match(doubleMoment.captions.preview, /180 วัน/);
+  assert.match(doubleMoment.captions.preview, /10,000 บาทต่องาน รวม 2 งาน/);
+  assert.match(doubleMoment.captions.preview, /โบนัส Moment งานละ 3,500 บาท/);
+  assert.match(doubleMoment.captions.preview, /อย่างน้อยงานละ 20,000 บาท/);
+  assert.match(doubleMoment.captions.preview, /https:\/\/www\.mmdbkk\.com\/promotion\/double-moment/);
+  assert.doesNotMatch(doubleMoment.captions.preview, /120 วัน|180 วัน/);
   for (const c of manifest.cards) {
     assert.equal(c.id, c.file_id);
     assert.match(c.model_id, /^rec[A-Za-z0-9]{14}$/);
