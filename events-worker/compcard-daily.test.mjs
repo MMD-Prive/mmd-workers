@@ -335,15 +335,14 @@ test("approved text promotion can run while model data is unavailable and never 
   assert.equal(f.bucket.read("readiness/latest.json").result.promotion_ready, true);
 });
 
-test("CARE BACK text stops after 31 October while model cards continue", async () => {
+test("CARE BACK text expires after October while Double Moment waits for its monthly anchor", async () => {
   const f = fixture({ promotions: APPROVED_COMPCARD_MANIFEST.promotions });
   await run(f, "2026-10-31", "20:00");
   const continued = await run(f, "2026-11-01", "20:00");
-  assert.equal(continued.results[0].status, "sent");
-  assert.equal(continued.results[0].card_id, "double-moment-continues-2026-telegram");
-  assert.equal(f.sends.length, 2);
+  assert.equal(continued.results[0].status, "no_approved_promotion");
+  assert.equal(f.sends.length, 1);
   await run(f, "2026-11-02", "16:30");
-  assert.equal(f.sends.length, 4);
+  assert.equal(f.sends.length, 3);
 });
 
 test("a known-down promotion room preserves its attempts until readiness recovers", async () => {
@@ -371,33 +370,30 @@ test("a promotion that expires during preparation cannot send even inside its da
   assert.equal(f.bucket.read("deliveries/2026-10-18/promotion/premium.json").status, "blocked");
 });
 
-test("explicit continuous promotion remains available after the CARE BACK cutoff and rotates rooms", async () => {
+test("continuous Double Moment does not bypass the durable monthly exposure schedule", async () => {
   const double = APPROVED_COMPCARD_MANIFEST.promotions.find((item) => item.id === "double-moment-continues-2026-telegram");
   const f = fixture({ cards: [], promotions: [double] });
-  for (const date of ["2026-11-01", "2027-01-01", "2036-01-01"]) await run(f, date, "20:00");
-  assert.deepEqual(f.sends.map((row) => row.destination), ["preview", "premium", "preview"]);
-  for (const row of f.sends) {
-    assert.equal(row.card.financial_campaign_id, "promo_double_moment_sep2026");
-    assert.equal(row.asset.sha256, double.sha256);
-    assert.equal(row.asset.sha256, await compcardSha256(new TextEncoder().encode(row.caption)));
-  }
+  const result = await run(f, "2026-11-06", "20:00");
+  assert.equal(result.status, "failed");
+  assert.equal(result.error, "compcard_double_monthly_anchor_missing");
+  assert.equal(f.sends.length, 0);
 });
 
-test("two active campaigns alternate deterministically and Double continues after CARE BACK", async () => {
+test("Double Moment remains out of the global rotation once monthly policy begins", async () => {
   const f = fixture({ cards: [], promotions: APPROVED_COMPCARD_MANIFEST.promotions });
   const selected = [];
   for (const date of ["2026-10-18", "2026-10-19", "2026-10-20", "2026-11-01", "2026-11-02"]) {
     const result = await run(f, date, "20:00");
-    selected.push(result.results[0].card_id);
+    selected.push(result.results?.[0]?.card_id || result.results?.[0]?.status || result.status);
   }
   assert.deepEqual(selected, [
     "care-back-continues-2026-telegram",
     "double-moment-continues-2026-telegram",
     "care-back-continues-2026-telegram",
-    "double-moment-continues-2026-telegram",
-    "double-moment-continues-2026-telegram",
+    "not_ready",
+    "not_ready",
   ]);
-  assert.deepEqual(f.sends.map((row) => row.destination), ["premium", "standard", "preview", "preview", "premium"]);
+  assert.deepEqual(f.sends.map((row) => row.destination), ["premium", "standard", "preview"]);
 });
 
 test("missing, malformed, paused, revoked and before-start promotion windows fail closed", async () => {
