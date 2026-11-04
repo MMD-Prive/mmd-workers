@@ -106,6 +106,24 @@ test('automatic CI is credential-free and runs gate and current-session regressi
   assert.doesNotMatch(source, /secrets\.|wrangler|curl |workflow_run:|environment:/);
 });
 
+test('model response regressions run for PR and main dependency changes without production access', () => {
+  const source = read('admin-workflow-safety-ci.yml');
+  const header = source.split('\njobs:')[0];
+  for (const event of ['pull_request', 'push']) {
+    const block = header.split(`  ${event}:\n`)[1]?.split(/^  \w+:/m)[0];
+    assert.ok(block, `${event}: trigger required`);
+    for (const path of ['shared/model-response-*', 'shared/model-decline-options*']) {
+      assert.ok(block.includes(`- '${path}'`), `${event}: ${path} trigger required`);
+    }
+  }
+  for (const file of ['adapter', 'journal', 'session']) {
+    assert.ok(source.includes(`node --check shared/model-response-${file}.mjs\n`));
+    assert.ok(source.includes(`node --check shared/model-response-${file}.test.mjs\n`));
+  }
+  assert.ok(source.includes('node --experimental-global-webcrypto --test shared/model-response-adapter.test.mjs shared/model-response-journal.test.mjs shared/model-response-session.test.mjs\n'));
+  assert.doesNotMatch(source, /secrets\.|wrangler|curl |workflow_run:|environment:/);
+});
+
 test('guard mutations fail regression: fan-out, missing needs/environment, and permissive condition', () => {
   const source = read('owner-payment-reissue.yml');
   for (const altered of [
