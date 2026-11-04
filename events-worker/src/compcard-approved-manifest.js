@@ -393,13 +393,13 @@ export const APPROVED_COMPCARD_MANIFEST = {
         "limit_per_verified_member_per_campaign": 1,
         "verification_and_ledger": "existing_official_verify_flow"
       },
-      "approval_provenance": "Owner instruction in CODEXMIN_HYPE_DOUBLE_MOMENT_CONTINUOUS_20261018.md; advertisement continues until owner pauses or revokes it.",
+      "approval_provenance": "Owner approved continuous availability in CODEXMIN_HYPE_DOUBLE_MOMENT_CONTINUOUS_20261018.md; the owner later set the monthly publication schedule and approved the revised CTA and copy.",
       "file_id": null,
-      "sha256": "9f73928285d48f8e3683c6177566a3f4fb23cf850f730175ca7150f0a837b81c",
+      "sha256": "f814901279bb93202c3244ee748376f872d0c62263e23afb55aa6292bb1e158d",
       "captions": {
-        "premium": "MMD PRIVÉ · DOUBLE MOMENT\n\nวางแผนโมเมนต์ถัดไปกับ MMD\nชำระ 20,000 บาท รับเครดิตรวม 27,000 บาท\n\n• เครดิตจากยอดชำระ 20,000 บาท\n• โบนัส Moment 1 จำนวน 3,500 บาท\n• โบนัส Moment 2 จำนวน 3,500 บาท\n\nโบนัสทั้งสองสิทธิ์ใช้กับคนละงานที่ยืนยันแล้ว แต่ละครั้งมียอดบริการอย่างน้อย 20,000 บาท\nเครดิตมีอายุ 180 วัน โดยอ้างอิงวันหมดอายุที่ระบบยืนยัน\nจำกัดหนึ่งแพ็กเกจต่อสมาชิกที่ยืนยันแล้วต่อแคมเปญ\n\nดูรายละเอียดและเช็กสิทธิ์ผ่าน MY MMD\nhttps://www.mmdbkk.com/member/login",
-        "standard": "MMD PRIVÉ · DOUBLE MOMENT\n\nวางแผนโมเมนต์ถัดไปกับ MMD\nชำระ 20,000 บาท รับเครดิตรวม 27,000 บาท\n\n• เครดิตจากยอดชำระ 20,000 บาท\n• โบนัส Moment 1 จำนวน 3,500 บาท\n• โบนัส Moment 2 จำนวน 3,500 บาท\n\nโบนัสทั้งสองสิทธิ์ใช้กับคนละงานที่ยืนยันแล้ว แต่ละครั้งมียอดบริการอย่างน้อย 20,000 บาท\nเครดิตมีอายุ 180 วัน โดยอ้างอิงวันหมดอายุที่ระบบยืนยัน\nจำกัดหนึ่งแพ็กเกจต่อสมาชิกที่ยืนยันแล้วต่อแคมเปญ\n\nดูรายละเอียดและเช็กสิทธิ์ผ่าน MY MMD\nhttps://www.mmdbkk.com/member/login",
-        "preview": "MMD PRIVÉ · DOUBLE MOMENT\n\nวางแผนโมเมนต์ถัดไปกับ MMD\nชำระ 20,000 บาท รับเครดิตรวม 27,000 บาท\n\n• เครดิตจากยอดชำระ 20,000 บาท\n• โบนัส Moment 1 จำนวน 3,500 บาท\n• โบนัส Moment 2 จำนวน 3,500 บาท\n\nโบนัสทั้งสองสิทธิ์ใช้กับคนละงานที่ยืนยันแล้ว แต่ละครั้งมียอดบริการอย่างน้อย 20,000 บาท\nเครดิตมีอายุ 180 วัน โดยอ้างอิงวันหมดอายุที่ระบบยืนยัน\nจำกัดหนึ่งแพ็กเกจต่อสมาชิกที่ยืนยันแล้วต่อแคมเปญ\n\nดูรายละเอียดและเช็กสิทธิ์ผ่าน MY MMD\nhttps://www.mmdbkk.com/member/login"
+        "premium": "MMD PRIVÉ · DOUBLE MOMENT\n\nวางแผนโมเมนต์ถัดไปกับ MMD\nชำระ 20,000 บาท รับเครดิตรวม 27,000 บาท\n\n• เครดิตส่วนที่ชำระ 10,000 บาทต่องาน รวม 2 งาน\n• โบนัส Moment งานละ 3,500 บาท สำหรับทั้ง 2 งาน\n\nแต่ละงานต้องเป็นคนละงานที่ยืนยันแล้ว และมียอดบริการอย่างน้อยงานละ 20,000 บาท\nจำกัดหนึ่งแพ็กเกจต่อสมาชิกที่ยืนยันแล้วต่อแคมเปญ\n\nดูรายละเอียดโปรโมชั่น\nhttps://www.mmdbkk.com/promotion/double-moment",
+        "standard": "MMD PRIVÉ · DOUBLE MOMENT\n\nวางแผนโมเมนต์ถัดไปกับ MMD\nชำระ 20,000 บาท รับเครดิตรวม 27,000 บาท\n\n• เครดิตส่วนที่ชำระ 10,000 บาทต่องาน รวม 2 งาน\n• โบนัส Moment งานละ 3,500 บาท สำหรับทั้ง 2 งาน\n\nแต่ละงานต้องเป็นคนละงานที่ยืนยันแล้ว และมียอดบริการอย่างน้อยงานละ 20,000 บาท\nจำกัดหนึ่งแพ็กเกจต่อสมาชิกที่ยืนยันแล้วต่อแคมเปญ\n\nดูรายละเอียดโปรโมชั่น\nhttps://www.mmdbkk.com/promotion/double-moment",
+        "preview": "MMD PRIVÉ · DOUBLE MOMENT\n\nวางแผนโมเมนต์ถัดไปกับ MMD\nชำระ 20,000 บาท รับเครดิตรวม 27,000 บาท\n\n• เครดิตส่วนที่ชำระ 10,000 บาทต่องาน รวม 2 งาน\n• โบนัส Moment งานละ 3,500 บาท สำหรับทั้ง 2 งาน\n\nแต่ละงานต้องเป็นคนละงานที่ยืนยันแล้ว และมียอดบริการอย่างน้อยงานละ 20,000 บาท\nจำกัดหนึ่งแพ็กเกจต่อสมาชิกที่ยืนยันแล้วต่อแคมเปญ\n\nดูรายละเอียดโปรโมชั่น\nhttps://www.mmdbkk.com/promotion/double-moment"
       }
     }
   ]
