@@ -5,12 +5,20 @@ on:
     paths:
       - "admin-worker/src/model-payout-adjustments.js"
       - "admin-worker/src/model-payout-operation.js"
+      - "admin-worker/src/job-orchestrator-owner-ops-runtime.js"
+      - "admin-worker/model-payout-evidence.test.mjs"
+      - "admin-worker/owner-job-edit.test.mjs"
+      - "payments-worker/index.js"
+      - "payments-worker/payout-existing-session.test.mjs"
+      - "payments-worker/partner-model-link.test.mjs"
+      - "payments-worker/session-finance-write.test.mjs"
       - "admin-worker/model-payout-adjustments.test.mjs"
       - "admin-worker/model-payout-outcomes.test.mjs"
       - "admin-worker/partner-owner-console.test.mjs"
       - "scripts/model-payout-read-admin-baseline.py"
       - "scripts/model-payout-build-preserved.mjs"
       - "scripts/model-payout-preserved-runtime.mjs"
+      - "scripts/payout-evidence-*"
       - ".github/workflows/model-payout-focused-ci.yml"
 
 permissions:
@@ -30,14 +38,28 @@ jobs:
         with:
           node-version: '22'
       - name: Focused payout, dependent audit and preserved lifecycle contracts
-        run: node --test admin-worker/model-payout-adjustments.test.mjs admin-worker/model-payout-outcomes.test.mjs admin-worker/partner-owner-console.test.mjs admin-worker/job-orchestrator-owner-ops.test.mjs
+        run: node --test admin-worker/model-payout-adjustments.test.mjs admin-worker/model-payout-outcomes.test.mjs admin-worker/partner-owner-console.test.mjs admin-worker/job-orchestrator-owner-ops.test.mjs admin-worker/model-payout-evidence.test.mjs admin-worker/owner-job-edit.test.mjs payments-worker/payout-existing-session.test.mjs payments-worker/partner-model-link.test.mjs payments-worker/session-finance-write.test.mjs
       - name: Install pinned local R2 runtime only
-        run: npm install --prefix "$RUNNER_TEMP/payout-tools" --no-save miniflare@4.20260317.3
+        run: npm install --prefix "$RUNNER_TEMP/payout-tools" --no-save miniflare@4.20260317.3 esbuild@0.28.1
       - name: Repeat payout outcomes with native local R2 (synthetic authority only)
         env:
           PAYOUT_NATIVE_R2: '1'
           PAYOUT_TOOLS_DIR: ${{ runner.temp }}/payout-tools
-        run: node --test admin-worker/model-payout-outcomes.test.mjs
+        run: node --test admin-worker/model-payout-outcomes.test.mjs admin-worker/model-payout-evidence.test.mjs
+      - name: Build actual production entrypoints and verify named exports (no release)
+        env:
+          PAYOUT_TOOLS_DIR: ${{ runner.temp }}/payout-tools
+        run: node scripts/payout-evidence-source-build.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: payout-evidence-production-source-${{ github.event.pull_request.head.sha }}
+          path: payout-evidence-source-build.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Pinned read transport denies drift; missing payments map remains explicit
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python3 scripts/payout-evidence-read.test.py
       - name: Syntax and whitespace checks
         run: |
           node --check admin-worker/src/model-payout-adjustments.js
@@ -136,4 +158,70 @@ jobs:
         with:
           name: payout-preserved-acceptance-${{ github.event.pull_request.head.sha }}
           path: payout-artifact-fixture/result.json
+          retention-days: 7
+
+  read-evidence-baselines:
+    needs: payout-contracts
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'codex/payout-evidence-writer-guard-v7'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: GET pinned Worker modules only; require version ETag and stable allocation
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python3 scripts/payout-evidence-read.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: payout-evidence-baseline-${{ github.event.pull_request.head.sha }}
+          path: payout-evidence-baseline/
+          if-no-files-found: error
+          retention-days: 7
+
+  preserve-evidence-candidates:
+    needs: read-evidence-baselines
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 0c8c06a7d1330a6fd1933d49d160a20a8e918439
+          path: payout-baseline-source
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v4
+        with:
+          name: payout-evidence-baseline-${{ github.event.pull_request.head.sha }}
+          path: payout-evidence-baseline
+      - name: Install pinned local assembly and fixture tools (no production credentials)
+        run: npm install --prefix "$RUNNER_TEMP/payout-tools" --no-save esbuild@0.28.1 acorn@8.15.0 @jridgewell/sourcemap-codec@1.6.0 miniflare@4.20260317.3
+      - name: Preserve exact live overlays and apply only reviewed payout delta
+        env:
+          PAYOUT_TOOLS_DIR: ${{ runner.temp }}/payout-tools
+          PAYOUT_BASELINE_SOURCE_DIR: payout-baseline-source
+        run: node scripts/payout-evidence-build.mjs
+      - name: Fixture compiled artifacts with native R2 restart and original service auth
+        env:
+          PAYOUT_TOOLS_DIR: ${{ runner.temp }}/payout-tools
+        run: node scripts/payout-evidence-runtime.mjs
+      - name: Verify retained artifact files
+        working-directory: payout-evidence-candidate
+        run: sha256sum -c SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: payout-evidence-preserved-${{ github.event.pull_request.head.sha }}
+          path: |
+            payout-evidence-candidate/
+            payout-evidence-fixtures/*-result.json
+          if-no-files-found: error
           retention-days: 7

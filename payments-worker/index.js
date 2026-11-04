@@ -354,7 +354,8 @@ async function createSessionIfMissing(env, payload) {
       payment_ref: payload.payment_ref,
       payment_type: payload.payment_type,
       amount_thb: payload.amount_thb,
-      pay_model_thb: payload.pay_model_thb,
+      // Existing Session payout belongs to its canonical adjustment/settlement
+      // writers. Reissuing confirmation links must not reset that total.
       client_name: payload.client_name,
       model_name: payload.model_name,
       job_type: payload.job_type,
@@ -367,7 +368,7 @@ async function createSessionIfMissing(env, payload) {
       notes: payload.note,
       created_at: payload.created_at,
     }));
-    return { ok: true, mode: "update", record_id: existing.id };
+    return { ok: true, mode: "update", record_id: existing.id, pay_model_thb: existing.fields?.pay_model_thb ?? null, payout_preserved: true };
   }
 
   const created = await airtableCreate(env, getSessionsTable(env), compact({
@@ -391,7 +392,7 @@ async function createSessionIfMissing(env, payload) {
     notes: payload.note,
     created_at: payload.created_at || nowIso(),
   }));
-  return { ok: true, mode: "create", record_id: created?.id || null };
+  return { ok: true, mode: "create", record_id: created?.id || null, pay_model_thb: payload.pay_model_thb ?? null };
 }
 
 /* -------------------------------------------------- */
@@ -1050,7 +1051,7 @@ async function handleConfirmLink(req, env) {
           `Model: <b>${esc(model_name)}</b>`,
           `Type: <b>${esc(job_type)}</b>`,
           `Amount: <b>${Number(amount_thb)} THB</b>`,
-          pay_model_thb != null ? `Pay Model: <b>${Number(pay_model_thb)} THB</b>` : "",
+          session_write.pay_model_thb != null ? `Pay Model: <b>${Number(session_write.pay_model_thb)} THB</b>` : "",
         ].join("\n"),
         env.TG_THREAD_PAYMENT || env.TG_THREAD_CONFIRM || "21"
       );

@@ -59,6 +59,7 @@ function installFetchMock({
       : null;
     calls.push({ method, url: request.url, table, recordId, body });
 
+    if (table === "tblMvsl7qYozD05e5" && method === "GET") return Response.json({ records: [] });
     if (table === SESSIONS && method === "GET") {
       return Response.json({ records: [currentSession] });
     }

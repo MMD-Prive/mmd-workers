@@ -23,6 +23,7 @@ async function fixture(t){
   const req=input instanceof Request?input:new Request(String(input),init),url=new URL(req.url),method=req.method,table=url.pathname.split('/')[3];
   assert.equal(url.hostname,'api.airtable.com','outbound must be intercepted; no real notifications');
   if(method==='GET'){
+   if(table==='tblMvsl7qYozD05e5')return Response.json({records:[]});
    if(state.fail.read)throw Error('synthetic read unavailable');
    if(table==='sessions'){if(state.fail.sessionMalformed)return Response.json({});return Response.json({records:state.fail.duplicateSession?[structuredClone(state.session),{...structuredClone(state.session),id:'recSyntheticSes02'}]:[structuredClone(state.session)]});}
    const formula=url.searchParams.get('filterByFormula')||'';
