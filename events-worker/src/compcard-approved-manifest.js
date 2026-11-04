@@ -393,7 +393,7 @@ export const APPROVED_COMPCARD_MANIFEST = {
         "limit_per_verified_member_per_campaign": 1,
         "verification_and_ledger": "existing_official_verify_flow"
       },
-      "approval_provenance": "Owner approved continuous availability in CODEXMIN_HYPE_DOUBLE_MOMENT_CONTINUOUS_20261018.md; the owner later set the monthly publication schedule and approved the revised CTA and copy.",
+      "approval_provenance": "Owner approved continuous availability in CODEXMIN_HYPE_DOUBLE_MOMENT_CONTINUOUS_20261018.md; the owner later set the monthly publication schedule and approved the revised CTA and copy. The terms.validity value and caption describe public advertising only; the payment issuance and credit ledger remain authoritative and unchanged.",
       "file_id": null,
       "sha256": "0ebc69b6b3b4f52f3b279d377962961efb8493d2170b374818f2c13b2a949a4a",
       "captions": {
