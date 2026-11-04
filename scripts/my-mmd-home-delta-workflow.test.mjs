@@ -9,23 +9,23 @@ const job=workflow.slice(workflow.indexOf('  my-mmd-home-release:'));
 const evaluate=new Function('github','inputs','return '+job.match(/^    if: (.+)$/m)[1]);
 const sha='a'.repeat(40),github={event_name:'workflow_dispatch',ref:'refs/heads/main',sha};
 const inputs={execution_mode:'my-mmd-home-delta',production_approved:true,approval_ref:'fixture',approved_sha:sha,expected_version:'fixture',expected_deployment:'fixture',patch_manifest:'fixture',expected_manifest_sha256:'fixture',expected_module_sha256:'fixture'};
-test('reader-only manifest and workflow pin agree with merged #3050 source',()=>{
+test('diagnostics manifest and workflow pin agree with merged #3059 source',()=>{
  const raw=readFileSync(new URL('./my-mmd-home-delta-manifest.json',import.meta.url));
- assert.equal(sha256(raw),'201f609df266f8124716d56136cde78e7758a7094045bd444abc57e99fb5cee7');
+ assert.equal(sha256(raw),'0faf49fea3332befbaea01be05c8c0fc40b6c7590f918baeabbda8b78048a7cf');
  const manifest=parseHomeManifest(raw,sha256(raw),'member-pages-worker');
- assert.equal(manifest.source_sha,'bf15ee119fd5f9f1dc4dd0c76bb52089415b4ac9');
+ assert.equal(manifest.source_sha,'3e416e70434dbd8ac7d73917d551f7f101c8c5dd');
  assert.equal(manifest.source_sha,job.match(/APPROVED_SOURCE_SHA: ([a-f0-9]{40})/)[1]);
- assert.equal(manifest.baseline_version,'a8633d87-7c29-4182-94c1-f785609a52c5');
- assert.equal(manifest.baseline_deployment,'453fd6d1-8af6-49a3-8199-962df60e5aaf');
- assert.equal(manifest.modules.length,1);assert.equal(manifest.modules[0].patches.length,1);
- assert.equal(manifest.modules[0].before_sha256,'dd923e00c876111431df170379e4eb8236bc64f987c0a68aa23740c0beac9519');
- assert.equal(manifest.modules[0].after_sha256,'efd016ba58f256ace9a3ddddb63f876e588d4b9cb731b5d75ddb4aea69dc2e4d');
- const patch=manifest.modules[0].patches[0];
- assert.equal(patch.id,'booking-evidence-manual-redirect');
- assert.equal(patch.after,patch.before.replace('redirect: "error"','redirect: "manual"'));
+ assert.equal(manifest.baseline_version,'13d39bce-751c-4eec-882a-a354aaacbf34');
+ assert.equal(manifest.baseline_deployment,'1c168fe4-3910-4304-ad68-6599a6e8804a');
+ assert.equal(manifest.modules.length,1);assert.equal(manifest.modules[0].patches.length,5);
+ assert.equal(manifest.modules[0].before_sha256,'7a5969426551b6d4eaf370b31280dd5a62a446b050529898c4b9b51855d7206f');
+ assert.equal(manifest.modules[0].after_sha256,'a882ddb90ceea1cb15c6ea5c49c9e65e874877f7b1dc99b5fc53ba59f1426e04');
+ assert.deepEqual(manifest.modules[0].patches.map(p=>p.id),['diagnostic-helpers','loader-lifecycle','active-identity-start-phase-timing','bounded-client-receiver','browser-lifecycle-wiring']);
+ for(const patch of manifest.modules[0].patches){
  assert.notEqual(patch.before,patch.after);
  assert.equal(sha256(patch.before),patch.before_sha256);
  assert.equal(sha256(patch.after),patch.after_sha256);
+ }
  const reader=readFileSync(new URL('../shared/original-booking-evidence.mjs',import.meta.url),'utf8');
  assert.match(reader,/redirect: "manual"/);assert.match(reader,/!response.ok/);
  const shell=readFileSync(new URL('../member-pages-worker/src/liff-member-shell.js',import.meta.url),'utf8');
