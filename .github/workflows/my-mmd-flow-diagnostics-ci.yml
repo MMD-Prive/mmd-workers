@@ -10,6 +10,9 @@ on:
       - 'member-pages-worker/src/liff-member-shell.js'
       - 'member-pages-worker/test/liff-flow-diagnostics.test.mjs'
       - 'member-pages-worker/test/liff-loader-diagnostics.test.mjs'
+      - 'scripts/my-mmd-flow-diagnostics-delta.mjs'
+      - 'scripts/my-mmd-flow-diagnostics-delta.test.mjs'
+      - 'scripts/my-mmd-diagnostics-auth-fixtures.test.mjs'
       - '.github/workflows/my-mmd-flow-diagnostics-ci.yml'
 permissions:
   contents: read
@@ -32,5 +35,7 @@ jobs:
           member-pages-worker/test/liff-customer-progress.test.mjs
           member-pages-worker/test/liff-identity-foundation.test.mjs
           member-pages-worker/test/liff-member-shell.test.mjs
+          scripts/my-mmd-flow-diagnostics-delta.test.mjs
+          scripts/my-mmd-diagnostics-auth-fixtures.test.mjs
       - name: Whitespace
         run: git diff --check
