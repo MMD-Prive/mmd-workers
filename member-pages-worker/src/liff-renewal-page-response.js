@@ -25,7 +25,7 @@ const ANCHORS = Object.freeze({
 const once = (text, marker) => text.indexOf(marker) >= 0 && text.indexOf(marker) === text.lastIndexOf(marker);
 
 export function enhanceRenewalShell(html) {
-  if (typeof html !== "string" || html.length > 1024 * 1024 || html.includes('data-renewal-version="' + RENEWAL_VIEW_VERSION + '"')) return null;
+  if (typeof html !== "string" || html.length > 4 * 1024 * 1024 || html.includes('data-renewal-version="' + RENEWAL_VIEW_VERSION + '"')) return null;
   if (![...Object.values(ANCHORS), '</head>'].every(marker => once(html, marker))) return null;
   const cardStart = html.indexOf(ANCHORS.card), cardEnd = html.indexOf(ANCHORS.afterCard, cardStart);
   const clientStart = html.indexOf(ANCHORS.client), clientEnd = html.indexOf(ANCHORS.afterClient, clientStart);
