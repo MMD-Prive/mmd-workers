@@ -1,0 +1,45 @@
+{
+  "schema": "care_back_november_policy_patch_v1",
+  "worker": "member-pages-worker",
+  "baseline_version": "910cc708-f246-42a9-9b5f-4d470b34b732",
+  "baseline_deployment": "53ebec9a-b988-4d39-bd55-099f34df4506",
+  "main_module": "worker.js",
+  "modules": [
+    {
+      "name": "worker.js",
+      "type": "esm",
+      "before_sha256": "a882ddb90ceea1cb15c6ea5c49c9e65e874877f7b1dc99b5fc53ba59f1426e04",
+      "after_sha256": "4e406ab1cedd3d777333b5078e7d915755f5679d0996e6dd885217e10fe6cf49",
+      "patches": [
+        {
+          "id": "renewal-recheck-1",
+          "before": "function currentPrivateMembershipPromotion({ package_code = \"\", paid_at = \"\", action = \"\", existing_member = false, prior_expire_at = \"\" } = {}) {\n  const packageCode = token5(package_code);\n  const paidMs = Date.parse(String(paid_at || \"\"));\n  if (!Number.isFinite(paidMs) || paidMs < CARE_BACK_START_MS || paidMs >= PROMO_HONORED_BEFORE_MS) return null;\n  if (token5(action) === \"signup\" && existing_member === false) {\n    return packageCode === \"premium\" ? { code: \"private_premium_signup_total_two_years_2026\", total_years: 2, bonus_days: 0, bonus_years: 0, label: \"Premium signup total 2 years\", starts_at: CARE_BACK_START_AT } : null;\n  }\n  if (paidMs >= Date.parse(\"2026-11-01T00:00:00+07:00\")) {\n    if (existing_member !== true) return null;\n    const timing = privateRenewalTiming(prior_expire_at, paid_at);\n    if (!timing?.expiry_known) return null;\n    const actionCode = token5(action);\n    if (actionCode !== \"renewal\" && !(actionCode === \"signup\" && !timing.active)) return null;\n    return Object.hasOwn(PRIVATE_CARE_BACK, packageCode) ? {\n      bonus_days: 0, bonus_years: 0, bonus_months: 6, label: \"CARE BACK +6 months\",\n      code: `november_returning_${packageCode}_2026`,\n      starts_at: \"2026-11-01T00:00:00+07:00\",\n      ends_before: \"2026-12-01T00:00:00+07:00\",\n      honored_before: PROMO_HONORED_BEFORE\n    } : null;\n  }\n  if (token5(action) !== \"renewal\" || existing_member !== true) return null;\n  const timing = privateRenewalTiming(prior_expire_at, paid_at);\n  if (!timing?.expiry_known || timing.expired_one_year_or_more) return null;\n  const policy = PRIVATE_CARE_BACK[packageCode];\n  return policy ? { ...policy, code: `october_prepaid_${packageCode}_2026`, starts_at: CARE_BACK_START_AT, ends_before: PROMO_PUBLIC_ENDS_BEFORE, honored_before: PROMO_HONORED_BEFORE } : null;\n}\n__name(currentPrivateMembershipPromotion, \"currentPrivateMembershipPromotion\");",
+          "after": "function currentPrivateMembershipPromotion({ package_code = \"\", paid_at = \"\", action = \"\", existing_member = false, prior_expire_at = \"\" } = {}) {\n  const packageCode = token5(package_code);\n  const paidMs = Date.parse(String(paid_at || \"\"));\n  if (!Number.isFinite(paidMs) || paidMs < CARE_BACK_START_MS || paidMs >= PROMO_HONORED_BEFORE_MS) return null;\n  if (token5(action) === \"signup\" && existing_member === false) {\n    return packageCode === \"premium\" ? { code: \"private_premium_signup_total_two_years_2026\", total_years: 2, bonus_days: 0, bonus_years: 0, label: \"Premium signup total 2 years\", starts_at: CARE_BACK_START_AT } : null;\n  }\n  if (token5(action) === \"renewal\" && existing_member === true && paidMs >= Date.parse(\"2026-11-04T16:00:00+07:00\")) {\n    const timing = privateRenewalTiming(prior_expire_at, paid_at);\n    if (!timing?.expiry_known) return null;\n    const policy = PRIVATE_CARE_BACK[packageCode];\n    return policy ? { ...policy, code: `reconfirmed_${policy.code}`, starts_at: \"2026-11-04T16:00:00+07:00\", ends_before: \"2026-11-01T00:00:00+07:00\", honored_before: PROMO_HONORED_BEFORE } : null;\n  }\n  if (paidMs >= Date.parse(\"2026-11-01T00:00:00+07:00\")) {\n    if (existing_member !== true) return null;\n    const timing = privateRenewalTiming(prior_expire_at, paid_at);\n    if (!timing?.expiry_known) return null;\n    const actionCode = token5(action);\n    if (actionCode !== \"renewal\" && !(actionCode === \"signup\" && !timing.active)) return null;\n    return Object.hasOwn(PRIVATE_CARE_BACK, packageCode) ? {\n      bonus_days: 0, bonus_years: 0, bonus_months: 6, label: \"CARE BACK +6 months\",\n      code: `november_returning_${packageCode}_2026`,\n      starts_at: \"2026-11-01T00:00:00+07:00\",\n      ends_before: \"2026-12-01T00:00:00+07:00\",\n      honored_before: PROMO_HONORED_BEFORE\n    } : null;\n  }\n  if (token5(action) !== \"renewal\" || existing_member !== true) return null;\n  const timing = privateRenewalTiming(prior_expire_at, paid_at);\n  if (!timing?.expiry_known || timing.expired_one_year_or_more) return null;\n  const policy = PRIVATE_CARE_BACK[packageCode];\n  return policy ? { ...policy, code: `october_prepaid_${packageCode}_2026`, starts_at: CARE_BACK_START_AT, ends_before: PROMO_PUBLIC_ENDS_BEFORE, honored_before: PROMO_HONORED_BEFORE } : null;\n}\n__name(currentPrivateMembershipPromotion, \"currentPrivateMembershipPromotion\");",
+          "before_sha256": "4102e891bf5b40e339acf816598bdae09caaabc15d903e3420644b12a181b6be",
+          "after_sha256": "e1ad400bd0f872892b099b68b7a232d215d192b30377f1e3409d9c4ec3eaa27c"
+        },
+        {
+          "id": "renewal-recheck-2",
+          "before": "  if (!packageCode) return { status: \"review_required\", reason: \"renewal_current_package_not_supported\" };",
+          "after": "  if (!packageCode) return { status: \"review_required\", reason: \"renewal_current_package_not_supported\" };\n  if ([\"blocked\", \"suspended\", \"revoked\", \"pending_review\", \"under_review\"].includes(String(session?.member_profile?.membership_status || \"\").trim().toLowerCase())) {\n    return { status: \"review_required\", reason: \"membership_review\" };\n  }",
+          "before_sha256": "925bd84d7914fe83152a42f8a6c6673f3670526e7e230d746f522179a0c51bd2",
+          "after_sha256": "4111e01114169387a29b999b96466127d8e26711be3f89b0754515caee890415"
+        },
+        {
+          "id": "renewal-recheck-3",
+          "before": "const announceCareBack = isPrivateCareBackAnnouncementVisible(now, \"november\");",
+          "after": "const announceCareBack = isPrivateCareBackAnnouncementVisible(now, \"november\") && new Date(now).getTime() < Date.parse(\"2026-11-04T16:00:00+07:00\");",
+          "before_sha256": "8c88d964a971c5c2a4c0b21b1a73fc96ad5622226544c5f2665b57fa9e36fa5e",
+          "after_sha256": "a7f491d825bcf081f46398b0e8aed905f22981879a6ff896c94f9deb8f7733cd"
+        },
+        {
+          "id": "renewal-recheck-4",
+          "before": "if (promotionMonths === 6 && !(timing.expiry_known === true && (timing.active === true || timing.expired_within_90_days === true))) {",
+          "after": "if ((promotionMonths === 6 || now.getTime() >= Date.parse(\"2026-11-04T16:00:00+07:00\")) && !(timing.expiry_known === true && (timing.active === true || timing.expired_within_90_days === true))) {",
+          "before_sha256": "51f9cd81d82ab8bffcd7b4dad4a8df13c25a9f7425a0f4b58f6080d8732ddea9",
+          "after_sha256": "43d7755cc851cea43b18a7c25dd8ecb59e878ef4b2de5a224544515512d7a6d1"
+        }
+      ]
+    }
+  ]
+}
