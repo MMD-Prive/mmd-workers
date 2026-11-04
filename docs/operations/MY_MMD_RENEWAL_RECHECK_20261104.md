@@ -27,11 +27,15 @@ Authoritative fixed prices remain Standard 1000 / Premium 2500. Both renewal bas
 The current source/production November bonus was six calendar months. The owner explicitly selected the current task's tier-specific bonus in the clarification: Premium +one year / Standard +180 days for new payments, preserving historical outcomes.
 The release candidate sets an explicit paid-time boundary of **4 Nov 2026 16:00 Asia/Bangkok**. Payments before that boundary retain their old bonus even if verification/retry happens later. Existing materialized entitlements are reused unchanged. From that boundary, only renewal bonuses change; returning-signup policy and fresh signup terms remain unchanged. This boundary is candidate configuration, not evidence that a deployment happened at that time.
 
+The Kenji personal benefit projection now applies its over-90-day review guard to every bonus unit; it previously applied only to six-month benefits. CI exposed this downstream mismatch and it is covered by a new tier-specific projection regression.
+
 The canonical offer resolver now also rejects blocked/suspended/revoked/pending-review/under-review memberships itself; previously only its outer guard rejected them. No review guard is removed.
 The stale November six-month advertising block is suppressed from the reconfirmation boundary. Personal base/bonus/expiry remain server supplied. Existing Thai text is reused; no new user-facing translation string or LINE message is introduced, so mmd-i18n has no changed copy to sync.
 
 ## Validation
 
+- Local scope expansion after initial CI: immutable November artifact fixtures now explicitly assert historical behavior and the intentional new paid-time divergence; no historical release manifest was changed.
+- Expanded Member Pages aggregate: 720 pass. Related artifact/approval contracts: 217 pass (overlap exists; do not sum suite counts). Historical October projections and immutable November release manifests retain their original behavior.
 - Baseline focused suite: 242 pass.
 - Candidate focused financial/policy/UI contracts and artifact tests: 249 pass, zero failures/skips.
 - Chromium synthetic mobile checks: 8/8 (Standard/Premium at 320/360/390/430px), no horizontal overflow, enabled eligible CTA and normal-flow checkout. See mobile-fixture-results.json and synthetic screenshots. Reproduce with scripts/renewal-recheck-browser.mjs, Playwright and RENEWAL_BROWSER_EXECUTABLE.
@@ -44,7 +48,7 @@ The stale November six-month advertising block is suppressed from the reconfirma
 
 `release/renewal-recheck-20261104/artifact-delta.json` pins the two active module SHA-256 values, candidate values and all before/after edit hashes. `scripts/renewal-recheck-artifact.mjs` builds offline only and rejects drift, nonunique anchors and any unexpected result.
 
-Do not full-rebuild/deploy main over these Workers: deployed November overlays differ from source. The reviewed release changes three exact Member Pages spans (policy, resolver status check, stale banner) and one Payments policy span, preserving all other artifact bytes. No route, binding, credential, feature-flag or data change is required.
+Do not full-rebuild/deploy main over these Workers: deployed November overlays differ from source. The reviewed release changes four exact Member Pages spans (policy, resolver status check, stale banner, bonus-independent 90-day personal projection guard) and one Payments policy span, preserving all other artifact bytes. No route, binding, credential, feature-flag or data change is required.
 
 Before any approved production upload: re-read active versions/deployments, download the complete module inventory, check exact baseline hashes, build candidates, run syntax/runtime validation and the focused suites, inherit all existing configuration, compare all configuration/bindings/routes/schedules before promotion, and reject any drift. Promote Payments first, then Member Pages; read active code hashes/configuration back. Renewal=true/Promotion=false must be preserved. No Double Moment activation.
 

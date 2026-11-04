@@ -1,4 +1,4 @@
-import { currentPrivateMembershipPromotion, privateRenewalTiming, privateRenewalPriceEligible } from "../../shared/membership-promotion-policy.mjs";
+import { currentPrivateMembershipPromotion, privateRenewalTiming, privateRenewalPriceEligible, RENEWAL_BONUS_RECONFIRMED_AT } from "../../shared/membership-promotion-policy.mjs";
 import { getCareBackStore } from "./care-back-claim-store.js";
 import { readCareBackPhase1Recovery } from "./care-back-phase1-recovery.js";
 
@@ -23,7 +23,7 @@ export function projectKenjiRenewalPromotion(membership = {}, now = new Date()) 
   // Returning members outside the existing 90-day price window still receive
   // the policy benefit, but require a separately verified signup/rejoin quote.
   // Do not manufacture its purchased term or a discounted renewal offer here.
-  if (promotionMonths === 6 && !privateRenewalPriceEligible(timing)) {
+  if ((promotionMonths === 6 || now.getTime() >= Date.parse(RENEWAL_BONUS_RECONFIRMED_AT)) && !privateRenewalPriceEligible(timing)) {
     return { ...benefit, status: "review_required", reason: "renewal_expired_over_90_days_review_required" };
   }
   return { ...benefit, status: "conditional_eligible", total_years: 1 + promotionYears, base_years: 1, starts_from: timing.active ? "existing_expiry" : "verified_renewal_time", checkout_status: "review_required", reason: "payment_term_policy_alignment_required" };

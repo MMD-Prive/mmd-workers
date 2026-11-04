@@ -6,7 +6,7 @@
       "baseline_version": "910cc708-f246-42a9-9b5f-4d470b34b732",
       "module": "worker.js",
       "baseline_sha256": "a882ddb90ceea1cb15c6ea5c49c9e65e874877f7b1dc99b5fc53ba59f1426e04",
-      "candidate_sha256": "dc2bacebe3d5b9487ddb5869d5c4b81bd2b799541b64d8d688b4ead6914c76bd",
+      "candidate_sha256": "4e406ab1cedd3d777333b5078e7d915755f5679d0996e6dd885217e10fe6cf49",
       "reverse_verified": true,
       "edits": [
         {
@@ -26,6 +26,12 @@
           "after": "const announceCareBack = isPrivateCareBackAnnouncementVisible(now, \"november\") && new Date(now).getTime() < Date.parse(\"2026-11-04T16:00:00+07:00\");",
           "before_sha256": "8c88d964a971c5c2a4c0b21b1a73fc96ad5622226544c5f2665b57fa9e36fa5e",
           "after_sha256": "a7f491d825bcf081f46398b0e8aed905f22981879a6ff896c94f9deb8f7733cd"
+        },
+        {
+          "before": "if (promotionMonths === 6 && !(timing.expiry_known === true && (timing.active === true || timing.expired_within_90_days === true))) {",
+          "after": "if ((promotionMonths === 6 || now.getTime() >= Date.parse(\"2026-11-04T16:00:00+07:00\")) && !(timing.expiry_known === true && (timing.active === true || timing.expired_within_90_days === true))) {",
+          "before_sha256": "51f9cd81d82ab8bffcd7b4dad4a8df13c25a9f7425a0f4b58f6080d8732ddea9",
+          "after_sha256": "43d7755cc851cea43b18a7c25dd8ecb59e878ef4b2de5a224544515512d7a6d1"
         }
       ]
     },
