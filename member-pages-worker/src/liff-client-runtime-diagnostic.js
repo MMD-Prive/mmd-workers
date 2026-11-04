@@ -42,13 +42,40 @@ export async function handleLiffClientDiagnostic(request, env = {}) {
   const boundaryId = boundaryFromCookie(request.headers.get("cookie"));
   if (!boundaryId) return new Response(null, { status: 204 });
 
-  const stage = normalizeStage(await request.text());
-  if (!stage) return new Response(null, { status: 204 });
+  // Bound legacy text and structured diagnostics alike; never persist arbitrary input.
+  const reader = request.body?.getReader();
+  let bytes = 0, text = '';
+  if (!reader) return new Response(null, {status:204});
+  try {
+    const decoder = new TextDecoder('utf-8', {fatal:true});
+    while (true) {
+      const part = await reader.read(); if (part.done) break;
+      bytes += part.value.byteLength;
+      if (bytes > 512) { await reader.cancel().catch(() => {}); return new Response(null, {status:204}); }
+      text += decoder.decode(part.value, {stream:true});
+    }
+    text += decoder.decode();
+  } catch { return new Response(null, {status:204}); }
+  finally { reader.releaseLock(); }
+  let detail = null;
+  if (/^application\/json(?:;|$)/i.test(request.headers.get('content-type') || '')) {
+    try {
+      const value = JSON.parse(text);
+      if (!value || Object.keys(value).sort().join(',') !== 'duration_ms,pending,stage' || typeof value.stage !== 'string'
+        || !/^loader\.(start|history|updates)\.(requested|headers|body_complete|settled|timeout|signal_abort|stale|reset|hidden|visible)$/.test(value.stage)
+        || !Number.isInteger(value.duration_ms) || value.duration_ms < 0 || value.duration_ms > 300000
+        || !Number.isInteger(value.pending) || value.pending < 0 || value.pending > 1000) return new Response(null,{status:204});
+      detail = {stage:value.stage, duration_ms:value.duration_ms, pending:value.pending};
+    } catch { return new Response(null,{status:204}); }
+  }
+  const stage = detail?.stage || normalizeStage(text);
+  if (!stage) return new Response(null, {status:204});
 
   const snapshot = {
     boundary_id: boundaryId,
     stage,
     observed_at: new Date().toISOString(),
+    ...(detail ? {duration_ms:detail.duration_ms, pending:detail.pending, authority:'untrusted_client_diagnostic'} : {}),
   };
 
   try {

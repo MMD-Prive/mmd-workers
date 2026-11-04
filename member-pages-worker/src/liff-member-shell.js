@@ -7,6 +7,7 @@ import {resolveVerifiedCustomerBrand,createCustomerBrand,renderCustomerBrand,CUS
 import { MY_MMD_SIGIL_PRIVATE_CSS } from "./liff-sigil-private-theme.js";
 import { customerGraphic, customerIcon, CUSTOMER_GRAPHICS_CSS } from "./liff-customer-graphics.js";
 import { createCustomerProgress, renderCustomerProgress } from "./liff-customer-progress.js";
+import { createFlowDiagnosticSender } from "./liff-flow-diagnostics.js";
 import { loadDoubleMomentCard } from "./liff-promotion-client.js";
 import { MY_MMD_LOVABLE_DESIGN_CSS, MY_MMD_PUBLIC_BLEND_CSS, MY_MMD_VERIFICATION_CSS } from "./liff-lovable-design.js";
 import { MY_MMD_LIFF_COMPACT_V4_CSS } from "./liff-member-compact-v4-style.js";
@@ -483,7 +484,18 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
   const CONFIG = ${safeConfig};
   const entryLoading = (${installApprovedEntryLoading.toString()})(${createHypeLoaderMotion.toString()}, ${createEntryPercentMotion.toString()});
   const renderLoadingProgress = ${renderCustomerProgress.toString()};
-  const customerLoading = (${createCustomerProgress.toString()})({ render: (panel, state) => { renderLoadingProgress(panel, state); entryLoading.update(state); }, request: window.fetch.bind(window) });
+  const flowDiagnostic = (${createFlowDiagnosticSender.toString()})(window.fetch.bind(window));
+  const loaderVisibility = new Map();
+  const customerLoading = (${createCustomerProgress.toString()})({ diagnostic:flowDiagnostic, render: (panel, state) => {
+    renderLoadingProgress(panel, state); entryLoading.update(state);
+    const kind = panel === 'history-panel' ? 'history' : panel === 'digital-news-progress' ? 'updates' : null;
+    const node = kind && document.getElementById('customer-progress-' + panel);
+    // Observe the DOM property after render; task settlement alone is not hidden proof.
+    if (node && loaderVisibility.get(panel) !== node.hidden) {
+      loaderVisibility.set(panel, node.hidden);
+      flowDiagnostic({event:'loader.' + kind + (node.hidden ? '.hidden' : '.visible'),durationMs:0,pending:Math.min(1000, state.pending)});
+    }
+  }, request: window.fetch.bind(window) });
   const fetch = customerLoading.fetch;
   const loadDoubleMomentCard = ${loadDoubleMomentCard.toString()};
   const CANONICAL_POINTS_PATH = "/my-mmd/points";
