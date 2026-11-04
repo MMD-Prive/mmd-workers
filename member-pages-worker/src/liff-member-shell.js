@@ -292,6 +292,10 @@ function renderShell(config, nonce) {
     .digital-news-feed{display:grid;gap:8px}.digital-news-card{width:100%;padding:12px;border:1px solid var(--digital-line);border-radius:var(--digital-radius);background:var(--digital-surface);color:var(--digital-cream);text-align:left}.digital-news-card.is-for-you{border-color:rgba(231,204,137,.5);background:linear-gradient(145deg,rgba(71,59,34,.58),var(--digital-surface))}.digital-news-card[data-feed-view]{cursor:pointer}.digital-news-card .meta{display:flex;justify-content:space-between;gap:8px;color:var(--digital-gold);font-size:9px}.digital-news-card h3{margin:7px 0 4px;font-size:13px}.digital-news-card p{margin:0;color:#c9c6b9;font-size:10px;line-height:1.5}.digital-feed-cta{display:block;margin-top:8px;color:var(--digital-gold);font-size:9px;font-weight:800}.digital-quiet{padding:20px 12px;border:1px dashed rgba(231,204,137,.32);border-radius:14px;color:var(--digital-muted);font-size:11px;text-align:center}
     .digital-quick{margin-top:4px}.digital-quick-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}.digital-quick button{min-height:64px;padding:8px 2px;border:1px solid var(--digital-line);border-radius:var(--digital-radius);background:var(--digital-surface);color:var(--digital-cream);font-size:9px;text-align:center}.digital-quick button i{display:block;margin-bottom:4px;color:var(--digital-gold);font-size:16px;font-style:normal}
     .digital-data-cache{display:none!important}
+    .digital-blackcard-entry{display:none}
+    body.app-entered:not(.signup-mode) .digital-blackcard-entry:not([hidden]){display:block;margin:8px 0 32px;padding-inline:max(var(--digital-gutter),env(safe-area-inset-left)) max(var(--digital-gutter),env(safe-area-inset-right))}
+    .digital-blackcard-entry a{display:flex;align-items:center;min-height:52px;padding:14px 18px;border:1px solid var(--digital-line);border-radius:12px;background:var(--digital-surface);color:var(--digital-cream);text-decoration:none;font-size:15px;line-height:1.6}
+    .digital-blackcard-entry a:focus-visible{outline:3px solid var(--digital-gold);outline-offset:3px}
     .digital-dock{position:fixed;z-index:10;bottom:0;left:0;right:0;width:100%;max-width:none;min-width:0;transform:none;display:none;grid-template-columns:repeat(4,minmax(0,1fr));padding:7px max(16px,env(safe-area-inset-right)) calc(7px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));border-top:1px solid var(--digital-line);background:rgba(8,9,7,.96);backdrop-filter:blur(18px)}
     body.app-entered:not(.signup-mode) .digital-dock{display:grid}.digital-dock button,.digital-dock a{min-height:44px;border:0;background:none;color:var(--digital-muted);font-size:9px;text-align:center;text-decoration:none}.digital-dock button[aria-current="page"]{color:var(--digital-gold);font-weight:800;background:var(--digital-surface);border-radius:var(--digital-radius)}.digital-dock i{display:block;margin-bottom:2px;font-size:17px;font-style:normal}
     body.app-entered:not(.signup-mode) #status{display:none!important;margin:0}.digital-design-slot[hidden]{display:none!important}.digital-design-slot{padding:16px;border:1px solid var(--digital-line);border-radius:var(--digital-radius);background:var(--digital-surface)}.digital-design-slot .digital-eyebrow{display:block}.digital-design-slot p{margin:6px 0 0;color:var(--digital-muted);font-size:10px;line-height:1.5}
@@ -380,7 +384,6 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
 
     <section id="digital-tmib-story" class="digital-design-slot" aria-label="TMIB Story" hidden><span class="digital-eyebrow">TMIB STORY</span><strong id="digital-tmib-story-title"></strong><p id="digital-tmib-story-note"></p></section>
     <section class="digital-quick" aria-label="Quick access"><div class="digital-sectionline"><h2 style="font-size:12px;letter-spacing:.1em">QUICK ACCESS</h2><span style="font-size:9px;color:var(--digital-muted)">MY MMD</span></div><div class="digital-quick-grid"><button type="button" data-view="package"><i>${customerIcon("icon-profile")}</i>Member</button><button type="button" data-view="points"><i>✦</i>Points</button><button type="button" data-view="credits"><i>▤</i>Wallet</button><button type="button" data-view="coupons"><i>▣</i>Coupons</button><button type="button" data-view="jobs"><i>↗</i>งานของฉัน</button><button type="button" data-view="history"><i>≡</i>ประวัติ</button><button type="button" data-view="history" data-payment-history><i>▤</i>การชำระเงิน</button><button type="button" data-view="account"><i>○</i>โปรไฟล์</button></div></section>
-    <p class="digital-blackcard-entry"><a href="/my-mmd/payments/blackcard">Black Card · ชำระต่อ / เลือก Companion →</a></p>
     <div class="digital-data-cache" aria-hidden="true">
       <strong id="profile-name">สมาชิก MMD</strong><span id="profile-email">—</span><span id="profile-phone">—</span>
       <div id="member-details" class="detail-grid hidden"><div id="expiry-card" class="card hidden"><strong id="profile-expiry">—</strong></div><div id="payment-card" class="card hidden"><strong id="profile-payment">—</strong></div></div>
@@ -466,6 +469,7 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
     </section>
     </div>
   </section>
+  <p class="digital-blackcard-entry" id="digital-blackcard-entry"><a href="/my-mmd/payments/blackcard">Black Card · ชำระต่อ / เลือก Companion →</a></p>
   <nav class="digital-dock" aria-label="เมนู MY MMD"><button type="button" data-view="home" aria-current="page"><i>${customerIcon("icon-home")}</i>HOME</button><button type="button" data-view="history" aria-current="false"><i>${customerIcon("icon-history")}</i>HISTORY</button><button type="button" data-view="credits" aria-current="false"><i>${customerIcon("icon-lock")}</i>WALLET</button><button type="button" data-view="home" data-pm-dock><i>✦</i>ผู้ช่วย</button></nav>
   <div id="status" class="status">MY MMD</div>
 </main>
@@ -727,6 +731,7 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
     }
     const targetId = view === "history" ? "history-panel" : view;
     const target = document.getElementById(targetId) || document.getElementById("home");
+    document.getElementById("digital-blackcard-entry").hidden = target.id !== "home";
     if (typeof memberBookingUI !== "undefined" && target.id !== "jobs") memberBookingUI.leave();
     for (const panel of document.querySelectorAll(".section-rail > .panel")) panel.setAttribute("data-active", String(panel === target));
     for (const item of document.querySelectorAll("[data-view]")) {
