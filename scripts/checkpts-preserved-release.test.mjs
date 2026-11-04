@@ -6,7 +6,14 @@ import {createRequire} from 'node:module';
 import path from 'node:path';
 import os from 'node:os';
 import {execFileSync} from 'node:child_process';
-import {PIN,ROOT,GUARD,hash,canonical,handler,assemble,toolchain,transport,release,safeBindings,Journal,uploadReviewed,reconcile,verifyUploaded,promote,validateReadback} from './checkpts-preserved-release.mjs';
+import {PIN,ROOT,GUARD,hash,canonical,handler,assemble,toolchain,transport,release,safeBindings,Journal,uploadReviewed as productionUploadReviewed,reconcile,verifyUploaded,promote,validateReadback} from './checkpts-preserved-release.mjs';
+// Mock API cases exercise upload transitions independently of the real CI guard.
+// Only this test process temporarily changes the flag; production code is unchanged.
+async function uploadReviewed(options) {
+ const previous=process.env.GITHUB_ACTIONS;delete process.env.GITHUB_ACTIONS;
+ try{return await productionUploadReviewed(options);}
+ finally{if(previous===undefined)delete process.env.GITHUB_ACTIONS;else process.env.GITHUB_ACTIONS=previous;}
+}
 const out=process.env.CHECKPTS_REVIEW_DIR;
 assert.ok(out,'CHECKPTS_REVIEW_DIR required');
 const read=(dir,n)=>readFileSync(path.join(out,dir,n),'utf8');
@@ -233,14 +240,14 @@ test('reconcile refuses a foreign latest upload even when one matching candidate
 });
 test('CI upload is explicitly unavailable without cross-runner state and shared release serialization',async()=>{
  const old=process.env.GITHUB_ACTIONS;process.env.GITHUB_ACTIONS='true';const f=fakeApi();
- try{await assert.rejects(uploadReviewed(f));assert.equal(f.calls.length,0);}finally{if(old===undefined)delete process.env.GITHUB_ACTIONS;else process.env.GITHUB_ACTIONS=old;}
+ try{await assert.rejects(productionUploadReviewed(f),/CI upload disabled/);assert.equal(f.calls.length,0);}finally{if(old===undefined)delete process.env.GITHUB_ACTIONS;else process.env.GITHUB_ACTIONS=old;}
 });
 
 test('a separate process cannot replay an intent or acquire an existing Worker lock',()=>{
  const f=fakeApi();f.journal.acquire();f.journal.append({...journalIdentity(f),phase:'upload_intent'});
  const url=new URL('./checkpts-preserved-release.mjs',import.meta.url).href;
  const program=`import assert from 'node:assert/strict';import {Journal,uploadReviewed} from ${JSON.stringify(url)};
- const [root,folder,approvalJson]=process.argv.slice(1);let calls=0;
+ const [root,folder,approvalJson]=process.argv.slice(1);let calls=0;delete process.env.GITHUB_ACTIONS; // Test journal guards, not the separate CI guard.
  await assert.rejects(uploadReviewed({folder,approval:JSON.parse(approvalJson),journal:new Journal(root),io:async()=>{calls++;throw Error('network forbidden');}}));
  assert.equal(calls,0);console.log('blocked');`;
  const child=()=>execFileSync(process.execPath,['--input-type=module','-e',program,f.journal.root,f.folder,JSON.stringify(f.approval)],{encoding:'utf8'}).trim();
