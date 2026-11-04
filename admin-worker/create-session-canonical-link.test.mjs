@@ -90,7 +90,7 @@ function recordFrom(url) {
   return decodeURIComponent(parts[3] || "");
 }
 
-function makeFetch({ lineUserId = "U-line-001", existingJob = false, existingJobNote = "" } = {}) {
+function makeFetch({ lineUserId = "U-line-001", existingJob = false, existingJobNote = "", sessionFields = {} } = {}) {
   const calls = [];
   const fetch = async (input, init = {}) => {
     const url = urlString(input);
@@ -117,7 +117,7 @@ function makeFetch({ lineUserId = "U-line-001", existingJob = false, existingJob
     }
 
     if (method === "GET" && table === ENV.AIRTABLE_TABLE_SESSIONS) {
-      return json({ records: [{ id: SESSION_RECORD_ID, fields: { session_id: "sess_001", job_id: "" } }] });
+      return json({ records: [{ id: SESSION_RECORD_ID, fields: { session_id: "sess_001", job_id: "", ...sessionFields } }] });
     }
     if (method === "PATCH" && table === ENV.AIRTABLE_TABLE_SESSIONS && recordId === SESSION_RECORD_ID) {
       return json({ id: SESSION_RECORD_ID, fields: init.body ? JSON.parse(init.body).fields : {} });
@@ -407,4 +407,32 @@ test('long service-priced Job notes preserve original partner snapshots on creat
       assert.deepEqual(JSON.parse(note.split('[MMD SERVICE PRICING v1] ')[1].split('\n')[0]), pricing);
     } finally { globalThis.fetch = originalFetch; }
   }
+});
+
+for (const [name, canonicalLine, sessionFields, expected] of [
+  ['canonical LINE owner is projected for MY MMD', 'U'+'1'.repeat(32), {}, 'copy'],
+  ['an existing matching LINE owner is preserved', 'U'+'1'.repeat(32), {line_user_id:'U'+'1'.repeat(32)}, 'preserve'],
+  ['a missing canonical LINE never trusts the request hint', '', {}, 'omit'],
+  ['a malformed canonical LINE is not copied', 'not-a-line-id', {}, 'omit'],
+  ['a foreign Session LINE owner stops reconciliation', 'U'+'1'.repeat(32), {line_user_id:'U'+'2'.repeat(32)}, 'conflict'],
+  ['a foreign Session Client stops reconciliation', 'U'+'1'.repeat(32), {Client:['recOTHER00000001']}, 'conflict'],
+  ['malformed Session Client links stop reconciliation', 'U'+'1'.repeat(32), {Client:'not-a-linked-record-array'}, 'conflict'],
+]) test(name, async () => {
+  const originalFetch=globalThis.fetch,mock=makeFetch({lineUserId:canonicalLine,sessionFields});
+  globalThis.fetch=mock.fetch;
+  try {
+    const body=linkedBody({line_identity:{line_user_id:canonicalLine||'U'+'9'.repeat(32)}});
+    const res=await handleCanonicalLinkedJobCreate(request(body),ENV,{}, {fetch:async()=>json({ok:true,session_id:'sess_001'})});
+    const result=await res.json(),patches=mock.calls.filter(c=>c.method==='PATCH'&&tableFrom(c.url)===ENV.AIRTABLE_TABLE_SESSIONS);
+    if(expected==='conflict'){
+      assert.equal(result.linkage.status,'review_required');
+      assert.equal(result.linkage.warning,'created_session_owner_conflict');
+      assert.equal(patches.length,0);
+      assert.equal(mock.calls.filter(c=>c.method==='POST'&&tableFrom(c.url)===ENV.AIRTABLE_TABLE_JOBS).length,0);
+    }else{
+      assert.equal(result.linkage.status,'linked');
+      assert.equal(patches[0].body.fields.line_user_id,expected==='copy'?canonicalLine:undefined);
+      assert.equal(patches[0].body.fields['Payment Status'],undefined);
+    }
+  }finally{globalThis.fetch=originalFetch;}
 });
