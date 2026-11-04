@@ -8,6 +8,11 @@ const CARE_BACK_START_MS = Date.parse(CARE_BACK_START_AT);
 const OCTOBER_PUBLIC_ENDS_BEFORE = "2026-11-01T00:00:00+07:00";
 const NOVEMBER_START_AT = "2026-11-01T00:00:00+07:00";
 const NOVEMBER_START_MS = Date.parse(NOVEMBER_START_AT);
+// Owner reconfirmed tier-specific renewal bonuses on 4 Nov 2026. Apply only
+// to payments from this explicit Bangkok boundary; older paid-time decisions
+// and already-materialized entitlements retain their original terms.
+export const RENEWAL_BONUS_RECONFIRMED_AT = "2026-11-04T16:00:00+07:00";
+const RENEWAL_BONUS_RECONFIRMED_MS = Date.parse(RENEWAL_BONUS_RECONFIRMED_AT);
 const PROMO_PUBLIC_ENDS_BEFORE = "2026-12-01T00:00:00+07:00";
 const PROMO_HONORED_BEFORE = "2027-01-01T00:00:00+07:00";
 const PROMO_HONORED_BEFORE_MS = Date.parse(PROMO_HONORED_BEFORE);
@@ -87,6 +92,13 @@ export function currentPrivateMembershipPromotion({ package_code = "", paid_at =
   const timing = privateRenewalTiming(prior_expire_at, paid_at);
   if (!timing?.expiry_known) return null;
   const actionCode = token(action);
+  if (actionCode === "renewal" && paidMs >= RENEWAL_BONUS_RECONFIRMED_MS) {
+    const policy = PRIVATE_CARE_BACK[packageCode];
+    return policy ? { ...policy, code: `reconfirmed_${policy.code}`,
+      starts_at: RENEWAL_BONUS_RECONFIRMED_AT,
+      ends_before: OCTOBER_PUBLIC_ENDS_BEFORE,
+      honored_before: PROMO_HONORED_BEFORE } : null;
+  }
   if (paidMs >= NOVEMBER_START_MS) {
     // Returning signups require verified past membership and an expired term.
     // This selects only the bonus; it does not authorize a price, checkout,

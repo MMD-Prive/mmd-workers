@@ -73,8 +73,8 @@ const truth = (m, promotion, renewal = { status: "review_required" }) => ({
   points: { status: "verified", authority: "canonical_paid_points_source_guard_v1", active_points: 100 },
 });
 
-test("November public copy covers all returning cohorts through Nov 30 and hides the internal honor window", () => {
-  for (const date of ["2026-11-01T00:00:00+07:00", "2026-11-30T23:59:59.999+07:00"]) {
+test("historical November public copy remains available before the reconfirmation boundary", () => {
+  for (const date of ["2026-11-01T00:00:00+07:00", "2026-11-04T15:59:59.999+07:00"]) {
     const html = renewalViewHtml(new Date(date));
     assert.match(html, /สมาชิกเดิม รับอายุสมาชิกเพิ่ม 6 เดือน/);
     assert.match(html, /หมดอายุไม่เกิน 6 เดือนหรือเกิน 6 เดือน/);
@@ -85,6 +85,7 @@ test("November public copy covers all returning cohorts through Nov 30 and hides
     assert.match(html, /สมัครใหม่ 1,199 บาท \/ 1 ปี/);
   }
   assert.doesNotMatch(renewalViewHtml(new Date("2026-12-01T00:00:00+07:00")), /<aside class="rn-campaign"/);
+  assert.doesNotMatch(renewalViewHtml(new Date("2026-11-04T16:00:00+07:00")), /<aside class="rn-campaign"|รับอายุสมาชิกเพิ่ม 6 เดือน/);
 });
 
 test("October public copy is retained for historical rendering", () => {
@@ -287,3 +288,14 @@ test("an October owner-reviewed quote retains its historical bonus and expires b
   assert.doesNotMatch(live.buildKenjiLiveTruthDecision("membership_renewal", payload).text, /โบนัสเพิ่ม 1|2,500/);
 });
 
+
+test('reconfirmed year/day bonuses cannot bypass the 90-day personal projection guard',()=>{
+  for(const level of ['private_standard','private_premium']) {
+    const result=benefits.projectKenjiRenewalPromotion(member(level,{lifecycle:'expired',expire_at:'2024-01-01'}),new Date('2026-11-04T16:00:00+07:00'));
+    assert.equal(result.status,'review_required');
+    assert.equal(result.reason,'renewal_expired_over_90_days_review_required');
+    assert.equal(result.base_years,undefined);
+    assert.equal(result.total_years,undefined);
+    assert.equal(result[level==='private_premium'?'promotion_years':'promotion_days'],level==='private_premium'?1:180);
+  }
+});

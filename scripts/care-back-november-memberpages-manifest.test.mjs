@@ -21,7 +21,15 @@ test('recovered Member Pages manifest pins complete before and after bytes',()=>
 test('emitted shared policy keeps new signup and historical terms and applies six calendar months',()=>{
  const policy=fn(pairs.get('currentPrivateMembershipPromotion').after),apply=fn(pairs.get('applyMembershipPromotion').after);
  for(const package_code of ['standard','premium','vip'])for(const paid_at of ['2026-10-31T12:00:00+07:00','2026-11-01T00:00:00+07:00','2026-12-31T12:00:00+07:00','2027-01-01T00:00:00+07:00'])for(const prior_expire_at of ['2027-08-31','2026-10-01','2024-01-01',''])for(const action of ['renewal','signup'])for(const existing_member of [true,false]){
-  const input={package_code,paid_at,prior_expire_at,action,existing_member};assert.deepEqual(policy(input),currentPrivateMembershipPromotion(input));
+  const input={package_code,paid_at,prior_expire_at,action,existing_member};
+  const historical=policy(input),current=currentPrivateMembershipPromotion(input);
+  if(action==='renewal' && existing_member && ['standard','premium'].includes(package_code)
+    && Number.isFinite(Date.parse(prior_expire_at))
+    && Date.parse(paid_at)>=Date.parse('2026-11-04T16:00:00+07:00') && Date.parse(paid_at)<Date.parse('2027-01-01T00:00:00+07:00')) {
+    assert.equal(historical.bonus_months,6);
+    assert.equal(current[package_code==='premium'?'bonus_years':'bonus_days'],package_code==='premium'?1:180);
+    assert.match(current.code,/^reconfirmed_/);
+  } else assert.deepEqual(historical,current);
  }
  for(const date of ['2027-08-31T23:59:59+07:00','2027-03-31T00:00:00+07:00'])assert.equal(apply(date,{bonus_months:6}).toISOString(),applyMembershipPromotion(date,{bonus_months:6}).toISOString());
 });
