@@ -1717,8 +1717,12 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
         if (generation !== digitalUpdatesGeneration) return;
         if (!response.ok || body?.ok === false || !Array.isArray(body?.items)) throw new Error("updates_unavailable");
         const items = body.items;
+        const privateReminderCards = Array.isArray(body.private_reminders) ? body.private_reminders.slice(0, 2).filter(item =>
+          item?.kind === "double_moment_expiry" && Number.isInteger(item.remaining_count) && item.remaining_count > 0
+          && Number.isFinite(Date.parse(item.expires_at))
+        ).map(item => ({ id:"double-moment-" + new Date(item.expires_at).toISOString(), title:"Double Moment", summary:"เหลือ " + item.remaining_count + " สิทธิ์ · ใช้ได้ถึง " + new Date(item.expires_at).toLocaleDateString("th-TH", { timeZone:"Asia/Bangkok" }), view:"credits", occurredAt:item.expires_at })) : [];
         const unread = Number(body.unread_count ?? body.unreadCount ?? 0);
-        renderDigitalNews(digitalPersonalizedFeed, items, Number.isInteger(unread) ? unread : 0);
+        renderDigitalNews([...privateReminderCards, ...digitalPersonalizedFeed], items, Number.isInteger(unread) ? unread : 0);
         digitalUpdatesLoaded = true;
       } catch {
         if (generation === digitalUpdatesGeneration && feed) {

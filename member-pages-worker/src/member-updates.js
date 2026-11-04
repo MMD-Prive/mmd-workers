@@ -40,6 +40,27 @@ export async function listMmdNowItems(env, live) {
     items.push(...data.items);offset+=data.items.length;if(offset>=data.pagination.total)return items;if(!data.items.length)break;
   }throw Error('cms_incomplete');
 }
+async function privateDoubleMomentReminders(env, session) {
+  const lineUserId=String(session?.lineUserId || '').trim(), memberId=String(session?.memberId || '').trim();
+  const token=String(env.AUTH_SERVICE_MEMBER_TO_PAYMENTS || '').trim();
+  if(!/^U[0-9a-f]{32}$/i.test(lineUserId) || !memberId || !token || typeof env.PAYMENTS_WORKER?.fetch!=='function')return [];
+  try {
+    const response=await env.PAYMENTS_WORKER.fetch(new Request('https://payments.internal/v1/confirm/double-moment/reminder-state',{
+      method:'POST',headers:{'content-type':'application/json','x-internal-token':token},
+      body:JSON.stringify({line_user_id:lineUserId,member_id:memberId}),signal:AbortSignal.timeout(5000),
+    }));
+    const payload=await response.json().catch(()=>null);
+    if(!response.ok || payload?.ok!==true || !Array.isArray(payload.reminders))return [];
+    return payload.reminders.slice(0,2).filter(item=>item?.kind==='double_moment_expiry'
+      && Number.isInteger(item.remaining_count) && item.remaining_count>0
+      && Number.isFinite(Date.parse(item.expires_at))).map(item=>({
+        id:'double-moment-'+new Date(item.expires_at).toISOString(),kind:'double_moment_expiry',
+        title:'Double Moment',
+        summary:`เหลือ ${item.remaining_count} สิทธิ์ · ใช้ได้ถึง ${new Date(item.expires_at).toLocaleDateString('th-TH',{timeZone:'Asia/Bangkok'})}`,
+        view:'credits',expires_at:new Date(item.expires_at).toISOString(),remaining_count:item.remaining_count,
+      }));
+  } catch { return []; }
+}
 export async function handleMemberUpdates(request, env, readSession) {
   const respond=(body,status=200)=>{
     // Fixed vocabulary only: no session, CMS payload, exception text or URL.
@@ -53,6 +74,7 @@ export async function handleMemberUpdates(request, env, readSession) {
   try {
     const [live,staged]=await Promise.all([listMmdNowItems(env,true),listMmdNowItems(env,false)]);
     const n=Number(new URL(request.url).searchParams.get('limit') || 10);const limit=Number.isInteger(n)?Math.max(1,Math.min(20,n)):10;
-    return respond({ok:true,items:projectPublishedUpdates(live,staged,limit),source:'webflow_mmd_now',checked_at:new Date().toISOString()});
+    const private_reminders=await privateDoubleMomentReminders(env,session);
+    return respond({ok:true,items:projectPublishedUpdates(live,staged,limit),private_reminders,source:'webflow_mmd_now',checked_at:new Date().toISOString()});
   } catch { return respond({ok:false,error:{code:'CMS_UNAVAILABLE'}},503); }
 }

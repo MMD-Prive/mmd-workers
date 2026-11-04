@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
-  PATCH_SCHEMA, REVIEWED_UPLOADS, sha256, parsePatchManifest, buildPolicyModules, checkModuleSyntax,
+  PATCH_SCHEMA, REVIEWED_UPLOADS, sha256, parsePatchManifest, buildPolicyModules, verifyCandidateModules, checkModuleSyntax,
   validateReleaseInputs, verifyPolicyApproval, createPolicyTransport, releasePolicyPatch,
 } from './care-back-november-policy-release.mjs';
 
@@ -149,6 +149,74 @@ test('patch preserves all unedited bytes and wrapper modules exactly', () => {
   assert.equal(modules[0].bytes.toString(), newCode);
   assert.equal(modules[1].bytes.toString(), wrapper);
   assert.equal(checkModuleSyntax(modules).length, 2);
+});
+
+test('reviewed added module is included in exact candidate inventory', () => {
+  const f = fixture();
+  const addedCode = 'export const helper = true;\n';
+  f.manifest.added_modules = [{
+    name: 'double-moment-expiry-v2.mjs', type: 'esm',
+    after_sha256: sha256(addedCode), content_base64: Buffer.from(addedCode).toString('base64'),
+  }];
+  const manifest = parse(f.manifest);
+  const modules = buildPolicyModules(f.artifact, manifest);
+  assert.equal(modules.at(-1).name, 'double-moment-expiry-v2.mjs');
+  assert.equal(modules.at(-1).bytes.toString(), addedCode);
+  const candidate = { id: B, main_module: 'worker.js', modules: modules.map(m => ({ name: m.name, content_base64: m.bytes.toString('base64') })) };
+  assert.equal(checkModuleSyntax(modules).length, 3);
+  assert.equal(verifyCandidateModules(candidate, B, manifest).length, 3);
+});
+
+test('added module rejects duplicate names, noncanonical bytes, and hash drift', () => {
+  for (const mutate of [
+    m => m.added_modules[0].name = 'worker.js',
+    m => m.added_modules[0].content_base64 = 'YQ==\n',
+    m => m.added_modules[0].after_sha256 = 'f'.repeat(64),
+  ]) {
+    const f = fixture();
+    const source = 'export const helper = true;\n';
+    f.manifest.added_modules = [{ name: 'helper.mjs', type: 'esm', after_sha256: sha256(source), content_base64: Buffer.from(source).toString('base64') }];
+    mutate(f.manifest);
+    assert.throws(() => parse(f.manifest));
+  }
+});
+
+test('Double Moment v2 patch manifest pins the active worker bytes and keeps reminders disabled', async () => {
+  const manifestBytes = readFileSync(new URL('./manifests/double-moment-expiry-v2.json', import.meta.url));
+  const manifest = parsePatchManifest(manifestBytes, sha256(manifestBytes), 'payments-worker');
+  assert.equal(manifest.baseline_version, 'f05c4a1c-e4e4-4a91-8160-5ee3743cb7b9');
+  assert.equal(manifest.baseline_deployment, 'd06216d5-b324-426e-a3f2-f4e044c9dd28');
+  assert.equal(manifest.modules[0].before_sha256, 'eec3f26d0bff7e0bb2b06ebfc03420aef14579a238bad21b5e6bd33287eadb83');
+  assert.deepEqual(manifest.modules[0].patches.map(p => p.id), [
+    'double-moment-expiry-import', 'double-moment-routes', 'double-moment-admin-extension-route',
+    'double-moment-private-reminder-route', 'double-moment-coordinator-actions',
+    'double-moment-activation-expiry-projection', 'double-moment-activation-claim-projection',
+    'double-moment-activation-journal-commit', 'double-moment-install',
+  ]);
+  const helper = readFileSync(new URL('../payments-worker/double-moment-expiry-v2.mjs', import.meta.url));
+  assert.equal(manifest.added_modules[0].after_sha256, sha256(helper));
+  assert.equal(Buffer.from(manifest.added_modules[0].content_base64, 'base64').compare(helper), 0);
+  const source = helper.toString();
+  assert.match(source, /DOUBLE_MOMENT_REMINDER_TIMING = null/);
+  assert.match(source, /DOUBLE_MOMENT_REMINDERS_ENABLED = false/);
+  assert.match(source, /DOUBLE_MOMENT_LINE_DELIVERY_ENABLED = false/);
+  assert.match(source, /if \(!DOUBLE_MOMENT_REMINDERS_ENABLED \|\| !DOUBLE_MOMENT_REMINDER_TIMING\) fail\('reminder_delivery_disabled'/);
+});
+
+test('private MMD NOW patch pins the active Member Pages artifact and authenticated UI anchors', () => {
+  const manifestBytes=readFileSync(new URL('./manifests/double-moment-mmd-now-v2.json',import.meta.url));
+  const manifest=parsePatchManifest(manifestBytes,sha256(manifestBytes),'member-pages-worker');
+  assert.equal(manifest.baseline_version,'13d39bce-751c-4eec-882a-a354aaacbf34');
+  assert.equal(manifest.baseline_deployment,'1c168fe4-3910-4304-ad68-6599a6e8804a');
+  assert.equal(manifest.modules[0].before_sha256,'7a5969426551b6d4eaf370b31280dd5a62a446b050529898c4b9b51855d7206f');
+  assert.deepEqual(manifest.modules[0].patches.map(p=>p.id),[
+    'mmd-now-private-reminder-helper','mmd-now-private-reminder-response','mmd-now-private-reminder-card',
+  ]);
+  const helper=manifest.modules[0].patches[0].after;
+  assert.match(helper,/session\?\.lineUserId/);
+  assert.match(helper,/session\?\.memberId/);
+  assert.match(helper,/AbortSignal\.timeout/);
+  assert.match(manifest.modules[0].patches[2].after,/body\.private_reminders/);
 });
 
 test('baseline bytes and the full module inventory must match the pinned artifact', () => {

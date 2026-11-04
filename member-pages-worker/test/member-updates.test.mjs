@@ -61,6 +61,39 @@ test('valid empty published feed succeeds without inventing content',async()=>{
   async()=>({lineUserId:'verified',memberId:'M1',memberExists:true}));
  assert.equal(response.status,200);assert.deepEqual((await response.json()).items,[]);
 });
+test('private MMD NOW reminders use only the authenticated session and stay separate from shared CMS items',async()=>{
+ const req=new Request('https://mmdbkk.com/api/member/app/updates?limit=10&line_user_id=Uffffffffffffffffffffffffffffffff&client_record_id=rec99999999999999');
+ const forwarded=[];const cms={fetch:async()=>Response.json({items:[published],pagination:{total:1}})};
+ const expiresAt=new Date(Date.now()+7*86400000).toISOString();
+ const env={WEBFLOW_CMS_TOKEN:'fixture',WEBFLOW_CMS_HTTP:cms,AUTH_SERVICE_MEMBER_TO_PAYMENTS:'service-token',PAYMENTS_WORKER:{fetch:async request=>{
+   const body=await request.json();forwarded.push(body);
+   return Response.json({ok:true,status:'eligible',reminders:[{kind:'double_moment_expiry',remaining_count:1,expires_at:expiresAt,private_note:'must-not-pass'}]});
+ }}};
+ const sessions=[
+  {lineUserId:'U0123456789abcdef0123456789abcdef',memberId:'member-A',memberExists:true},
+  {lineUserId:'Uabcdef0123456789abcdef0123456789',memberId:'member-B',memberExists:true},
+ ];
+ const results=[];
+ for(const session of sessions){
+  const response=await handleMemberUpdates(req,env,async()=>session);
+  assert.equal(response.status,200);assert.match(response.headers.get('cache-control'),/private, no-store/);assert.match(response.headers.get('vary'),/Cookie/);
+  results.push(await response.json());
+ }
+ assert.deepEqual(forwarded,[
+  {line_user_id:sessions[0].lineUserId,member_id:sessions[0].memberId},
+  {line_user_id:sessions[1].lineUserId,member_id:sessions[1].memberId},
+ ]);
+ assert.equal(results[0].items[0].id,'p');assert.equal(results[1].items[0].id,'p');
+ assert.equal(results[0].private_reminders[0].remaining_count,1);
+ assert.equal(results[0].private_reminders[0].id,results[1].private_reminders[0].id);
+ assert.equal(JSON.stringify(results[0].items).includes('private_note'),false);
+ assert.equal(JSON.stringify(results[0].private_reminders).includes('private_note'),false);
+});
+test('unavailable private reminder service fails closed without hiding the editorial feed',async()=>{
+ const req=new Request('https://mmdbkk.com/api/member/app/updates');
+ const response=await handleMemberUpdates(req,{WEBFLOW_CMS_TOKEN:'fixture',WEBFLOW_CMS_HTTP:{fetch:async()=>Response.json({items:[published],pagination:{total:1}})},AUTH_SERVICE_MEMBER_TO_PAYMENTS:'token',PAYMENTS_WORKER:{fetch:async()=>{throw Error('private upstream')}}},async()=>({lineUserId:'U0123456789abcdef0123456789abcdef',memberId:'M1',memberExists:true}));
+ assert.equal(response.status,200);const body=await response.json();assert.equal(body.items.length,1);assert.deepEqual(body.private_reminders,[]);
+});
 test('CMS uses manual redirect mode and rejects 3xx without following Location',async()=>{
  for(const status of [301,302,303,307,308]){
   let calls=0;

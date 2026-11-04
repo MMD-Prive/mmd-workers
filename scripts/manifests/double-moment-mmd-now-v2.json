@@ -1,0 +1,38 @@
+{
+  "schema": "care_back_november_policy_patch_v1",
+  "worker": "member-pages-worker",
+  "baseline_version": "13d39bce-751c-4eec-882a-a354aaacbf34",
+  "baseline_deployment": "1c168fe4-3910-4304-ad68-6599a6e8804a",
+  "main_module": "worker.js",
+  "modules": [
+    {
+      "name": "worker.js",
+      "type": "esm",
+      "before_sha256": "7a5969426551b6d4eaf370b31280dd5a62a446b050529898c4b9b51855d7206f",
+      "after_sha256": "239bff7b5908c931334872d83c645a5c55f5aba614a0dc39989c591d115bc165",
+      "patches": [
+        {
+          "id": "mmd-now-private-reminder-helper",
+          "before": "async function handleMemberUpdates(request, env, readSession) {",
+          "after": "async function privateDoubleMomentReminders(env, session) {\n  const lineUserId=String(session?.lineUserId || '').trim(), memberId=String(session?.memberId || '').trim();\n  const token=String(env.AUTH_SERVICE_MEMBER_TO_PAYMENTS || '').trim();\n  if(!/^U[0-9a-f]{32}$/i.test(lineUserId) || !memberId || !token || typeof env.PAYMENTS_WORKER?.fetch!=='function')return [];\n  try {\n    const response=await env.PAYMENTS_WORKER.fetch(new Request('https://payments.internal/v1/confirm/double-moment/reminder-state',{\n      method:'POST',headers:{'content-type':'application/json','x-internal-token':token},\n      body:JSON.stringify({line_user_id:lineUserId,member_id:memberId}),signal:AbortSignal.timeout(5000),\n    }));\n    const payload=await response.json().catch(()=>null);\n    if(!response.ok || payload?.ok!==true || !Array.isArray(payload.reminders))return [];\n    return payload.reminders.slice(0,2).filter(item=>item?.kind==='double_moment_expiry'\n      && Number.isInteger(item.remaining_count) && item.remaining_count>0\n      && Number.isFinite(Date.parse(item.expires_at))).map(item=>({\n        id:'double-moment-'+new Date(item.expires_at).toISOString(),kind:'double_moment_expiry',\n        title:'Double Moment',\n        summary:`เหลือ ${item.remaining_count} สิทธิ์ · ใช้ได้ถึง ${new Date(item.expires_at).toLocaleDateString('th-TH',{timeZone:'Asia/Bangkok'})}`,\n        view:'credits',expires_at:new Date(item.expires_at).toISOString(),remaining_count:item.remaining_count,\n      }));\n  } catch { return []; }\n}\nasync function handleMemberUpdates(request, env, readSession) {",
+          "before_sha256": "842c24e6b1a989da6a93cbb18a57c38d3803e7338f0c1550a7603ef0aebbcf7e",
+          "after_sha256": "146b8af04fb5337e25aeb565e3465ac6b1a1c1962fda2ce636190b22ce4fa73a"
+        },
+        {
+          "id": "mmd-now-private-reminder-response",
+          "before": "return respond({ok:true,items:projectPublishedUpdates(live,staged,limit),source:'webflow_mmd_now',checked_at:new Date().toISOString()});",
+          "after": "const private_reminders=await privateDoubleMomentReminders(env,session);\n    return respond({ok:true,items:projectPublishedUpdates(live,staged,limit),private_reminders,source:'webflow_mmd_now',checked_at:new Date().toISOString()});",
+          "before_sha256": "0565ef9c5008846608fb6ced9c34aa0206aac52d03fb50c50610e9d7fed38e0b",
+          "after_sha256": "d88b118dff26e281ad2eda4d30a4ec5e322b0a20436e87a5330ff7f50b21fa5d"
+        },
+        {
+          "id": "mmd-now-private-reminder-card",
+          "before": "        const items = body.items;\n        const unread = Number(body.unread_count ?? body.unreadCount ?? 0);\n        renderDigitalNews(digitalPersonalizedFeed, items, Number.isInteger(unread) ? unread : 0);",
+          "after": "        const items = body.items;\n        const privateReminderCards = Array.isArray(body.private_reminders) ? body.private_reminders.slice(0, 2).filter(item =>\n          item?.kind === \"double_moment_expiry\" && Number.isInteger(item.remaining_count) && item.remaining_count > 0\n          && Number.isFinite(Date.parse(item.expires_at))\n        ).map(item => ({ id:\"double-moment-\" + new Date(item.expires_at).toISOString(), title:\"Double Moment\", summary:\"เหลือ \" + item.remaining_count + \" สิทธิ์ · ใช้ได้ถึง \" + new Date(item.expires_at).toLocaleDateString(\"th-TH\", { timeZone:\"Asia/Bangkok\" }), view:\"credits\", occurredAt:item.expires_at })) : [];\n        const unread = Number(body.unread_count ?? body.unreadCount ?? 0);\n        renderDigitalNews([...privateReminderCards, ...digitalPersonalizedFeed], items, Number.isInteger(unread) ? unread : 0);",
+          "before_sha256": "8ead3f581851bf662a79a527a2222bb807394ab4d33289fc157ba06397b38f08",
+          "after_sha256": "df0772f6809eb1cec371380bc6645d9a65f8f0f24edcce2b5b6a18b496699b60"
+        }
+      ]
+    }
+  ]
+}

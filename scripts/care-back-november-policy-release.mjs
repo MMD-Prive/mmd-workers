@@ -72,7 +72,10 @@ export function parsePatchManifest(raw, expectedHash, expectedWorker) {
   assert.equal(sha256(raw), expectedHash, 'patch manifest hash drift');
   assert.deepEqual(Buffer.from(raw.toString('utf8')), raw, 'manifest must be exact UTF-8');
   const manifest = JSON.parse(raw.toString('utf8'));
-  exactKeys(manifest, ['schema', 'worker', 'baseline_version', 'baseline_deployment', 'main_module', 'modules'], 'unknown manifest fields');
+  const rootKeys = Object.keys(manifest).sort();
+  const requiredRootKeys = ['baseline_deployment', 'baseline_version', 'main_module', 'modules', 'schema', 'worker'];
+  const allowedRootKeys = [...requiredRootKeys, 'added_modules'].sort();
+  assert.ok(rootKeys.every(key => allowedRootKeys.includes(key)) && requiredRootKeys.every(key => rootKeys.includes(key)), 'unknown or missing manifest fields');
   assert.equal(manifest.schema, PATCH_SCHEMA, 'unknown patch schema');
   assert.equal(workerName(manifest.worker), workerName(expectedWorker), 'manifest worker mismatch');
   assert.match(manifest.baseline_version, UUID);
@@ -108,6 +111,22 @@ export function parsePatchManifest(raw, expectedHash, expectedWorker) {
     if (module.patches.length === 0) assert.equal(module.before_sha256, module.after_sha256, 'unpatched module changed');
     else assert.notEqual(module.before_sha256, module.after_sha256, 'patched module hash did not change');
   }
+  const addedModules = manifest.added_modules || [];
+  assert.ok(Array.isArray(addedModules) && addedModules.length <= 7, 'invalid added module inventory');
+  for (const module of addedModules) {
+    exactKeys(module, ['name', 'type', 'after_sha256', 'content_base64'], 'unknown added module fields');
+    assert.match(module.name, MODULE);
+    assert.ok(!names.has(module.name), 'duplicate or baseline module name');
+    names.add(module.name);
+    assert.equal(module.type, 'esm', 'only reviewed JavaScript modules are supported');
+    assert.match(module.after_sha256, SHA256);
+    assert.ok(typeof module.content_base64 === 'string' && module.content_base64.length > 0, 'added module bytes missing');
+    const bytes = Buffer.from(module.content_base64, 'base64');
+    assert.equal(bytes.toString('base64'), module.content_base64, 'added module must use canonical base64');
+    assert.deepEqual(Buffer.from(bytes.toString('utf8')), bytes, 'added module must be exact UTF-8');
+    assert.equal(sha256(bytes), module.after_sha256, 'added module bytes drift');
+  }
+  assert.ok(manifest.modules.length + addedModules.length <= 8, 'module inventory exceeds limit');
   assert.ok(names.has(manifest.main_module), 'main module missing');
   assert.ok(count > 0 && count <= 40, 'invalid bounded patch count');
   return manifest;
@@ -116,7 +135,7 @@ export function parsePatchManifest(raw, expectedHash, expectedWorker) {
 export function buildPolicyModules(artifact, manifest) {
   const baselineHashes = Object.fromEntries(manifest.modules.map(m => [m.name, m.before_sha256]));
   const baseline = verifyModuleInventory(artifact, manifest.baseline_version, manifest.main_module, baselineHashes);
-  return baseline.map(module => {
+  const patched = baseline.map(module => {
     const spec = manifest.modules.find(m => m.name === module.name);
     if (!spec.patches.length) return { name: module.name, bytes: Buffer.from(module.bytes) };
     const edits = spec.patches.map(p => ({
@@ -131,11 +150,14 @@ export function buildPolicyModules(artifact, manifest) {
     assert.deepEqual(reverse, module.bytes, 'reverse patch did not recover exact baseline');
     return { name: module.name, bytes };
   });
+  const added = (manifest.added_modules || []).map(module => ({ name: module.name, bytes: Buffer.from(module.content_base64, 'base64') }));
+  return [...patched, ...added];
 }
 
 export function verifyCandidateModules(artifact, id, manifest) {
-  return verifyModuleInventory(artifact, id, manifest.main_module,
-    Object.fromEntries(manifest.modules.map(m => [m.name, m.after_sha256])));
+  const expected = Object.fromEntries(manifest.modules.map(m => [m.name, m.after_sha256]));
+  for (const module of manifest.added_modules || []) expected[module.name] = module.after_sha256;
+  return verifyModuleInventory(artifact, id, manifest.main_module, expected);
 }
 
 export function checkModuleSyntax(modules, run = execFileSync) {
