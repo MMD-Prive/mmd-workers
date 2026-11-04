@@ -1,3 +1,4 @@
+import { jobInterestReassurance } from './job-interest-reassurance.js';
 export const SHORT_FORM_VERSION = "job-interest-short-v1";
 export const SHORT_MEDIA_LIMIT = 25 * 1024 * 1024;
 const PHOTO_TYPES = new Map([["image/jpeg", "jpg"], ["image/png", "png"], ["image/webp", "webp"], ["image/heic", "heic"], ["image/heif", "heif"]]);
@@ -18,16 +19,17 @@ export function shortProfile(input) {
   return { profile };
 }
 
-export function shortFormMarkup(jobId, title, escape) {
+export function shortFormMarkup(jobId, title, escape, { publicJob = true } = {}) {
   return `<main><a class="back" href="/public/api/jobs/${encodeURIComponent(jobId)}">← กลับไปอ่านบรีฟ</a><section class="detail jd-short"><p class="eyebrow">Jobs:</p><h1>${escape(title)}</h1><form data-short-interest>
   <label>ชื่อเล่น<input name="nickname" autocomplete="nickname" required maxlength="80"></label>
   <div class="jd-contact"><label>LINE<input name="line_id" maxlength="120"></label><label>เบอร์โทร<input name="phone" type="tel" autocomplete="tel" maxlength="40"></label></div>
   <p>ฝาก LINE หรือเบอร์โทรอย่างใดอย่างหนึ่งครับ</p>
+  ${publicJob ? '<p><button class="jd-reassurance-trigger" type="button" data-reassurance-open>ยังไม่มั่นใจ? อ่านข้อความจากเปอร์ก่อนได้ครับ</button></p>' : ''}
   <fieldset><legend>รูปปัจจุบัน</legend><div class="jd-photos">${Array.from({ length: 8 }, (_, i) => `<label class="jd-slot"><span>รูป ${i + 1}</span><img hidden alt="พรีวิวรูป ${i + 1}"><input type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" data-slot="${i + 1}" aria-label="เลือกรูป ${i + 1}"></label>`).join("")}</div>
   <label class="jd-bulk">เลือกรูปพร้อมกัน<input type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple data-bulk></label>
   <p>กรุณาไม่ใช้รูปที่สวมแว่นดำ หมวก</p><p>กรุณาเลือกรูปที่เห็นหน้าชัดเจน ไม่เซลฟี่ ไม่แต่งสีภาพจนไม่ตรงกับปก</p></fieldset>
   <div class="jd-support"><label class="jd-slot">คลิป<video hidden controls playsinline></video><input type="file" accept="video/mp4,video/quicktime,video/webm" data-slot="9" aria-label="เลือกคลิป"></label><label class="jd-slot">คอมการ์ด<img hidden alt="พรีวิวคอมการ์ด"><input type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" data-slot="10" aria-label="เลือกคอมการ์ด"></label></div>
-  <p>ไฟล์ละไม่เกิน 25 MB · คลิปและคอมการ์ดส่งเพิ่มได้ตามสะดวก</p><button class="primary" type="submit">ส่งข้อมูล</button><p data-short-status role="status" aria-live="polite"></p></form></section></main>
+  <p>ไฟล์ละไม่เกิน 25 MB · คลิปและคอมการ์ดส่งเพิ่มได้ตามสะดวก</p><button class="primary" type="submit">ส่งข้อมูล</button><p data-short-status role="status" aria-live="polite"></p></form>${publicJob ? jobInterestReassurance(`/public/api/jobs/${encodeURIComponent(jobId)}`) : ""}</section></main>
   <style>body.mmd-worker-surface .detail.jd-short{background:#faf6ed!important;color:#26201c!important;border-color:#ded4c4!important;box-shadow:none!important;padding:22px!important}body.mmd-worker-surface .detail.jd-short h1{font-size:24px!important;line-height:1.4!important;color:#26201c!important;letter-spacing:normal!important}body.mmd-worker-surface .detail.jd-short :is(p,label,legend){color:#655a50!important}body.mmd-worker-surface .detail.jd-short input{background:#fffdf7!important;color:#26201c!important;border-color:#cfc3b3!important}body.mmd-worker-surface .detail.jd-short .primary{background:#8f2636!important;color:#fff!important}body.mmd-worker-surface .detail.jd-short .eyebrow{color:#8f2636!important}.jd-bulk{position:relative;min-height:44px;display:flex;justify-content:center;border:1px solid #cfc3b3;border-radius:8px;cursor:pointer}.jd-bulk input{position:absolute;inset:0;opacity:0;cursor:pointer}.jd-short{max-width:680px;margin:auto}.jd-short h1{font-size:clamp(24px,5vw,38px)!important;line-height:1.4!important}.jd-short p{font-size:13px;margin:8px 0}.jd-contact,.jd-support{display:grid;grid-template-columns:1fr 1fr;gap:12px}.jd-short fieldset{border:0;padding:0;margin:20px 0}.jd-photos{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.jd-slot{min-width:0;position:relative;border:1px solid #89745d;border-radius:8px;padding:8px;overflow:hidden}.jd-photos .jd-slot{aspect-ratio:1;display:flex;align-items:center;justify-content:center;margin:0}.jd-slot input{position:absolute;inset:0;opacity:0;cursor:pointer;min-height:44px}.jd-slot:focus-within{outline:2px solid #c9a14a;outline-offset:2px}.jd-slot img,.jd-slot video{width:100%;max-height:180px;object-fit:contain}.jd-photos img{position:absolute;inset:0;height:100%;object-fit:cover}.jd-short input{min-height:44px;min-width:0;font-size:16px}.jd-support .jd-slot{min-height:100px}.jd-short button:disabled{opacity:.6}</style>`;
 }
 
