@@ -108,6 +108,7 @@ test('the approved manifest contains unique matched models, pinned image bytes a
   assert.equal(doubleMoment.status, 'active');
   assert.equal(doubleMoment.valid_to, null);
   assert.equal(doubleMoment.financial_campaign_id, 'promo_double_moment_sep2026');
+  assert.equal(manifest.revision, '2026-11-04-owner-approved-double-moment-monthly-120d-copy');
   assert.equal(doubleMoment.package_code, 'double_moment_20000');
   assert.equal(doubleMoment.policy_version, 'v1');
   assert.deepEqual(doubleMoment.terms, {
@@ -117,7 +118,7 @@ test('the approved manifest contains unique matched models, pinned image bytes a
     moment_bonus_count: 2,
     moment_bonus_each_thb: 3500,
     minimum_service_per_confirmed_booking_thb: 20000,
-    credit_valid_days_after_verified_payment: 180,
+    credit_valid_days_after_verified_payment: 120,
     limit_per_verified_member_per_campaign: 1,
     verification_and_ledger: 'existing_official_verify_flow',
   });
@@ -126,8 +127,9 @@ test('the approved manifest contains unique matched models, pinned image bytes a
   assert.match(doubleMoment.captions.preview, /10,000 บาทต่องาน รวม 2 งาน/);
   assert.match(doubleMoment.captions.preview, /โบนัส Moment งานละ 3,500 บาท/);
   assert.match(doubleMoment.captions.preview, /อย่างน้อยงานละ 20,000 บาท/);
+  assert.match(doubleMoment.captions.preview, /เครดิตใช้ได้ 120 วันนับจากวันที่ออกเครดิต/);
   assert.match(doubleMoment.captions.preview, /https:\/\/www\.mmdbkk\.com\/promotion\/double-moment/);
-  assert.doesNotMatch(doubleMoment.captions.preview, /120 วัน|180 วัน/);
+  assert.doesNotMatch(doubleMoment.captions.preview, /180 วัน/);
   for (const c of manifest.cards) {
     assert.equal(c.id, c.file_id);
     assert.match(c.model_id, /^rec[A-Za-z0-9]{14}$/);
