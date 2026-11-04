@@ -4,6 +4,7 @@ import test from 'node:test';
 
 const directory = new URL('../.github/workflows/', import.meta.url);
 const files = [
+  'deploy-events-worker.yml',
   'deploy-member-pages-worker.yml', 'sync-control-room-dashboard-ingress.yml',
   'retire-mmd-redirect-worker-production.yml',
   'deploy-admin-worker.yml', 'audience-production-ingress.yml',
