@@ -19,6 +19,6 @@ test('local exact active artifact diagnostics delta is reversible, scoped and sy
  assert.throws(()=>buildDiagnosticsDelta(Buffer.concat([bytes,Buffer.from(' ')])),/drift/);
  assert(candidate.includes('digital-blackcard-entry'));assert(candidate.includes('loaderVisibility'));
  assert.equal(sha(candidate),'a882ddb90ceea1cb15c6ea5c49c9e65e874877f7b1dc99b5fc53ba59f1426e04');
- assert.equal(sha(raw),'b6e87bc264f352487981c4babe28e87f917360028f62bd50d58865ee973d8d34');
+ assert.equal(sha(raw),'0faf49fea3332befbaea01be05c8c0fc40b6c7590f918baeabbda8b78048a7cf');
  console.log(JSON.stringify({candidateBytes:candidate.length,candidateHash:sha(candidate),manifestHash:sha(raw),patches:manifest.modules[0].patches.length,reverseExact:true,ownerCreditsOverlayExact:true,releaseReady:false}));
 });

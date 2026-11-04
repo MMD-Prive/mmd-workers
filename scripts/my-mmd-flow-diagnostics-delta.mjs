@@ -6,7 +6,7 @@ import {execFileSync} from 'node:child_process';
 import {transformSync} from '../member-pages-worker/test-runtime/node_modules/esbuild/lib/main.js';
 import {applyReviewedArtifactDelta} from './member-pages-artifact-delta.mjs';
 export const BASELINE_HASH='7a5969426551b6d4eaf370b31280dd5a62a446b050529898c4b9b51855d7206f';
-export const SOURCE_SHA='dcb70dda2807f775f7933d59b742fae816584fda';
+export const SOURCE_SHA='3e416e70434dbd8ac7d73917d551f7f101c8c5dd';
 export const sha=x=>createHash('sha256').update(x).digest('hex');
 const read=name=>{
  const file=new URL('../member-pages-worker/src/'+name,import.meta.url);
