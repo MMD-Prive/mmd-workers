@@ -361,7 +361,8 @@ async function legacyDoubleMomentExposure(bucket, month, throughDate) {
     if (plan?.card_id !== DOUBLE_MOMENT_CAMPAIGN_ID) continue;
     for (const destination of plan.destinations || []) {
       const delivery = (await readCompcardJson(bucket, `deliveries/${date}/promotion/${destination}.json`))?.record;
-      if (["sent", "delivery_uncertain", "sending"].includes(delivery?.status)) return { date, destination, status: delivery.status, receipt: delivery.receipt || null };
+      if (delivery?.status === "sent" || delivery?.status === "delivery_uncertain") return { date, destination, status: delivery.status, receipt: delivery.receipt || null };
+      if (delivery && !["not_sent", "blocked"].includes(delivery.status)) throw problem("compcard_double_monthly_prior_reservation_unknown", false);
     }
   }
   return null;
@@ -370,8 +371,38 @@ async function findPriorDoubleMomentRound(bucket, month) {
   let last = null;
   for (let cursor = DOUBLE_MOMENT_MONTHLY_ANCHOR_MONTH; cursor < month; cursor = shiftMonth(cursor, 1)) {
     const saved = await readMonthlyRecord(bucket, cursor);
-    if (saved && ["reserved", "consumed"].includes(saved.record.status)) {
+    if (saved?.record.status === "consumed") {
       last = saved.record;
+      continue;
+    }
+    if (saved?.record.status === "reserved") {
+      const record = saved.record;
+      const plan = (await readCompcardJson(bucket, `plans/${record.date}/promotion.json`))?.record;
+      const delivery = (await readCompcardJson(bucket, `deliveries/${record.date}/promotion/${record.destination}.json`))?.record;
+      if (plan?.card_id !== DOUBLE_MOMENT_CAMPAIGN_ID || plan?.date !== record.date
+          || !plan.destinations?.includes(record.destination) || !delivery) {
+        throw problem("compcard_double_monthly_prior_reservation_unknown", false);
+      }
+      if (delivery.status === "sent" || delivery.status === "delivery_uncertain") {
+        const consumed = { ...record, status: "consumed", prior_outcome: delivery.status, receipt: delivery.receipt || null };
+        const written = await writeCompcardJson(bucket, monthKey(cursor), consumed, saved.etag);
+        if (!written) {
+          const latest = await readMonthlyRecord(bucket, cursor);
+          if (latest?.record.status !== "consumed") throw problem("compcard_double_monthly_prior_reservation_unknown", false);
+          last = latest.record;
+        } else last = consumed;
+        continue;
+      }
+      if (delivery.status !== "not_sent" && delivery.status !== "blocked") {
+        throw problem("compcard_double_monthly_prior_reservation_unknown", false);
+      }
+      // A confirmed no-send did not consume an actual monthly publication round.
+      const released = { ...record, status: "released", prior_outcome: delivery.status };
+      const written = await writeCompcardJson(bucket, monthKey(cursor), released, saved.etag);
+      if (!written) {
+        const latest = await readMonthlyRecord(bucket, cursor);
+        if (latest?.record.status === "reserved") throw problem("compcard_double_monthly_prior_reservation_unknown", false);
+      }
       continue;
     }
     const legacy = await legacyDoubleMomentExposure(bucket, cursor, null);
