@@ -8,8 +8,7 @@ import { createHash } from "node:crypto";
 
 test("workerd R2 conditional writes deduplicate concurrent publish and resume a durable reservation", async () => {
   const root = fileURLToPath(new URL("../../", import.meta.url));
-  const files = ["public-access-worker/src/public-job-board-v2.js", "public-access-worker/src/job-interest-short-form.js", "public-access-worker/src/broadcast-owner-store.js", "shared/model-job-board-links.mjs"];
-  const files = ["public-access-worker/src/public-job-board-v2.js", "public-access-worker/src/job-interest-reassurance.js", "public-access-worker/src/broadcast-owner-store.js", "shared/model-job-board-links.mjs"];
+  const files = ["public-access-worker/src/public-job-board-v2.js", "public-access-worker/src/job-interest-short-form.js", "public-access-worker/src/job-interest-reassurance.js", "public-access-worker/src/broadcast-owner-store.js", "shared/model-job-board-links.mjs"];
   const modules = await Promise.all(files.map(async path => ({ type: "ESModule", path, contents: await readFile(root + path, "utf8") })));
   const mf = new Miniflare({ modulesRoot: root, modules: [{ type: "ESModule", path: "public-access-worker/test-runtime/entry.js", contents: `import { handlePublicJobBoardV2Request } from '../src/public-job-board-v2.js'; export default { fetch: handlePublicJobBoardV2Request };` }, ...modules], compatibilityDate: "2026-07-18", r2Buckets: ["PUBLIC_ACCESS_EVIDENCE"] });
   try {
