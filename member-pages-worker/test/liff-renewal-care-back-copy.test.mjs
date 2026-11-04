@@ -48,11 +48,17 @@ test('approved November announcement stops exactly at December 1 Bangkok without
 });
 
 for(const code of ['premium','standard']) {
-  test(`${code}: November and the final December millisecond use the six-month canonical CARE BACK benefit`,()=>{
+  test(`${code}: paid-time policy preserves early November and reconfirms tier bonus for December`,()=>{
     for(const time of ['2026-11-01T00:00:00+07:00','2026-12-15T12:00:00+07:00','2026-12-31T23:59:59.999+07:00']) {
       const promo=promotionAt(time,code);
-      assert.ok(promo); assert.equal(promo.bonus_years,0); assert.equal(promo.bonus_days,0); assert.equal(promo.bonus_months,6);
-      assert.equal(promo.ends_before,'2026-12-01T00:00:00+07:00');
+      assert.ok(promo);
+      if (time.startsWith('2026-11-01')) {
+        assert.equal(promo.bonus_months,6);
+        assert.equal(promo.ends_before,'2026-12-01T00:00:00+07:00');
+      } else {
+        assert.equal(promo[code==='premium'?'bonus_years':'bonus_days'],code==='premium'?1:180);
+        assert.equal(promo.ends_before,'2026-11-01T00:00:00+07:00');
+      }
       assert.equal(promo.honored_before,'2027-01-01T00:00:00+07:00');
     }
     assert.equal(promotionAt('2027-01-01T00:00:00+07:00',code),null);
@@ -84,6 +90,8 @@ test('customer markup preserves October history and uses the approved November w
   assert.match(november,/30 พ.ย. 2569/); assert.match(november,/รับอายุสมาชิกเพิ่ม 6 เดือน/);
   assert.doesNotMatch(november,/31 ต.ค.|Premium เพิ่ม 1 ปี|Standard เพิ่ม 180 วัน|31 ธ.ค.|สิ้นปี|honored_before/);
   assert.match(november,/สมัครใหม่ 2,999 บาท \/ 2 ปี/);
+  const reconfirmed=renewalViewHtml(new Date('2026-11-04T16:00:00+07:00'));
+  assert.doesNotMatch(reconfirmed,/<aside class="rn-campaign"|รับอายุสมาชิกเพิ่ม 6 เดือน|30 พ.ย. 2569|31 ธ.ค./);
 });
 
 test('wish coupon entry goes to existing Care view, never applies a membership discount',()=>{

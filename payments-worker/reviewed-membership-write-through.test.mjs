@@ -436,7 +436,7 @@ for (const packages of [[],[packageRecord("standard",{is_active:false,require_ap
 for (const [packageCode, amount, capability] of [
   ["standard", 1000, "private_standard"],
   ["premium", 2500, "private_premium"],
-]) for (const active of [true, false]) test("November reviewed " + packageCode + (active ? " active" : " expired") + " renewal grants six calendar months and reports the exact term", async () => {
+]) for (const active of [true, false]) test("Reconfirmed reviewed " + packageCode + (active ? " active" : " expired") + " renewal grants its tier bonus and reports the exact term", async () => {
   const paidAt = "2026-11-29T17:15:00.000Z";
   const priorExpiry = active ? "2027-08-30T17:15:00.000Z" : "2026-09-01T17:15:00.000Z";
   const h = harness({ entitlements: [entitlement({ packageCode, capability, expireAt: priorExpiry })] });
@@ -447,9 +447,12 @@ for (const [packageCode, amount, capability] of [
   assert.equal(body.entitlement_materialized, true);
   assert.equal(receipt.action, "renewal");
   assert.equal(receipt.start_at, active ? priorExpiry : paidAt);
-  assert.equal(receipt.expire_at, active ? "2029-02-27T17:15:00.000Z" : "2028-05-29T17:15:00.000Z");
-  assert.equal(receipt.membership_term, "1_year_plus_6_months");
-  assert.equal(receipt.promotion.bonus_months, 6);
+  const expected = packageCode === "premium"
+    ? (active ? "2029-08-30T17:15:00.000Z" : "2028-11-29T17:15:00.000Z")
+    : (active ? "2029-02-26T17:15:00.000Z" : "2028-05-27T17:15:00.000Z");
+  assert.equal(receipt.expire_at, expected);
+  assert.equal(receipt.membership_term, packageCode === "premium" ? "1_year_plus_1_year" : "1_year_plus_180_days");
+  assert.equal(receipt.promotion[packageCode === "premium" ? "bonus_years" : "bonus_days"], packageCode === "premium" ? 1 : 180);
   assert.equal(createdEntitlements(h)[0].fields.expire_at, receipt.expire_at);
 });
 

@@ -212,6 +212,26 @@ test('concurrent verified web renewals keep one payment entitlement and one exte
   const created=h.tables.entitlements.filter(row=>row.fields.payment_ref==='PAY-WEB-RENEW-1');
   assert.equal(created.length,1); assert.equal(new Set(bodies.map(b=>b.membership_expire_at)).size,1);
 });
+test('retry repairs the renewal receipt after entitlement creation succeeded but session write failed',async()=>{
+  const h=harness(); const transport=h.env.AIRTABLE_HTTP.fetch;
+  let fail=true;
+  h.env.AIRTABLE_HTTP.fetch=async request=>{
+    if (fail && request.method==='PATCH' && new URL(request.url).pathname.endsWith('/renewals/recRenew12345678')) {
+      fail=false; return Response.json({error:'fixture unavailable'},{status:503});
+    }
+    return transport(request);
+  };
+  const first=await(await reconcileCanonicalWebRenewalProof(renewalRequest(),slipResponse(),h.env)).json();
+  assert.equal(first.entitlement_materialized,false);
+  assert.equal(h.tables.entitlements.length,2);
+  const expiry=h.tables.entitlements[1].fields.expire_at;
+  const second=await(await reconcileCanonicalWebRenewalProof(renewalRequest(),slipResponse(),h.env)).json();
+  assert.equal(second.entitlement_materialized,true);
+  assert.equal(second.renewal_settlement.duplicate,true);
+  assert.equal(second.membership_expire_at,expiry);
+  assert.equal(h.tables.entitlements.length,2);
+  assert.equal(h.tables.renewals[0].fields.renewal_flow_status,'materialized');
+});
 test('verified proof belonging to another payment cannot grant rights',async()=>{
   const h=harness();h.tables.proofs[0].fields.payment_ref='OTHER';
   const body=await(await reconcileCanonicalWebRenewalProof(renewalRequest(),slipResponse(),h.env)).json();
@@ -295,7 +315,7 @@ for (const [packageCode, amount, capability, duration] of [
 
 for (const [paidAt, expiry] of [
   ["2026-10-31T17:00:00.000Z", "2028-04-30T17:00:00.000Z"],
-  ["2026-12-31T16:59:59.999Z", "2028-06-30T16:59:59.999Z"],
+  ["2026-12-31T16:59:59.999Z", "2028-06-28T16:59:59.999Z"],
 ]) test("signed web paid-time November policy boundary " + paidAt + " grants the canonical bonus", async () => {
   const h = harness();
   h.tables.payments[0].fields.paid_at = paidAt;
@@ -303,7 +323,7 @@ for (const [paidAt, expiry] of [
   const body = await (await reconcileCanonicalWebRenewalProof(renewalRequest(), slipResponse(), h.env)).json();
   assert.equal(body.entitlement_materialized, true);
   assert.equal(body.membership_expire_at, expiry);
-  assert.equal(body.membership_term, "1_year_plus_6_months");
+  assert.equal(body.membership_term, paidAt.startsWith("2026-12") ? "1_year_plus_180_days" : "1_year_plus_6_months");
 });
 
 test("November signed renewal still rejects a payment one millisecond beyond the renewal-price window", async () => {

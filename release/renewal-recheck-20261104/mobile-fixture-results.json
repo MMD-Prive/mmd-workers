@@ -1,0 +1,78 @@
+{
+  "kind": "synthetic_browser_fixture",
+  "browser": "141.0.7390.37",
+  "results": [
+    {
+      "tier": "standard",
+      "width": 320,
+      "scroll": 320,
+      "ctaEnabled": true,
+      "selection": "Standard · 1 ปี + 180 วัน",
+      "banner": false,
+      "position": "relative"
+    },
+    {
+      "tier": "standard",
+      "width": 360,
+      "scroll": 360,
+      "ctaEnabled": true,
+      "selection": "Standard · 1 ปี + 180 วัน",
+      "banner": false,
+      "position": "relative"
+    },
+    {
+      "tier": "standard",
+      "width": 390,
+      "scroll": 390,
+      "ctaEnabled": true,
+      "selection": "Standard · 1 ปี + 180 วัน",
+      "banner": false,
+      "position": "relative"
+    },
+    {
+      "tier": "standard",
+      "width": 430,
+      "scroll": 430,
+      "ctaEnabled": true,
+      "selection": "Standard · 1 ปี + 180 วัน",
+      "banner": false,
+      "position": "relative"
+    },
+    {
+      "tier": "premium",
+      "width": 320,
+      "scroll": 320,
+      "ctaEnabled": true,
+      "selection": "Premium · 1 ปี + 1 ปี",
+      "banner": false,
+      "position": "relative"
+    },
+    {
+      "tier": "premium",
+      "width": 360,
+      "scroll": 360,
+      "ctaEnabled": true,
+      "selection": "Premium · 1 ปี + 1 ปี",
+      "banner": false,
+      "position": "relative"
+    },
+    {
+      "tier": "premium",
+      "width": 390,
+      "scroll": 390,
+      "ctaEnabled": true,
+      "selection": "Premium · 1 ปี + 1 ปี",
+      "banner": false,
+      "position": "relative"
+    },
+    {
+      "tier": "premium",
+      "width": 430,
+      "scroll": 430,
+      "ctaEnabled": true,
+      "selection": "Premium · 1 ปี + 1 ปี",
+      "banner": false,
+      "position": "relative"
+    }
+  ]
+}

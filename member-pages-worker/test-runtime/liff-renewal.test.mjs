@@ -20,6 +20,17 @@ async function fixture(days=-30,tier='standard') {
   return {env,request,payments,values,sessionKey,state};
 }
 describe('actual Worker runtime Renewal Standard/Premium activation readiness',()=>{
+  for(const tier of ['standard','premium']) it(`${tier}: reconfirmed paid-time bonus is served by the actual shell runtime`,async()=>{
+    vi.setSystemTime(new Date('2026-11-04T09:00:00.000Z'));
+    const fx=await fixture(-30,tier);
+    const offer=await(await worker.fetch(fx.request('offer'),fx.env)).json();
+    expect(offer.status).toBe('ready');
+    expect(offer.membership_years).toBe(1);
+    expect(offer[tier==='premium'?'bonus_years':'bonus_days']).toBe(tier==='premium'?1:180);
+    expect(offer.bonus_months).toBe(0);
+    expect(offer.entitlement_granted).toBe(false);
+    expect(offer.promotion_ends_before).toBe('2026-11-01T00:00:00+07:00');
+  });
   for(const [tier,amount] of [['standard',1000],['premium',2500]]) {
     for(const days of [-30,0,89,90]) it(`${tier} day ${days}: canonical offer and signed checkout while Promotion flag stays off`,async()=>{
       const fx=await fixture(days,tier);

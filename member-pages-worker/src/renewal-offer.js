@@ -49,6 +49,10 @@ export async function resolveCanonicalRenewalOffer(env = {}, session = {}, now =
 
   const packageCode = canonicalRenewalPackageFromTier(session?.member_profile?.tier);
   if (!packageCode) return { status: "review_required", reason: "renewal_current_package_not_supported" };
+  if (["blocked", "suspended", "revoked", "pending_review", "under_review"].includes(
+    String(session?.member_profile?.membership_status || "").trim().toLowerCase())) {
+    return { status: "review_required", reason: "membership_review" };
+  }
   const timing = privateRenewalTiming(session?.member_profile?.membership_expires_at, now);
   if (!timing?.expiry_known) return {status:"review_required",reason:"canonical_expiry_required"};
   // Owner decision 2026-10-27: active advance / expired within 90 days only.

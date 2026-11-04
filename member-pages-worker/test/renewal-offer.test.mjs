@@ -6,6 +6,23 @@ import {
   renewalPriceForSpend,
   resolveCanonicalRenewalOffer,
 } from "../src/renewal-offer.js";
+import { evaluateRenewalEligibility } from "../src/liff-renewal-eligibility.js";
+
+test("canonical resolver agrees with the outer guard for blocked and review memberships", async () => {
+  const now = new Date("2026-11-04T09:00:00Z");
+  for (const tier of ["standard", "premium"]) for (const membership_status of ["blocked", "suspended", "revoked", "pending_review", "under_review"]) {
+    for (const membership_expires_at of ["2027-01-01T00:00:00Z", "2026-11-01T00:00:00Z"]) {
+      const profile = { tier, membership_status, membership_expires_at };
+      const guard = evaluateRenewalEligibility({ memberExists: true, memberProfile: profile }, null, tier, now);
+      const offer = await resolveCanonicalRenewalOffer({}, { liff_intent: "renew", member_exists: true,
+        line_user_id: "U" + "a".repeat(32), member_profile: profile }, now);
+      assert.equal(guard.state, "review");
+      assert.equal(offer.status, "review_required");
+      assert.equal(offer.reason, guard.reason);
+      assert.equal(offer.amount_thb, undefined);
+    }
+  }
+});
 
 test("Standard compatibility quote never revives retired spend-band prices", () => {
   for (const spend of [0, 9999.99, 10000, 49999.99, 50000, 1000000]) {

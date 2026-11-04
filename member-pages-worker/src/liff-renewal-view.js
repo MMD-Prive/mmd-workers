@@ -1,4 +1,4 @@
-import { isPrivateCareBackAnnouncementVisible } from "../../shared/membership-promotion-policy.mjs";
+import { isPrivateCareBackAnnouncementVisible, RENEWAL_BONUS_RECONFIRMED_AT } from "../../shared/membership-promotion-policy.mjs";
 
 // MY MMD Renewal: presentation only. Prices paid, dates and eligibility are
 // supplied by the authenticated server offer, never query strings/localStorage.
@@ -21,7 +21,8 @@ export const RENEWAL_COPY = Object.freeze({
 export function renewalViewHtml(now = new Date()) {
   // Server clock controls announcement visibility only. Personal bonus and
   // expiry still come from the verified offer, including after the public wave.
-  const announceCareBack = isPrivateCareBackAnnouncementVisible(now, "november");
+  const announceCareBack = isPrivateCareBackAnnouncementVisible(now, "november")
+    && new Date(now).getTime() < Date.parse(RENEWAL_BONUS_RECONFIRMED_AT);
   const novemberWave = new Date(now).getTime() >= Date.parse("2026-11-01T00:00:00+07:00");
   const campaign = novemberWave ? {
     campaignTitle: "สมาชิกเดิม รับอายุสมาชิกเพิ่ม 6 เดือน",
