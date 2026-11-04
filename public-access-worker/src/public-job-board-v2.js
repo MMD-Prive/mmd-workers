@@ -296,7 +296,7 @@ async function renderApplication(request, env, jobId) {
   if (!gate && job.public.world !== "public") throw httpError(401, "model_login_required");
   await enforceViewerAccess(env, anon.id, job);
   if (job.public.world === "private" && !(await hasPrivateReveal(request, env, job.id, anon.id))) throw httpError(403, "job_brief_not_opened");
-  const form = shortFormMarkup(job.id, job.public.title, esc);
+  const form = shortFormMarkup(job.id, job.public.title, esc, { publicJob: job.public.world === "public" });
   const content = gate ? form.replace('</form>', `</form><a class="back" href="https://www.mmdbkk.com/sigil/model/dashboard/photos?source=job_board&job_id=${encodeURIComponent(job.id)}">อัปเดตรูปปัจจุบัน →</a>`) : form;
   return html(pageShell(`สนใจงานนี้ · ${job.public.title}`, content + shortFormScript(job.id)));
 }
