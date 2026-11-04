@@ -37,6 +37,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           artifact-ids: '13266408212'
+          merge-multiple: true
           run-id: '41710503902'
           repository: MMD-Prive/mmd-workers
           github-token: ${{ github.token }}
