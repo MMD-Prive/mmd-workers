@@ -138,16 +138,22 @@ identity remains `promo_double_moment_sep2026`, package `double_moment_20000`,
 policy `v1`. The approved Telegram copy says pay THB 20,000 for total credit THB 27,000:
 paid credit is THB 10,000 for each of two separate jobs, with a THB 3,500 Moment
 bonus for each job; each confirmed job must have service amount of at least
-THB 20,000. The Telegram copy does not state a credit-validity duration. Existing
-Official Verify and credit ledger remain authoritative; no payment or ledger logic
-was changed.
+THB 20,000. It states credit is usable for 120 days from issuance. The manifest's
+120-day term is advertising metadata; payment issuance and ledger logic were not
+changed.
 
 The Double Moment plain-text message is identical for Premium, Standard and
 Preview and pinned by SHA-256 in the approved manifest. Its CTA is
-`https://www.mmdbkk.com/promotion/double-moment`. Release stays gated until the
-corrected public page is published: the public page was checked on 4 November and
-still showed an outdated “use within 120 days” statement. This task does not publish
-or change the Webflow page.
+`https://www.mmdbkk.com/promotion/double-moment`. The live page, description and
+Open Graph description were checked read-only on 4 November and display 120 days.
+No Webflow edit or publish was performed. The production Double Moment health
+endpoint reports policy v2, `validity_days: 120`, and `purchase_enabled: false`.
+The currently available repository v1 payment source instead sets a fixed 180-day
+expiry at credit issuance; it contains no 120-to-180 extension cap or expiry
+reminder logic. Production runs a `double-moment-v2` payments-worker version, so
+the v1 source is not proof of live issuance behavior. Do not assume a maximum
+180-day extension or implement reminders until the deployed v2 behavior and
+reminder date rules are confirmed.
 
 When CARE BACK expires, it is no longer eligible; Double Moment remains eligible
 subject to its monthly publication limit. Model-card rotation is independent. A
