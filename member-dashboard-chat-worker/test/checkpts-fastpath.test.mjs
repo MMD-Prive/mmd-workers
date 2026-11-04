@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import worker, { createLineSignature } from "../src/index.js";
 import { isCheckptsShortcut } from "../src/checkpts-command.mjs";
 import { handleKenjiSeedLineRequest } from "../src/kenji-seed-line-runtime.mjs";
+import { handleKenjiSeedLineRequestWithRedeliveryRecovery } from "../src/kenji-line-redelivery-recovery.mjs";
 import { aggregateKenjiLineTurn, prepareKenjiLineWebhookBatch } from "../src/kenji-line-turn-aggregation.mjs";
 
 const UID = `U${"a".repeat(32)}`;
@@ -54,7 +55,12 @@ async function run(command, options = {}) {
   const matrix = { id: "recMatrix", fields: { Client: ["recClient"], matrix_id: "fixture-matrix", channel: "line_ofc",
     conversation_scope: "fixture-scope", matrix_status: "active", state_updated_at: new Date().toISOString(),
     state_expires_at: new Date(Date.now() + 60_000).toISOString(),
-    payload_json: JSON.stringify(options.support ? { rich_menu_v1: { topic: "support", entry: "per_support_button",
+    payload_json: JSON.stringify(options.booking ? { booking_draft_v1: {
+      schema: 'mmd.kenji_booking_accumulator.v1', draft_id: 'fixture-hiro-draft',
+      model_name: 'Hiro', model_working_name_hint: 'Hiro', status: 'collecting',
+      revision: 1, action_state: 'not_started', missing_fields: ['date', 'time', 'location', 'amount_thb'],
+      started_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    } } : options.support ? { rich_menu_v1: { topic: "support", entry: "per_support_button",
       expires_at: new Date(Date.now() + 60_000).toISOString() } } : {}) } };
   globalThis.setTimeout = (callback, ms, ...args) => { calls.waits.push(ms); return previousTimer(callback, ms, ...args); };
   globalThis.fetch = async (input, init = {}) => {
@@ -124,11 +130,38 @@ async function run(command, options = {}) {
       headers: { "x-line-signature": options.invalidSignature ? "invalid" : await createLineSignature(raw, env.LINE_CHANNEL_SECRET) } });
     const ctx = { waitUntil: work => background.push(work) };
     const response = options.directCore ? await worker.fetch(request, env, ctx)
+      : options.recovery ? await handleKenjiSeedLineRequestWithRedeliveryRecovery(request, env, ctx, worker)
       : await handleKenjiSeedLineRequest(request, env, ctx, worker);
     await Promise.all(background);
     return { status: response.status, body: await response.json(), calls };
   } finally { globalThis.fetch = previousFetch; globalThis.setTimeout = previousTimer; }
 }
+
+for (const command of ALIASES) test(`recovery wrapper keeps Hiro draft out of ${command}`, async () => {
+  const { status, calls } = await run(command, { recovery: true, booking: true, env: {
+    LINE_AUTO_REPLY_ENABLED: 'true', LINE_KENJI_BOOKING_INTENT_ENABLED: 'true',
+    KENJI_LINE_MODEL_ONLY_ENABLED: 'true',
+  } });
+  assert.equal(status, 200);
+  assert.equal(calls.replies.length, 1);
+  assert.match(calls.replies[0].messages[0].text, /สถานะสมาชิก: Premium.*\nPoints: 120 Points.*\nวันหมดอายุ: 01\/01\/2027/);
+  assert.doesNotMatch(calls.replies[0].messages[0].text, /Hiro|ต้องการวันไหน/);
+  assert.deepEqual(calls.truth, [{ path: '/__internal/kenji/member-truth', intent: 'points_status' }]);
+  assert.equal(calls.writes.filter(w => w.table === MATRIX).length, 0, 'preserve the Hiro draft');
+  assert.ok(calls.writes.some(w => w.table === 'MMD — Console Inbox'));
+});
+
+for (const guards of [{ owner: true }, { kill: true }, { globalKill: true }, { invalidSignature: true }])
+  test(`Hiro to Checkpts through recovery retains reply guards: ${JSON.stringify(guards)}`, async () => {
+    const { calls } = await run('Checkpts', { ...guards, recovery: true, booking: true, env: {
+      LINE_AUTO_REPLY_ENABLED: 'true', LINE_KENJI_BOOKING_INTENT_ENABLED: 'true',
+      KENJI_LINE_MODEL_ONLY_ENABLED: 'true',
+    } });
+    assert.equal(calls.replies.length, 0);
+    assert.equal(calls.truth.length, 0);
+    assert.equal(calls.writes.filter(w => w.table === MATRIX).length, 0);
+    if (guards.invalidSignature) assert.equal(calls.writes.length, 0);
+  });
 
 for (const command of ALIASES) test(`${command} uses one canonical Points lane with and without SUPPORT`, async () => {
   for (const support of [false, true]) {
