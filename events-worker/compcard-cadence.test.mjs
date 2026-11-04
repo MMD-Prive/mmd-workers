@@ -15,6 +15,20 @@ const cards = (count = 1) => Array.from({ length: count }, (_, i) => ({
   id: `approved-standard-${i}`, file_id: `approved-standard-${i}`, model_id: `recStandard${i}`, category: 'standard',
   canonical_name: `Standard ${i}`, display_name: `Standard ${i}`, sha256: HASH, content_type: 'image/png', bytes: BYTES.length,
 }));
+const DOUBLE_MOMENT_ID = 'double-moment-continues-2026-telegram';
+async function seedNovemberDoubleMomentReceipt(f) {
+  const card = f.manifest.promotions.find(row => row.id === DOUBLE_MOMENT_ID);
+  const planKey = 'plans/2026-11-03/promotion.json';
+  const deliveryKey = 'deliveries/2026-11-03/promotion/preview.json';
+  const plan = { schema: 'hype_compcard_plan_v1', date: '2026-11-03', slot: 'promotion', card_id: card.id,
+    model_id: null, category: 'promotion', file_id: null, sha256: card.sha256, destinations: ['preview'],
+    chat_ids: { preview: ROOM_IDS.preview }, captions: { preview: card.captions.preview } };
+  const delivery = { schema: 'hype_compcard_delivery_v1', status: 'sent', attempts: 1,
+    receipt: { message_id: 135, chat_id: ROOM_IDS.preview, approved_sha256: card.sha256 } };
+  await f.bucket.put(COMPCARD_JOURNAL_ROOT + planKey, JSON.stringify(plan));
+  await f.bucket.put(COMPCARD_JOURNAL_ROOT + deliveryKey, JSON.stringify(delivery));
+  return { planKey, deliveryKey, plan: JSON.stringify(plan), delivery: JSON.stringify(delivery) };
+}
 function fixture({ inventory = cards(), send, cadence = true } = {}) {
   const records = new Map();
   let version = 0;
@@ -76,43 +90,98 @@ test('a week has two promotions and five Standard evenings with no Preview model
   assert.equal(f.sends.filter(row => row.card.kind === 'text').length, 2);
 });
 
-test('10:00 promotion schedule leaves daily model and 20:00 Standard times unchanged without replay', async () => {
-  const f = fixture({ inventory: cards(4) });
+test('Double Moment is monthly across rooms; the confirmed November receipt anchors Dec/Jan/Feb rotation', async () => {
+  const f = fixture({ inventory: cards(5) });
   f.env.HYPE_PROMOTION_SEND_AT_ICT = '10:00';
   f.env.HYPE_STANDARD_SEND_AT_ICT = '20:00';
+  const old = await seedNovemberDoubleMomentReceipt(f);
 
-  assert.equal((await run(f, '2026-11-03', '09:59')).status, 'not_due');
+  assert.equal((await run(f, '2026-11-06', '09:59')).status, 'not_due');
+  assert.equal((await run(f, '2026-11-06', '10:00')).results[0].status, 'no_approved_promotion');
   assert.equal(f.sends.length, 0);
+  assert.equal(f.bucket.read('plans/2026-11-06/standard.json'), null);
+  const nov = f.bucket.read('monthly-promotions/double-moment/2026-11.json');
+  assert.equal(nov.status, 'consumed');
+  assert.equal(nov.date, '2026-11-03');
+  assert.equal(nov.destination, 'preview');
+  assert.equal(nov.round_index, 0);
+  assert.equal(f.bucket.records.get(COMPCARD_JOURNAL_ROOT + old.planKey).value, old.plan);
+  assert.equal(f.bucket.records.get(COMPCARD_JOURNAL_ROOT + old.deliveryKey).value, old.delivery);
 
-  const morning = await run(f, '2026-11-03', '10:00');
-  assert.equal(morning.results[0].slot, 'promotion');
-  assert.equal(morning.results[0].sent, 1);
-  assert.equal(f.bucket.read('plans/2026-11-03/promotion.json').destinations[0], 'preview');
-  const afterMorning = f.sends.length;
+  assert.equal((await run(f, '2026-11-06', '16:30')).results[0].slot, 'model');
+  const afterModel = f.sends.length;
+  assert.equal((await run(f, '2026-11-06', '20:00')).status, 'not_due');
+  assert.equal(f.sends.length, afterModel);
+  assert.equal((await run(f, '2026-11-07', '20:00')).results[0].slot, 'standard');
 
-  const model = await run(f, '2026-11-03', '16:30');
-  assert.equal(model.results[0].slot, 'model');
-  assert.equal(f.sends.length, afterMorning + 2);
-  assert.equal((await run(f, '2026-11-03', '20:00')).status, 'not_due');
-  assert.equal(f.sends.length, afterMorning + 2);
+  assert.equal((await run(f, '2026-12-01', '09:59')).status, 'not_due');
+  assert.equal((await run(f, '2026-12-01', '10:00')).results[0].slot, 'promotion');
+  assert.equal(f.bucket.read('plans/2026-12-01/promotion.json').destinations[0], 'premium');
+  const doubleSends = () => f.sends.filter(row => row.card.id === DOUBLE_MOMENT_ID);
+  assert.equal(doubleSends().length, 1);
+  await run(f, '2026-12-01', '10:15');
+  assert.equal(doubleSends().length, 1);
+  await run(f, '2026-12-01', '20:00');
+  await run(f, '2026-12-04', '10:00');
+  assert.equal(doubleSends().length, 1);
+  assert.equal(f.bucket.read('plans/2026-12-04/standard.json'), null);
 
-  const standard = await run(f, '2026-11-04', '20:00');
-  assert.equal(standard.results[0].slot, 'standard');
-  assert.equal(f.sends.length, afterMorning + 4);
-
-  assert.equal((await run(f, '2026-11-06', '10:00')).results[0].slot, 'promotion');
-  assert.equal(f.bucket.read('plans/2026-11-06/promotion.json').destinations[0], 'premium');
-  assert.equal((await run(f, '2026-11-10', '10:00')).results[0].slot, 'promotion');
-  assert.equal(f.bucket.read('plans/2026-11-10/promotion.json').destinations[0], 'standard');
-  assert.equal((await run(f, '2026-11-10', '20:00')).status, 'not_due');
+  assert.equal((await run(f, '2027-01-05', '10:00')).results[0].slot, 'promotion');
+  assert.equal(f.bucket.read('plans/2027-01-05/promotion.json').destinations[0], 'standard');
+  assert.equal((await run(f, '2027-02-02', '10:00')).results[0].slot, 'promotion');
+  assert.equal(f.bucket.read('plans/2027-02-02/promotion.json').destinations[0], 'preview');
+  assert.deepEqual([nov.round_index, f.bucket.read('monthly-promotions/double-moment/2026-12.json').round_index,
+    f.bucket.read('monthly-promotions/double-moment/2027-01.json').round_index,
+    f.bucket.read('monthly-promotions/double-moment/2027-02.json').round_index], [0, 1, 2, 3]);
+  assert.equal(doubleSends().length, 3);
 });
 
-test('promotion rooms advance by eligible promotion dates and Double remains continuous', async () => {
-  const f = fixture({ inventory: [] });
-  for (const date of ['2026-10-23', '2026-10-27', '2026-10-30', '2026-11-03', '2026-11-06', '2026-11-10']) await run(f, date);
-  assert.deepEqual(f.sends.map(row => row.destination), ['preview', 'premium', 'standard', 'preview', 'premium', 'standard']);
-  assert.ok(f.sends.slice(3).every(row => row.card.id === 'double-moment-continues-2026-telegram'));
-  assert.ok(f.sends.slice(3).every(row => row.card.financial_campaign_id === 'promo_double_moment_sep2026'));
+test('monthly Double Moment claim is atomic across dates and rooms', async () => {
+  const f = fixture({ inventory: cards(5) });
+  f.env.HYPE_PROMOTION_SEND_AT_ICT = '10:00';
+  f.env.HYPE_STANDARD_SEND_AT_ICT = '20:00';
+  await seedNovemberDoubleMomentReceipt(f);
+  await run(f, '2026-11-06', '10:00');
+  await Promise.all([run(f, '2026-12-01', '10:00'), run(f, '2026-12-04', '10:00')]);
+  assert.equal(f.sends.filter(row => row.card.id === DOUBLE_MOMENT_ID).length, 1);
+  const ledger = f.bucket.read('monthly-promotions/double-moment/2026-12.json');
+  assert.ok(['reserved', 'consumed'].includes(ledger.status));
+  assert.equal(ledger.round_index, 1);
+});
+
+test('uncertain Double Moment outcome consumes the month and advances the next actual room round', async () => {
+  const f = fixture({ inventory: cards(5), send: () => ({ delivery_state: 'delivery_uncertain', error: 'compcard_mock_timeout' }) });
+  f.env.HYPE_PROMOTION_SEND_AT_ICT = '10:00';
+  f.env.HYPE_STANDARD_SEND_AT_ICT = '20:00';
+  await seedNovemberDoubleMomentReceipt(f);
+  await run(f, '2026-11-06', '10:00');
+  await run(f, '2026-12-01', '10:00');
+  await run(f, '2026-12-04', '10:00');
+  assert.equal(f.sends.filter(row => row.card.id === DOUBLE_MOMENT_ID).length, 1);
+  assert.equal(f.bucket.read('monthly-promotions/double-moment/2026-12.json').status, 'consumed');
+  assert.equal((await run(f, '2027-01-05', '10:00')).results[0].slot, 'promotion');
+  assert.equal(f.bucket.read('plans/2027-01-05/promotion.json').destinations[0], 'standard');
+});
+
+test('monthly claim stays reserved through bounded not_sent retries, then reuses the same room next promotion date', async () => {
+  const f = fixture({ inventory: cards(5), send: (card, destination, count) => count <= 3
+    ? { delivery_state: 'not_sent', error: 'compcard_mock_rejected' }
+    : { ok: true, delivery_state: 'sent', destination, chat_id: ROOM_IDS[destination], message_id: count, approved_sha256: card.sha256 } });
+  f.env.HYPE_PROMOTION_SEND_AT_ICT = '10:00';
+  f.env.HYPE_STANDARD_SEND_AT_ICT = '20:00';
+  await seedNovemberDoubleMomentReceipt(f);
+  await run(f, '2026-11-06', '10:00');
+  await run(f, '2026-12-01', '10:00');
+  assert.equal(f.bucket.read('monthly-promotions/double-moment/2026-12.json').status, 'reserved');
+  await run(f, '2026-12-01', '10:15');
+  assert.equal(f.bucket.read('monthly-promotions/double-moment/2026-12.json').status, 'reserved');
+  await run(f, '2026-12-01', '10:30');
+  assert.equal(f.bucket.read('monthly-promotions/double-moment/2026-12.json').status, 'released');
+  await run(f, '2026-12-04', '10:00');
+  assert.equal(f.bucket.read('monthly-promotions/double-moment/2026-12.json').status, 'consumed');
+  assert.equal(f.bucket.read('monthly-promotions/double-moment/2026-12.json').date, '2026-12-04');
+  assert.equal(f.bucket.read('plans/2026-12-04/promotion.json').destinations[0], 'premium');
+  assert.equal(f.sends.filter(row => row.card.id === DOUBLE_MOMENT_ID).length, 4);
 });
 
 test('afternoon and Standard evening share same-day exposure and seven-day cooldown', async () => {
