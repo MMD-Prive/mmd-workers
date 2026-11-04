@@ -1,0 +1,36 @@
+name: My MMD privacy-safe flow diagnostics
+on:
+  pull_request:
+    paths:
+      - 'member-pages-worker/src/liff-start-diagnostics.js'
+      - 'member-pages-worker/src/liff-flow-diagnostics.js'
+      - 'member-pages-worker/src/liff-client-runtime-diagnostic.js'
+      - 'member-pages-worker/src/liff-customer-progress.js'
+      - 'member-pages-worker/src/liff-identity-foundation.js'
+      - 'member-pages-worker/src/liff-member-shell.js'
+      - 'member-pages-worker/test/liff-flow-diagnostics.test.mjs'
+      - 'member-pages-worker/test/liff-loader-diagnostics.test.mjs'
+      - '.github/workflows/my-mmd-flow-diagnostics-ci.yml'
+permissions:
+  contents: read
+jobs:
+  offline-diagnostics:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Focused privacy, lifecycle and unchanged auth contracts
+        run: >-
+          node --experimental-global-webcrypto --test
+          member-pages-worker/test/liff-flow-diagnostics.test.mjs
+          member-pages-worker/test/liff-loader-diagnostics.test.mjs
+          member-pages-worker/test/liff-customer-progress.test.mjs
+          member-pages-worker/test/liff-identity-foundation.test.mjs
+          member-pages-worker/test/liff-member-shell.test.mjs
+      - name: Whitespace
+        run: git diff --check
