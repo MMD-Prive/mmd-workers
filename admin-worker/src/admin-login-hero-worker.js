@@ -1,3 +1,4 @@
+import { isSocialMediaRequest, handleSocialMedia } from "./social-media.js";
 export { ModelDiscoveryCoordinator } from "./model-customer-discovery-settings.js";
 import { isAdminRecoveryPage, renderAdminRecoveryPage } from "./admin-recovery-pages.js";
 import { isHypeConsoleRequest, handleHypeConsole } from "./hype-console.js";
@@ -267,6 +268,7 @@ const adminLoginHeroWorker = {
   },
   async fetch(request, env, ctx) {
     const runtimeEnv = modelMoneyRuntimeEnv(env);
+    if (isSocialMediaRequest(request)) return handleSocialMedia(request, runtimeEnv);
     if (isHeldDocumentRequest(request)) return handleHeldDocumentRequest(request, runtimeEnv, handleMoneyControlWorkerHome);
     if (isHypeConsoleRequest(request)) return handleHypeConsole(request, runtimeEnv);
     if (isMyMmdOperationsRequest(request)) return handleMyMmdOperations(request, runtimeEnv);
@@ -519,4 +521,5 @@ export default {
     return decorateInternalSilverTheme(request, await adminLoginHeroWorker.fetch(request, env, ctx));
   },
 };
+
 
