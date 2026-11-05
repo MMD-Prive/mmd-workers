@@ -1,7 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {readMemberAppSession} from '../src/member-app-api-runtime.js';
 import {handleMemberUpdates,isMemberUpdatesRequest,listMmdNowItems,projectPublishedUpdates} from '../src/member-updates.js';
 const published={id:'p',isDraft:false,isArchived:false,lastPublished:'2026-10-16T00:00:00Z',fieldData:{name:'News','short-summary':'Hello','news-content':'<script>bad()</script>','cover-image':{url:'https://cdn.prod.website-files.com/a.png'},'button-label':'Open','button-link':'javascript:alert(1)'}};
+test('editorial alias authenticates through the real session reader without rotating cookies or writing KV',async()=>{
+ const secret='synthetic-editorial-session-secret-32-characters',token='synthetic-editorial-cookie';
+ const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(secret),{name:'HMAC',hash:'SHA-256'},false,['sign']);
+ const signature=await crypto.subtle.sign('HMAC',key,new TextEncoder().encode('session:'+token));
+ const slot='liff:session:'+Buffer.from(signature).toString('hex');let reads=0,writes=0;
+ const env={LIFF_SESSION_SECRET:secret,LIFF_IDENTITY_KV:{async get(k){reads++;assert.equal(k,slot);return {line_user_id:'U'+'a'.repeat(32),member_exists:true,member_id:'synthetic-member',expires_at:Date.now()+60000};},async put(){writes++;throw Error('must not write');},async delete(){writes++;throw Error('must not delete');}},WEBFLOW_CMS_TOKEN:'fixture',WEBFLOW_CMS_HTTP:{fetch:async()=>Response.json({items:[],pagination:{total:0}})}};
+ const response=await handleMemberUpdates(new Request('https://mmdbkk.com/api/member/app/updates',{headers:{cookie:'__Host-mmd_liff_session='+token}}),env,readMemberAppSession);
+ assert.equal(response.status,200);assert.equal(response.headers.get('set-cookie'),null);assert.equal(reads,1);assert.equal(writes,0);
+});
 test('same-origin alias and legacy path retain the same session and published-feed contract',async()=>{
  for(const path of ['/api/member/app/updates','/api/v1/member/updates/list']){
   let calls=0;
