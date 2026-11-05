@@ -31,9 +31,16 @@ function fixture(){
 const writes=f=>f.calls.filter(x=>x.startsWith('/'));
 const run=f=>runFloorRelease(f.io,f.plan,f.c);
 
-test('the committed contract is unsealed, so a real run fails closed before any write',async()=>{
- assert.throws(()=>requireSealedContract(live),/unsealed/);
- const f=fixture();await assert.rejects(runFloorRelease(f.io,f.plan));assert.equal(writes(f).length,0);
+test('an unsealed contract fails closed before any write, for every sealed field',async()=>{
+ for(const unseal of [c=>{c.target.version=null;},c=>{c.target.deployment=null;},c=>{c.target.configuration_sha256=null;},c=>{c.approval_ref_sha256=null;},c=>{c.proof_sha256=null;},c=>{c.candidate_sha256=null;}]){
+  const f=fixture();unseal(f.c);assert.throws(()=>requireSealedContract(f.c),/unsealed/);
+  await assert.rejects(runFloorRelease(f.io,f.plan,f.c));assert.equal(writes(f).length,0);
+ }
+});
+test('the committed contract is fully sealed and consistent with the reviewed candidate',()=>{
+ assert.doesNotThrow(()=>requireSealedContract(live));
+ assert.equal(live.target.configuration_sha256,'6ac3ce9cd923847cf3df6ce1283a757d90ab7adbd7e5c2f8ca83028be08fa06a');
+ assert.notEqual(live.target.sha256,live.candidate_sha256);
 });
 test('the committed contract pins the reviewed baseline and candidate',()=>{
  assert.equal(live.target.sha256,'4ce2dd1c1573fa1d5babced3764b1c5c7c77e024c24303b7ba9534fd3f5b19b0');

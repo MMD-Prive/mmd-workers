@@ -7,11 +7,11 @@
     "name": "sigil-booking-worker",
     "module": "runtime-index.js",
     "sha256": "4ce2dd1c1573fa1d5babced3764b1c5c7c77e024c24303b7ba9534fd3f5b19b0",
-    "version": null,
-    "deployment": null,
-    "configuration_sha256": null
+    "version": "49cde187-a609-4576-b2de-d7fd9598347b",
+    "deployment": "9a291476-d278-41f3-8525-4c3959180629",
+    "configuration_sha256": "6ac3ce9cd923847cf3df6ce1283a757d90ab7adbd7e5c2f8ca83028be08fa06a"
   },
   "candidate_sha256": "cc092790b18521a8ee78c08ddd29134b8a9050a07a0026ed85bf67f69ac64b68",
   "proof_sha256": "475af0f1b6d4580b3e6f5bedef2abf6e7a8d18f829fd9228a972f74d35174b9b",
-  "approval_ref_sha256": null
+  "approval_ref_sha256": "9be4e3c3e8259b4ff973f0144a7ea252e279f0b598f071de20af6a76b3ec68c8"
 }

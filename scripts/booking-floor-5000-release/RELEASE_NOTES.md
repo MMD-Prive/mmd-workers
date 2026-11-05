@@ -49,7 +49,10 @@ Tested only against in-memory fakes of the Cloudflare and GitHub APIs. It has ne
 - `member-pages-worker` is untouched; older release tooling is unchanged.
 - The sealed values, which only a real capture can provide.
 
+## Sealed from a real capture
+
+Sealed on 2026-11-06 from the read-only `capture` run 42115926304 (attempt 1, `main` 31b9d33): live module sha256 `4ce2dd1c...b19b0` (equals the pinned baseline), version `49cde187-a609-4576-b2de-d7fd9598347b`, deployment `9a291476-d278-41f3-8525-4c3959180629`, configuration fingerprint `6ac3ce9c...8fa06a` (same as the fingerprint sealed for the identity release, so the configuration is unchanged). `approval_ref_sha256` is the sha256 of the owner's reference; the reference itself is not stored. If anyone deploys this Worker before the release, the run stops at the baseline check and a new capture and seal are needed.
+
 ## Before anyone releases this
 
-- Decide the NIGHT OUT 3h package (shown at 4,500): once live, a 4,500 budget is rejected.
 - Publish the Webflow booking pages separately (they still show 4,500 until published from `main`).
