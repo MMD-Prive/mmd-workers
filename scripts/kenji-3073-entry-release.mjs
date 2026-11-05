@@ -4,6 +4,8 @@ import {activeVersion,versionConfiguration,uploadMetadata,validateSourceState} f
 import {verifyProductionApproval} from './admin-production-approval.mjs';
 import {inspectEnvironment} from './admin-production-validation.mjs';
 export const ROOT='/accounts/b176eda1172b741fd2e58904cc9d77c5/workers/scripts/member-dashboard-chat-worker';
+const baselineModule = 'guide-notification-entry.js';
+const candidateModule = 'worker.js';
 const artifactRoot=ROOT.replace('/scripts/','/workers/');
 export const MANIFEST_SHA='8970b2f3567f42bbf4f6d24997708da1ec2a6816c6be596233a7129af72665a7';
 const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
@@ -34,7 +36,7 @@ export async function runEntryRelease(io){
  const stage=phase=>{receipt.check=phase;save(receipt.phase);};
  stage('owner-and-source');await io.approve(stage);
  const call=io.call;
- const moduleBytes=async id=>{assert(UUID.test(id));const a=await call(artifactRoot+'/versions/'+id+'?include=modules');assert.equal(a.id,id);assert.equal(a.modules.length,1);assert.equal(a.modules[0].name,'worker.js');const b=Buffer.from(a.modules[0].content_base64,'base64');assert(b.length>0&&b.length<20*1024*1024);return b;};
+ const moduleBytes=async (id, expectedName)=>{assert(UUID.test(id));const a=await call(artifactRoot+'/versions/'+id+'?include=modules');assert.equal(a.id,id);assert.equal(a.modules.length,1);assert.equal(a.modules[0].name,expectedName,'unexpected module name');const b=Buffer.from(a.modules[0].content_base64,'base64');assert(b.length>0&&b.length<20*1024*1024);return b;};
  const snapshot=async latest=>{
   stage('active-deployment');
   const d=(await call(ROOT+'/deployments')).deployments[0];assert.equal(d.id,m.baseline_deployment,'deployment drift');assert.equal(activeVersion(d),m.baseline_version,'active drift');
@@ -46,14 +48,18 @@ export async function runEntryRelease(io){
   const flag=v.resources.bindings.find(x=>x.name==='LINE_KENJI_MODEL_ENABLED');assert.equal(flag?.type,'plain_text');assert.equal(flag.text,'false','model must stay OFF');return v;
  };
  let latest=io.mode==='promote'?io.candidateVersion:m.baseline_version;if(io.mode==='promote'){assert(UUID.test(latest||''));assert.notEqual(latest,m.baseline_version);}
- const baseline=await snapshot(latest);stage('baseline-artifact-and-overlay');const candidate=applyManifest(await moduleBytes(m.baseline_version),m);
+ const baseline=await snapshot(latest);
+ stage('baseline-artifact-read');
+ const baselineBytes=await moduleBytes(m.baseline_version,baselineModule);
+ stage('baseline-overlay');
+ const candidate=applyManifest(baselineBytes,m);
  stage('candidate-syntax');
  execFileSync(process.execPath,['--input-type=module','--check'],{input:candidate,stdio:['pipe','pipe','pipe']});
- const exact=async id=>{const v=await call(ROOT+'/versions/'+id);assert.equal(v.id,id);assert.equal(hash(versionConfiguration(v)),m.configuration_sha256,'candidate config mismatch');assert.equal(sha(await moduleBytes(id)),m.candidate_sha256,'version-specific bytes mismatch');return v;};
+ const exact=async id=>{const v=await call(ROOT+'/versions/'+id);assert.equal(v.id,id);assert.equal(hash(versionConfiguration(v)),m.configuration_sha256,'candidate config mismatch');assert.equal(sha(await moduleBytes(id,candidateModule)),m.candidate_sha256,'version-specific bytes mismatch');return v;};
  if(io.mode==='inspect'||io.mode==='canary'){await snapshot(latest);receipt.baseline_version=m.baseline_version;receipt.configuration_sha256=m.configuration_sha256;receipt.settings_sha256=m.settings_sha256;receipt.model_enabled=false;receipt.overlay_reversible=true;save('inspection-complete');if(io.mode==='inspect')return receipt;}
  stage('owner-and-source');await io.approve(stage);await snapshot(latest);
  if(io.mode==='upload'||io.mode==='canary'){
-  const form=new FormData();form.set('metadata',JSON.stringify(uploadMetadata(baseline,SOURCE_SHA)));form.set('worker.js',new Blob([candidate],{type:'application/javascript+module'}),'worker.js');
+  const form=new FormData();form.set('metadata',JSON.stringify(uploadMetadata(baseline,SOURCE_SHA)));form.set(candidateModule,new Blob([candidate],{type:'application/javascript+module'}),candidateModule);
   save('upload-attempted-outcome-unknown');const uploaded=await call(ROOT+'/versions?bindings_inherit=strict',{method:'POST',body:form});assert(UUID.test(uploaded?.id||'')&&uploaded.id!==m.baseline_version,'ambiguous upload; do not retry');
   receipt.candidate_version=uploaded.id;save('uploaded-not-promoted');stage('uploaded-version-parity');await exact(uploaded.id);await snapshot(uploaded.id);save('upload-readback-complete');if(io.mode==='upload')return receipt;latest=uploaded.id;
  }
