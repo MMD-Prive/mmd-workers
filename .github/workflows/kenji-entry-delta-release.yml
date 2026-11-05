@@ -8,7 +8,7 @@ on:
     inputs:
       mode:
         type: choice
-        options: [inspect, upload, promote]
+        options: [inspect, upload, promote, canary]
         required: true
         default: inspect
       production_approved:
