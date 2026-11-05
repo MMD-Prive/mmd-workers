@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import test from 'node:test';
-import { buildConsoleEmbed, assetManifest, consoleStyleSource } from '../../../scripts/build-model-console-atelier-embed.mjs';
+import { buildConsoleDeclineEmbed, buildConsoleEmbed, assetManifest, consoleStyleSource } from '../../../scripts/build-model-console-atelier-embed.mjs';
 import CleanCSS from 'clean-css';
 import { travelClientCss } from '../../../shared/model-travel-client-source.mjs';
 const base = new URL('./console-atelier/', import.meta.url);
@@ -79,7 +79,8 @@ test('bundle contains presentation and existing runtime without new endpoints or
   const bundle = buildConsoleEmbed();
   const js = bundle.match(/<script>([\s\S]*)<\/script>/)[1];
   new vm.Script(js);
-  assert.match(bundle, /consoleAtelierAssets=/);
+  // Illustrations are installed by the separate presentation embed (Footer size budget).
+  assert.match(buildConsoleDeclineEmbed(), /window\.consoleAtelierAssets=/);
   assert.match(bundle, /function renderConsoleAtelier/);
   assert.doesNotMatch(skin, /fetch\(|XMLHttpRequest|localStorage|location\.|allowed_actions\s*=/);
 });
