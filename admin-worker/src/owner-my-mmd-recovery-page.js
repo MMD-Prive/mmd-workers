@@ -38,7 +38,7 @@ const RECOVERY_CLIENT = String.raw`function recoveryClient() {
   var api = '/v1/admin/my-mmd/recovery-diagnostic';
   function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, function(c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function rec(v) { return /^rec[A-Za-z0-9]{6,32}$/.test(v || ''); }
-  function requestId(v) { return /^IMR-[A-Z0-9]{6,40}$/i.test(v || ''); }
+  function requestId(v) { return /^IMR-(?=[A-Z0-9-]{6,40}$)[A-Z0-9]+(?:-[A-Z0-9]+)*$/i.test(v || ''); }
   function value(v) { return v == null || v === '' ? '—' : esc(v); }
   function list(v) { return Array.isArray(v) ? v.join(', ') : ''; }
   function date(v) {
@@ -95,8 +95,16 @@ const RECOVERY_CLIENT = String.raw`function recoveryClient() {
       var items = inbox.items.filter(function(i) { return i && requestId(i.request_id); });
       if (inbox.items.length && !items.length) return errorView({ error: 'invalid_response' });
       if (!items.length) { result.innerHTML = state('ยังไม่มีคำขอ Recovery ที่อ่านได้', 'ค้นหาสมาชิกด้านบนเพื่อตรวจสถานะรายคนได้', 'warn', ''); return 'ยังไม่มีคำขอ Recovery ที่อ่านได้'; }
-      result.innerHTML = '<ul class="rc-inbox">' + items.map(function(i) { var s = i.submitted || {}; return '<li><a href="?request_id=' + encodeURIComponent(i.request_id) + '"><div><span class="rc-ref">' + esc(i.request_id) + '</span><br><strong>' + esc(i.claimed_name || 'คำขอยืนยันตัวตน') + '</strong><p>' + esc([s.email, s.phone].filter(Boolean).join(' · ') || 'ยังไม่มีข้อมูลติดต่อ') + '</p><p>วิธีจับคู่: ' + esc(i.match_type || 'ยังไม่ระบุ') + '</p></div><div>' + badge(label(i.status), i.status === 'resolved' && i.unresolved === false ? 'ok' : 'warn') + '<p>เปิดรายละเอียด →</p></div></a></li>'; }).join('') + '</ul>';
-      return 'อ่านคำขอ Recovery แล้ว ' + items.length + ' รายการ';
+      var pending = items.filter(function(i) { return String(i.status || '').toLowerCase() !== 'applied'; });
+      var applied = items.filter(function(i) { return String(i.status || '').toLowerCase() === 'applied'; });
+      function inboxList(rows) {
+        return '<ul class="rc-inbox">' + rows.map(function(i) { var s = i.submitted || {}; return '<li><a href="?request_id=' + encodeURIComponent(i.request_id) + '"><div><span class="rc-ref">' + esc(i.request_id) + '</span><br><strong>' + esc(i.claimed_name || 'คำขอยืนยันตัวตน') + '</strong><p>' + esc([s.email, s.phone].filter(Boolean).join(' · ') || 'ยังไม่มีข้อมูลติดต่อ') + '</p><p>วิธีจับคู่: ' + esc(i.match_type || 'ยังไม่ระบุ') + '</p></div><div>' + badge(label(i.status), String(i.status || '').toLowerCase() === 'applied' || (i.status === 'resolved' && i.unresolved === false) ? 'ok' : 'warn') + '<p>เปิดรายละเอียด →</p></div></a></li>'; }).join('') + '</ul>';
+      }
+      result.innerHTML = '<section data-recovery-section="pending"><h3>งานรอตรวจ · ' + pending.length + ' รายการ</h3>'
+        + (pending.length ? inboxList(pending) : '<p class="rc-muted">ไม่มีงานรอตรวจในรายการที่อ่านได้</p>') + '</section>'
+        + '<details class="rc-panel" data-recovery-section="applied"><summary>ประวัติ applied · ' + applied.length + ' รายการ</summary><p class="rc-muted">ดำเนินการจับคู่ตัวตนแล้ว · ไม่ใช่หลักฐานยืนยันสิทธิ์สมาชิกหรือการรับเงินปัจจุบัน</p>'
+        + (applied.length ? inboxList(applied) : '<p class="rc-muted">ยังไม่มีประวัติ applied ในรายการที่อ่านได้</p>') + '</details>';
+      return 'อ่านคำขอ Recovery แล้ว ' + items.length + ' รายการ · งานรอตรวจ ' + pending.length + ' · ประวัติ applied ' + applied.length;
     }
     var c = b.customer || {}, m = b.membership || {}, r = b.recovery || {}, p = b.points || {}, a = b.acceptance || {}, i = b.identity_recovery_request || {};
     if (scope.request_id) { result.innerHTML = identityView(i); return 'อ่านรายละเอียดคำขอยืนยันตัวตนแล้ว'; }

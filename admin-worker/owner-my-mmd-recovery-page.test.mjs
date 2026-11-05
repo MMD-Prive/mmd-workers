@@ -139,3 +139,32 @@ test('request references and record IDs typed in the search form use their own s
   w.document.querySelector('[data-inbox]').click(); await tick(); assert.match(calls.at(-1), /inbox=1/);
   assert.equal(w.document.querySelector('input').value, '');
 });
+
+test('inbox keeps applied history separate and opens a legacy hyphenated reference read-only', async t => {
+  const legacy = 'IMR-FIXTURE-MEMBERSHIP-20260923';
+  const calls = [];
+  const fetch = async (url, options) => {
+    calls.push({ url: new URL(url), method: options.method ?? 'GET' });
+    if (calls.at(-1).url.searchParams.has('inbox')) return reply({ ok: true, recovery_inbox: { state: 'available', items: [
+      { request_id: legacy, status: 'applied' },
+      { request_id: 'IMR-REVIEW123', status: 'review_required' },
+      { request_id: 'IMR-INVALID--REF', status: 'applied' },
+    ] } });
+    return reply({ ok: true, identity_recovery_request: { found: true, request_id: legacy, status: 'applied' } });
+  };
+  const w = await page(t, fetch);
+  const pending = w.document.querySelector('[data-recovery-section="pending"]');
+  const history = w.document.querySelector('[data-recovery-section="applied"]');
+  assert.match(pending.textContent, /งานรอตรวจ · 1 รายการ/);
+  assert.match(pending.textContent, /IMR-REVIEW123/);
+  assert.doesNotMatch(pending.textContent, /FIXTURE-MEMBERSHIP/);
+  assert.equal(history.open, false);
+  assert.match(history.querySelector('summary').textContent, /ประวัติ applied · 1 รายการ/);
+  const detail = await page(t, fetch, history.querySelector('a').search);
+  assert.equal(calls.at(-1).url.searchParams.get('request_id'), legacy);
+  assert.match(content(detail), /IMR-FIXTURE-MEMBERSHIP-20260923/);
+  assert.equal(detail.document.querySelector('.rc-metric'), null);
+  search(w, legacy); await tick();
+  assert.equal(calls.at(-1).url.searchParams.get('request_id'), legacy);
+  assert.ok(calls.every(call => call.method === 'GET'));
+});
