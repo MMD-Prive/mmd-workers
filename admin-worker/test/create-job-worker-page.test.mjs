@@ -120,3 +120,9 @@ test("Travel fee option gives the 25 km Siam Square case only as an example and 
   assert.match(html, /สาเหตุ: /);
   for (const script of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) new Function(script[1]);
 });
+
+test("client search result without Client ID explains pending reconcile", async () => {
+  const html = await handleCreateJobWorkerPage(new Request("https://mmdbkk.com/internal/admin/jobs/create-job")).text();
+  assert.match(html, /ยังไม่มี Client ID · รอจับคู่ลูกค้าหลัก/);
+  assert.match(html, /ยังไม่ผูกลูกค้าหลัก/);
+});
