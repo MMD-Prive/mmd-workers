@@ -66,7 +66,7 @@ test('successful null session remains empty and a real job remains visible', asy
 
 const actCode=source.slice(source.indexOf('async function act('),source.indexOf('function support('));
 const lifecycleCode=source.slice(source.lastIndexOf("addEventListener('pagehide'"),source.lastIndexOf('load()})();'));
-function lifecycle(context){const listeners={};context.addEventListener=(name,fn)=>{listeners[name]=fn;};vm.runInNewContext(loadCode+lifecycleCode,context);return listeners;}
+function lifecycle(context){const listeners={};context.addEventListener=(name,fn)=>{listeners[name]=fn;};context.setInterval=context.setInterval||(()=>0);vm.runInNewContext(loadCode+lifecycleCode,context);return listeners;}
 async function tick(){for(let n=0;n<4;n++)await new Promise(setImmediate);}
 
 test('Console A remains A after refresh and reopening the same Dashboard link',async()=>{

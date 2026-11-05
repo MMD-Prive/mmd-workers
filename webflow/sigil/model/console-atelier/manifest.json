@@ -1,11 +1,21 @@
 {
   "version": "console-atelier-v3",
-  "delivery": "inline SVG plus one existing Webflow CDN Hero image",
-  "externalAssets": [
+  "delivery": "inline SVG and same-origin TarT asset",
+  "externalAssets": [],
+  "servedAssets": [
     {
       "role": "decorative-console-hero",
-      "assetId": "6abe1dcae59e7e03c06d950b",
-      "url": "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6abe1dcae59e7e03c06d950b_Cinematic%20Night%20Balcony%20Portrait.webp"
+      "url": "/sigil/model/dashboard-assets/tart-review.png",
+      "source": "model-dashboard-presentation-worker/assets/tart-review.png",
+      "bytes": 2483013,
+      "sha256": "b466251a2ab3b1a96a121f5ef98432d5383c5b330d3f39235c8207dc12ac75ae"
+    },
+    {
+      "role": "private-logo",
+      "url": "/sigil/model/dashboard-assets/sigil-review-logo.png",
+      "source": "model-dashboard-presentation-worker/assets/sigil-review-logo.png",
+      "bytes": 195270,
+      "sha256": "dbb8a9d14db32674d06ca98b40db78dfb060e794f5016affd7fc82817f61b1ce"
     }
   ],
   "attribution": "Project-authored geometry; job/support shapes reuse MY MODEL icon family",

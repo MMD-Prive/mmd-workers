@@ -5,11 +5,11 @@ import test from 'node:test';
 const source=fs.readFileSync(new URL('./model-console-v3-i18n.js',import.meta.url),'utf8');
 const bootstrap=fs.readFileSync(new URL('./model-console-registered-entry.html',import.meta.url),'utf8');
 const actionCode=source.slice(source.indexOf('function actions(s)'),source.indexOf('function render()'));
-function renderActions(state, allowed){
+function renderActions(state, allowed, paymentReadiness){
  const children=[];const host={innerHTML:'',append:b=>children.push(b)};
  const nextCode=source.match(/next=(\{.*?\}),v=/)[1];
  const next=vm.runInNewContext('('+nextCode+')');
- const context={L:'th',$:()=>host,document:{createElement:()=>({dataset:{}})},ses:{allowed_actions:allowed},next,d:()=>({ac:{start_travel:'เริ่มเดินทาง',mark_arrived:'ถึงจุดนัดแล้ว'}})};
+ const context={L:'th',$:()=>host,document:{createElement:()=>({dataset:{}})},ses:{allowed_actions:allowed,payment_readiness:paymentReadiness},next,d:()=>({ac:{start_travel:'เริ่มเดินทาง',mark_arrived:'ถึงจุดนัดแล้ว'}})};
  vm.runInNewContext(actionCode+';actions('+JSON.stringify(state)+');',context);return children;
 }
 test('latest v3 shows the real travel action for a confirmed owned-session presentation',()=>{
@@ -24,9 +24,31 @@ test('missing, malformed or empty backend permission fails closed',()=>{
  for(const allowed of [undefined,null,{},'start_travel',[]])assert.equal(renderActions('confirmed',allowed).length,0);
 });
 test('payment gate cannot be bypassed by UI state or an inconsistent action list',()=>{
- for(const state of ['met_customer','final_payment_pending','confirmed','unknown'])assert.equal(renderActions(state,['start_work']).length,0);
- assert.equal(renderActions('final_payment_confirmed',[]).length,0);
- assert.deepEqual(renderActions('final_payment_confirmed',['start_work']).map(b=>b.dataset.action),['start_work']);
+ // Readiness alone must not bypass the lifecycle or server permission gate.
+ const ready={status:'ready'};
+ for(const state of ['offered','confirmed','en_route','nearby','arrived','met_customer','final_payment_pending','work_started','work_finished','separated','unknown']){
+  assert.equal(renderActions(state,['start_work'],ready).length,0,`start_work must not render for ${state}`);
+ }
+ for(const allowed of [undefined,null,{},'start_work',[],['start_travel'],[{action:'start_work'}]]){
+  assert.equal(renderActions('final_payment_confirmed',allowed,ready).length,0,'ready payment still requires an explicit allowed_actions entry');
+ }
+});
+test('start work fails closed when payment readiness is missing, malformed, pending or held',()=>{
+ // Do not default this fixture to ready: omitted backend data must remain denied.
+ for(const readiness of [undefined,null,{},[],true,'ready',{status:true},{status:'READY'},{status:''},{status:'pending'},{status:'hold'},{status:'unknown'},{status:'unavailable'}]){
+  assert.equal(renderActions('final_payment_confirmed',['start_work'],readiness).length,0,`start_work must not render for readiness ${JSON.stringify(readiness)}`);
+ }
+});
+test('start work renders only with confirmed state, server permission and ready payment',()=>{
+ assert.deepEqual(
+  renderActions('final_payment_confirmed',['start_work'],{status:'ready'}).map(b=>b.dataset.action),
+  ['start_work'],
+ );
+ // An over-broad permission list must not add actions from another lifecycle state.
+ assert.deepEqual(
+  renderActions('final_payment_confirmed',['start_travel','mark_arrived','start_work','confirm_separated'],{status:'ready'}).map(b=>b.dataset.action),
+  ['start_work'],
+ );
 });
 test('finished work retains separation action only when server allows it',()=>{
  assert.deepEqual(renderActions('work_finished',['confirm_separated']).map(b=>b.dataset.action),['confirm_separated']);

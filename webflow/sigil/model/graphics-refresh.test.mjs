@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import test from 'node:test';
-import { assetManifest, buildConsoleEmbed } from '../../../scripts/build-model-console-atelier-embed.mjs';
+import { assetManifest, buildConsoleDeclineEmbed, buildConsoleEmbed } from '../../../scripts/build-model-console-atelier-embed.mjs';
 import { buildLovableSkinEmbed } from '../../../scripts/build-my-model-lovable-skin-embed.mjs';
 
 test('both surface manifests identify the shipped graphics and retain the shared accent budget', () => {
@@ -27,7 +27,9 @@ test('both surface manifests identify the shipped graphics and retain the shared
 });
 
 test('refreshed accents reach both bounded embeds without removing the LV9 client', () => {
-  for (const [surface, embed] of [['atelier', buildLovableSkinEmbed()], ['console-atelier', buildConsoleEmbed()]]) {
+  // Console graphics ship in the presentation embed; the runtime embed carries travel.
+  const consoleRuntime = buildConsoleEmbed();
+  for (const [surface, embed, runtime] of [['atelier', buildLovableSkinEmbed(), null], ['console-atelier', buildConsoleDeclineEmbed(), consoleRuntime]]) {
     assert.ok(Buffer.byteLength(embed) < 50000);
     const manifest = JSON.parse(fs.readFileSync(new URL(`./${surface}/manifest.json`, import.meta.url)));
     for (const entry of manifest.files.filter(e => e.file !== 'icons.svg')) {
@@ -35,6 +37,6 @@ test('refreshed accents reach both bounded embeds without removing the LV9 clien
       // Check geometry rather than quote style, which the minifier may change.
       for (const [, geometry] of svg.matchAll(/ d="([^"]+)"/g)) assert.ok(embed.includes(geometry), entry.file);
     }
-    assert.match(embed, /\/v1\/model\/session\/travel/);
+    assert.match(runtime || embed, /\/v1\/model\/session\/travel/);
   }
 });
