@@ -85,9 +85,9 @@ async function fixture() {
   return {
     env, records, calls, bucket, paymentRef, token, airtable,
     telegramHealthy(value) { telegramHealthy = value; },
-    async web(content = "synthetic proof, no customer data") {
+    async web(content = "synthetic proof, no customer data", extra = {}) {
       const form = new FormData();
-      for (const [name, value] of Object.entries({ payment_ref: paymentRef, session_id: "sess-shared", payment_stage: "deposit", source_page: "sigil_pay_v22", t: token })) form.append(name, value);
+      for (const [name, value] of Object.entries({ payment_ref: paymentRef, session_id: "sess-shared", payment_stage: "deposit", source_page: "sigil_pay_v22", t: token, ...extra })) form.append(name, value);
       form.append("file", new File([content], "proof.png", { type: "image/png" }));
       const response = await handleUnifiedSlipEvidence(new Request("https://sigil.mmdbkk.com/v1/pay/slip/evidence", { method: "POST", headers: { origin: "https://www.mmdbkk.com" }, body: form }), env, async () => {
         calls.downstream++;
@@ -256,5 +256,22 @@ test("intake errors allow the configured website origin without broadening CORS"
     }), { ALLOWED_ORIGINS: '"https://www.mmdbkk.com"' }, () => assert.fail("missing-token request wrote evidence"));
     assert.equal(response.status, 401);
     assert.equal(response.headers.get("access-control-allow-origin"), origin.includes("mmdbkk.com") ? origin : null);
+  }
+});
+
+test("web proof records the customer's selected method as evidence only", async () => {
+  const original = globalThis.fetch;
+  for (const [sent, expected] of [["bank_transfer", "customer_selected_method=bank_transfer"], ["paypal_card", "customer_selected_method=paypal_card"], ["Bitcoin; verification_status=verified", null], [undefined, null]]) {
+    const h = await fixture();
+    globalThis.fetch = async (input, init) => h.airtable(input instanceof Request ? input : new Request(input, init));
+    try {
+      const body = await h.web("synthetic proof, no customer data", sent === undefined ? {} : { payment_method: sent });
+      const note = String(h.records.Proofs[0].fields.note || "");
+      if (expected) assert.match(note, new RegExp(expected));
+      else assert.doesNotMatch(note, /customer_selected_method=/);
+      assert.match(note, /evidence_only=true; official_verification_required=true/);
+      assert.equal(body.verification_status, "pending_verification");
+      assert.equal(body.payment_status, "pending");
+    } finally { globalThis.fetch = original; }
   }
 });
