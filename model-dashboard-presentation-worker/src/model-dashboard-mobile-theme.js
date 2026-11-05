@@ -36,4 +36,5 @@ export const MODEL_DASHBOARD_MOBILE_CSS = `
 .app .primary{color:#21180e;-webkit-text-fill-color:#21180e}.app .need b{color:#21180e;-webkit-text-fill-color:#21180e}
 @media(max-width:359px){.shell{padding-inline:14px}.top{margin-inline:-14px;padding-inline:14px}.brand{font-size:11px;gap:7px}.snapshot{grid-template-columns:minmax(0,1fr) auto}.snapicon{display:none}.quick a{padding:12px 10px;gap:7px;font-size:12px}.need{grid-template-columns:1fr}.need button,.need a{width:100%}#screen-home .home-hero{padding:20px 17px;min-height:236px}}
 @media(min-width:600px){.shell{padding-inline:24px}.top{margin-inline:-24px;padding-inline:24px}#screen-home .home-hero{min-height:278px;padding:27px}.home-hero img{width:58%}}
+
 `;

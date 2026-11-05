@@ -3,6 +3,12 @@ main = "src/index.js"
 compatibility_date = "2026-01-01"
 workers_dev = true
 
+# Local release preparation only; activation requires separate approval.
+[assets]
+directory = "./assets"
+binding = "ASSETS"
+run_worker_first = true
+
 # Canonical Model Dashboard presentation only. API authority remains on
 # admin-worker under /v1/model/*.
 # Proposed exact apex front gates; production route activation needs separate approval.

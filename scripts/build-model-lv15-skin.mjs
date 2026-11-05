@@ -4,10 +4,15 @@ import {fileURLToPath} from 'node:url';
 import CleanCSS from 'clean-css';
 import {minify_sync} from 'terser';
 import {LV15_CSS,installModelLv15} from '../webflow/sigil/model/model-lv15-presentation.mjs';
-export function buildLv15Embed(){
+export const TART_REVIEW_ASSET_URL='/sigil/model/dashboard-assets/tart-review.png';
+export function buildTartSkinEmbed({consoleOnly=false}={}){
+ return buildLv15Embed({consoleOnly,reviewSkin:true,tartRoomUrl:TART_REVIEW_ASSET_URL});
+}
+export function buildLv15Embed({consoleOnly = false,localTartRoom = false,reviewSkin = false,tartRoomUrl = ''} = {}){
+ if(tartRoomUrl && tartRoomUrl!==TART_REVIEW_ASSET_URL)throw Error('Unapproved Tart asset path');
  const css=new CleanCSS({level:1}).minify(LV15_CSS);
  if(css.errors.length)throw new Error(css.errors.join('; '));
- const js=minify_sync(`(${installModelLv15.toString()})(document);`,{compress:true,mangle:true,format:{ascii_only:false}});
+ const js=minify_sync(`(${installModelLv15.toString()})(document,${JSON.stringify({consoleOnly,localTartRoom,reviewSkin,tartRoomUrl})});`,{compress:true,mangle:true,format:{ascii_only:false}});
  if(js.error)throw js.error;
  const result='<style id="my-model-lv15-presentation">'+css.styles+'</style><script>'+js.code.replace(/<\/script/gi,'<\\/script')+'</script>';
  if(Buffer.byteLength(result)>=50000)throw new Error('LV15 presentation embed exceeds 50,000 bytes');

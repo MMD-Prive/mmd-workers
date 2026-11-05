@@ -6,8 +6,10 @@ test('ordered blocks retain existing tail exactly, each fits budget and parses',
  const tail='\n<script id="rules">void 0;</script>\n<script id="payout">void 1;</script>';
  const saved='<!-- MY MODEL LV9 travel + Console V3 -->\n<script>oldRuntime()</script>'+tail;
  const blocks=buildConsoleInstallBlocks(saved);
- assert.equal(blocks.length,3);
+ assert.equal(blocks.length,4);
  assert.equal(blocks[2].content,tail);
+ assert.equal(blocks[3].name,'04-console-lv15-skin.embed.html');
+ assert.match(blocks[3].content,/my-model-lv15-presentation/);
  assert.match(blocks[0].content,/MMDConsoleDecline/);
  assert.ok(blocks.every(b=>b.bytes<50000&&b.sha256.length===64));
  assert.doesNotMatch(blocks.map(b=>b.content).join(''),/oldRuntime/);

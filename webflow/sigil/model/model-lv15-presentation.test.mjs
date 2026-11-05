@@ -7,6 +7,62 @@ import {LV15_FONT_CSS,LV15_FONT_FACES} from './model-lv15-fonts.mjs';
 import {buildLv15Embed} from '../../../scripts/build-model-lv15-skin.mjs';
 const docFor=html=>new JSDOM(html,{url:'https://local.invalid/sigil/model/dashboard?lane=private'});
 const tick=()=>new Promise(r=>setTimeout(r,0));
+test('served Console uses responsive Tart Room images without changing actions',()=>{
+ const dom=docFor('<section id="sigil-model-console-v3"><div class="smcv3-hero"><img class="smcv3-hero__image"></div><div class="smcv3-shell"><button disabled>Start</button></div></section>');
+ const d=dom.window.document,button=d.querySelector('button');
+ installModelLv15(d,{consoleOnly:true,reviewSkin:true,tartRoomUrl:'/sigil/model/dashboard-assets/tart-review.png'});
+ const img=d.querySelector('.smcv3-hero__image'),source=img.parentElement.querySelector('source');
+ assert.equal(source.media,'(max-width: 600px)');assert.match(source.srcset,/6a35f70ba2c1ec636a446949/);
+ assert.match(img.src,/6a357b94de86294947105b58/);assert.equal(d.querySelector('button'),button);assert.equal(button.disabled,true);
+ dom.window.close();
+});
+test('review skin preserves API-owned actions and payment locks without making requests',async()=>{
+ const dom=new JSDOM('<section id="sigil-model-console-v3" data-console-lane="private"><div class="smcv3-hero"><img class="smcv3-hero__image"></div><div class="smcv3-shell"><main data-view="work"><div data-primary-actions><button data-action="start_work" disabled>Payment pending</button></div><div data-model-payout>Not paid</div></main></div></section>',{url:'http://127.0.0.1/console'});
+ const d=dom.window.document,button=d.querySelector('button'),actions=d.querySelector('[data-primary-actions]');
+ dom.window.fetch=()=>{throw Error('Skin must not call API')};
+ installModelLv15(d,{consoleOnly:true,localTartRoom:true,reviewSkin:true});
+ d.dispatchEvent(new dom.window.Event('DOMContentLoaded'));
+ assert.equal(d.querySelector('[data-lv15-review]').dataset.lv15World,'private');
+ assert.equal(d.querySelector('.smcv3-hero__image').getAttribute('src'),'/model-nightline-assets/tart-review.png');
+ assert.equal(d.querySelector('[data-primary-actions]'),actions);
+ assert.equal(actions.children.length,1);assert.equal(actions.firstChild,button);assert.equal(button.disabled,true);
+ const next=d.createElement('button');next.dataset.action='mark_arrived';actions.replaceChildren(next);await tick();
+ assert.equal(actions.firstChild,next);assert.equal(d.querySelector('[data-model-payout]').textContent,'Not paid');
+ dom.window.close();
+});
+test('review home reuses original controls, adds one local hero and never forces Private',()=>{
+ const dom=new JSDOM('<main id="mmd-model-home-v4"><div class="mmhome-shell"><header class="mm-lv-header"><button>Language</button></header><div data-mm-workspace hidden></div></div></main>',{url:'http://127.0.0.1/sigil/model/dashboard'});
+ const d=dom.window.document,button=d.querySelector('button');
+ installModelLv15(d,{reviewSkin:true,localTartRoom:true});installModelLv15(d,{reviewSkin:true,localTartRoom:true});
+ assert.equal(d.querySelector('button'),button);assert.equal(d.querySelectorAll('.lv15-review-hero').length,1);
+ assert.equal(d.querySelector('main').dataset.lv15World,'neutral');
+ assert.equal(d.querySelector('[data-mm-workspace]').hidden,true);dom.window.close();
+ assert.ok(Buffer.byteLength(buildLv15Embed({reviewSkin:true,localTartRoom:true}))<50000);
+});
+test('Tart Room is opt-in, loopback-only and keeps the existing action node and disabled state',()=>{
+ for(const url of ['http://127.0.0.1/console','https://mmdbkk.com/sigil/model/console']){
+  const dom=new JSDOM('<section id="sigil-model-console-v3"><div class="smcv3-hero"><img class="smcv3-hero__image" src="https://example.invalid/original.webp"></div><div class="smcv3-shell"><button data-action="start_work" disabled>Start</button></div></section>',{url});
+  const d=dom.window.document,button=d.querySelector('button');installModelLv15(d,{consoleOnly:true,localTartRoom:true});
+  assert.equal(d.querySelector('button'),button);assert.equal(button.disabled,true);
+  assert.equal(d.querySelector('img.smcv3-hero__image').getAttribute('src'),url.startsWith('http://127.')?'/model-nightline-assets/tart-room.png':'https://example.invalid/original.webp');dom.window.close();
+ }
+});
+test('local Tart Room attaches when the owner creates the Hero at DOM ready',()=>{
+ const dom=new JSDOM('<section id="sigil-model-console-v3"><div class="smcv3-shell"></div></section>',{url:'http://127.0.0.1/console'}),d=dom.window.document;
+ installModelLv15(d,{consoleOnly:true,localTartRoom:true});
+ const hero=d.createElement('div');hero.className='smcv3-hero';hero.innerHTML='<img class="smcv3-hero__image">';d.querySelector('section').append(hero);
+ d.dispatchEvent(new dom.window.Event('DOMContentLoaded'));
+ assert.equal(hero.querySelector('img').getAttribute('src'),'/model-nightline-assets/tart-room.png');dom.window.close();
+});
+test('restored Console-only skin never changes MY MODEL or customer app roots',()=>{
+ const dom=docFor('<main id="mmd-model-home-v4"></main><div class="app" data-mmd-app-digital></div><section id="sigil-model-console-v3"><div class="smcv3-shell"><header class="smcv3-head"><button disabled>Action</button></header></div></section>');
+ const d=dom.window.document,button=d.querySelector('button');
+ installModelLv15(d,{consoleOnly:true});installModelLv15(d,{consoleOnly:true});
+ assert.ok(d.querySelector('#sigil-model-console-v3').hasAttribute('data-lv15-world'));
+ for(const selector of ['#mmd-model-home-v4','.app'])assert.equal(d.querySelector(selector).hasAttribute('data-lv15-world'),false);
+ assert.equal(d.querySelectorAll('.lv15-masthead').length,1);assert.equal(d.querySelector('button'),button);assert.equal(button.disabled,true);
+ dom.window.close();
+});
 test('moves original controls intact and preserves listeners, file picker, disabled and hidden states',()=>{
  const dom=docFor('<main id="mmd-model-home-v4" data-mm-lv-lane="public"><div class="mmhome-shell"><header class="mm-lv-header"><button id="lang">TH</button></header><div data-mm-workspace><section class="mm-lv-work"><button id="action" disabled>Save</button><input id="picker" type="file"><input id="private" hidden></section></div></div></main>');
  const d=dom.window.document,lang=d.querySelector('#lang'),picker=d.querySelector('#picker'),button=d.querySelector('#action');let clicks=0;lang.addEventListener('click',()=>clicks++);
