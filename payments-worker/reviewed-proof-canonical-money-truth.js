@@ -187,9 +187,10 @@ function paymentDate(value) {
 
 function canonicalPaymentMethod(value) {
   const raw = clean(value).toLowerCase();
+  if (!raw) return "";
   if (raw.includes("prompt")) return "PromptPay";
   if (raw.includes("bank")) return "Bank Transfer";
-  if (raw.includes("credit")) return "Credit Card";
+  if (raw.includes("credit") || raw.includes("paypal") || raw.includes("card")) return "Credit Card";
   if (raw.includes("cash")) return "Cash";
   return "Other";
 }

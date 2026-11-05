@@ -6287,7 +6287,7 @@ async function createAdminJob(env, body) {
     throw new CreateSessionAccessError("payment_type_invalid", "Payment type must be deposit or full.", 400);
   }
   const payment_type = requested_payment_type;
-  const payment_method = str(body.payment_method || payment.payment_method || "promptpay");
+  const payment_method = str(body.payment_method || payment.payment_method || "");
   // amount_thb may include a separately itemized membership renewal. The
   // customer deposit is always calculated from service money only.
   const amount_thb = numReq(body.amount_thb || payment.amount_thb, "amount_thb");

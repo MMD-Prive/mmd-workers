@@ -118,3 +118,17 @@ test("same canonical payment reference is updated idempotently instead of duplic
   assert.equal(h.writes[0].method, "PATCH");
   assert.equal(h.writes[0].fields[PAYMENT_REF_FIELD], PAYMENT_REF);
 });
+
+test("reviewed money truth writes the confirmed method and never invents one", async () => {
+  for (const [sent, expected] of [["bank_transfer", "Bank Transfer"], ["paypal_card", "Credit Card"], ["promptpay", "PromptPay"], [undefined, undefined]]) {
+    const h = harness();
+    const body = recoveryBody();
+    if (sent === undefined) delete body.payment_method; else body.payment_method = sent;
+    const response = await commitEmailLessLineRenewalMoneyTruth(h.env, body);
+    assert.equal(response.status, 200);
+    const fields = h.writes[0].fields;
+    if (expected) assert.equal(fields.fldsblzIn0wzan3c9, expected);
+    else assert.equal(Object.hasOwn(fields, "fldsblzIn0wzan3c9"), false);
+    assert.equal(fields.fldJ7a0Ube9F0bmRy, "verified");
+  }
+});

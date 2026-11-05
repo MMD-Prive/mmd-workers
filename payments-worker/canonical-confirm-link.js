@@ -122,7 +122,7 @@ export async function handleCanonicalConfirmLink(request, env) {
       "pay_model_thb",
     );
     const paymentStage = normalizeStage(body.payment_type || body.payment_stage || "deposit");
-    const paymentMethod = canonicalPaymentMethod(body.payment_method || "promptpay");
+    const paymentMethod = canonicalPaymentMethod(body.payment_method);
     // Keep machine-readable membership markers on their own lines.
     const note = clean(body.note || body.notes).replace(/[\u0000-\u0009\u000B-\u001F\u007F]/g, " ").slice(0, 4000);
     const components = parseSigilMembershipPaymentComponents(note, amountThb);
@@ -498,9 +498,10 @@ function normalizeStage(value) {
 
 function canonicalPaymentMethod(value) {
   const raw = clean(value).toLowerCase();
+  if (!raw) return undefined;
   if (raw.includes("prompt")) return "PromptPay";
   if (raw.includes("bank")) return "Bank Transfer";
-  if (raw.includes("credit")) return "Credit Card";
+  if (raw.includes("credit") || raw.includes("paypal") || raw.includes("card")) return "Credit Card";
   if (raw.includes("cash")) return "Cash";
   return "Other";
 }

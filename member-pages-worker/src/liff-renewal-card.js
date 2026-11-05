@@ -152,7 +152,6 @@ async function createPaymentIntent(env, { sessionId, offer }) {
       payment_stage: "membership",
       amount: offer.amount_thb,
       package_code: offer.package_code,
-      payment_method: "promptpay",
       notes: `source=line_liff;intent=renew;requested_stage=renewal;renewal_price_rule=${clean(offer.price_rule, 80)};official_verify_required=true`,
     }),
   }));

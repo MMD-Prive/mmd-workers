@@ -50,7 +50,7 @@ export async function handleReviewedProof(request, env = {}, ctx = null, notifyT
     const sessionId = text(body.session_id, 180);
     const memberEmail = email(body.member_email || body.email);
     const packageCode = canonicalPackage(body.package_code || body.package);
-    const paymentMethod = text(body.payment_method || "promptpay", 80) || "promptpay";
+    const paymentMethod = text(body.payment_method, 80);
     const reviewReason = text(body.review_reason, 600);
     const reviewActor = text(body.review_actor || "internal_admin_owner", 120);
     const contextSource = code(body.context_source);

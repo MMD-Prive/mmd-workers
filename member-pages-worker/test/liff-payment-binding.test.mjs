@@ -164,7 +164,6 @@ describe("LIFF payments-worker binding", () => {
       payment_stage: "membership",
       amount: 2500,
       package_code: "premium",
-      payment_method: "promptpay",
       notes: "source=line_liff;intent=renew;requested_stage=renewal;renewal_price_rule=expired_within_90_days_premium",
     });
 
