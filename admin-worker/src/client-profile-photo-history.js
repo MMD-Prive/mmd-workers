@@ -79,23 +79,41 @@ async function airtablePatch(env, clientId, fields) {
   return response.json();
 }
 
+function lineProfileTokens(env) {
+  // A LINE user id only resolves with the token of the OA/provider it belongs to,
+  // so try the primary OA first and then the optional second OA.
+  return [env.LINE_CHANNEL_ACCESS_TOKEN, env.LINE_CHANNEL_ACCESS_TOKEN_SECONDARY]
+    .map((value) => clean(value, 10000))
+    .filter(Boolean);
+}
+
 async function readLineProfile(env, lineUserId) {
-  const token = clean(env.LINE_CHANNEL_ACCESS_TOKEN, 10000);
-  if (!token) return { ok: false, error: "line_profile_sync_unavailable" };
-  const response = await fetch(
-    `https://api.line.me/v2/bot/profile/${encodeURIComponent(lineUserId)}`,
-    {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/json",
+  const tokens = lineProfileTokens(env);
+  if (!tokens.length) return { ok: false, error: "line_profile_sync_unavailable" };
+  let lastError = "line_profile_picture_missing";
+  for (const token of tokens) {
+    const response = await fetch(
+      `https://api.line.me/v2/bot/profile/${encodeURIComponent(lineUserId)}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/json",
+        },
       },
-    },
-  );
-  if (!response.ok) return { ok: false, error: `line_profile_http_${response.status}` };
-  const body = await response.json().catch(() => ({}));
-  const pictureUrl = clean(body?.pictureUrl, 3000);
-  if (!/^https:\/\//i.test(pictureUrl)) return { ok: false, error: "line_profile_picture_missing" };
-  return { ok: true, pictureUrl };
+    );
+    if (!response.ok) {
+      lastError = `line_profile_http_${response.status}`;
+      continue;
+    }
+    const body = await response.json().catch(() => ({}));
+    const pictureUrl = clean(body?.pictureUrl, 3000);
+    if (!/^https:\/\//i.test(pictureUrl)) {
+      lastError = "line_profile_picture_missing";
+      continue;
+    }
+    return { ok: true, pictureUrl };
+  }
+  return { ok: false, error: lastError };
 }
 
 async function sha256Token(value) {
