@@ -1,3 +1,4 @@
+import {entryTopicCommand} from './kenji-entry-topics.mjs';
 // Explicit opt-in; this module cannot change runtime controls or perform I/O.
 export function restrictedReplyCategories(env = {}) {
   return env.KENJI_LINE_REPLY_CATEGORY_MODE === 'approved_qa_promo';
@@ -7,7 +8,7 @@ export function isExplicitCategoryCommand(event = {}, env = {}) {
   if (!restrictedReplyCategories(env) || event.type !== 'message' ||
       event.message?.type !== 'text' || event.source?.type !== 'user') return false;
   const command = String(event.message.text || '').normalize('NFKC').trim().toLowerCase();
-  return /^(checkpts|package|regis|apply)$/.test(command);
+  return /^(checkpts|package|regis|apply)$/.test(command) || Boolean(entryTopicCommand(event));
 }
 export const CATEGORY_REPLY_GRANT = Symbol('kenji-approved-reply');
 export function membershipUriButton(decision) {
@@ -31,7 +32,7 @@ export function categoryReplyTransportAllowed(env, token, text, button = null, e
 export function withCategoryReplyGrant(env, token, decision) {
   if (env?.KENJI_LINE_REPLY_CATEGORY_MODE !== 'approved_qa_promo') return env;
   if (!decision?.text || !(decision.intent === 'approved_promotion' ||
-      (decision.intent === 'approved_command' && /^category_(checkpts|package|regis|apply)$/.test(decision.reply_source)))) return env;
+      (decision.intent === 'approved_command' && /^category_(checkpts|package|regis|apply|membership_intro|models|jobs)$/.test(decision.reply_source)))) return env;
   const button = membershipUriButton(decision);
   return {...env, [CATEGORY_REPLY_GRANT]: Object.freeze({token, text:decision.text, button:button ? Object.freeze(button) : null})};
 }

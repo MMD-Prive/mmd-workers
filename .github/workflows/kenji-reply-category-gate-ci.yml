@@ -25,6 +25,7 @@ jobs:
           member-dashboard-chat-worker/test/kenji-membership-status-reply.test.mjs
           member-dashboard-chat-worker/test/kenji-line-live-truth.test.mjs
           member-dashboard-chat-worker/test/kenji-category-source.test.mjs
+          member-dashboard-chat-worker/test/kenji-entry-topics.test.mjs
           member-dashboard-chat-worker/test/kenji-category-promotion-cta.test.mjs
           member-dashboard-chat-worker/test/kenji-care-back-november.test.mjs
           member-dashboard-chat-worker/test/kenji-model-only-owner-lock.test.mjs
