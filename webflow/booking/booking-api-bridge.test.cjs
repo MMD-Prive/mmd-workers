@@ -111,12 +111,12 @@ for (const [code,httpStatus,label] of [['login_required',401,'เข้าสู
   }finally{dom.window.close();}
  });
 }
-test('budget requires an explicit customer maximum of at least 4500 and embeds stay in sync',async()=>{
+test('budget requires an explicit customer maximum of at least 5000 and embeds stay in sync',async()=>{
  let calls=0;const {dom,d}=setup(async()=>{calls++;throw Error('unexpected request');});
  try {
-  const input=d.querySelector('[name=budget_thb]');assert.equal(input.min,'4500');assert.equal(input.required,true);
-  for(const value of ['', '4499']){input.value=value;d.querySelector('[data-public-search]').click();await pause();assert.equal(calls,0);assert.equal(input.checkValidity(),false);}
-  input.value='4500';assert.equal(input.checkValidity(),true);
+  const input=d.querySelector('[name=budget_thb]');assert.equal(input.min,'5000');assert.equal(input.required,true);
+  for(const value of ['', '4499', '4999']){input.value=value;d.querySelector('[data-public-search]').click();await pause();assert.equal(calls,0);assert.equal(input.checkValidity(),false);}
+  input.value='5000';assert.equal(input.checkValidity(),true);
   assert.ok(source('booking-webflow-head.html').includes(source('booking-api-bridge.js')));
  }finally{dom.window.close();}
 });
@@ -129,12 +129,12 @@ test('SIGIL public membership failure keeps input and re-enables submit for retr
  try {
   w.eval(html.replace(/^<script>/,'').replace(/<\/script>\s*$/,''));
   const d=w.document,f=d.querySelector('form');
-  for(const [name,val] of Object.entries({client_name:'QA',contact:'qa@example.test',budget_thb:'4500',date:'2027-01-01',time:'19:00',area:'Bangkok',duties:'Dinner'}))f.elements[name].value=val;
+  for(const [name,val] of Object.entries({client_name:'QA',contact:'qa@example.test',budget_thb:'5000',date:'2027-01-01',time:'19:00',area:'Bangkok',duties:'Dinner'}))f.elements[name].value=val;
   d.querySelector('[data-filter=public_format]').click();
   f.dispatchEvent(new w.Event('submit',{cancelable:true,bubbles:true}));await pause();
   assert.equal(posts,1);assert.equal(d.querySelector('[data-skb26-submit]').disabled,false);
   assert.match(d.querySelector('[data-skb26-result]').textContent,/สมัครสมาชิก Public/);
-  assert.equal(f.elements.budget_thb.value,'4500');assert.equal(f.elements.contact.value,'qa@example.test');
+  assert.equal(f.elements.budget_thb.value,'5000');assert.equal(f.elements.contact.value,'qa@example.test');
   f.dispatchEvent(new w.Event('submit',{cancelable:true,bubbles:true}));await pause();
   assert.equal(posts,2);assert.equal(d.querySelector('[data-skb26-submit]').disabled,true);
   assert.match(d.querySelector('[data-skb26-result]').textContent,/ส่ง SIGIL Booking แล้ว/);

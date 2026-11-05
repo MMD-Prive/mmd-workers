@@ -506,7 +506,7 @@
   const el = (tag, text, cls) => { const n = document.createElement(tag); if (text) n.textContent = text; if (cls) n.className = cls; return n; };
   const box = el('section', '', 'bk-api-models');
   box.innerHTML = `<h3>เลือก Model ที่สนใจ</h3><p>ค้นหาและดูรูปก่อนส่งคำขอ หรือข้ามให้ MMD ช่วยเลือกได้</p>
-    <label>งบสูงสุดสำหรับงาน (บาท)<input name="budget_thb" type="number" min="4500" step="1" inputmode="numeric" required placeholder="เริ่มต้น 4,500 บาท"></label><p>สำหรับสมาชิก Public ตั้งแต่แพ็กเกจแรกขึ้นไป · ระบุงบสูงสุดของคุณเพื่อให้ MMD ตรวจรายละเอียด</p>
+    <label>งบสูงสุดสำหรับงาน (บาท)<input name="budget_thb" type="number" min="5000" step="1" inputmode="numeric" required placeholder="เริ่มต้น 5,000 บาท"></label><p>สำหรับสมาชิก Public ตั้งแต่แพ็กเกจแรกขึ้นไป · ระบุงบสูงสุดของคุณเพื่อให้ MMD ตรวจรายละเอียด</p>
     <div class="bk-api-search"><label>ชื่อ Model<input name="public_model_query" type="search" placeholder="พิมพ์ชื่อ หรือดูทั้งหมด" autocomplete="off"></label><button type="button" data-public-search>ค้นหา</button></div>
     <details><summary>ตัวกรองเพิ่มเติม</summary><div class="bk-api-filters">
     <label>ส่วนสูงตั้งแต่ (ซม.)<input name="min_height_cm" type="number" min="100" max="230" inputmode="numeric"></label>
