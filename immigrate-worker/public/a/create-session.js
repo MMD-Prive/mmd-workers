@@ -112,7 +112,6 @@
     map: $("[data-op-map]"),
     amount: $("[data-op-amount]"),
     paymentType: $("[data-op-payment-type]"),
-    paymentMethod: $("[data-op-payment-method]"),
     pointsMode: $("[data-op-points-mode]"),
     humanAssistant: $("[data-op-human-assistant]"),
     escalationOwner: $("[data-op-escalation-owner]"),
@@ -927,7 +926,6 @@
       payment: {
         amount_thb: Number(val(el.amount)) || 0,
         payment_type: String(val(el.paymentType) || "deposit"),
-        payment_method: String(val(el.paymentMethod) || "promptpay"),
         points_mode: String(val(el.pointsMode) || "auto")
       },
       human_support: {
@@ -1345,7 +1343,6 @@
       el.amount,
       el.modelBudget,
       el.paymentType,
-      el.paymentMethod,
       el.pointsMode,
       el.humanAssistant,
       el.escalationOwner,

@@ -478,7 +478,9 @@ function normalizeCreateLinksPayload(
 
   normalized.amount_thb = amountThb;
   normalized.payment_type = toStr(payload.payment_type || payload.payment_stage || "deposit");
-  normalized.payment_method = toStr(payload.payment_method || "promptpay");
+  // The customer picks the payment method on the payment page; Create Job never sets it.
+  const paymentMethod = toStr(payload.payment_method);
+  if (paymentMethod) normalized.payment_method = paymentMethod;
   normalized.google_map_url = toStr(payload.google_map_url);
   normalized.note = toStr(payload.note || payload.notes) || buildDefaultBookingNote(payload);
 

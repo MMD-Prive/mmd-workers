@@ -242,7 +242,6 @@ function transformOwnerHtml(source: string): string {
     `<div class="mmd-cs-v14__essentialPayment">
         <label class="mmd-cs-v14__field"><span>การเรียกเก็บ</span><select data-op-payment-type><option value="deposit">มัดจำ</option><option value="full">เต็มจำนวน</option></select></label>
       </div>
-      <input type="hidden" data-op-payment-method value="promptpay" />
       <input type="hidden" data-op-points-mode value="auto" />
       <input type="hidden" data-op-escalation-owner value="Boss Per" />
       <input id="csAssignedPerson"`
