@@ -31,7 +31,7 @@ const element = (id) => {
   if (!elements.has(id)) elements.set(id, {
     children: [], dataset: {}, hidden: id === 'workspace', disabled: false,
     textContent: '', className: '', value: '', style: {},
-    setAttribute() {}, append(...children) { this.children.push(...children); },
+    setAttribute() {}, addEventListener() {}, append(...children) { this.children.push(...children); },
     replaceChildren(...children) { this.children = children; },
   });
   return elements.get(id);
