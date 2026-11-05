@@ -9,18 +9,18 @@ const job=workflow.slice(workflow.indexOf('  my-mmd-home-release:'));
 const evaluate=new Function('github','inputs','return '+job.match(/^    if: (.+)$/m)[1]);
 const sha='a'.repeat(40),github={event_name:'workflow_dispatch',ref:'refs/heads/main',sha};
 const inputs={execution_mode:'my-mmd-home-delta',production_approved:true,approval_ref:'fixture',approved_sha:sha,expected_version:'fixture',expected_deployment:'fixture',patch_manifest:'fixture',expected_manifest_sha256:'fixture',expected_module_sha256:'fixture'};
-test('diagnostics manifest and workflow pin agree with merged #3059 source',()=>{
+test('entry lane manifest and workflow pin agree with merged #3070 source',()=>{
  const raw=readFileSync(new URL('./my-mmd-home-delta-manifest.json',import.meta.url));
- assert.equal(sha256(raw),'0faf49fea3332befbaea01be05c8c0fc40b6c7590f918baeabbda8b78048a7cf');
+ assert.equal(sha256(raw),'33cd6afb79303e4149622f92f209586f7f06532c012fcec428bff4bae3db3b0b');
  const manifest=parseHomeManifest(raw,sha256(raw),'member-pages-worker');
- assert.equal(manifest.source_sha,'3e416e70434dbd8ac7d73917d551f7f101c8c5dd');
+ assert.equal(manifest.source_sha,'625164e20d8713aaf26db7fcb43bbb1d7befe084');
  assert.equal(manifest.source_sha,job.match(/APPROVED_SOURCE_SHA: ([a-f0-9]{40})/)[1]);
- assert.equal(manifest.baseline_version,'13d39bce-751c-4eec-882a-a354aaacbf34');
- assert.equal(manifest.baseline_deployment,'1c168fe4-3910-4304-ad68-6599a6e8804a');
- assert.equal(manifest.modules.length,1);assert.equal(manifest.modules[0].patches.length,5);
- assert.equal(manifest.modules[0].before_sha256,'7a5969426551b6d4eaf370b31280dd5a62a446b050529898c4b9b51855d7206f');
- assert.equal(manifest.modules[0].after_sha256,'a882ddb90ceea1cb15c6ea5c49c9e65e874877f7b1dc99b5fc53ba59f1426e04');
- assert.deepEqual(manifest.modules[0].patches.map(p=>p.id),['diagnostic-helpers','loader-lifecycle','active-identity-start-phase-timing','bounded-client-receiver','browser-lifecycle-wiring']);
+ assert.equal(manifest.baseline_version,'60b85c46-0d3b-4988-8bb0-60165085d6e1');
+ assert.equal(manifest.baseline_deployment,'f6f79e0a-440a-4f7f-8b12-176c7ff4fc1a');
+ assert.equal(manifest.modules.length,1);assert.equal(manifest.modules[0].patches.length,1);
+ assert.equal(manifest.modules[0].before_sha256,'de6ae634a7199b2cfad2ffb20807c36a417ee456df61dfec5e3d27982f79394a');
+ assert.equal(manifest.modules[0].after_sha256,'25661f7891b22743054d73072029aa686c852c3e87b85bbe2493c936a4fdc5e9');
+ assert.deepEqual(manifest.modules[0].patches.map(p=>p.id),['member-api-start-editorial-lane']);
  for(const patch of manifest.modules[0].patches){
  assert.notEqual(patch.before,patch.after);
  assert.equal(sha256(patch.before),patch.before_sha256);
