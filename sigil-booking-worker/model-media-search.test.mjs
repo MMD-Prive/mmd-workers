@@ -473,7 +473,7 @@ test("SIGIL Search intake requires budget, strips customer-supplied storage URLs
 });
 
 
-test("Public Model search and intake reject a budget below 4,500 THB", async () => {
+test("Public Model search and intake reject a budget below 5,000 THB", async () => {
   const originalFetch = globalThis.fetch;
   let fetchCount = 0;
   globalThis.fetch = async () => {

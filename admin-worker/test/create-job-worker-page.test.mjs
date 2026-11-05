@@ -111,4 +111,11 @@ test("Create Job shows up to five recent photos for members and models without a
   assert.match(html, /\/v1\/admin\/clients\/profile-photo\/sync/);
   assert.match(html, /\.thumbs\{display:flex;flex-wrap:wrap/);
   assert.doesNotMatch(html, /overflow-x:\s*(auto|scroll)/);
+
+test("Travel fee option gives the 25 km Siam Square case only as an example and readiness failure shows its cause", async () => {
+  const html = await handleCreateJobWorkerPage(new Request("https://mmdbkk.com/internal/admin/jobs/create-job")).text();
+  assert.match(html, /เช่น สถานที่ไกลเกิน 25 กม\./);
+  assert.match(html, /สยามสแควร์ กรุงเทพ/);
+  assert.match(html, /สาเหตุ: /);
+  for (const script of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) new Function(script[1]);
 });

@@ -109,11 +109,13 @@ test("budget bands become bounded numeric search context", () => {
   assert.deepEqual(normalizeBudget({ budget_band: "30000_plus" }), { provided: true, min_thb: 30000, max_thb: null, label: "30000_plus" });
 });
 
-test("Public Model budget floor is 4,500 THB without changing Private budget parsing", () => {
-  assert.equal(PUBLIC_MODEL_MIN_BUDGET_THB, 4500);
+test("Public Model budget floor is 5,000 THB without changing Private budget parsing", () => {
+  assert.equal(PUBLIC_MODEL_MIN_BUDGET_THB, 5000);
   assert.equal(publicBudgetFloorError({ budget_thb: 4499 }), "public_budget_below_minimum");
-  assert.equal(publicBudgetFloorError({ budget_thb: 4500 }), "");
-  assert.equal(publicBudgetFloorError({ budget_thb: 4999 }), "");
+  assert.equal(publicBudgetFloorError({ budget_thb: 4500 }), "public_budget_below_minimum");
+  assert.equal(publicBudgetFloorError({ budget_thb: 4999 }), "public_budget_below_minimum");
+  assert.equal(publicBudgetFloorError({ budget_thb: 5000 }), "");
+  assert.deepEqual(normalizeBudget({ budget_band: "4500_10000" }), { provided: true, min_thb: 5000, max_thb: 10000, label: "5000_10000" });
   assert.equal(publicBudgetFloorError({ budget_band: "4500_10000" }), "");
   assert.equal(publicBudgetFloorError({ budget_band: "5000_10000" }), "");
   assert.equal(publicBudgetFloorError({ budget_band: "under_10000" }), "public_budget_below_minimum");
