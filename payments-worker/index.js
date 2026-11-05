@@ -554,11 +554,14 @@ async function createOrUpdatePaymentIntent(env, payload, options = {}) {
   // Canonical Payments writes use only schema-backed fields. Do not write to
   // formula aliases such as `payment_ref` / `verification_status`, and do
   // not send legacy field names that are absent from the production table.
-  const paymentMethodRaw = toStr(payload.payment_method || "promptpay").toLowerCase();
+  // The customer picks the method on the payment page and the reviewer confirms it at
+  // verification. An intent that names no method leaves Payment Method untouched.
+  const paymentMethodRaw = toStr(payload.payment_method).toLowerCase();
   const paymentMethod =
+    !paymentMethodRaw ? undefined :
     paymentMethodRaw.includes("prompt") ? "PromptPay" :
     paymentMethodRaw.includes("bank") ? "Bank Transfer" :
-    paymentMethodRaw.includes("credit") ? "Credit Card" :
+    (paymentMethodRaw.includes("credit") || paymentMethodRaw.includes("paypal") || paymentMethodRaw.includes("card")) ? "Credit Card" :
     paymentMethodRaw.includes("cash") ? "Cash" : "Other";
   const paymentDate = toStr(payload.paid_at || nowIso()).slice(0, 10);
   const alreadyVerified = toStr(existing?.fields?.[toStr(env.AT_PAYMENTS__PAYMENT_STATUS || "Payment Status")]).toLowerCase() === "paid"
@@ -701,7 +704,7 @@ async function handleVerify(req, env) {
     const session_id = toStr(assertRequired(body.session_id, "session_id"));
     const payment_stage = normalizeStage(body.payment_stage || body.payment_type || "deposit");
     const amount = ensurePositiveNumber(body.amount, "amount");
-    const payment_method = toStr(body.payment_method || "promptpay");
+    const payment_method = toStr(body.payment_method);
     const member_email = toStr(body.member_email || body.email);
     const package_code = toStr(body.package_code || body.package);
     const notes = toStr(body.notes || body.note);
@@ -824,7 +827,7 @@ async function handleNotify(req, env) {
     const amount_thb = ensurePositiveNumber(body.amount_thb || body.amount, "amount_thb");
     const member_email = toStr(body.member_email || body.email);
     const package_code = toStr(body.package_code || body.package);
-    const payment_method = toStr(body.payment_method || "promptpay");
+    const payment_method = toStr(body.payment_method);
     const receipt_url = toStr(body.receipt_url || body.slip_url);
     const paid_at = toStr(body.paid_at || nowIso());
 
@@ -965,7 +968,7 @@ async function handleConfirmLink(req, env) {
             "pay_model_thb"
           );
     const payment_type = normalizeStage(body.payment_type || body.payment_stage || "full");
-    const payment_method = toStr(body.payment_method || "promptpay");
+    const payment_method = toStr(body.payment_method);
     const note = toStr(body.note || body.notes);
 
     const payment_ref = toStr(body.payment_ref || makePaymentRef("pay"));

@@ -524,7 +524,7 @@ async function buildApprovalContext(env, proof, item, actor, operatorContext = {
     session_id: sessionId || null,
     member_email: memberEmail || null,
     package_code: packageCode || null,
-    payment_method: safeText(paymentFields["Payment Method"] || paymentFields.payment_method || fields.payment_method || "promptpay", 80) || "promptpay",
+    payment_method: customerSelectedMethod(fields) || safeText(paymentFields["Payment Method"] || paymentFields.payment_method || fields.payment_method, 80) || "",
     context_source: contextSource,
     renewal_session_id: renewalSessionId || null,
     operator_context: operatorContextAudit,
@@ -1206,6 +1206,13 @@ function isoOrText(value) {
   return Number.isFinite(parsed) ? new Date(parsed).toISOString() : raw;
 }
 
+const CUSTOMER_SELECTABLE_METHODS = new Set(["promptpay", "bank_transfer", "paypal_card"]);
+// Evidence the customer attached with the slip; the reviewer's approval is what makes it the record's method.
+export function customerSelectedMethod(fields) {
+  const value = String(parseNote(fields?.note).customer_selected_method || "").trim().toLowerCase();
+  return CUSTOMER_SELECTABLE_METHODS.has(value) ? value : "";
+}
+
 function parseNote(value) {
   const parsed = parseJson(value);
   if (Object.keys(parsed).length) return parsed;
@@ -1215,7 +1222,7 @@ function parseNote(value) {
   if (!/^schema=mmd_(?:web|shop)_payment_proof_v1(?:;|$)/.test(raw)) return {};
   const note = {};
   for (const part of raw.split(";")) {
-    const match = /^\s*(schema|r2_key|payment_lane|telegram_delivered)\s*=\s*([^;]+?)\s*$/.exec(part);
+    const match = /^\s*(schema|r2_key|payment_lane|telegram_delivered|customer_selected_method)\s*=\s*([^;]+?)\s*$/.exec(part);
     if (!match || Object.hasOwn(note, match[1])) continue;
     note[match[1]] = match[2];
   }

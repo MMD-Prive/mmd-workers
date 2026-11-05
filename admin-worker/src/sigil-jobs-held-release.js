@@ -222,7 +222,7 @@ async function verifyPrivateGate(env, body, meta, clientId, modelId) {
 function paymentPayload(body, session, meta) {
   const note = sessionNote(session);
   const paymentType = firstText(body.payment_type, body.payment_stage, meta.payment_type, "deposit");
-  const paymentMethod = firstText(body.payment_method, meta.payment_method, "promptpay");
+  const paymentMethod = firstText(body.payment_method, meta.payment_method, "");
   return {
     session_id: clean(body.session_id),
     payment_ref: stablePaymentRef(body.session_id),

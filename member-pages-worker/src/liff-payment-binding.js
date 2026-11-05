@@ -94,7 +94,6 @@ export async function completeValidatedLiffPaymentIntent(request, guardedRespons
     payment_stage: canonicalStage,
     amount: amountThb,
     package_code: requestedPackage,
-    payment_method: "promptpay",
     notes: paymentIntentNote(session, requestedStage, renewalOffer),
   });
   if (!upstream.ok) {

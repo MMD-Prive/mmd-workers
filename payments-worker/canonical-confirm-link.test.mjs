@@ -196,7 +196,8 @@ test("canonical confirm-link writes only real Sessions/Payments schema fields", 
   assert.equal(paymentFields.fld2wdhBvc8xrV6y5, "sess_create_job_schema_test");
   assert.equal(paymentFields.fldvCSwrUW8OMAooS, 32500);
   assert.equal(paymentFields.fldEJ1hmm7KwWuI6q, "Pending");
-  assert.equal(paymentFields.fldsblzIn0wzan3c9, "PromptPay");
+  // No method was named, so the link must not claim one; the customer picks it on the payment page.
+  assert.equal(Object.hasOwn(paymentFields, "fldsblzIn0wzan3c9"), false);
   assert.equal(paymentFields.fldJ7a0Ube9F0bmRy, "pending_review");
   assert.equal(paymentFields.fld04fr3bRJTohO6y, "Pending Confirmation");
   assert.equal(paymentFields.fldrr9g8ZZjqAbdKQ, "full");

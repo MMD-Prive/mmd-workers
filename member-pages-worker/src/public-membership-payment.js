@@ -86,7 +86,6 @@ async function createPaymentIntent(env, { sessionId, packageItem }) {
       payment_stage: "membership",
       amount: packageItem.amount_thb,
       package_code: packageItem.package_code,
-      payment_method: "promptpay",
       notes: "source=public_membership;official_verify_required=true",
     }),
   });
