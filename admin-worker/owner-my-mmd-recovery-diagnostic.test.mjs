@@ -276,3 +276,26 @@ test('reviewed refresh resolves client server-side and returns the new points re
     const body=await res.json();assert.equal(body.points.value,1300);assert.equal(body.guardrails.read_only,false);assert.doesNotMatch(JSON.stringify(body),new RegExp(LINE_ID));
   } finally {globalThis.fetch=originalFetch}
 });
+
+test("owner detail forwards a legacy IMR reference without altering it and rejects malformed input", async () => {
+  const legacy = "IMR-FIXTURE-MEMBERSHIP-20260923";
+  const calls = [];
+  const requestEnv = { MEMBER_PAGES_MEMBER_WALLET: { async fetch(req) {
+    calls.push(await req.json());
+    return Response.json({ ok: true, identity_recovery_request: { found: true, request_id: legacy, status: "applied" } });
+  } } };
+  const actor = { role: "owner" };
+  const detail = (ref) => request(OWNER_MY_MMD_RECOVERY_API_PATH + "?request_id=" + encodeURIComponent(ref));
+  const response = await handleOwnerMyMmdRecoveryDiagnostic(detail(legacy), requestEnv, actor);
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.identity_recovery_request.request_id, legacy);
+  assert.equal(body.guardrails.read_only, true);
+  assert.equal((await handleOwnerMyMmdRecoveryDiagnostic(detail(legacy), requestEnv, { role: "admin" })).status, 403);
+  for (const ref of ["IMR-INVALID--REF", "IMR-INVALID-", "IMR-BAD'REF", "IMR-" + "A".repeat(41)]) {
+    const denied = await handleOwnerMyMmdRecoveryDiagnostic(detail(ref), requestEnv, actor);
+    assert.equal(denied.status, 400);
+    assert.equal((await denied.json()).error, "invalid_request_id");
+  }
+  assert.deepEqual(calls, [{ merge_request_id: legacy }]);
+});

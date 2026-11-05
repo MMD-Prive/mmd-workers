@@ -57,7 +57,7 @@ export async function handleOwnerMyMmdRecoveryDiagnosticRpc(request, env = {}, d
 
   const lineUserId = canonicalLineId(body.line_user_id);
   const mergeRequestId = safeText(body.merge_request_id, 80);
-  if (!lineUserId && !/^IMR-[A-Z0-9]{6,40}$/.test(mergeRequestId)) return json({ ok: false, error: "invalid_request" }, 400);
+  if (!lineUserId && !/^IMR-(?=[A-Z0-9-]{6,40}$)[A-Z0-9]+(?:-[A-Z0-9]+)*$/.test(mergeRequestId)) return json({ ok: false, error: "invalid_request" }, 400);
   if (!lineUserId && mergeRequestId) {
     return json({
       ok: true,
@@ -144,7 +144,7 @@ async function readIdentityRecoveryRequest(env, lineUserId, mergeRequestId = "")
   const apiKey = text(env.AIRTABLE_API_KEY);
   const baseId = text(env.AIRTABLE_BASE_ID);
   const table = text(env.AIRTABLE_TABLE_IDENTITY_MERGE_REQUESTS || IDENTITY_MERGE_REQUESTS_TABLE);
-  if (!apiKey || !baseId || (!canonicalLineId(lineUserId) && !/^IMR-[A-Z0-9]{6,40}$/.test(mergeRequestId))) return { found: false, state: "unavailable" };
+  if (!apiKey || !baseId || (!canonicalLineId(lineUserId) && !/^IMR-(?=[A-Z0-9-]{6,40}$)[A-Z0-9]+(?:-[A-Z0-9]+)*$/.test(mergeRequestId))) return { found: false, state: "unavailable" };
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), PROFILE_TIMEOUT_MS);
   try {

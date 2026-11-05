@@ -48,7 +48,7 @@ export async function handleOwnerMyMmdRecoveryDiagnostic(request, env = {}, acto
   const inbox = url.searchParams.get("inbox") === "1";
   const clientId = recordId(refresh ? body.client_id : url.searchParams.get("client_id"));
   if (mergeRequestId) {
-    if (!/^IMR-[A-Z0-9]{6,40}$/.test(mergeRequestId)) return json({ ok: false, error: "invalid_request_id" }, 400);
+    if (!/^IMR-(?=[A-Z0-9-]{6,40}$)[A-Z0-9]+(?:-[A-Z0-9]+)*$/.test(mergeRequestId)) return json({ ok: false, error: "invalid_request_id" }, 400);
     const binding = env.MEMBER_PAGES_MEMBER_WALLET;
     if (!binding?.fetch) return json({ ok: false, state: "unavailable", error: "member_pages_binding_missing" }, 503);
     const response = await binding.fetch(new Request(`https://member-pages-worker.internal${MEMBER_PAGES_RPC_PATH}`, {

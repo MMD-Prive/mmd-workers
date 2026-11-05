@@ -258,3 +258,24 @@ test('public refresh cannot reach the recovery runner',async()=>{
   const res=await handleOwnerMyMmdRecoveryDiagnosticRpc(internalRequest({line_user_id:LINE_ID,refresh_reviewed:true},'admin-worker','www.mmdbkk.com'),env(),{runRecovery:async()=>{calls++;}});
   assert.equal(res.status,404);assert.equal(calls,0);
 });
+
+test("legacy hyphenated applied request is read by exact reference with a GET only", async () => {
+  const legacy = "IMR-FIXTURE-MEMBERSHIP-20260923";
+  const reads = [];
+  const response = await handleOwnerMyMmdRecoveryDiagnosticRpc(internalRequest({ merge_request_id: legacy }), {
+    AIRTABLE_API_KEY: "fixture-key",
+    AIRTABLE_BASE_ID: "appFixture",
+    AIRTABLE_HTTP: { async fetch(req) {
+      reads.push([req.method, new URL(req.url).searchParams.get("filterByFormula")]);
+      return Response.json({ records: [{ fields: { merge_request_id: legacy, status: "applied", line_user_id: LINE_ID } }] });
+    } },
+  });
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.deepEqual(reads, [["GET", `{merge_request_id}='${legacy}'`]]);
+  assert.equal(body.identity_recovery_request.found, true);
+  assert.equal(body.identity_recovery_request.request_id, legacy);
+  assert.equal(body.identity_recovery_request.status, "applied");
+  assert.equal(body.guardrails.read_only, true);
+  assert.doesNotMatch(JSON.stringify(body), new RegExp(LINE_ID));
+});
