@@ -84,8 +84,10 @@ test('owner gate needs the sealed owner reference for a release but not for capt
  await assert.rejects(verifyFloorOwnerApproval({...w.env,APPROVAL_REF:'wrong'},w.request,{c:w.c}),/wrong owner authorization reference/);
  // capture does not need the reference (it is what the owner seals afterwards)
  await verifyFloorOwnerApproval({...w.env,APPROVAL_REF:'anything'},w.request,{c:w.c,requireRef:false});
- // the committed contract has no sealed reference: a release gate must fail closed
- await assert.rejects(verifyFloorOwnerApproval(w.env,w.request),/unsealed release contract/);
+ // an unsealed reference must fail closed
+ await assert.rejects(verifyFloorOwnerApproval(w.env,w.request,{c:{...clone(w.c),approval_ref_sha256:null}}),/unsealed release contract/);
+ // the committed contract is sealed to a reference this fixture does not know
+ await assert.rejects(verifyFloorOwnerApproval(w.env,w.request),/wrong owner authorization reference/);
 });
 test('fetchBaseline refuses an unsealed contract and writes the exact bytes create-only when sealed',async()=>{
  const w=world();
