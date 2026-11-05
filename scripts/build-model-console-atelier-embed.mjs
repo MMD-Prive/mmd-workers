@@ -13,6 +13,8 @@ import { installConsoleCustomerUpdates } from '../webflow/sigil/model/model-cons
 import {renderModelJobBrief} from '../webflow/sigil/model/model-job-brief.mjs';
 import { LV15_FONT_FACES } from '../webflow/sigil/model/model-lv15-fonts.mjs';
 import {mountMeetingDetails} from '../shared/model-meeting-client.mjs';
+import {buildTartSkinEmbed,TART_REVIEW_ASSET_URL} from './build-model-lv15-skin.mjs';
+import {buildLovableSkinEmbed} from './build-my-model-lovable-skin-embed.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const source = path.join(root, 'webflow/sigil/model');
 const assets = path.join(source, 'console-atelier');
@@ -27,27 +29,32 @@ export function consoleStyleSource(css) {
   const decoded = tokens.reduce((code, [token, value]) => code + `.replaceAll(${JSON.stringify(token)},${JSON.stringify(value)})`, JSON.stringify(packed));
   return `if(!document.getElementById('mmd-console-lv9-css')){const s=document.createElement('style');s.id='mmd-console-lv9-css';s.textContent=${decoded};document.head.append(s);}`;
 }
-export function buildConsoleEmbed() {
+function consoleAssets() {
   const illustrations = Object.fromEntries(Object.entries(names).map(([key, file]) => [key, fs.readFileSync(path.join(assets, file), 'utf8').trim()]));
   const sprite = fs.readFileSync(path.join(assets, 'icons.svg'), 'utf8');
   illustrations.icons = Object.fromEntries([...sprite.matchAll(/<symbol id="([^"]+)"[^>]*>(.*?)<\/symbol>/gs)].map(([, id, body]) => [id, body]));
+  return illustrations;
+}
+export function buildConsoleEmbed() {
   const skin = fs.readFileSync(path.join(source, 'model-console-atelier-v3.js'), 'utf8');
   const runtime = fs.readFileSync(path.join(source, 'model-console-v3-i18n.js'), 'utf8');
-  const js = '(()=>{const renderModelJobBrief='+renderModelJobBrief.toString()+';const consoleAtelierAssets=' + JSON.stringify(illustrations) + ';\n' + skin + '\n' + travelClientBundle(false,false) + '\n' + runtime + '\n})();';
-  const compact = minify_sync(js, { compress: { passes: 2 }, mangle: { reserved: ['consoleAtelierAssets', 'renderConsoleAtelier'], properties: { regex: /^_tr/ } }, format: { comments: false, ascii_only: false } }).code;
+  const js = '(()=>{' + skin + '\n' + travelClientBundle(false,false) + '\n' + runtime + '\n})();';
+  const compact = minify_sync(js, { compress: { passes: 3 }, mangle: { reserved: ['consoleAtelierAssets', 'renderConsoleAtelier'], properties: { regex: /^_tr/ } }, format: { comments: false, ascii_only: false } }).code;
   const embed = '<!-- MY MODEL LV9 travel + Console V3 -->\n<script>' + compact + '</script>';
   if (Buffer.byteLength(embed, 'utf8') >= 50000) throw new Error(`Console Embed exceeds 50,000 bytes: ${Buffer.byteLength(embed, 'utf8')}`);
   return embed;
 }
 export function assetManifest() {
-  return { version: 'console-atelier-v3', delivery: 'inline SVG plus one existing Webflow CDN Hero image', externalAssets: [{ role: 'decorative-console-hero', assetId: '6abe1dcae59e7e03c06d950b', url: 'https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6abe1dcae59e7e03c06d950b_Cinematic%20Night%20Balcony%20Portrait.webp' }], attribution: 'Project-authored geometry; job/support shapes reuse MY MODEL icon family', files: [...Object.values(names), 'icons.svg'].map(file => {
+  const tart=fs.readFileSync(path.join(root,'model-dashboard-presentation-worker/assets/tart-review.png'));
+  const logo=fs.readFileSync(path.join(root,'model-dashboard-presentation-worker/assets/sigil-review-logo.png'));
+  return { version: 'console-atelier-v3', delivery: 'inline SVG and same-origin TarT asset', externalAssets: [], servedAssets:[{role:'decorative-console-hero',url:TART_REVIEW_ASSET_URL,source:'model-dashboard-presentation-worker/assets/tart-review.png',bytes:tart.length,sha256:crypto.createHash('sha256').update(tart).digest('hex')},{role:'private-logo',url:'/sigil/model/dashboard-assets/sigil-review-logo.png',source:'model-dashboard-presentation-worker/assets/sigil-review-logo.png',bytes:logo.length,sha256:crypto.createHash('sha256').update(logo).digest('hex')}], attribution: 'Project-authored geometry; job/support shapes reuse MY MODEL icon family', files: [...Object.values(names), 'icons.svg'].map(file => {
     const bytes = fs.readFileSync(path.join(assets, file));
     return { file, bytes: bytes.length, sha256: crypto.createHash('sha256').update(bytes).digest('hex') };
   }) };
 }
 // A separate presentation embed avoids overflowing the existing Console Footer.
 export function buildConsoleDeclineEmbed() {
-  const code = '(()=>{window.MMDMeetingDetails='+mountMeetingDetails.toString()+';const normalizeModelDecline=' + normalizeModelDecline.toString() + ';window.MMDConsoleDecline=' + openModelDecline.toString() + ';const mountConsoleHero=' + mountConsoleHero.toString() + ';const installModelTravelReceiptNotice=' + installModelTravelReceiptNotice.toString() + ';const installConsoleCustomerUpdates='+installConsoleCustomerUpdates.toString()+';installConsoleCustomerUpdates();if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",()=>mountConsoleHero(),{once:true});else mountConsoleHero();installModelTravelReceiptNotice();})();';
+  const code = 'window.renderModelJobBrief='+renderModelJobBrief.toString()+';window.consoleAtelierAssets='+JSON.stringify(consoleAssets())+';(()=>{window.MMDMeetingDetails='+mountMeetingDetails.toString()+';const normalizeModelDecline=' + normalizeModelDecline.toString() + ';window.MMDConsoleDecline=' + openModelDecline.toString() + ';const mountConsoleHero=' + mountConsoleHero.toString() + ';const installModelTravelReceiptNotice=' + installModelTravelReceiptNotice.toString() + ';const installConsoleCustomerUpdates='+installConsoleCustomerUpdates.toString()+';installConsoleCustomerUpdates();if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",()=>mountConsoleHero(),{once:true});else mountConsoleHero();installModelTravelReceiptNotice();})();';
   const fonts=LV15_FONT_FACES.filter(([family])=>['Outfit','Noto Sans Thai'].includes(family)).map(([family,weight,url,format])=>
     `@font-face{font-family:"${family}";font-style:normal;font-weight:${weight};font-display:swap;src:url("${url}") format("${format}")}`).join('\n');
   const css = new CleanCSS({ level: 2 }).minify(fonts+'\n'+fs.readFileSync(path.join(source, 'model-console-atelier-v3.css'), 'utf8')+'\n'+travelClientCss+'\n'+fs.readFileSync(path.join(source, 'model-console-surfaces.css'), 'utf8'));
@@ -65,6 +72,7 @@ export function buildConsoleInstallBlocks(savedFooter) {
     { name: '01-console-form-and-theme.embed.html', content: buildConsoleDeclineEmbed() },
     { name: '02-console-runtime.embed.html', content: buildConsoleEmbed() },
     { name: '03-console-preserved-tail.embed.html', content: tail },
+    { name: '04-console-lv15-skin.embed.html', content: buildTartSkinEmbed({consoleOnly:true}) },
   ];
   for (const block of blocks) {
     block.bytes = Buffer.byteLength(block.content);
@@ -80,6 +88,12 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   fs.writeFileSync(path.join(out, 'model-console-atelier-v3.embed.html'), buildConsoleEmbed());
   fs.writeFileSync(path.join(out, 'asset-manifest.json'), JSON.stringify(assetManifest(), null, 2) + '\n');
   fs.writeFileSync(path.join(out, 'model-console-decline-options.embed.html'), buildConsoleDeclineEmbed());
+  fs.writeFileSync(path.join(out, 'model-console-lv15-skin.embed.html'), buildTartSkinEmbed({consoleOnly:true}));
+  fs.writeFileSync(path.join(out, 'my-model-lv15-skin.embed.html'), buildTartSkinEmbed());
+  fs.writeFileSync(path.join(out, 'my-model-atelier-skin.embed.html'), buildLovableSkinEmbed());
+  fs.mkdirSync(path.join(out,'assets'),{recursive:true});
+  fs.copyFileSync(path.join(root,'model-dashboard-presentation-worker/assets/tart-review.png'),path.join(out,'assets/tart-review.png'));
+  fs.copyFileSync(path.join(root,'model-dashboard-presentation-worker/assets/sigil-review-logo.png'),path.join(out,'assets/sigil-review-logo.png'));
   if (process.argv[3]) {
     const saved = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'));
     const blocks = buildConsoleInstallBlocks(saved.content);

@@ -1,3 +1,4 @@
+import { tartReviewAssetResponse } from './tart-review-asset.js';
 import { MODEL_HISTORY_JS, MODEL_HISTORY_CSS } from "./model-history-presentation.js";
 import { modelOnboardingPhaseAHtml } from "./model-onboarding-phase-a-page.js";
 import { MODEL_LINE_BRIEFS_JS, MODEL_LINE_BRIEFS_CSS } from "./model-line-briefs.js";
@@ -1470,7 +1471,9 @@ function unavailable() {
 }
 
 export default {
-  async fetch(request) {
+  async fetch(request, env) {
+    const tart = await tartReviewAssetResponse(request, env);
+    if (tart) return tart;
     const docsVerification = modelDocsVerificationResponse(request);
     if (docsVerification) return docsVerification;
     const path = normalizePath(new URL(request.url).pathname);

@@ -82,6 +82,9 @@ export const LV15_CSS = LV15_FONT_CSS + `
 #sigil-model-console-v3[data-lv15-world] .lv15-controls>.smcv3-head{position:static!important;inset:auto!important;background:none!important;border:0!important;margin:0!important;padding:0!important;min-height:44px!important;border-radius:0!important;flex-wrap:wrap!important}
 #sigil-model-console-v3[data-lv15-world] .lv15-controls .smcv3-brand{display:none!important}
 #sigil-model-console-v3[data-lv15-world] .smcv3-hero{display:none!important}
+#sigil-model-console-v3[data-lv15-world][data-lv15-tart-room] .smcv3-hero{display:block!important;position:relative!important;width:min(1032px,calc(100% - 48px))!important;height:260px!important;min-height:0!important;margin:0 auto 20px!important;padding:0!important;overflow:hidden!important;border:0!important;border-radius:0!important}
+#sigil-model-console-v3[data-lv15-world][data-lv15-tart-room] .smcv3-hero__image{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;object-fit:cover!important;object-position:center 38%!important;opacity:1!important}
+#sigil-model-console-v3[data-lv15-world][data-lv15-tart-room] :is(.smcv3-hero__content,.smcv3-hero__veil){display:none!important}
 #sigil-model-console-v3[data-lv15-world] :is(.smcv3-card,.smcv3-state){background:transparent!important;border:0!important;border-bottom:1px solid var(--v15-line)!important;border-radius:0!important;padding:22px 0!important;margin-bottom:12px!important;box-shadow:none!important}
 #sigil-model-console-v3[data-lv15-world] .smcv3-summary{isolation:isolate;position:relative;overflow:visible!important}
 #sigil-model-console-v3[data-lv15-world] :is(.smcv3-h1,.smcv3-h2){font-family:var(--v15-ui)!important;font-weight:500!important;font-size:clamp(23px,3vw,32px)!important;line-height:1.4!important;color:var(--v15-ink)!important}
@@ -135,12 +138,67 @@ body[data-lv15-canvas]{background:#f8f7f4!important}body[data-lv15-canvas=privat
 @media(max-width:650px){:is(#sigil-model-console-v3,.app[data-mmd-app-digital])[data-lv15-world] .lv15-model{font-size:48px}:is(#sigil-model-console-v3,.app[data-mmd-app-digital])[data-lv15-world] .lv15-my{font-size:22px}}
 
 [data-lv15-world=public] .lv15-masthead:before{background:url("https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90/6aa3942052d84281cd18f80d_MMD%20Academy%20front.webp") center/cover;opacity:.025;filter:grayscale(1)}
+
+/* Review skin only decorates owner-rendered nodes; it never creates actions. */
+[data-lv15-review]{--v15-ui:"Noto Sans Thai","Outfit",sans-serif;letter-spacing:0!important}
+[data-lv15-review][data-lv15-world="private"]{--v15-bg:#0b0e10;--v15-panel:#171b1d;--v15-soft:#232729;--v15-ink:#f3f0e8;--v15-muted:#bebbb1;--v15-accent:#c9b38b;--v15-line:#49463f;--v15-button-ink:#171713}
+[data-lv15-review]:before,[data-lv15-review] .lv15-masthead:before,[data-lv15-review] :is(.lv15-rain,.lv15-skyline,.lv15-accent){display:none!important}
+[data-lv15-review] .lv15-masthead{padding:16px 0!important;margin-bottom:0!important}
+[data-lv15-review] .lv15-topline{margin:0!important;padding:0!important;border:0!important;min-height:44px!important}
+[data-lv15-review] .lv15-parent-logo{width:76px!important;height:44px!important}
+[data-lv15-review] .lv15-wordmark{gap:8px!important;margin-top:12px!important}
+[data-lv15-review] :is(.lv15-my,.lv15-model){font:600 20px/1.4 var(--v15-ui)!important;letter-spacing:0!important;padding:0!important;border:0!important}
+[data-lv15-review] .lv15-my:after{display:none!important}
+[data-lv15-review] :is(.lv15-index,.lv15-brandline){display:none!important}
+#sigil-model-console-v3[data-lv15-review]>.lv15-masthead,#sigil-model-console-v3[data-lv15-review] .smcv3-shell{width:min(900px,calc(100% - 36px))!important}
+#sigil-model-console-v3[data-lv15-review]>.lv15-masthead{order:-2!important}
+#sigil-model-console-v3[data-lv15-review] .lv15-wordmark{display:none!important}
+#sigil-model-console-v3[data-lv15-review] .ca-accent{display:none!important}
+#sigil-model-console-v3[data-lv15-review][data-lv15-tart-room] .smcv3-hero,[data-lv15-review] .lv15-review-hero{width:min(900px,calc(100% - 36px))!important;height:180px!important;min-height:0!important;position:relative;overflow:hidden;margin:0 auto 18px!important;border-radius:0!important}
+#sigil-model-console-v3[data-lv15-review][data-lv15-tart-room] .smcv3-hero{order:-1!important}
+#sigil-model-console-v3[data-lv15-review] .smcv3-hero__image,[data-lv15-review] .lv15-review-hero img{display:block;width:100%!important;height:100%!important;object-fit:cover!important;object-position:74% 37%!important}
+#sigil-model-console-v3[data-lv15-world][data-lv15-review][data-lv15-tart-room] .smcv3-hero__image{object-position:74% 37%!important}
+#sigil-model-console-v3[data-lv15-review][data-lv15-tart-room] .smcv3-hero{height:210px!important;margin-bottom:22px!important}
+#sigil-model-console-v3[data-lv15-world][data-lv15-review][data-lv15-tart-room] .smcv3-hero__image{object-position:68% 32%!important}
+@media(max-width:600px){#sigil-model-console-v3[data-lv15-world][data-lv15-review][data-lv15-tart-room] .smcv3-hero__image{object-position:center 12%!important}}
+#sigil-model-console-v3[data-lv15-review] .smcv3-summary{border:0!important;border-bottom:1px solid var(--v15-line)!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;padding:14px 0 18px!important}
+#sigil-model-console-v3[data-lv15-review] .smcv3-state{border:1px solid var(--v15-line)!important;border-radius:6px!important;background:var(--v15-panel)!important;box-shadow:none!important;padding:18px!important}
+#sigil-model-console-v3[data-lv15-review] .smcv3-card{border-radius:6px!important;box-shadow:none!important}
+#sigil-model-console-v3[data-lv15-review] [data-primary-actions]>button{min-height:50px!important;border-radius:6px!important}
+#sigil-model-console-v3[data-lv15-review] .smcv3-copy{line-height:1.7!important}
+#sigil-model-console-v3[data-lv15-review] :is(.smcv3-h1,.smcv3-h2){font-size:24px!important;line-height:1.4!important}
+#sigil-model-console-v3[data-lv15-review] [data-primary-actions]>button,#mmd-model-home-v4[data-lv15-review] .mmprimary{border-radius:8px!important;min-height:48px!important;white-space:normal;overflow-wrap:anywhere;box-shadow:none!important}
+[data-lv15-review] :is(input,select,textarea){font-family:var(--v15-ui)!important}
+[data-lv15-review] :is(h1,h2,h3,p,button,a,dt,dd,span,label){font-family:var(--v15-ui)!important;letter-spacing:0!important}
+#mmd-model-home-v4[data-lv15-review] .mm-lv-atmosphere{display:none!important}
+#mmd-model-home-v4[data-lv15-review] :is(.mm-lv-work,.mm-lv-panel){background:var(--v15-panel)!important}
+#mmd-model-home-v4[data-lv15-review] .mm-lv-work:before,#mmd-model-home-v4[data-lv15-review] .mm-lv-work:after{display:none!important}
+#mmd-model-home-v4[data-lv15-review] .lv15-review-hero{height:210px!important;margin-bottom:22px!important}
+#mmd-model-home-v4[data-lv15-review] .lv15-review-hero img{object-position:70% 36%!important}
+#mmd-model-home-v4[data-lv15-review] .mm-lv-work{border:0!important;border-top:1px solid var(--v15-line)!important;background:transparent!important;padding:18px 0!important}
+#mmd-model-home-v4[data-lv15-review] .mm-lv-work h2{font-size:22px!important;line-height:1.4!important}
+#mmd-model-home-v4[data-lv15-review] .mmreconfirm{background:var(--v15-panel)!important;border:1px solid var(--v15-line)!important;border-radius:6px!important;padding:16px!important}
+#mmd-model-home-v4[data-lv15-review] .mmverify-actions{display:flex!important;flex-wrap:wrap!important;gap:12px!important;align-items:center!important}
+#mmd-model-home-v4[data-lv15-review] .mmverify-actions [data-mm-console]{display:flex!important;justify-content:center!important;align-items:center!important;min-height:50px!important;flex:1 1 200px!important;background:#d1bb92!important;color:#171713!important}
+#mmd-model-home-v4[data-lv15-review] .mmverify-actions a:not([data-mm-console]){min-height:44px;display:flex;align-items:center}
+#mmd-model-home-v4[data-lv15-review] .mm-lv-dock{border-radius:8px!important}
+[data-lv15-review] .row>*{min-width:0;overflow-wrap:anywhere}
+@media(max-width:650px){
+  #mmd-model-home-v4[data-lv15-review] .mmhome-shell{padding-inline:18px!important}
+  [data-lv15-review] .lv15-review-hero{width:100%!important}
+  #sigil-model-console-v3[data-lv15-review][data-lv15-tart-room] .smcv3-hero,[data-lv15-review] .lv15-review-hero{height:150px!important}
+  [data-lv15-review] :is(.lv15-my,.lv15-model){font-size:18px!important}
+  #mmd-model-home-v4[data-lv15-review] .lv15-review-hero{height:190px!important}
+  #sigil-model-console-v3[data-lv15-review][data-lv15-tart-room] .smcv3-hero{height:190px!important}
+}
 `;
 
-export function installModelLv15(doc = document) {
+export function installModelLv15(doc = document, {consoleOnly = false,localTartRoom = false,reviewSkin = false,tartRoomUrl = ''} = {}) {
   const win = doc.defaultView;
   if (!win) return null;
-  const roots = Array.from(doc.querySelectorAll('#mmd-model-home-v4,#sigil-model-console-v3,.app[data-mmd-app-digital]'));
+  const servedRoom = reviewSkin && tartRoomUrl === '/sigil/model/dashboard-assets/tart-review.png' ? tartRoomUrl : '';
+  const localRoom = localTartRoom && ['127.0.0.1','localhost','[::1]'].includes(doc.location.hostname);
+  const roots = Array.from(doc.querySelectorAll(consoleOnly ? '#sigil-model-console-v3' : '#mmd-model-home-v4,#sigil-model-console-v3,.app[data-mmd-app-digital]'));
   const skyline = '<svg class="lv15-skyline" viewBox="0 0 700 200" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true" focusable="false"><path d="M0 190h700M20 190V96h35v94m12 0V60h26v130m15 0V32h38v158m13 0V100h21v90m16 0V78h26v112m11 0V6h27v184m15 0V112h32v78m15 0V88h27v102m16 0V45h36v145m19 0V119h33v71m16 0V85h30v105m15 0V25h26v165m17 0V130h34v60m15 0V99h30v91m14 0V59h41v131"/></svg>';
   const accent = '<svg class="lv15-accent" viewBox="0 0 180 100" fill="none" stroke="currentColor" stroke-width=".8" aria-hidden="true" focusable="false"><path d="M9 90h164M22 90V45l29-18v63m0-44 40-24 38 24v44M91 22V7m0 0 59 35v48M66 90V59h20v31m15 0V59h15v31M34 48v14m0 7v14M137 45v38M9 96h164"/><path d="M4 36h25m113-20h30M162 9v14"/></svg>';
   function lane(session) {
@@ -157,7 +215,8 @@ export function installModelLv15(doc = document) {
     const privateWorld = world === 'private';
     const logo = root.querySelector('.lv15-parent-logo');
     if (logo) {
-      const url = privateWorld
+      const url = privateWorld && servedRoom
+        ? '/sigil/model/dashboard-assets/sigil-review-logo.png' : privateWorld
         ? 'https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90/6a0798f3b04827b18da9c500_LOGO%20SIGIL%20small.webp'
         : 'https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90/6a8ea257c27c93043f03e65c_04-mmd-prive-compact-m-symbol-gold.webp';
       if (logo.getAttribute('src') !== url) logo.src = url;
@@ -173,7 +232,27 @@ export function installModelLv15(doc = document) {
   for (const root of roots) {
     if (root.dataset.lv15Installed === '1') continue;
     root.dataset.lv15Installed = '1';
+    if (reviewSkin) root.dataset.lv15Review = '1';
     const isConsole = root.id === 'sigil-model-console-v3';
+    if(isConsole && (servedRoom || localRoom)){
+      const showRoom=()=>{
+        const image=root.querySelector('.smcv3-hero__image');
+        if(image){
+          image.src=reviewSkin && servedRoom?'https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a357b94de86294947105b58_Tart%20Console.webp':servedRoom || (reviewSkin?'/model-nightline-assets/tart-review.png':'/model-nightline-assets/tart-room.png');
+          if(reviewSkin && servedRoom && image.parentElement?.tagName!=='PICTURE'){
+            const picture=doc.createElement('picture');
+            const source=doc.createElement('source');
+            source.media='(max-width: 600px)';
+            source.srcset='https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a35f70ba2c1ec636a446949_ChatGPT%20Image%20Jun%2020%2C%202026%2C%2005_32_07%20AM.webp';
+            image.before(picture);picture.append(source,image);
+          }
+          image.dataset.tartRoom=servedRoom?'served':'local';root.dataset.lv15TartRoom=servedRoom?'served':'local';
+        }
+        if(reviewSkin && image) root.querySelector('.lv15-masthead')?.after(image.closest('.smcv3-hero'));
+      };
+      showRoom();
+      if(doc.readyState==='loading')doc.addEventListener('DOMContentLoaded',showRoom,{once:true});
+    }
     const isHome = root.id === 'mmd-model-home-v4';
     const shell = root.querySelector(isConsole ? '.smcv3-shell' : isHome ? '.mmhome-shell' : '.shell') || root;
     const oldHead = root.querySelector(isConsole ? '.smcv3-head' : isHome ? '.mm-lv-header' : '.top');
@@ -182,6 +261,21 @@ export function installModelLv15(doc = document) {
     masthead.innerHTML = '<div class="lv15-rain" aria-hidden="true"></div><div class="lv15-topline"><img class="lv15-parent-logo" alt="MMD Privé" width="54" height="45"><div class="lv15-controls"></div></div><div class="lv15-index"><span>DIGITAL MODEL WORKSPACE</span><span>BANGKOK / TH</span></div><a class="lv15-wordmark" href="/sigil/model/dashboard" aria-label="MY MODEL Home"><span class="lv15-my" lang="en">MY</span><span class="lv15-model" lang="en">MODEL</span></a><div class="lv15-brandline"><p class="lv15-slogan" lang="en">Your work.<br>In focus.</p><span class="lv15-world-label"></span></div>' + skyline;
     if (oldHead) masthead.querySelector('.lv15-controls').append(oldHead);
     (isConsole ? root : shell).prepend(masthead);
+    if (isConsole && reviewSkin) {
+      const hero = root.querySelector('.smcv3-hero');
+      if (hero) masthead.after(hero);
+    }
+    if (isHome && reviewSkin && (servedRoom || localRoom)) {
+      const hero = doc.createElement('div');
+      hero.className = 'lv15-review-hero';
+      const image = doc.createElement('img');
+      image.src = servedRoom || '/model-nightline-assets/tart-review.png';
+      image.alt = 'TarT ใน Tart Room';
+      image.width = 1672;
+      image.height = 941;
+      hero.append(image);
+      masthead.after(hero);
+    }
     const credits = doc.createElement('footer');
     credits.className = 'lv15-credits';
     credits.innerHTML = '<strong>MY MODEL</strong><p class="lv15-credit"></p><p class="lv15-tagline">Discreet by Desire. Elegant by Choice.</p>';
