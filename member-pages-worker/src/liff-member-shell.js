@@ -1052,20 +1052,27 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
     return result;
   }
 
-  // Member session cookies rotate on every authenticated read and the prior cookie is
-  // retired immediately. Parallel reads would reuse one cookie and lose with 401, so
-  // session-bound reads run one at a time and each picks up the latest Set-Cookie.
+  // Rotating-session endpoints stay serialized so each picks up the latest
+  // Set-Cookie. The exact non-rotating editorial GET below is the only exception.
   // Keep the credential lane locked through headers AND body. A timeout aborts
   // the actual request; it must never release a second read alongside a live one.
   function memberApiFetch(url, init = {}) {
     const valid = arguments[2] || (() => true);
+    const method = String(init.method || "GET").toUpperCase();
+    const path = String(url).split("?")[0];
+    // This exact editorial GET authenticates without rotating the session. Wait
+    // for earlier auth work, but do not make History wait for the CMS response.
+    const editorialRead = method === "GET" && path === "/api/member/app/updates";
+    // Server verification (5s) and the shared status/profile resolver budget
+    // (12s) can legitimately exceed the ordinary read deadline. Never replay.
+    const deadlineMs = method === "POST" && path === "/member/api/liff/start" ? 30000 : 10000;
     const run = memberApiChain.then(async () => {
       if (!valid()) throw Object.assign(new Error("member_request_stale"), {code:"member_request_not_started"});
       const controller = new AbortController();
       const abort = () => controller.abort();
       if (init.signal?.aborted) abort();
       init.signal?.addEventListener("abort", abort, { once: true });
-      const timer = setTimeout(() => controller.abort(), 10000);
+      const timer = setTimeout(() => controller.abort(), deadlineMs);
       try {
         if (controller.signal.aborted) throw new Error("member_request_aborted");
         const response = await fetch(url, { ...init, signal: controller.signal });
@@ -1089,7 +1096,7 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
         init.signal?.removeEventListener("abort", abort);
       }
     });
-    memberApiChain = run.then(() => undefined, () => undefined);
+    if (!editorialRead) memberApiChain = run.then(() => undefined, () => undefined);
     return run;
   }
   async function readOwnHistoryPreview(profileRequestGeneration = profileGeneration) {

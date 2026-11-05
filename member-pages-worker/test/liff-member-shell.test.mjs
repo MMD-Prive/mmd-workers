@@ -196,7 +196,7 @@ describe("same-site /member/liff shell", () => {
   it("loads secondary member panels only after selection and reuses a successful read", async () => {
     const html = await (await shell("/member/liff?intent=status")).text();
     const start = html.indexOf("async function hydrateMemberHome(");
-    const end = html.indexOf("// Member session cookies rotate", start);
+    const end = html.indexOf("function memberApiFetch(", start);
     assert.ok(start > 0 && end > start);
     const calls = [];
     const read = (name) => async () => { calls.push(name); return { ok:true }; };
