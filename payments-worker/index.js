@@ -1,3 +1,4 @@
+import {doubleMomentTestDeadline} from './double-moment-test-access.js';
 import { requestSessionPaidProjection } from './session-paid-projection.js';
 /**
  * =========================================================
@@ -340,6 +341,7 @@ async function verifyConfirmToken(env, token, options = {}) {
     }
   }
 
+  await doubleMomentTestDeadline(env,payload.session_id,(options.nowSeconds ?? Math.floor(Date.now()/1000))*1000);
   return payload;
 }
 

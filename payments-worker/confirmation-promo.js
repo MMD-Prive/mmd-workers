@@ -1,4 +1,5 @@
 import { verifyConfirmToken } from "./index.js";
+import { beginDoubleMomentDiscount, executeDoubleMomentMutation } from "./double-moment-discount-lane.js";
 import { stablePaymentRef } from "./unified-payment-proof.js";
 import {
   SESSION_FIELDS,
@@ -61,6 +62,11 @@ export async function handleConfirmApplyPromo(request, env = {}, now = new Date(
     const session = await findSession(env, claims.session_id);
     if (!session?.id) return withCors(request, env, json({ ok: false, error: "session_not_found" }, 404));
     const fields = session.fields || {};
+    if (env.DOUBLE_MOMENT_COORDINATOR && !env.DOUBLE_MOMENT_DISCOUNT_EXECUTOR) {
+      return executeDoubleMomentMutation(env, fields, claims.session_id, new Request(request.url, {
+        method: request.method, headers: request.headers, body: JSON.stringify(body),
+      }), "coupon");
+    }
 
     const sessionPaymentRef = text(fields[field(env.AT_SESSIONS__PAYMENT_REF, SESSION_FIELDS.paymentRef)], 200);
     const finalPaymentRef = await stablePaymentRef(claims.session_id, "final");
@@ -87,6 +93,8 @@ export async function handleConfirmApplyPromo(request, env = {}, now = new Date(
     const prior = parseMarkedJson(note, PROMO_LABEL);
     if (prior?.source === "care_back") {
       if (clean(prior.code).toUpperCase() === code) {
+        const lane = await beginDoubleMomentDiscount(env, fields, claims.session_id, claims.session_id + ":" + code);
+        await lane?.complete();
         return withCors(request, env, json({ ok: true, applied: true, already_applied: true, ...summary(pricing) }));
       }
       return fail(request, env, 409, "promo_already_applied");
@@ -108,7 +116,9 @@ export async function handleConfirmApplyPromo(request, env = {}, now = new Date(
     const secret = clean(env.AUTH_SERVICE_PAYMENTS_TO_MEMBER_PAGES);
     if (secret.length < 32 || !env.MEMBER_PAGES_WORKER?.fetch) return fail(request, env, 503, "promo_service_not_configured");
 
+    const discountLane = await beginDoubleMomentDiscount(env, fields, claims.session_id, claims.session_id + ":" + code);
     const upstream = await env.MEMBER_PAGES_WORKER.fetch(new Request(MEMBER_PAGES_REDEEM_URL, {
+      signal: env.DOUBLE_MOMENT_DISCOUNT_EXECUTOR ? AbortSignal.timeout(8000) : undefined,
       method: "POST",
       headers: { "content-type": "application/json", [SERVICE_HEADER]: secret },
       body: JSON.stringify({
@@ -139,6 +149,7 @@ export async function handleConfirmApplyPromo(request, env = {}, now = new Date(
     const oldDue = numberOrNull(fields[SESSION_FIELDS.customerAmountDueThb]);
     if (oldDue !== null && oldDue === numberOrNull(pricing.balance_thb)) patch[SESSION_FIELDS.customerAmountDueThb] = next.balance_thb;
     await patchSession(env, session.id, patch);
+    await discountLane?.complete();
 
     return withCors(request, env, json({ ok: true, applied: true, already_applied: false, ...summary(next) }));
   } catch (error) {
@@ -235,6 +246,7 @@ async function patchSession(env, recordId, fields) {
   const apiKey = clean(env.AIRTABLE_API_KEY, 5000);
   if (!baseId || !apiKey) throw Object.assign(new Error("airtable_not_ready"), { status: 503 });
   const req = new Request(`${AIRTABLE_API}/${baseId}/${encodeURIComponent(tableId)}/${encodeURIComponent(recordId)}`, {
+    signal: env.DOUBLE_MOMENT_DISCOUNT_EXECUTOR ? AbortSignal.timeout(8000) : undefined,
     method: "PATCH",
     headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
     body: JSON.stringify({ fields, typecast: false }),

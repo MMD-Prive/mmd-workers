@@ -21,6 +21,7 @@ import {
 import { notifyPartnerJobAfterOfficialVerify } from "./partner-job-confirm.js";
 import { BLACKCARD_COMPANION_PREFERENCE_PATH, handleBlackCardCompanionPreference } from "./blackcard-companion-preference.js";
 import { constantTimeEqual, formulaValue, httpError } from "./lib/payment-primitives.js";
+import { isWritablePaymentAmountField, readPaymentCashAmount } from "../shared/payment-cash-receipt.mjs";
 export { PointsPhase1Coordinator } from "./points-phase1.js";
 
 const NOTIFY_PATH = "/v1/payments/notify";
@@ -33,7 +34,6 @@ const CANCELLATION_CREDIT_RECOVERY = Object.freeze({
   sessionsTable: "tblC98mKWbzmPuNzX",
   paymentRef: "fldOO6SY49iDw8VBZ",
   paymentClient: "fldcrLuJijj7xr0y8",
-  paymentAmountReceived: "fld5rTIVEF1DXwfe2",
   paymentVerification: "fldJ7a0Ube9F0bmRy",
   paymentSessionId: "fld2wdhBvc8xrV6y5",
   paymentDepositStatus: "fldD0mQWTfdmyBAeT",
@@ -172,6 +172,7 @@ async function handleHistoricalReviewedSlip(request, env, ctx) {
 
     let recoverySession = null;
     if (cancellationCreditRecovery) {
+      if (!isWritablePaymentAmountField(env.AT_PAYMENTS__AMOUNT)) throw httpError(503, "recovery_cash_amount_field_not_writable");
       recoverySession = await validateCancellationCreditRecoverySubject(env, {
         sessionId,
         clientRecordId: recoveryClientRecordId,
@@ -468,14 +469,18 @@ async function finalizeCancellationCreditRecoveryPayment(env, {
     throw httpError(409, "recovery_payment_write_client_mismatch");
   }
 
+  const writtenCash = readPaymentCashAmount(payment, env.AT_PAYMENTS__AMOUNT);
+  if (writtenCash === null || Math.round(writtenCash * 100) !== Math.round(amountThb * 100)) {
+    throw httpError(409, "recovery_payment_write_amount_mismatch");
+  }
+
   const verifiedAt = new Date().toISOString();
   await recoveryAirtableRequest(env, recoveryPaymentsTable(env), `/${encodeURIComponent(payment.id)}`, {
     method: "PATCH",
     body: {
       fields: {
         [CANCELLATION_CREDIT_RECOVERY.paymentClient]: [clientRecordId],
-        [CANCELLATION_CREDIT_RECOVERY.paymentAmountReceived]: amountThb,
-        [CANCELLATION_CREDIT_RECOVERY.paymentVerification]: "official_verified",
+        [CANCELLATION_CREDIT_RECOVERY.paymentVerification]: "verified",
         [CANCELLATION_CREDIT_RECOVERY.paymentDepositStatus]: "official_verified",
         [CANCELLATION_CREDIT_RECOVERY.paymentOfficialAt]: verifiedAt,
         [CANCELLATION_CREDIT_RECOVERY.paymentOfficialRef]: paymentRef,

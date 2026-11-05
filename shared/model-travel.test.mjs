@@ -206,10 +206,43 @@ test('upload rejects metadata, spoofed MIME, wrong bytes and oversize streams', 
   assert.equal((await projectTravel(env, record, 'model')).photos_used, 0);
 });
 
+test('arrival supports private meeting-point photos and messages without restarting ETA or changing the appointment', async () => {
+  const {env,record} = travelFixture(), spec = await photoSpec();
+  record.fields.model_session_state = 'arrived';
+  record.fields.location_name = 'Agreed meeting point';
+  const before = structuredClone(record);
+  const prepared = await prepareTravelSubmission(env, record, MODEL, input('fixture-arrival-photo', 'Please confirm the entrance', [spec]));
+  await uploadTravelPhoto(env, record, MODEL, prepared.id, 0, putRequest());
+  await commitTravelSubmission(env, record, MODEL, prepared.id);
+  const model = await projectTravel(env, record, 'model'), customer = await projectTravel(env, record);
+  assert.equal(model.can_send, true);
+  assert.equal(model.eta.status, 'inactive');
+  assert.equal(model.eta.arrival_at, null);
+  assert.equal(customer.can_send, true);
+  assert.equal(customer.submissions[0].text, 'Please confirm the entrance');
+  assert.equal(customer.submissions[0].photos.length, 1);
+  assert.equal((await travelPhotoResponse(env, record, prepared.id + '_0')).status, 200);
+  assert.deepEqual(record, before);
+  assert.equal(model.messages_remaining, 2);
+  assert.equal(model.photos_remaining, 2);
+  record.fields.model_session_state = 'met_customer';
+  assert.equal((await projectTravel(env, record, 'model')).can_send, false);
+  await assert.rejects(prepareTravelSubmission(env, record, MODEL, input('fixture-after-meeting')), /travel_not_allowed/);
+});
+
+test('an arrival reservation cannot upload or commit after meeting the customer', async () => {
+  const {env,record} = travelFixture(), spec = await photoSpec();
+  record.fields.model_session_state = 'arrived';
+  const prepared = await prepareTravelSubmission(env, record, MODEL, input('fixture-arrival-race', '', [spec]));
+  record.fields.model_session_state = 'met_customer';
+  await assert.rejects(uploadTravelPhoto(env, record, MODEL, prepared.id, 0, putRequest()), /travel_not_allowed/);
+  await assert.rejects(commitTravelSubmission(env, record, MODEL, prepared.id), /travel_not_allowed/);
+});
+
 test('ownership, canonical conflicts, finished lifecycle and customer-safe projection fail closed', async () => {
   const { env, record } = travelFixture();
   await assert.rejects(prepareTravelSubmission(env, record, 'recAnother', input()), /forbidden/);
-  for (const state of ['confirmed', 'arrived', 'completed', 'cancelled', 'work_started']) {
+  for (const state of ['confirmed', 'met_customer', 'completed', 'cancelled', 'work_started']) {
     record.fields.model_session_state = state;
     await assert.rejects(prepareTravelSubmission(env, record, MODEL, input()), /not_allowed/);
   }

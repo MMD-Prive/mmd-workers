@@ -56,7 +56,8 @@ import {
   handleDoubleMomentRequest,
   isDoubleMomentRequest,
   reconcileDoubleMomentReviewedProof,
-} from "./double-moment-purchase-v1.js";
+} from "./double-moment-v2.js";
+export { DoubleMomentCoordinator } from "./double-moment-v2.js";
 import {
   handleFinalPaymentFlow,
   isFinalPaymentFlowRequest,

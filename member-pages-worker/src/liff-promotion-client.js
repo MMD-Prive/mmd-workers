@@ -15,15 +15,17 @@ export async function loadDoubleMomentCard(request = globalThis.fetch) {
     const offer = await response.json();
     if (!response.ok || offer.ok !== true) throw new Error("unavailable");
     if (offer.status === "already_activated") { note.textContent = "บัญชีนี้รับ Double Moment แล้ว ตรวจสอบเครดิตที่ Wallet ได้ครับ"; return; }
-    const keys = ["amount_thb", "paid_credit_thb", "bonus_1_thb", "bonus_2_thb", "total_credit_thb", "minimum_service_thb", "validity_days"];
+    const v3=offer.policy_version==='v3';
+    const keys = ["amount_thb", "paid_credit_thb", "bonus_1_thb", "bonus_2_thb", "total_credit_thb", "minimum_service_thb", ...(v3?['validity_months','maximum_validity_months','moments','paid_credit_per_moment_thb']:['validity_days'])];
+    if(v3&&(offer.validity_months!==3||offer.maximum_validity_months!==5||offer.moments!==2||offer.paid_credit_per_moment_thb!==10000))throw new Error('invalid_policy');
     if (offer.status !== "ready" || offer.payment_available !== true || offer.package_code !== "double_moment_20000" || keys.some(key => !Number.isInteger(offer[key]) || offer[key] <= 0)) throw new Error("invalid_offer");
-    for (const [label, value] of [["ชำระครั้งนี้", money(offer.amount_thb)], ["เครดิตที่ซื้อ", money(offer.paid_credit_thb)], ["โบนัสครั้งที่ 1", money(offer.bonus_1_thb)], ["โบนัสครั้งที่ 2", money(offer.bonus_2_thb)], ["รวมเครดิตบริการ", money(offer.total_credit_thb)], ["อายุเครดิต", offer.validity_days + " วัน หลังออกเครดิต"]]) {
+    for (const [label, value] of [["ชำระครั้งนี้", money(offer.amount_thb)], ["เครดิตที่ซื้อ", money(offer.paid_credit_thb)], ...(v3?[["แบ่งใช้", "2 ครั้ง ครั้งละ 10,000 บาท"]]:[]), ["โบนัสครั้งที่ 1", money(offer.bonus_1_thb)], ["โบนัสครั้งที่ 2", money(offer.bonus_2_thb)], ["รวมเครดิตบริการ", money(offer.total_credit_thb)], ["อายุเครดิต", v3?"3 เดือนนับจากออกเครดิต":offer.validity_days + " วัน หลังออกเครดิต"]]) {
       const row = document.createElement("div"); row.className = "renewal-row";
       const name = document.createElement("span"); name.textContent = label;
       const amount = document.createElement("b"); amount.textContent = value;
       row.append(name, amount); rows.append(row);
     }
-    note.textContent = "เครดิตบริการ ไม่ใช่เงินสด · โบนัสแต่ละครั้งใช้กับคนละงานที่ยืนยันแล้ว ยอดบริการขั้นต่ำ " + money(offer.minimum_service_thb) + " ต่อครั้ง · 1 แพ็กเกจต่อสมาชิกต่อแคมเปญ · คืนเงินไม่ได้ · เครดิตและโบนัสออกหลังยืนยันการชำระเท่านั้น · ไม่มีคูปองเพิ่มอัตโนมัติ";
+    note.textContent = "เครดิตบริการ ไม่ใช่เงินสด · ใช้กับคนละงานที่ยืนยันแล้ว ยอดบริการขั้นต่ำ " + money(offer.minimum_service_thb) + " ต่อครั้ง · ซื้อได้ตามรอบสิทธิ์ที่อนุมัติ · ใช้หลายชุดกับงานเดียวกันไม่ได้ · คืนเงินไม่ได้ · เครดิตและโบนัสออกหลังยืนยันการชำระเท่านั้น" + (v3?" · เปอร์พิจารณาขยายได้ไม่เกิน 5 เดือนนับจากออกเครดิต ไม่ขยายอัตโนมัติ":"");
     button.textContent = "ชำระ " + money(offer.amount_thb) + " →";
     button.hidden = false; button.disabled = false;
     let purchasing = false;

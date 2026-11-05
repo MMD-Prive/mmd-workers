@@ -9,6 +9,10 @@ import { normalizeModelDecline } from '../shared/model-decline-options.mjs';
 import { openModelDecline } from '../webflow/sigil/model/model-console-decline-options.mjs';
 import { mountConsoleHero } from '../webflow/sigil/model/model-console-hero.mjs';
 import { installModelTravelReceiptNotice } from '../webflow/sigil/model/model-console-travel-receipt.mjs';
+import { installConsoleCustomerUpdates } from '../webflow/sigil/model/model-console-customer-updates.mjs';
+import {renderModelJobBrief} from '../webflow/sigil/model/model-job-brief.mjs';
+import { LV15_FONT_FACES } from '../webflow/sigil/model/model-lv15-fonts.mjs';
+import {mountMeetingDetails} from '../shared/model-meeting-client.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const source = path.join(root, 'webflow/sigil/model');
 const assets = path.join(source, 'console-atelier');
@@ -27,13 +31,9 @@ export function buildConsoleEmbed() {
   const illustrations = Object.fromEntries(Object.entries(names).map(([key, file]) => [key, fs.readFileSync(path.join(assets, file), 'utf8').trim()]));
   const sprite = fs.readFileSync(path.join(assets, 'icons.svg'), 'utf8');
   illustrations.icons = Object.fromEntries([...sprite.matchAll(/<symbol id="([^"]+)"[^>]*>(.*?)<\/symbol>/gs)].map(([, id, body]) => [id, body]));
-  const css = fs.readFileSync(path.join(source, 'model-console-atelier-v3.css'), 'utf8');
   const skin = fs.readFileSync(path.join(source, 'model-console-atelier-v3.js'), 'utf8');
   const runtime = fs.readFileSync(path.join(source, 'model-console-v3-i18n.js'), 'utf8');
-  const compactCss = new CleanCSS({ level: 2 }).minify(css + travelClientCss);
-  if (compactCss.errors.length) throw new Error(compactCss.errors.join('; '));
-  const style = consoleStyleSource(compactCss.styles);
-  const js = '(()=>{' + style + 'const consoleAtelierAssets=' + JSON.stringify(illustrations) + ';\n' + skin + '\n' + travelClientBundle() + '\n' + runtime + '\n})();';
+  const js = '(()=>{const renderModelJobBrief='+renderModelJobBrief.toString()+';const consoleAtelierAssets=' + JSON.stringify(illustrations) + ';\n' + skin + '\n' + travelClientBundle(false,false) + '\n' + runtime + '\n})();';
   const compact = minify_sync(js, { compress: { passes: 2 }, mangle: { reserved: ['consoleAtelierAssets', 'renderConsoleAtelier'], properties: { regex: /^_tr/ } }, format: { comments: false, ascii_only: false } }).code;
   const embed = '<!-- MY MODEL LV9 travel + Console V3 -->\n<script>' + compact + '</script>';
   if (Buffer.byteLength(embed, 'utf8') >= 50000) throw new Error(`Console Embed exceeds 50,000 bytes: ${Buffer.byteLength(embed, 'utf8')}`);
@@ -47,8 +47,10 @@ export function assetManifest() {
 }
 // A separate presentation embed avoids overflowing the existing Console Footer.
 export function buildConsoleDeclineEmbed() {
-  const code = '(()=>{const normalizeModelDecline=' + normalizeModelDecline.toString() + ';window.MMDConsoleDecline=' + openModelDecline.toString() + ';const mountConsoleHero=' + mountConsoleHero.toString() + ';const installModelTravelReceiptNotice=' + installModelTravelReceiptNotice.toString() + ';if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",()=>mountConsoleHero(),{once:true});else mountConsoleHero();installModelTravelReceiptNotice();})();';
-  const css = new CleanCSS({ level: 2 }).minify(fs.readFileSync(path.join(source, 'model-console-surfaces.css'), 'utf8'));
+  const code = '(()=>{window.MMDMeetingDetails='+mountMeetingDetails.toString()+';const normalizeModelDecline=' + normalizeModelDecline.toString() + ';window.MMDConsoleDecline=' + openModelDecline.toString() + ';const mountConsoleHero=' + mountConsoleHero.toString() + ';const installModelTravelReceiptNotice=' + installModelTravelReceiptNotice.toString() + ';const installConsoleCustomerUpdates='+installConsoleCustomerUpdates.toString()+';installConsoleCustomerUpdates();if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",()=>mountConsoleHero(),{once:true});else mountConsoleHero();installModelTravelReceiptNotice();})();';
+  const fonts=LV15_FONT_FACES.filter(([family])=>['Outfit','Noto Sans Thai'].includes(family)).map(([family,weight,url,format])=>
+    `@font-face{font-family:"${family}";font-style:normal;font-weight:${weight};font-display:swap;src:url("${url}") format("${format}")}`).join('\n');
+  const css = new CleanCSS({ level: 2 }).minify(fonts+'\n'+fs.readFileSync(path.join(source, 'model-console-atelier-v3.css'), 'utf8')+'\n'+travelClientCss+'\n'+fs.readFileSync(path.join(source, 'model-console-surfaces.css'), 'utf8'));
   if (css.errors.length) throw new Error(css.errors.join('; '));
   const embed = '<style>' + css.styles + '</style><script>' + minify_sync(code, { compress: true, mangle: true }).code + '</script>';
   if (Buffer.byteLength(embed, 'utf8') >= 50000) throw new Error('Console theme embed exceeds 50,000 bytes');

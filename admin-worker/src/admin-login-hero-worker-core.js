@@ -102,6 +102,7 @@ import {
 export const ADMIN_LOGIN_PAGE_PATH = "/internal/admin/login";
 export const SIGIL_ADMIN_LOGIN_PAGE_PATH = "/sigil/internal/admin/login";
 export const ADMIN_DASHBOARD_API_PATH = "/v1/admin/dashboard";
+export const ADMIN_OWNER_DASHBOARD_PATH = "/internal/admin/dashboard";
 export {
   ADMIN_LOGIN_SESSION_PATH,
   APPROVED_ADMIN_LOGIN_APPLE_TOUCH_ICON,

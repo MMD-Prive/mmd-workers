@@ -1,6 +1,6 @@
 import { readTravelSession, travelBinding, travelState, travelError } from './model-travel-store.mjs';
 
-export const travelNoticeLabels = Object.freeze({ submission: 'โมเดลส่งข้อความหรือภาพเพิ่มเติมเกี่ยวกับงาน', start_travel: 'โมเดลเริ่มเดินทางแล้ว', mark_nearby: 'โมเดลแจ้งว่าใกล้ถึงแล้ว', mark_arrived: 'โมเดลถึงแล้ว', eta: 'โมเดลอัปเดตเวลาคาดว่าจะถึง' });
+export const travelNoticeLabels = Object.freeze({ submission: 'โมเดลส่งข้อความหรือภาพเพิ่มเติมเกี่ยวกับงาน', start_travel: 'โมเดลเริ่มเดินทางแล้ว', mark_nearby: 'โมเดลแจ้งว่าใกล้ถึงแล้ว', mark_arrived: 'โมเดลถึงแล้ว', eta: 'โมเดลอัปเดตเวลาคาดว่าจะถึง', report_wrong_location:'โมเดลแจ้งไปผิดสถานที่ กำลังเดินทางไปสถานที่นัดเดิม เปิดดูจุดปัจจุบันและเวลาถึงใหม่ในงานของคุณ', confirm_separated: 'โมเดลยืนยันแยกย้ายแล้ว กรุณาเปิดงานเพื่ออนุมัติจบงานและให้รีวิวส่วนตัว' });
 
 export async function deliverTravelNotice(env, input) {
   if (!travelNoticeLabels[input?.kind] || !/^[0-9a-f-]{36}$/.test(input.retry_key || '')) throw travelError('travel_notice_invalid', 400);

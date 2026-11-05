@@ -1,0 +1,66 @@
+/* Complete Aftercare surface; all selectors stay inside this page owner. */
+#sigil-aftercare-room.sac{--ink:#fff8ed;--muted:#d0c9bf;--soft:#aaa99e;--gold:#d1b77e;--line:#3f4640;--line2:#566158;--page:#0d1210;--panel:#18201b;--ui:"Outfit","Noto Sans Thai",sans-serif;--thai:"Noto Sans Thai",sans-serif;--display:"Playfair Display",Georgia,serif;position:relative;isolation:isolate;min-height:100svh;background:var(--page);color:var(--ink);font:400 16px/1.8 var(--ui);font-synthesis:none;letter-spacing:0;overflow-wrap:anywhere;color-scheme:dark}
+#sigil-aftercare-room.sac *,#sigil-aftercare-room.sac *::before,#sigil-aftercare-room.sac *::after{box-sizing:border-box;letter-spacing:0}
+#sigil-aftercare-room.sac [hidden]{display:none!important}
+#sigil-aftercare-room.sac a{color:var(--gold);text-decoration:none}
+#sigil-aftercare-room.sac :is(button,input,textarea){font:inherit}
+#sigil-aftercare-room.sac :is(a,button,textarea,summary):focus-visible{outline:3px solid var(--gold);outline-offset:4px}
+#sigil-aftercare-room.sac .sac-wrap{width:calc(100% - 40px);max-width:1100px;margin-inline:auto}
+#sigil-aftercare-room.sac .sac-bg{position:absolute;inset:0 0 auto;height:580px;z-index:-1;pointer-events:none;background:linear-gradient(0deg,var(--page),rgba(13,18,16,.4)),var(--sac-bg-img) center 40%/cover no-repeat}
+#sigil-aftercare-room.sac :is(.sac-glow,.sac-gridline){display:none}
+#sigil-aftercare-room.sac .sac-top{display:flex;align-items:center;justify-content:space-between;gap:20px;min-height:84px;padding-block:18px;border-bottom:1px solid var(--line)}
+#sigil-aftercare-room.sac .sac-brand{display:flex;align-items:center;min-width:0;min-height:44px}
+#sigil-aftercare-room.sac .sac-brand svg{display:block;width:216px;max-width:100%;height:auto}
+#sigil-aftercare-room.sac .sac-brand svg+.sac-brand-text{display:none}
+#sigil-aftercare-room.sac .sac-brand-text{font-family:var(--display);font-size:20px}
+#sigil-aftercare-room.sac .sac-pill{color:var(--muted);font-size:11px;white-space:nowrap}
+#sigil-aftercare-room.sac .sac-hero{min-height:0;padding-bottom:32px}
+#sigil-aftercare-room.sac .sac-hero-grid{display:grid;gap:28px;padding-top:32px;align-items:end}
+#sigil-aftercare-room.sac .sac-kicker,#sigil-aftercare-room.sac .sac-label{margin:0 0 8px;font:500 11px/1.5 var(--ui);color:var(--gold)}
+#sigil-aftercare-room.sac :is(h1,h2,h3){margin:0;font-family:var(--thai);font-weight:600;line-height:1.6;color:var(--ink);-webkit-text-fill-color:currentColor}
+#sigil-aftercare-room.sac .sac2-title{font:400 64px/1.15 var(--display);margin:0 0 18px}
+#sigil-aftercare-room.sac .sac2-title br{display:none}
+#sigil-aftercare-room.sac h2{font-size:22px}
+#sigil-aftercare-room.sac h3{font-size:20px}
+#sigil-aftercare-room.sac p{margin:8px 0 18px;color:var(--muted);font-size:15px;line-height:1.85}
+#sigil-aftercare-room.sac .sac-lead{max-width:560px}
+#sigil-aftercare-room.sac .sac-actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:18px 0 0}
+#sigil-aftercare-room.sac .sac-btn{display:inline-flex;justify-content:center;align-items:center;min-height:48px;max-width:100%;border:1px solid var(--line2);border-radius:6px;padding:11px 17px;background:transparent;color:var(--ink);font:500 15px/1.7 var(--ui);text-align:center;white-space:normal;cursor:pointer;text-decoration:none}
+#sigil-aftercare-room.sac .sac-primary{background:var(--gold);border-color:var(--gold);color:#172019;-webkit-text-fill-color:#172019}
+#sigil-aftercare-room.sac .sac-ghost{background:var(--panel)}
+#sigil-aftercare-room.sac button:disabled{cursor:not-allowed;opacity:.55}
+#sigil-aftercare-room.sac .sac-card{padding-block:20px;border-top:1px solid var(--line)}
+#sigil-aftercare-room.sac .sac-mini{display:grid;grid-template-columns:64px minmax(0,1fr);gap:8px 14px;font-size:14px;margin-top:18px}
+#sigil-aftercare-room.sac .sac-mini span{color:var(--soft)}
+#sigil-aftercare-room.sac .sac-mini strong{font-weight:500}
+#sigil-aftercare-room.sac .sac-panel{padding:28px 0;border-top:1px solid var(--line);scroll-margin-top:18px}
+#sigil-aftercare-room.sac .sac2-status{gap:18px}
+#sigil-aftercare-room.sac .sac2-badge{border-radius:5px;font:500 11px/1.4 var(--ui)}
+#sigil-aftercare-room.sac .sac2-optional{font-size:13px;font-weight:400}
+#sigil-aftercare-room.sac .sac-form-grid{display:grid;gap:24px;margin-top:24px}
+#sigil-aftercare-room.sac .sac-form-card{min-width:0}
+#sigil-aftercare-room.sac label{display:block;margin-bottom:10px;color:var(--ink);font-size:15px;font-weight:500}
+#sigil-aftercare-room.sac .sac2-stars{grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+#sigil-aftercare-room.sac .sac2-stars button{border-radius:6px;min-height:68px;font-family:var(--ui);transition:background .15s ease,color .15s ease}
+#sigil-aftercare-room.sac .sac2-stars button.is-on{box-shadow:none;background:#394333;color:#ffe1a4}
+#sigil-aftercare-room.sac .sac2-tags button{border-radius:6px;font:500 14px/1.5 var(--ui);min-height:44px;padding:9px 12px;max-width:100%;white-space:normal}
+#sigil-aftercare-room.sac .sac2-tags button.is-on{background:#394333}
+#sigil-aftercare-room.sac textarea{display:block;width:100%;min-height:130px!important;resize:vertical;padding:12px 14px;border:1px solid var(--line2);border-radius:6px;background:var(--panel);color:var(--ink);font:400 16px/1.8 var(--ui)}
+#sigil-aftercare-room.sac textarea::placeholder{color:var(--soft);opacity:1}
+#sigil-aftercare-room.sac .sac2-hint{font-size:12px;line-height:1.8}
+#sigil-aftercare-room.sac .sac2-care-box summary{min-height:48px;font-weight:500}
+#sigil-aftercare-room.sac .sac2-care-body{padding-block:14px 0}
+#sigil-aftercare-room.sac .sac2-care-body p{font-size:14px}
+#sigil-aftercare-room.sac .sac2-success{padding:20px;border-radius:6px;background:#1c2c20;border-color:#63775d}
+#sigil-aftercare-room.sac .sac2-success>span{font:500 11px/1.6 var(--ui)}
+#sigil-aftercare-room.sac .sac2-success p{font-size:15px}
+#sigil-aftercare-room.sac .sac2-submit-note{font-size:12px}
+#sigil-aftercare-room.sac fieldset:disabled{filter:none}
+#sigil-aftercare-room.sac .sac-toast{position:fixed;z-index:100;bottom:20px;left:50%;transform:translateX(-50%);width:max-content;max-width:calc(100% - 32px);padding:12px 18px;border-radius:6px;background:#eee5cc;color:#18201b;opacity:0;pointer-events:none;font-size:14px;text-align:center}
+#sigil-aftercare-room.sac .sac-toast.is-show{opacity:1}
+#sigil-aftercare-room.sac .mmd-signature-footer{padding:28px 20px;border-top:1px solid var(--line);text-align:center}
+#sigil-aftercare-room.sac .mmd-signature-footer p{font-size:12px;margin:5px 0}
+#sigil-aftercare-room.sac .mmd-signature-footer a{color:var(--gold)}
+@media(min-width:860px){#sigil-aftercare-room.sac .sac-hero-grid{grid-template-columns:1.15fr 1fr;gap:64px}#sigil-aftercare-room.sac .sac-form-grid{grid-template-columns:1fr 1fr}#sigil-aftercare-room.sac .is-wide{grid-column:1/-1}}
+@media(max-width:560px){#sigil-aftercare-room.sac .sac-top{flex-wrap:wrap;gap:8px;min-height:76px}#sigil-aftercare-room.sac .sac-brand svg{width:190px}#sigil-aftercare-room.sac .sac-wrap{width:calc(100% - 32px)}#sigil-aftercare-room.sac .sac2-title{font-size:48px}#sigil-aftercare-room.sac h2{font-size:20px}#sigil-aftercare-room.sac .sac-hero-grid{padding-top:24px}#sigil-aftercare-room.sac .sac-actions>.sac-primary{width:100%}#sigil-aftercare-room.sac .sac2-stars{gap:5px}#sigil-aftercare-room.sac .sac2-stars button{min-height:60px}}
+@media(prefers-reduced-motion:reduce){#sigil-aftercare-room.sac *{animation:none!important;transition:none!important;scroll-behavior:auto!important}}

@@ -54,7 +54,8 @@ function fixture({ staleProofClient = false, officialPayment = false } = {}) {
         "Payment Reference": PAYMENT_REF,
         fld2wdhBvc8xrV6y5: RECOVERY_SESSION_ID,
         fldcrLuJijj7xr0y8: [IDS.client],
-        fld5rTIVEF1DXwfe2: 4500,
+        fldvCSwrUW8OMAooS: 4500,
+        fld5rTIVEF1DXwfe2: 0,
         fldJ7a0Ube9F0bmRy: "official_verified",
         fldD0mQWTfdmyBAeT: "official_verified",
         fldPNK6qgxCSdaJRM: "2026-09-24T00:37:00.000Z",
@@ -248,4 +249,18 @@ test("credit handoff uses the payment-authority received amount and stable idemp
   assert.equal(state.calls.downstream[0].body.amount_thb, 4500);
   assert.equal(state.calls.downstream[0].body.reason, "client_cancel_no_penalty");
   assert.equal(state.calls.downstream[0].idempotency, `cancellation-credit:${IDS.proof}:${IDS.client}`);
+});
+
+for (const [name, mutate] of [
+  ['missing cash with a stale positive formula', f => {delete f.fldvCSwrUW8OMAooS; f.fld5rTIVEF1DXwfe2=4500;}],
+  ['unverified cash', f => {f.fldJ7a0Ube9F0bmRy='pending_review';}],
+  ['refunded cash', f => {f['Payment Status']='Refunded';}],
+  ['credit redemption', f => {f.payment_type='credit';}],
+]) test(`recovery rejects ${name} before issuing carry-forward credit`, async () => {
+  const state=fixture({officialPayment:true}); mutate(state.db.payments[0].fields);
+  const response=await handleCancellationCreditRecoveryRequest(request({action:'issue_credit',proof_id:PROOF_ID}),state.env,null,{
+    ...actorDeps,delegatedWorker:{fetch:async()=>{throw Error('credit writer must not run');}},
+  });
+  assert.equal(response.status,409); assert.equal((await response.json()).error.code,'RECOVERY_PAYMENT_NOT_OFFICIALLY_VERIFIED');
+  assert.equal(state.calls.creates.length,0); assert.equal(state.calls.patches.length,0);
 });

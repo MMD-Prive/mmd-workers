@@ -1,5 +1,5 @@
 // The Events Worker remains the only ETA writer. Both apps consume this contract.
-export function travelEtaFromEvents(value, now = Date.now()) {
+export function travelEtaFromEvents(value, now = Date.now(), binding = '') {
   const unavailable=()=>({status:'unavailable',server_now:new Date(now).toISOString(),arrival_at:null,updated_at:null});
   let events = value;
   if (typeof value === 'string') {
@@ -10,20 +10,24 @@ export function travelEtaFromEvents(value, now = Date.now()) {
     if (!Array.isArray(events)) return unavailable();
   }
   if(events!=null&&!Array.isArray(events))return unavailable();
-  let latest, invalidEta = false;
+  let latest, issue, invalidEta = false;
   for (const event of Array.isArray(events) ? events : []) {
     if (event?.event !== 'eta_update') continue;
     if(typeof event.ts!=='string' || !/^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/.test(event.ts)) { invalidEta = true; continue; }
     const minutes = Number(event?.eta_minutes), at = Date.parse(event?.ts);
     if (!['number','string'].includes(typeof event.eta_minutes) || !Number.isInteger(minutes) || minutes < 1 || minutes > 240 || !Number.isFinite(at)) { invalidEta = true; continue; }
     if (!latest || at >= latest.at) latest = { at, minutes };
+    const report=event.location_issue;
+    if (binding && report?.binding===binding && typeof report.current_place==='string' && report.current_place.trim() && report.current_place.length<=240 && typeof report.agreed_location==='string' && report.agreed_location.trim() && ['grab_taxi','private_car','other'].includes(report.transport_mode)
+      && (!issue || at>=issue.at)) issue={at,report};
   }
   const server_now = new Date(now).toISOString();
   if (!latest) return { status: invalidEta ? 'unavailable' : 'missing', server_now, arrival_at: null, updated_at: null };
   // A future event is not a trustworthy clock reference.
   if (latest.at > now + 60000) return { status: 'unavailable', server_now, arrival_at: null, updated_at: null };
   const arrival = latest.at + latest.minutes * 60000;
-  return { status: arrival > now ? 'active' : 'expired', server_now, arrival_at: new Date(arrival).toISOString(), updated_at: new Date(latest.at).toISOString() };
+  return { status: arrival > now ? 'active' : 'expired', server_now, arrival_at: new Date(arrival).toISOString(), updated_at: new Date(latest.at).toISOString(),
+    ...(issue && issue.at<=latest.at?{location_report:{current_place:issue.report.current_place,agreed_location:issue.report.agreed_location,transport_mode:issue.report.transport_mode,reported_at:new Date(issue.at).toISOString()}}:{}) };
 }
 
 // Self-contained so exactly the same formatter can be embedded in both clients.

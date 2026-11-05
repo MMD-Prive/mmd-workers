@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { SessionPaidProjectionState, requestSessionPaidProjection } from './session-paid-projection.js';
 import { BALANCE_FIELDS as F } from './verified-session-balance.js';
+import {REPORT_FIELDS, reportFieldMap, readSessionReport} from './session-report-projection.js';
 const sid = 'sess_projection_fixture';
 const session = () => ({ id: 'recSession', fields: { [F.sessionId]: sid, [F.total]: 13000, job_type: 'pn', Client: ['recClient'], [F.sessionStatus]: 'Pending' } });
 const payment = (id = 'deposit', amount = 4000, verified = true, stage = 'deposit') => ({ id: `rec-${id}`, fields: { [F.ref]: `pay_${id}`, [F.paymentSession]: sid, [F.amount]: amount, [F.stage]: stage, [F.verification]: verified ? 'verified' : 'pending_review', [F.status]: verified ? 'Paid' : 'Pending', Client: ['recClient'] } });
@@ -27,7 +28,10 @@ function harness() {
         assert.equal(table, 'sessions', 'no Payment/proof/verification writes');
         assert.equal(url.pathname.split('/')[4], s.id);
         assert.ok(st.alarmAt, 'recovery alarm persisted before any remote write'); assert.ok(st.data.has('pending'));
-        const body = await request.json(); assert.deepEqual(Object.keys(body.fields), [F.paidSum]); assert.equal(body.typecast, false);
+        const body = await request.json();
+        if (!h.reportMap || Object.hasOwn(body.fields,F.paidSum)) assert.deepEqual(Object.keys(body.fields), [F.paidSum]);
+        else assert.deepEqual(Object.keys(body.fields).sort(),Object.values(h.reportMap).sort());
+        assert.equal(body.typecast, false);
         patches.push(body.fields);
         if (patchFailure === 1) { patchFailure = 0; return Response.json({ error: 'temporary' }, { status: 503 }); }
         Object.assign(s.fields, body.fields);
@@ -38,6 +42,7 @@ function harness() {
       assert.equal(request.method, 'GET'); assert.ok(url.searchParams.get('filterByFormula'));
       if (table === 'sessions') return Response.json({ records: h.ambiguous ? [s, { ...s, id: 'other' }] : [s] });
       ledgerReads++;
+      if(h.ledgerUnavailable)return Response.json({error:'synthetic outage'},{status:503});
       const records = structuredClone(payments);
       const offset = h.truncated ? 'same-offset' : undefined;
       if (h.afterRead) h.afterRead(ledgerReads);
@@ -55,6 +60,73 @@ test('Ice T equivalent: one verified 4000 Payment updates only the cache, leavin
   assert.equal(r.body.status, 'updated'); assert.equal(r.body.paid_received_sum, 4000); assert.equal(r.body.remaining_amount_thb, 9000);
   assert.equal(r.body.payment_truth_changed, false); assert.deepEqual(h.payments, before);
   assert.deepEqual(h.patches, [{ [F.paidSum]: 4000 }]); assert.equal(h.st.alarmAt, null); assert.equal(h.st.data.has('pending'), false);
+});
+
+function reporting(h) {
+  h.reportMap=Object.fromEntries(Object.keys(REPORT_FIELDS).map((key,i)=>[key,'fld'+String(i).padStart(14,'0')]));
+  h.env.SESSION_REPORT_PROJECTION_ENABLED='true';h.env.SESSION_REPORT_FIELD_IDS=JSON.stringify(h.reportMap);
+  return h;
+}
+test('private report read rechecks changed price/payment and refuses stale data on HOLD or outage',async()=>{
+  const h=reporting(harness());
+  const read=()=>h.coordinator.fetch(new Request('https://private/report',{method:'POST',body:JSON.stringify({session_id:sid})}));
+  assert.equal((await (await read()).json()).balance.remaining_amount_thb,9000);
+  h.s.fields[F.total]=15000;
+  assert.equal((await (await read()).json()).balance.remaining_amount_thb,11000);
+  h.payments.push(payment('later',1000));
+  assert.equal((await (await read()).json()).balance.remaining_amount_thb,10000);
+  h.ledgerUnavailable=true;let r=await read();assert.equal(r.status,503);assert.equal((await r.json()).balance,null);
+  h.ledgerUnavailable=false;h.s.fields[F.sessionStatus]='Hold';r=await read();assert.equal(r.status,503);assert.equal((await r.json()).balance,null);
+});
+for (const status of ['Hold', 'Paused', 'Blocked']) test('report stops when '+status+' begins after initial invalidation',async()=>{
+  const h=reporting(harness()),before=structuredClone(h.payments);
+  h.afterPatch=()=>{h.s.fields[F.sessionStatus]=status;};
+  const response=await h.coordinator.fetch(new Request('https://private/report',{method:'POST',body:JSON.stringify({session_id:sid})}));
+  assert.equal(response.status,503);
+  assert.equal((await response.json()).balance,null);
+  assert.ok(h.patches.every(fields=>fields[h.reportMap.status]!=='verified'));
+  assert.equal(h.s.fields[F.paidSum],undefined);
+  assert.deepEqual(h.payments,before);
+});
+test('report writer stays disabled by default and requires a complete distinct field mapping',()=>{
+  assert.equal(reportFieldMap({}),null);
+  assert.throws(()=>reportFieldMap({SESSION_REPORT_PROJECTION_ENABLED:'true'}),/mapping_required/);
+  const h=reporting(harness());h.reportMap.status=F.paidSum;h.env.SESSION_REPORT_FIELD_IDS=JSON.stringify(h.reportMap);
+  assert.throws(()=>reportFieldMap(h.env),/mapping_invalid/);
+});
+test('report writer invalidates first, publishes one coherent snapshot and expires without reusing stale amounts',async()=>{
+  const h=reporting(harness()),before=structuredClone(h.payments);const r=await h.trigger();assert.equal(r.body.status,'updated');
+  assert.equal(h.patches[0][h.reportMap.status],'unavailable');assert.equal(h.patches[0][h.reportMap.verified_paid_thb],null);
+  const view=readSessionReport(h.s.fields,h.reportMap,sid);assert.equal(view.status,'verified');assert.equal(view.balance.verified_paid_thb,4000);assert.equal(view.balance.paid_credit_thb,0);assert.equal(view.balance.remaining_amount_thb,9000);
+  assert.equal(readSessionReport(h.s.fields,h.reportMap,'sess_other').balance,null);
+  assert.equal(readSessionReport(h.s.fields,h.reportMap,sid,Date.now()+61000).balance,null);
+  assert.deepEqual(h.payments,before);
+});
+test('unavailable ledger clears previous report and durable result, then restart retries from current truth',async()=>{
+  const h=reporting(harness());await h.trigger();h.ledgerUnavailable=true;
+  const r=await h.trigger();assert.equal(r.body.status,'retry_scheduled');assert.equal(r.body.balance,null);
+  assert.equal(readSessionReport(h.s.fields,h.reportMap,sid).balance,null);assert.equal(h.st.data.get('last_result').balance,null);
+  h.ledgerUnavailable=false;h.payments.push(payment('later',1000));
+  await new SessionPaidProjectionState(h.st,h.env).alarm();assert.equal(readSessionReport(h.s.fields,h.reportMap,sid).balance.verified_paid_thb,5000);
+});
+test('HOLD invalidates a formerly verified report without changing cash or Payment records',async()=>{
+  const h=reporting(harness());await h.trigger();const before=structuredClone(h.payments);h.s.fields[F.sessionStatus]='Hold';
+  assert.equal((await h.trigger()).body.status,'needs_review');assert.equal(readSessionReport(h.s.fields,h.reportMap,sid).balance,null);
+  assert.equal(h.s.fields[F.paidSum],4000);assert.deepEqual(h.payments,before);
+});
+test('lost verified-report response is invalidated and eight retries never increment cash',async()=>{
+  const h=reporting(harness());let lost=false;const original=h.env.AIRTABLE_HTTP.fetch;
+  h.env.AIRTABLE_HTTP.fetch=async req=>{
+    const fields=req.method==='PATCH'?(await req.clone().json()).fields:{};const response=await original(req);
+    if(fields[h.reportMap.status]==='verified'&&!lost){lost=true;throw Error('synthetic lost response');}return response;
+  };
+  const r=await h.trigger();assert.equal(r.body.report_status,'unavailable');assert.equal(readSessionReport(h.s.fields,h.reportMap,sid).balance,null);
+  const results=await Promise.all(Array.from({length:8},()=>h.trigger()));assert.ok(results.every(r=>r.body.paid_received_sum===4000));assert.equal(h.payments.length,1);
+});
+test('unreachable Airtable never claims successful invalidation or returns old money',async()=>{
+  const h=reporting(harness());await h.trigger();const original=h.env.AIRTABLE_HTTP.fetch;
+  h.env.AIRTABLE_HTTP.fetch=async req=>req.method==='PATCH'?Response.json({error:'outage'},{status:503}):original(req);
+  const r=await h.trigger();assert.equal(r.body.report_invalidation,'unconfirmed');assert.equal(r.body.balance,null);assert.equal(h.st.data.get('last_result').report_status,'unavailable');
 });
 test('replay assigns an absolute total and does not issue another PATCH', async () => {
   const h = harness(); await h.trigger(); const next = await h.trigger();

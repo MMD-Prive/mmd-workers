@@ -1,6 +1,7 @@
 import delegatedWorker from "./payment-proof-client-provenance-wrapper.js";
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
 import { handleHistoricalSlipBackfillRequest } from "./historical-slip-backfill-runtime.js";
+import { readPaymentCashReceipt } from "../../shared/payment-cash-receipt.mjs";
 
 export const CANCELLATION_CREDIT_RECOVERY_PATH = "/v1/admin/cancellation-credit-recovery";
 
@@ -48,7 +49,6 @@ const PAYMENT = Object.freeze({
   ref: "fldOO6SY49iDw8VBZ",
   client: "fldcrLuJijj7xr0y8",
   sessionId: "fld2wdhBvc8xrV6y5",
-  amountReceived: "fld5rTIVEF1DXwfe2",
   verification: "fldJ7a0Ube9F0bmRy",
   depositStatus: "fldD0mQWTfdmyBAeT",
   officialAt: "fldPNK6qgxCSdaJRM",
@@ -315,7 +315,8 @@ function paymentSummary(payment) {
   const fields = payment?.fields || {};
   const verification = code(field(fields, PAYMENT.verification, "Verification Status", "verification_status"));
   const depositStatus = code(field(fields, PAYMENT.depositStatus, "deposit_status"));
-  const receivedThb = positiveAmount(field(fields, PAYMENT.amountReceived, "amount_received_thb", "Amount Received"));
+  const receipt = readPaymentCashReceipt(payment, {requireOfficialEvidence: true, allowLegacyOfficial: true, allowConfirmed: true});
+  const receivedThb = receipt.amount_thb;
   const officialAt = clean(field(fields, PAYMENT.officialAt, "official_verified_at"), 120);
   const officialRef = clean(field(fields, PAYMENT.officialRef, "official_verification_ref"), 180);
   const officialBy = clean(field(fields, PAYMENT.officialBy, "official_verified_by"), 180);

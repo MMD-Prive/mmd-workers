@@ -3,7 +3,7 @@
     <header class="mmhome-hero">
       <p class="mmeyebrow">MY MODEL · MMD PRIVÉ</p>
       <h1>MY MODEL<br><span>พร้อมสำหรับงานถัดไป</span></h1>
-      <p>โปรไฟล์ การยืนยันตัวตน และงานของคุณ อยู่ในที่เดียว</p>
+      <p>งานและโปรไฟล์ของคุณ</p>
     </header>
     <section class="mmcard mmverify" aria-labelledby="mmverify-title">
       <span class="mmeyebrow">MODEL IDENTITY</span>
@@ -25,15 +25,22 @@
         <a href="#mmd-model-self-service">แก้โปรไฟล์ ↗</a>
         <dl><div><dt>LINE Identity</dt><dd data-mm-line>ยังต้องตรวจสอบ</dd></div><div><dt>Telegram</dt><dd data-mm-telegram>ยังต้องตรวจสอบ</dd></div></dl>
         <button type="button" data-mm-telegram-connect>เชื่อม Telegram สำหรับแจ้งงาน</button>
-        <p class="mmhint">การเชื่อมบัญชีไม่ใช่การอนุมัติพร้อมทำงาน ทีมตรวจโปรไฟล์ รูป ความพร้อม และสิทธิ์งานแยกกัน</p>
+        <p class="mmhint">เชื่อมบัญชีแล้ว ยังต้องตรวจโปรไฟล์ รูป ความพร้อมและสิทธิ์งาน</p>
       </section>
       <section class="mmcard" aria-label="งานของคุณ">
         <span class="mmeyebrow">YOUR WORK</span><h2 data-mm-job>กำลังตรวจงานของคุณ</h2><p data-mm-job-copy></p>
+        <section class="mmreconfirm" data-mm-reconfirm aria-labelledby="mm-reconfirm-title" hidden>
+          <p class="mmeyebrow">JOB RECONFIRMATION</p>
+          <h3 id="mm-reconfirm-title">ตรวจรายละเอียดก่อนวันงาน</h3>
+          <dl><div><dt>วันและเวลา</dt><dd data-mm-reconfirm-time>—</dd></div><div><dt>สถานที่</dt><dd data-mm-reconfirm-location>—</dd></div></dl>
+          <button type="button" class="mmprimary" data-mm-reconfirm-ack disabled>รับทราบงานแล้ว</button>
+          <p class="mmhint" data-mm-reconfirm-status role="status"></p>
+        </section>
         <nav class="mmverify-actions"><a data-mm-console class="mmprimary" href="/sigil/model/console">เปิดงานใน Console ↗</a><a href="/sigil/model/dashboard/jobs">Jobs Today ↗</a></nav>
       </section>
       <section id="mmd-model-self-service" class="mmcard" aria-labelledby="mss-title">
         <span class="mmeyebrow">PROFILE & AVAILABILITY</span><h2 id="mss-title">ข้อมูลและสถานะรับงาน</h2>
-        <p>แก้ข้อมูลพื้นฐานได้ ส่วนเรตและการอนุมัติให้ MMD ดูแล</p>
+        <p>แก้โปรไฟล์ได้ เรตและการอนุมัติให้ MMD ดูแล</p>
         <form data-mss-profile-form>
           <div class="mmfields">
             <label>ส่วนสูง (ซม.)<input name="height_cm" type="number" min="130" max="230" inputmode="numeric"></label>
@@ -50,7 +57,7 @@
           <p data-mm-save-status role="status"></p>
         </form>
       </section>
-      <section class="mmcard" aria-label="รูปและคลิปของฉัน"><h2>รูปและคลิป Public ของฉัน</h2><p>สิทธิ์และสถานะของแต่ละรายการยึดตามข้อมูลล่าสุดจาก MMD</p><div data-mm-gallery class="mmgallery" role="status">กำลังอ่านรายการ</div></section>
+      <section class="mmcard" aria-label="รูปและคลิปของฉัน"><h2>รูปและคลิป Public ของฉัน</h2><p>สิทธิ์แต่ละรายการตามสถานะล่าสุดจาก MMD</p><div data-mm-gallery class="mmgallery" role="status">กำลังอ่านรายการ</div></section>
       <div data-mm-media-host></div>
     </div>
     <nav class="mmshortcuts" aria-label="คู่มือและความช่วยเหลือ">

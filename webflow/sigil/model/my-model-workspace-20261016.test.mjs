@@ -274,6 +274,87 @@ for (const [status,error] of [[401,'model_session_expired'],[403,'forbidden'],[5
     if (status === 401) assert.equal(f.nodes.get('[data-mm-workspace]').hidden, true);
   });
 }
+test('packed workspace CSS decodes byte-for-byte and refuses token collisions',async()=>{
+  const {workspaceStyleSource}=await import('../../../scripts/build-my-model-workspace-bundle.mjs');
+  const css='#mmd-model-home-v4{color:red}#mmd-model-home-v4 button{padding:4px}';let style;
+  vm.runInNewContext(workspaceStyleSource(css),{document:{createElement:()=>({}),head:{append:s=>{style=s;}}}});
+  assert.equal(style.textContent,css);assert.equal(style.id,'mmd-workspace-style');
+  assert.throws(()=>workspaceStyleSource('~R{}'),/token collision/);
+});
+function reconfirmJob(extra={}) {
+  return {ok:true,session:{session_id:'session-reconfirm',state:'confirmed',model_work_lane:'private_model',job_date:'2026-11-01',
+    start_time:'2026-11-01T19:00:00+07:00',location_name:'Fixture venue',allowed_actions:['acknowledge_reconfirm'],
+    reconfirm:{status:'pending',required_at:'2026-10-31T18:00:00+07:00',notified_at:'2026-10-31T18:00:00+07:00'},...extra}};
+}
+function acknowledgedJob() {const data=reconfirmJob();data.session.allowed_actions=[];data.session.reconfirm={...data.session.reconfirm,status:'acknowledged',acknowledged_at:'2026-10-31T18:10:00+07:00'};return data;}
+
+test('MY MODEL shows real job details and server-allowed acknowledgement without a write on boot',async()=>{
+  const f=fixture({job:reconfirmJob()});await settle();
+  assert.equal(f.nodes.get('[data-mm-reconfirm]').hidden,false);
+  assert.equal(f.nodes.get('[data-mm-reconfirm-ack]').disabled,false);
+  assert.equal(f.nodes.get('[data-mm-reconfirm-location]').textContent,'Fixture venue');
+  assert.equal(f.calls.some(c=>c.options?.method),false);
+});
+
+test('acknowledgement rechecks the selected session and waits for server evidence, preserving signed context',async()=>{
+  const f=fixture({job:reconfirmJob(),search:'?t=fixture-signed&session_id=session-reconfirm'});await settle();
+  const original=f.window.fetch,writes=[];
+  f.window.fetch=async(url,options={})=>{
+    if(String(url)==='/v1/model/session/action'){writes.push({url,options});return Response.json(acknowledgedJob());}
+    return original(url,options);
+  };
+  await f.nodes.get('[data-mm-reconfirm-ack]').listeners.click();
+  assert.equal(writes.length,1);
+  assert.deepEqual(JSON.parse(writes[0].options.body),{action:'acknowledge_reconfirm',session_id:'session-reconfirm',t:'fixture-signed'});
+  assert.equal(writes[0].options.credentials,'include');
+  assert.equal(f.nodes.get('[data-mm-reconfirm-ack]').textContent,'รับทราบแล้ว');
+  assert.equal(f.nodes.get('[data-mm-reconfirm-ack]').disabled,true);
+  assert.ok(!writes.some(x=>/start_travel|start_work/.test(x.options.body)));
+});
+
+for(const session of [reconfirmJob({allowed_actions:[]}),reconfirmJob({state:'work_started'}),reconfirmJob({reconfirm:null}),reconfirmJob({reconfirm:{status:'unknown'}})])
+test('missing server capability or invalid lifecycle never enables acknowledgement: '+JSON.stringify(session.session),async()=>{
+  const f=fixture({job:session});await settle();assert.equal(f.nodes.get('[data-mm-reconfirm-ack]').disabled,true);
+});
+
+test('changed details, cancelled state and another session all block the write and clear stale details',async()=>{
+  for(const changed of [reconfirmJob({location_name:'Changed venue'}),reconfirmJob({state:'cancelled'}),reconfirmJob({session_id:'other-session'})]){
+    const f=fixture({job:reconfirmJob()});await settle();let writes=0;
+    f.window.fetch=async(url,options={})=>{if(options.method)writes++;return Response.json(changed);};
+    await f.nodes.get('[data-mm-reconfirm-ack]').listeners.click();
+    assert.equal(writes,0);assert.equal(f.nodes.get('[data-mm-reconfirm]').hidden,true);
+    assert.equal(f.nodes.get('[data-mm-reconfirm-location]').textContent,'');
+  }
+});
+
+test('an unconfirmed or failed acknowledgement never displays success',async()=>{
+  for(const response of [()=>Response.json({ok:true,session:reconfirmJob().session}),()=>Response.json({ok:false,error:'unavailable'},{status:503}),()=>Response.json({ok:true,session:acknowledgedJob().session&&{...acknowledgedJob().session,session_id:'other'}})]){
+    const f=fixture({job:reconfirmJob()});await settle();const original=f.window.fetch;
+    f.window.fetch=(url,options={})=>options.method==='POST'?response():original(url,options);
+    await f.nodes.get('[data-mm-reconfirm-ack]').listeners.click();
+    assert.equal(f.nodes.get('[data-mm-reconfirm]').hidden,true);
+    assert.doesNotMatch(f.nodes.get('[data-mm-reconfirm-status]').textContent,/บันทึกการรับทราบแล้ว/);
+  }
+});
+
+test('duplicate clicks make one write and late success cannot reopen a locked workspace',async()=>{
+  const f=fixture({job:reconfirmJob()});await settle();const original=f.window.fetch,pending=deferredResponse();let writes=0;
+  f.window.fetch=async(url,options={})=>{if(options.method==='POST'){writes++;return pending.promise;}return original(url,options);};
+  const first=f.nodes.get('[data-mm-reconfirm-ack]').listeners.click();await settle();
+  await f.nodes.get('[data-mm-reconfirm-ack]').listeners.click();assert.equal(writes,1);
+  f.window.fetch=()=>Promise.resolve(Response.json({ok:false,error:'private_access_required'},{status:403}));
+  await f.nodes.get('[data-mm-refresh]').listeners.click();
+  pending.resolve(Response.json(acknowledgedJob()));await first;
+  assert.equal(f.nodes.get('[data-mm-workspace]').hidden,true);
+  assert.equal(f.nodes.get('[data-mm-reconfirm]').hidden,true);
+});
+
+test('another device acknowledgement is read back without posting again',async()=>{
+  const f=fixture({job:reconfirmJob()});await settle();let writes=0;
+  f.window.fetch=async(url,options={})=>{if(options.method)writes++;return Response.json(acknowledgedJob());};
+  await f.nodes.get('[data-mm-reconfirm-ack]').listeners.click();
+  assert.equal(writes,0);assert.equal(f.nodes.get('[data-mm-reconfirm-ack]').textContent,'รับทราบแล้ว');
+});
 
 for (const review of [true,false,undefined]) test(`profile save pending single-flight and confirmed review=${review}`,async()=>{
   const f=fixture();await settle();const pending=deferredResponse();let writes=0;

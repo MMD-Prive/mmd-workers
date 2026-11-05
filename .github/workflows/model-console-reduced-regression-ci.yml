@@ -1,0 +1,54 @@
+name: Model Console Reduced Regression CI
+
+on:
+  pull_request:
+    paths:
+      - 'admin-worker/**'
+      - 'auth-worker/**'
+      - 'events-worker/**'
+      - 'member-dashboard-chat-worker/**'
+      - 'member-pages-worker/**'
+      - 'partners-worker/**'
+      - 'payments-worker/**'
+      - 'shared/**'
+      - 'sigil-booking-worker/**'
+      - 'webflow/**'
+      - 'tools/browser/**'
+      - 'release/my-model-console/session-report-mapping.json'
+      - 'package.json'
+      - '.github/workflows/model-console-reduced-regression-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  focused-and-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install locked local runtime dependencies
+        run: npm ci --prefix admin-worker/test/runtime --ignore-scripts --no-audit --no-fund
+      - name: Run scoped projection and entrypoint regressions
+        run: >-
+          env -u NODE_PATH -u NODE_OPTIONS node --test --test-reporter=tap
+          payments-worker/session-paid-projection.test.mjs
+          payments-worker/session-report-formula.test.mjs
+          admin-worker/test/runtime/live-source-merge.test.mjs
+          admin-worker/test/runtime/session-report.test.mjs
+      - name: Install locked browser dependencies
+        run: npm ci --prefix tools/browser --ignore-scripts --no-audit --no-fund
+      - name: Install test Chromium
+        working-directory: tools/browser
+        run: npx --no-install playwright install --with-deps chromium
+      - name: Test browser outage and races against synthetic local runtime
+        working-directory: tools/browser
+        env:
+          MMD_BROWSER_CHANNEL: chromium
+        run: npm test

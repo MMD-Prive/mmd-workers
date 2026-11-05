@@ -48,6 +48,7 @@ function validSessionFields(overrides = {}) {
     fldIiRpaxoafjTkFt: 'The Line Vipe',
     fldoUDQ8sH93idPx0: 'https://maps.example/fixture',
     fldvJowquu8RrsOMc: 27500,
+    fldhwC79ndbnEXSZz: 27500,
     fldlTO5aNfqUmlNWm: 20000,
     fld6P6if0vDZCeV0C: ['recClientFixture'],
     fldEcDkF7CH9VixWM: 'Owner-approved existing session',
@@ -55,7 +56,14 @@ function validSessionFields(overrides = {}) {
   };
 }
 
-function installAdminAirtable(env, sessionFields, { paymentRecords = [] } = {}) {
+function installAdminAirtable(env, sessionFields, { paymentRecords = [], cash = 0, paidCredit = 0, bonus = 0 } = {}) {
+  const issuer=env.PAYMENTS_WORKER;
+  env.PAYMENTS_WORKER={fetch:async req=>{
+    if(new URL(req.url).pathname!=='/v1/internal/payments/balance')return issuer.fetch(req);
+    assert.deepEqual(await req.json(),{session_id:'sess_fixture'});
+    const total=sessionFields.fldhwC79ndbnEXSZz;
+    return Response.json({ok:true,authority:'payments-worker',balance:{schema:'verified_session_balance_v1',session_id:'sess_fixture',total_amount_thb:total,verified_paid_thb:cash,verified_deposit_thb:cash,paid_credit_thb:paidCredit,bonus_credit_thb:bonus,credit_applied_thb:paidCredit+bonus,remaining_amount_thb:Math.max(0,total-cash-paidCredit-bonus),overpaid_amount_thb:Math.max(0,cash+paidCredit+bonus-total)}});
+  }};
   env.AIRTABLE_BASE_ID = 'test-base';
   env.AIRTABLE_API_KEY = 'test-airtable';
   env.AIRTABLE_TABLE_SESSIONS = 'tblC98mKWbzmPuNzX';
@@ -220,6 +228,14 @@ test('owner existing-session issuance builds deposit pricing server-side and nev
   assert.match(payload.note, /"balance_thb":19000/);
 });
 
+
+test('missing job total never falls back to a cached cash-only balance', async () => {
+  const h=setup(),fields=validSessionFields();delete fields.fldhwC79ndbnEXSZz;
+  installAdminAirtable(h.env,fields);
+  const r=await worker.fetch(await request(h.env,{body:{mode:ISSUE_EXISTING_SESSION_MODE,session_id:'sess_fixture'}}),h.env,{});
+  assert.equal(r.status,409);assert.equal((await r.json()).stage,'preflight');assert.equal(h.calls.length,0);assert.deepEqual(h.writes,[]);
+});
+for(const amounts of [{cash:5000},{paidCredit:10000,bonus:3500}])test('full reissue with existing cash/credit must use final checkout instead',async()=>{const h=setup();installAdminAirtable(h.env,validSessionFields(),amounts);const r=await worker.fetch(await request(h.env,{body:{mode:REISSUE_EXISTING_SESSION_MODE,session_id:'sess_fixture',payment_type:'full'}}),h.env,{});assert.equal(r.status,409);assert.equal((await r.json()).error,'use_credit_aware_final_checkout');assert.equal(h.calls.length,0);});
 
 test('owner can reissue an existing session as full payment from the latest server-owned session amount', async () => {
   const minted = {

@@ -1,4 +1,6 @@
 import { normalizeSessionState } from "../../admin-worker/src/modelSessionContractV1.js";
+import { COMPLETION_SCHEMA, readCustomerCompletion, withSessionCompletionLock } from "../../shared/session-completion.mjs";
+import {notifyAftercareOwner} from './owner-aftercare-notification.js';
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 export const CUSTOMER_AFTERCARE_PATH = "/v1/customer/session/aftercare";
@@ -54,27 +56,32 @@ export async function handleCustomerAftercare(request, env = {}) {
     const sessionId = clean(verified?.session_id, 200);
     if (!sessionId) throw httpError(401, "invalid_confirmation_token_subject");
 
+    return await withSessionCompletionLock(env, sessionId, async () => {
     const job = await findJobBySessionId(env, sessionId);
-    const state = normalizeSessionState(job?.fields?.status);
+    const state = normalizeSessionState(job?.fields?.model_session_state);
     if (!AFTERCARE_STATES.has(state)) {
       throw httpError(409, state === "work_finished" ? "aftercare_wait_for_separated" : "aftercare_not_available");
     }
 
-    const events = parseEvents(job?.fields?.events_json);
-    const existing = findExistingAftercare(events);
-    if (existing) {
+    const completion = readCustomerCompletion(job.fields);
+    const existing = completion.review;
+    if ((input.action === "approve_completion" && completion.approved) || existing) {
       return withCors(request, env, json(buildResponse({
         input,
         sessionId,
         job,
         state,
-        event: existing,
+        event: existing || {},
         idempotent: true,
       }), 200));
     }
 
+    if (input.action === "submit_review" && !completion.approved) throw httpError(409, "customer_completion_required");
+    if (input.action === "approve_completion" && state !== "separated") throw httpError(409, "customer_completion_not_available");
+    if (job.fields.customer_aftercare_json && !completion.approved) throw httpError(409, "completion_evidence_review_required");
+
     const updatedAt = new Date().toISOString();
-    const privateCareRecommended = shouldRecommendPrivateCare(input.rating, input.issueTags);
+    const privateCareRecommended = input.action === "submit_review" && shouldRecommendPrivateCare(input.rating, input.issueTags, input.ratingScale);
     const aftercareEvent = {
       ts: updatedAt,
       event: "aftercare_submitted",
@@ -83,6 +90,7 @@ export async function handleCustomerAftercare(request, env = {}) {
       schema: "customer_aftercare_v2",
       idempotency_key: input.idempotencyKey,
       rating: input.rating,
+      rating_scale: input.ratingScale,
       quick_tags: input.quickTags,
       issue_tags: input.issueTags,
       private_model_message: input.privateModelMessage,
@@ -90,34 +98,32 @@ export async function handleCustomerAftercare(request, env = {}) {
       private_care_recommended: privateCareRecommended,
     };
 
-    const nextEvents = appendTimelineEvent(events, aftercareEvent);
-    let nextState = state;
-    if (state === "separated") {
-      nextState = "under_review";
-      nextEvents.push({
-        ts: updatedAt,
-        event: "request_review",
-        by: "customer_aftercare",
-        source: "mmd_aftercare_v2",
-        from: "separated",
-        to: "under_review",
-      });
-    }
-
-    const patched = await patchJob(env, job.id, {
-      events_json: JSON.stringify(nextEvents.slice(-200)),
-      status: nextState,
-      last_update_at: updatedAt,
+    const approving = input.action === "approve_completion";
+    const nextState = approving ? "under_review" : state;
+    const evidence = approving ? { schema: COMPLETION_SCHEMA, session_id: sessionId, approved_at: updatedAt,
+      approval_id: input.idempotencyKey, review: null } : { ...completion.evidence, review: aftercareEvent };
+    const fields = { customer_aftercare_json: JSON.stringify(evidence) };
+    if (approving) Object.assign(fields, { customer_completed_at: updatedAt, model_session_state: nextState,
+      model_session_state_updated_at: updatedAt,
+      completion_review_status: job.fields.completion_review_status === "hold" ? "hold" : "pending_review" });
+    if (privateCareRecommended && state !== "closed") Object.assign(fields, {
+      completion_review_status: "hold", payout_hold_reason: "customer_review_requires_attention",
     });
+    const fresh = await findJobBySessionId(env, sessionId);
+    if (fresh.id !== job.id || JSON.stringify(fresh.fields) !== JSON.stringify(job.fields)) throw httpError(409, "session_changed_retry");
+    const patched = await patchJob(env, job.id, fields);
+    // Notification failure does not undo the customer's recorded approval/review.
+    const notification = await notifyAftercareOwner(env,patched,approving?'customer_completion_approved':'customer_review_received');
 
     return withCors(request, env, json(buildResponse({
       input,
       sessionId,
       job: patched,
       state: nextState,
-      event: aftercareEvent,
+      event: approving ? {} : aftercareEvent,
       idempotent: false,
-    }), 201));
+    }, notification), 201));
+    });
   } catch (error) {
     return withCors(request, env, json({
       ok: false,
@@ -131,9 +137,13 @@ export function normalizeAftercareInput(body = {}) {
   const token = clean(body.t || body.token, 12000);
   if (!token) throw httpError(400, "confirmation_token_required");
 
-  const rating = Number(body.rating);
-  if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
-    throw httpError(400, "rating_must_be_1_to_5");
+  const action = body.action || "submit_review";
+  if (!["approve_completion", "submit_review"].includes(action)) throw httpError(400, "invalid_aftercare_action");
+  if (action === "approve_completion" && body.confirm_completed !== true) throw httpError(400, "explicit_completion_approval_required");
+  const ratingScale = Number(body.rating_scale || 5);
+  const rating = action === "approve_completion" ? null : Number(body.rating);
+  if (action === "submit_review" && (![5, 10].includes(ratingScale) || !Number.isInteger(rating) || rating < 1 || rating > ratingScale)) {
+    throw httpError(400, "rating_out_of_range");
   }
 
   const idempotencyKey = clean(body.idempotency_key || body.idempotencyKey, 120);
@@ -147,8 +157,10 @@ export function normalizeAftercareInput(body = {}) {
   const privateMmdMessage = safeText(body.private_mmd_message, 4000);
 
   return {
+    action,
     token,
     rating,
+    ratingScale,
     idempotencyKey,
     quickTags,
     issueTags,
@@ -157,8 +169,8 @@ export function normalizeAftercareInput(body = {}) {
   };
 }
 
-export function shouldRecommendPrivateCare(rating, issueTags = []) {
-  return Number(rating) <= 2 || issueTags.some((tag) => ISSUE_TAGS.has(String(tag || "")));
+export function shouldRecommendPrivateCare(rating, issueTags = [], ratingScale = 5) {
+  return Number(rating) > 0 && Number(rating) / ratingScale <= 0.4 || issueTags.some((tag) => ISSUE_TAGS.has(String(tag || "")));
 }
 
 export function appendTimelineEvent(events, event) {
@@ -199,7 +211,7 @@ async function verifyCustomerConfirmation(env, token, origin) {
 
 async function findJobBySessionId(env, sessionId) {
   const baseId = clean(env.AIRTABLE_BASE_ID, 100);
-  const table = clean(env.AIRTABLE_TABLE_JOBS || "jobs", 120);
+  const table = clean(env.AIRTABLE_TABLE_SESSIONS || "Sessions", 120);
   const apiKey = clean(env.AIRTABLE_API_KEY, 5000);
   if (!baseId || !table || !apiKey) throw httpError(503, "aftercare_storage_not_ready");
 
@@ -209,6 +221,7 @@ async function findJobBySessionId(env, sessionId) {
   });
   const request = new Request(`${AIRTABLE_API}/${encodeURIComponent(baseId)}/${encodeURIComponent(table)}?${query}`, {
     method: "GET",
+    signal: AbortSignal.timeout(10000),
     headers: { authorization: `Bearer ${apiKey}` },
   });
   const response = env.AIRTABLE_HTTP?.fetch
@@ -217,19 +230,21 @@ async function findJobBySessionId(env, sessionId) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw httpError(503, "aftercare_storage_lookup_failed");
   const records = Array.isArray(data?.records) ? data.records : [];
-  if (records.length > 1) throw httpError(409, "session_id_ambiguous");
+  if (records.length > 1 || data.offset) throw httpError(409, "session_id_ambiguous");
   if (!records[0]) throw httpError(404, "aftercare_session_not_found");
+  if (records[0].fields?.session_id !== sessionId) throw httpError(409, "aftercare_session_mismatch");
   return records[0];
 }
 
 async function patchJob(env, recordId, fields) {
   const baseId = clean(env.AIRTABLE_BASE_ID, 100);
-  const table = clean(env.AIRTABLE_TABLE_JOBS || "jobs", 120);
+  const table = clean(env.AIRTABLE_TABLE_SESSIONS || "Sessions", 120);
   const apiKey = clean(env.AIRTABLE_API_KEY, 5000);
   if (!baseId || !table || !apiKey) throw httpError(503, "aftercare_storage_not_ready");
 
   const request = new Request(`${AIRTABLE_API}/${encodeURIComponent(baseId)}/${encodeURIComponent(table)}/${encodeURIComponent(recordId)}`, {
     method: "PATCH",
+    signal: AbortSignal.timeout(10000),
     headers: {
       authorization: `Bearer ${apiKey}`,
       "content-type": "application/json",
@@ -244,8 +259,8 @@ async function patchJob(env, recordId, fields) {
   return data;
 }
 
-function buildResponse({ input, sessionId, job, state, event, idempotent }) {
-  const privateCareRecommended = Boolean(event?.private_care_recommended ?? shouldRecommendPrivateCare(input.rating, input.issueTags));
+function buildResponse({ input, sessionId, job, state, event, idempotent }, notification = null) {
+  const privateCareRecommended = event?.private_care_recommended === true;
   return {
     ok: true,
     authority: "events-worker",
@@ -253,7 +268,9 @@ function buildResponse({ input, sessionId, job, state, event, idempotent }) {
     session_id: sessionId,
     job_id: clean(job?.fields?.job_id, 200) || null,
     state,
-    aftercare_complete: true,
+    customer_approved: readCustomerCompletion(job.fields).approved,
+    aftercare_complete: Boolean(event?.ts),
+    ...(notification ? { owner_notification: { delivered: notification.ok === true } } : {}),
     idempotent: Boolean(idempotent),
     submitted_at: clean(event?.ts, 120) || null,
     private_model_message_received: Boolean(input.privateModelMessage || event?.private_model_message),
@@ -261,10 +278,12 @@ function buildResponse({ input, sessionId, job, state, event, idempotent }) {
     private_care: {
       recommended: privateCareRecommended,
       url: privateCareRecommended ? `/sigil/recovery?t=${encodeURIComponent(input.token)}` : null,
-      reasons: privateCareRecommended ? privateCareReasons(input.rating, input.issueTags) : [],
+      reasons: privateCareRecommended ? privateCareReasons(event.rating / (event.rating_scale || 5) * 5, event.issue_tags) : [],
     },
   };
 }
+
+function escapeHtml(value) { return String(value).replace(/[&<>\"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
 function privateCareReasons(rating, issueTags) {
   const reasons = [];

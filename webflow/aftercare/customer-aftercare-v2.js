@@ -35,6 +35,7 @@
   const quickTags = new Set();
   const issueTags = new Set();
   let submitting = false;
+  const requestKeys = new Map();
 
   installV2Styles();
   document.body.classList.add('sac-lock');
@@ -57,18 +58,19 @@
 
       <header class="sac-wrap sac-hero sac2-hero">
         <nav class="sac-top" aria-label="Aftercare navigation">
-          <a class="sac-brand" data-confirm-link href="${CONFIRM_PATH}${token ? `?t=${encodeURIComponent(token)}` : ''}"><i class="sac-dot"></i><span>SIGIL</span></a>
+          <a class="sac-brand" data-confirm-link aria-label="SĪGIL System · กลับ Session" href="${CONFIRM_PATH}${token ? `?t=${encodeURIComponent(token)}` : ''}"><!--MMD_AFTERCARE_BRAND--><span class="sac-brand-text">SIGIL SYSTEM</span></a>
           <div class="sac-nav"><span class="sac-pill">PRIVATE AFTERCARE</span></div>
         </nav>
 
         <div class="sac-hero-grid">
           <div>
             <p class="sac-kicker">MMD PRIVE / AFTERCARE</p>
-            <h1 class="sac2-title">After<br>Care</h1>
-            <p class="sac-lead">หลัง Session แยกจากกันเรียบร้อย คุณสามารถให้คะแนนสั้น ๆ และส่งข้อความส่วนตัวถึง Model หรือ MMD ได้ตรงนี้ครับ</p>
+            <h1 class="sac2-title" lang="en">After Care</h1>
+            <p class="sac-lead">หลังแยกย้าย ยืนยันจบงาน แล้วค่อยบอกว่าครั้งนี้เป็นอย่างไรบ้างครับ</p>
             <div class="sac-actions">
-              <a class="sac-btn sac-primary" href="#aftercareForm">เริ่ม Aftercare</a>
+              <a class="sac-btn sac-primary" href="#completionApproval">ยืนยันจบ Session</a>
               <a class="sac-btn sac-ghost" data-recovery-link href="${signedPath(RECOVERY_PATH)}">Private Care</a>
+              <a class="sac-btn sac-ghost" data-confirm-link href="${signedPath(CONFIRM_PATH)}">กลับ Session</a>
             </div>
           </div>
 
@@ -92,16 +94,27 @@
             <div>
               <p class="sac-kicker">SESSION GATE</p>
               <h2 data-gate-title>กำลังยืนยัน Session</h2>
-              <p data-gate-copy>ใช้ข้อมูลจาก signed confirmation เท่านั้น Browser จะไม่อ่าน Jobs หรือ event log ดิบโดยตรง</p>
+              <p data-gate-copy>กำลังตรวจรายละเอียดของงานนี้ครับ</p>
             </div>
             <span class="sac2-badge" data-gate-badge>CHECKING</span>
           </div>
         </section>
 
+        <section class="sac-panel" id="completionApproval" aria-label="Confirm session completion">
+          <div class="sac-head">
+            <p class="sac-kicker">SESSION COMPLETION</p>
+            <h2>ยืนยันจบ Session</h2>
+          </div>
+          <div class="sac-actions">
+            <button class="sac-btn sac-primary" type="button" data-approve-completion disabled>ยืนยันว่าจบงานและแยกจากกันแล้ว</button>
+          </div>
+          <p class="sac2-hint" data-completion-status role="status" aria-live="polite">รอยืนยันสถานะ Session</p>
+        </section>
+
         <section class="sac-panel" id="aftercareForm" aria-label="Private aftercare form">
           <div class="sac-head">
             <p class="sac-kicker">PRIVATE FEEDBACK</p>
-            <h2>วันนี้เป็นยังไงบ้างครับ</h2>
+            <h2>วันนี้เป็นยังไงบ้างครับ <span class="sac2-optional">ไม่บังคับ</span></h2>
             <p>คะแนนและข้อความในหน้านี้เป็นข้อมูลภายใน MMD ไม่ใช่ public review และจะไม่ถูกนำไปใช้เป็น quote จากหน้านี้</p>
           </div>
 
@@ -150,8 +163,8 @@
               </div>
 
               <div class="sac-actions sac2-submit-row">
-                <button class="sac-btn sac-primary" type="submit" data-submit>ส่ง Aftercare ให้ MMD</button>
-                <span class="sac2-submit-note">ต้องเลือกคะแนนก่อนส่ง</span>
+                <button class="sac-btn sac-primary" type="submit" data-submit>ส่งรีวิวส่วนตัวให้ MMD</button>
+                <span class="sac2-submit-note">คะแนน 1–5 ดาว</span>
               </div>
             </fieldset>
           </form>
@@ -162,8 +175,8 @@
         <section class="sac-panel" aria-label="Aftercare privacy note">
           <div class="sac-head">
             <p class="sac-kicker">PRIVACY BY DESIGN</p>
-            <h2>จบ Session ก่อน แล้วค่อยเปิด Aftercare</h2>
-            <p>Aftercare unlock ที่ <strong>separated</strong> ไม่ใช่ work_finished เพื่อให้ทั้งสองฝ่ายมีพื้นที่ส่วนตัวก่อน ระบบใช้ signed confirmation token เป็น context และไม่ให้ลูกค้ากรอก Job/Model/วันที่ซ้ำเอง</p>
+            <h2>ข้อความของคุณเป็นส่วนตัว</h2>
+            <p>รีวิวนี้ไม่เผยแพร่สาธารณะ ถ้ามีเรื่องที่ไม่สบายใจ เปอร์ช่วยตรวจสอบให้ได้ครับ</p>
           </div>
         </section>
       </main>
@@ -192,7 +205,17 @@
     root.querySelectorAll('[data-issue-tag]').forEach((button) => {
       button.addEventListener('click', () => toggleTag(button, issueTags, button.dataset.issueTag));
     });
+    root.querySelector('[data-approve-completion]')?.addEventListener('click', approveCompletion);
     root.querySelector('[data-form="aftercare"]')?.addEventListener('submit', submitAftercare);
+  }
+
+  async function post(url, payload) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 12000);
+    try {
+      return await fetch(url, { method: 'POST', credentials: 'omit', signal: controller.signal,
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(payload) });
+    } finally { clearTimeout(timer); }
   }
 
   async function verifySignedSession() {
@@ -202,14 +225,9 @@
       return;
     }
 
-    setGate('checking', 'กำลังยืนยัน Session', 'กำลังตรวจ signed token และสถานะล่าสุดจาก Customer Session v2', 'CHECKING');
+    setGate('checking', 'กำลังยืนยัน Session', 'กำลังตรวจข้อมูลและสถานะล่าสุดของงานครับ', 'CHECKING');
     try {
-      const response = await fetch(DETAILS_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ t: token, expected_role: 'customer' }),
-        credentials: 'omit',
-      });
+      const response = await post(DETAILS_URL, { t: token, expected_role: 'customer' });
       const data = await response.json().catch(() => ({}));
       if (!response.ok || !data?.ok || data?.role !== 'customer') {
         throw new Error(clean(data?.error) || 'confirmation_verification_failed');
@@ -225,12 +243,13 @@
 
   function renderVerifiedDetails(data) {
     const session = data?.customer_session;
-    const lifecycle = clean(session?.lifecycle_state) || clean(data?.session_status) || 'unknown';
+    const lifecycle = clean(session?.lifecycle_state) || 'unknown';
     text('[data-model-name]', clean(data?.model_name) || 'MMD Model');
     text('[data-job-date]', formatDate(data?.job_date));
     text('[data-session-state]', lifecycle);
+    setSubmitState(false);
 
-    if (!session || session?.schema !== 'customer_session_v2' || session?.source_available === false) {
+    if (!session || session?.schema !== 'customer_session_v2' || session?.source_available !== true) {
       setGate('locked', 'ยังตรวจ Aftercare state ไม่ได้', 'Customer Session source ยังไม่พร้อม จึงปิดการส่ง feedback แบบ fail-closed ไว้ก่อน', 'WAITING');
       setSessionCard('รอข้อมูล Session', 'MMD ยืนยันตัวตนได้แล้ว แต่ยังยืนยันสถานะงานสำหรับ Aftercare ไม่ได้', lifecycle);
       return;
@@ -243,10 +262,23 @@
       return;
     }
 
-    setGate('ready', 'Aftercare พร้อมแล้ว', 'Signed session ยืนยันแล้ว คุณสามารถให้คะแนนและส่งข้อความส่วนตัวได้', 'READY');
-    setSessionCard('Aftercare ready', `Session กับ ${clean(data?.model_name) || 'MMD Model'} พร้อมรับ feedback แล้ว`, lifecycle);
-    const fields = root.querySelector('[data-form-fields]');
-    if (fields) fields.disabled = false;
+    const approved = session.aftercare.customer_approved === true;
+    const reviewed = session.aftercare.review_submitted === true;
+    text('[data-completion-status]', approved ? 'บันทึกการยืนยันจบ Session แล้วครับ' : 'รอการยืนยันจบ Session จากคุณ');
+    if (reviewed) {
+      setGate('done', 'รับรีวิวส่วนตัวแล้ว', 'MMD บันทึกคะแนนและข้อความเป็นข้อมูลส่วนตัวเรียบร้อย', 'RECEIVED');
+      setSessionCard('Aftercare received', 'รับรีวิวส่วนตัวของ Session นี้แล้วครับ', lifecycle);
+    } else if (approved) {
+      setGate('ready', 'บันทึกการยืนยันจบ Session แล้ว', 'ขอบคุณที่ให้ MMD ดูแลวันนี้ครับ', 'CONFIRMED');
+      setSessionCard('Completion confirmed', 'บันทึกการยืนยันจบ Session แล้วครับ', lifecycle);
+    } else if (lifecycle !== 'separated') {
+      text('[data-completion-status]', 'ยังยืนยันการจบ Session ไม่ได้ กรุณาติดต่อ MMD ผ่าน Private Care ครับ');
+      setGate('waiting', 'รอ MMD ตรวจสอบการจบ Session', 'ยังยืนยันหลักฐานการจบ Session ไม่ได้ครับ', 'WAITING');
+      setSessionCard('Completion pending', 'กรุณาติดต่อ MMD ผ่าน Private Care ครับ', lifecycle);
+    } else {
+      setGate('ready', 'รอคุณยืนยันจบ Session', 'Model ยืนยันว่าแยกจากกันแล้วครับ', 'READY');
+      setSessionCard('Session separated', `Session กับ ${clean(data?.model_name) || 'MMD Model'} รอการยืนยันจากคุณ`, lifecycle);
+    }
   }
 
   function setRating(value) {
@@ -270,11 +302,16 @@
   async function submitAftercare(event) {
     event.preventDefault();
     if (submitting) return;
-    if (!details?.customer_session?.aftercare?.available) {
+    if (!aftercareAvailable()) {
       showToast('Aftercare ยังไม่พร้อมสำหรับ Session นี้ครับ');
       return;
     }
-    if (!rating) {
+    if (details.customer_session.aftercare.customer_approved !== true) {
+      showToast('กรุณายืนยันจบ Session ก่อนครับ');
+      return;
+    }
+    if (details.customer_session.aftercare.review_submitted === true) return;
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
       showToast('กรุณาเลือกคะแนน 1–5 ดาวก่อนส่งครับ');
       root.querySelector('[data-rating-value]')?.focus();
       return;
@@ -284,34 +321,69 @@
     const fd = new FormData(form);
     const sessionId = clean(details?.session_id);
     const payload = {
+      action: 'submit_review',
       t: token,
       rating,
-      idempotency_key: idempotencyKey(sessionId),
+      idempotency_key: idempotencyKey(sessionId, 'submit_review'),
       quick_tags: [...quickTags],
       issue_tags: [...issueTags],
       private_model_message: clean(fd.get('private_model_message')),
       private_mmd_message: clean(fd.get('private_mmd_message')),
     };
 
-    submitting = true;
+    await sendAftercare(payload);
+  }
+
+  async function approveCompletion() {
+    if (submitting || !aftercareAvailable() || details.customer_session.lifecycle_state !== 'separated' || details.customer_session.aftercare.customer_approved === true) return;
+    await sendAftercare({
+      action: 'approve_completion',
+      confirm_completed: true,
+      idempotency_key: idempotencyKey(clean(details.session_id), 'approve_completion'),
+      t: token,
+    });
+  }
+
+  function aftercareAvailable() {
+    const session = details?.customer_session;
+    return Boolean(token && session?.schema === 'customer_session_v2' && session.source_available === true && session.aftercare?.available === true);
+  }
+
+  async function sendAftercare(payload) {
+    const approving = payload.action === 'approve_completion';
+    submitting = payload.action;
     setSubmitState(true);
-    showToast('กำลังส่ง Aftercare ให้ MMD...');
+    showToast(approving ? 'กำลังบันทึกการยืนยันจบ Session...' : 'กำลังส่งรีวิวส่วนตัวให้ MMD...');
     try {
-      const response = await fetch(SUBMIT_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify(payload),
-        credentials: 'omit',
-      });
+      const response = await post(SUBMIT_URL, payload);
       const data = await response.json().catch(() => ({}));
       if (!response.ok || !data?.ok) {
         throw new Error(clean(data?.error) || `aftercare_submit_${response.status}`);
       }
-      renderSuccess(data);
+      if (data.customer_approved !== true || typeof data.aftercare_complete !== 'boolean' || (!approving && data.aftercare_complete !== true)) {
+        throw new Error('aftercare_response_incomplete');
+      }
+      const session = details.customer_session;
+      session.aftercare.customer_approved = data.customer_approved;
+      session.aftercare.review_submitted = data.aftercare_complete === true;
+      session.lifecycle_state = clean(data.state) || session.lifecycle_state;
+      renderVerifiedDetails(details);
+      if (approving) {
+        showToast('บันทึกการยืนยันจบ Session แล้วครับ');
+      } else {
+        renderSuccess(data);
+      }
     } catch (error) {
       const code = clean(error?.message);
-      if (code === 'aftercare_wait_for_separated' || code === 'aftercare_not_available') {
+      if (['aftercare_wait_for_separated', 'aftercare_not_available', 'customer_completion_not_available', 'completion_evidence_review_required'].includes(code)) {
+        details.customer_session.aftercare.available = false;
         setGate('waiting', 'Aftercare ยังไม่เปิด', 'สถานะ Session เปลี่ยนก่อนส่ง กรุณากลับไปหน้า Confirmation และรอ separated ก่อน', 'WAITING');
+      } else if (code === 'customer_completion_required') {
+        details.customer_session.aftercare.customer_approved = false;
+        renderVerifiedDetails(details);
+      } else if (/confirmation|token|401|403|410/.test(code)) {
+        details.customer_session.source_available = false;
+        setGate('locked', 'ยืนยันลิงก์นี้ไม่ได้', humanVerificationError(code), 'LOCKED');
       }
       showToast(humanSubmitError(code));
     } finally {
@@ -358,24 +430,35 @@
   }
 
   function setSubmitState(isBusy) {
+    const aftercare = details?.customer_session?.aftercare;
+    const available = aftercareAvailable();
+    const fields = root.querySelector('[data-form-fields]');
+    if (fields) fields.disabled = isBusy || !available || aftercare?.customer_approved !== true || aftercare.review_submitted === true;
+    const approve = root.querySelector('[data-approve-completion]');
+    if (approve) {
+      approve.disabled = isBusy || !available || details?.customer_session?.lifecycle_state !== 'separated' || aftercare?.customer_approved === true;
+      approve.textContent = isBusy && submitting === 'approve_completion' ? 'กำลังบันทึก...' : aftercare?.customer_approved === true ? 'ยืนยันจบ Session แล้ว' : 'ยืนยันว่าจบงานและแยกจากกันแล้ว';
+    }
     const button = root.querySelector('[data-submit]');
     if (!button) return;
     button.disabled = isBusy;
-    button.textContent = isBusy ? 'กำลังส่ง...' : 'ส่ง Aftercare ให้ MMD';
+    button.textContent = isBusy && submitting === 'submit_review' ? 'กำลังส่ง...' : 'ส่งรีวิวส่วนตัวให้ MMD';
   }
 
-  function idempotencyKey(sessionId) {
-    const key = `mmd_aftercare_v2:${clean(sessionId) || 'session'}`;
+  function idempotencyKey(sessionId, action) {
+    const key = `mmd_aftercare_v2:${clean(sessionId) || 'session'}${action === 'approve_completion' ? ':approve_completion' : ''}`;
+    if (requestKeys.has(key)) return requestKeys.get(key);
+    let existing;
     try {
-      const existing = localStorage.getItem(key);
-      if (existing && /^[A-Za-z0-9._:-]{8,120}$/.test(existing)) return existing;
-      const suffix = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-      const created = `ac-${clean(sessionId).replace(/[^A-Za-z0-9._:-]/g, '_').slice(0, 42)}-${suffix}`.slice(0, 120);
-      localStorage.setItem(key, created);
-      return created;
-    } catch {
-      return `ac-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
-    }
+      existing = localStorage.getItem(key);
+    } catch {}
+    const suffix = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const created = existing && /^[A-Za-z0-9._:-]{8,120}$/.test(existing)
+      ? existing
+      : `ac-${action === 'approve_completion' ? 'approve-' : ''}${clean(sessionId).replace(/[^A-Za-z0-9._:-]/g, '_').slice(0, 42)}-${suffix}`.slice(0, 120);
+    requestKeys.set(key, created);
+    try { localStorage.setItem(key, created); } catch {}
+    return created;
   }
 
   function signedPath(path) {
@@ -411,6 +494,8 @@
   function humanSubmitError(code) {
     if (code === 'aftercare_wait_for_separated') return 'งานจบแล้ว แต่ยังต้องรอ separated ก่อนเปิด Aftercare ครับ';
     if (code === 'aftercare_not_available') return 'Aftercare ยังไม่พร้อมสำหรับ Session นี้ครับ';
+    if (code === 'customer_completion_required') return 'กรุณายืนยันจบ Session ก่อนส่งรีวิวครับ';
+    if (code === 'customer_completion_not_available' || code === 'completion_evidence_review_required') return 'ยังยืนยันจบ Session ไม่ได้ กรุณาติดต่อ MMD ผ่าน Private Care ครับ';
     if (/confirmation|token|401|403|410/.test(code)) return 'signed confirmation ใช้งานไม่ได้ กรุณาเปิดลิงก์ล่าสุดจาก MMD';
     return 'ตอนนี้ส่ง Aftercare ไม่สำเร็จ ข้อมูลที่พิมพ์ยังอยู่ในหน้า ลองส่งอีกครั้งได้ครับ';
   }

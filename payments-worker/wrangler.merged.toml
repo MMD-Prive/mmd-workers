@@ -1,5 +1,6 @@
 name = "payments-worker"
 main = "index.session-paid-projection-wrapper.js"
+keep_vars = true
 triggers = { crons = ["*/5 * * * *"] }
 compatibility_date = "2026-01-20"
 
@@ -42,8 +43,9 @@ tag = "points-phase1-v1"
 new_sqlite_classes = ["PointsPhase1Coordinator"]
 
 [vars]
+# Preserve the live purchase gate; this release does not enable purchases.
+DOUBLE_MOMENT_PURCHASE_ENABLED = "false"
 # Approved free-text retention only; structured Companion/readback has no TTL here.
-BLACKCARD_PREFERENCE_TEXT_RETENTION_DAYS = "90"
 KBANK_SANDBOX_ENABLED = "true"
 POSTHOG_PROJECT_TOKEN = "phc_vi3BckZetrC6yfCoopFGwuBKiKTxaujz7B4jadBYkuYK"
 ALLOWED_ORIGINS = "\"https://mmdprive.com,https://mmdprive.webflow.io,https://mmdbkk.com,https://www.mmdbkk.com,https://sigil.mmdbkk.com\""
@@ -136,6 +138,10 @@ service = "himai-chat-worker"
 binding = "TELEGRAM_WORKER"
 service = "telegram-worker"
 
+[[services]]
+binding = "MEMBER_PAGES_WORKER"
+service = "member-pages-worker"
+
 # Sandbox credential checks only; no transfer execution.
 [[durable_objects.bindings]]
 name = "KBANK_SANDBOX_COORDINATOR"
@@ -155,10 +161,11 @@ class_name = "SessionPaidProjectionCoordinator"
 tag = "session-paid-projection-v1"
 new_sqlite_classes = ["SessionPaidProjectionCoordinator"]
 
-# Black Card Companion preference ledger. The D1 database exists but its
-# migrations remain unapplied until a separately approved release.
-[[d1_databases]]
-binding = "BLACKCARD_DB"
-database_name = "mmd-blackcard-companion-preferences"
-database_id = "18880ae8-2bf6-4c6a-8cc0-70c5d998324d"
-migrations_dir = "migrations"
+# Existing production namespace and migration, never recreate or rename it.
+[[durable_objects.bindings]]
+name = "DOUBLE_MOMENT_COORDINATOR"
+class_name = "DoubleMomentCoordinator"
+
+[[migrations]]
+tag = "double-moment-v2"
+new_sqlite_classes = ["DoubleMomentCoordinator"]

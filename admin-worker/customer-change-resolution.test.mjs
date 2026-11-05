@@ -12,7 +12,23 @@ function fixture(type='location_change',requested={location_name:'New Hotel'}){
  return{env,deps,data,writes,objects,input,body};
 }
 test('approved location writes only canonical details and reconfirmation; exact retry never repeats writes',async()=>{
- const f=fixture(),b=await f.body();const r=await resolveCustomerChange(f.env,b,f.deps);assert.equal(r.status,'applied');assert.equal(r.money_truth_changed,false);assert.equal(f.data.session.fields[S.location_name],'New Hotel');assert.equal(f.data.session.fields[S.google_map_url],null);assert.equal(f.data.session.fields[S.customer_ack],null);assert.equal(f.data.session.fields[S.model_ack],null);assert.equal(f.data.session.fields[S.partner_confirmation_status],'pending');assert.equal(f.data.session.fields[S.partner_confirmed_at],null);assert.equal(f.data.session.fields[S.partner_notification_status],'pending_change');assert.equal(f.data.request.fields[C.reviewer],'owner-1');assert.equal(f.data.session.fields.fldu1v7jHIllouI7g,'2026-10-03T09:00:00.000Z');const before=f.writes.length;assert.equal((await resolveCustomerChange(f.env,b,f.deps)).idempotent,true);assert.equal(f.writes.length,before);assert.equal(f.writes.filter(w=>w.table==='sessions').length,1);
+ const f=fixture(),b=await f.body();const r=await resolveCustomerChange(f.env,b,f.deps);assert.equal(r.status,'applied');assert.equal(r.money_truth_changed,false);assert.equal(f.data.session.fields[S.location_name],'New Hotel');assert.equal(f.data.session.fields[S.google_map_url],null);assert.equal(f.data.session.fields[S.customer_ack],null);assert.equal(f.data.session.fields[S.model_ack],null);assert.equal(f.data.session.fields[S.partner_confirmation_status],'pending');assert.equal(f.data.session.fields[S.partner_confirmed_at],null);assert.equal(f.data.session.fields[S.partner_notification_status],'pending_change');assert.equal(f.data.request.fields[C.reviewer],'owner-1');assert.equal(f.data.session.fields.fldu1v7jHIllouI7g,'2026-10-03T11:00:00.000Z');const before=f.writes.length;assert.equal((await resolveCustomerChange(f.env,b,f.deps)).idempotent,true);assert.equal(f.writes.length,before);assert.equal(f.writes.filter(w=>w.table==='sessions').length,1);
+});
+for (const [type, requested, day] of [
+ ['location_change', {location_name:'New Hotel'}, '2026-10-03'],
+ ['date_change', {job_date:'2026-10-05'}, '2026-10-04'],
+ ['time_change', {start_time:'17:45'}, '2026-10-03'],
+]) test(type+' resets reconfirm to D-1 18:00 Bangkok and keeps the schedule on exact retry',async()=>{
+ const f=fixture(type,requested),body=await f.body();
+ await resolveCustomerChange(f.env,body,f.deps);
+ const fields=f.data.session.fields;
+ assert.equal(fields.fldu1v7jHIllouI7g,day+'T11:00:00.000Z');
+ assert.equal(fields.fldPvRothitseULiN,day+'T11:00:00.000Z');
+ assert.equal(fields.fldVElAODigVt7AcR,day+'T12:00:00.000Z');
+ const snapshot=clone(fields),writes=f.writes.length;
+ assert.equal((await resolveCustomerChange(f.env,body,f.deps)).idempotent,true);
+ assert.deepEqual(f.data.session.fields,snapshot);
+ assert.equal(f.writes.length,writes);
 });
 test('reject keeps Session and all financial truth untouched and records reviewer/reason',async()=>{
  const f=fixture(),before=clone(f.data.session);const r=await resolveCustomerChange(f.env,await f.body('reject'),f.deps);assert.equal(r.status,'rejected');assert.deepEqual(f.data.session,before);assert.equal(f.writes.some(w=>w.table==='sessions'),false);assert.match(f.data.request.fields[C.resolution],/Confirmed/);

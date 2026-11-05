@@ -4,7 +4,7 @@ export function renderOwnerJobEdit(){return `<!doctype html><html lang="th"><hea
 <section><h2 id="client"></h2><p id="where" class="muted"></p><div class="chosen"><img id="modelPhoto" alt="รูปน้องที่เลือก"><div><strong id="modelName"></strong><div class="muted">น้องที่รับงาน</div></div></div><details><summary>เปลี่ยนน้อง</summary><label>ค้นหาน้องๆและนายแบบ<input id="search" autocomplete="off"></label><button id="searchButton" type="button">ค้นหา</button><div id="results"></div></details></section>
 <section><h2>ราคาลูกค้า</h2><div class="grid"><label>PN<input id="clientBase" type="number" min="0.01" step="0.01" required></label><label>ค่าเดินทาง<input id="travel" type="number" min="0" step="0.01" required></label></div><div id="clientAddons"></div></section>
 <section><h2>ยอดถึงตัวน้อง</h2><div class="grid"><label>PN<input id="modelBase" type="number" min="0.01" step="0.01" required></label><label>ค่าเดินทางน้อง<input id="modelTravel" type="number" min="0" step="0.01" required></label></div><div id="modelAddons"></div></section>
-<section class="summary"><div>ยอดลูกค้า <b id="total"></b></div><div>ยอดถึงตัวน้อง <b id="payout"></b></div><div>รับเงินตามรายการเดิม <span id="paid"></span></div><div>คงเหลือ <b id="remaining"></b></div></section>
+<section class="summary"><div>ยอดลูกค้า <b id="total"></b></div><div>ยอดถึงตัวน้อง <b id="payout"></b></div><div>เงินรับที่ยืนยันแล้ว (ไม่รวมเครดิต) <span id="paid"></span></div><div>คงเหลือ <b id="remaining"></b></div></section>
 <label>เหตุผลที่แก้ไข<input id="reason" minlength="3" maxlength="300" required></label><p class="muted">หลังแก้ไข ลูกค้าและน้องต้องอ่านรายละเอียดและยืนยันใหม่ การบันทึกจะไม่ส่งข้อความให้อัตโนมัติ</p><button id="review">ตรวจทานการแก้ไข</button></form><section id="historyBox" hidden><details><summary>ประวัติการแก้ไข</summary><div id="history"></div></details></section>
 <dialog id="confirm"><h2>ตรวจทานก่อนบันทึก</h2><p id="confirmText"></p><div class="actions"><button id="back" type="button">กลับไปแก้</button><button id="save" type="button">บันทึกการแก้ไข</button></div></dialog></main><script>
 (function(){
@@ -72,6 +72,7 @@ async function load(){
   try{
     const d=await api(t,'/v1/admin/jobs/edit?session_id='+encodeURIComponent(id));
     if(!current(t)||$('session').value.trim()!==id)return;
+    if(d.job.blocked==='credit_settlement_review_required')throw Error('งานนี้ใช้เครดิตแล้ว ต้องตรวจยอดและสิทธิ์ก่อนแก้ราคา');
     if(d.job.blocked)throw Error(errors[d.job.blocked]||'งานนี้ต้องตรวจรายละเอียดก่อนแก้ไข');
     job=d.job;rev=d.revision;
     $('client').textContent=job.client;$('where').textContent=[job.date,job.location].join(' · ');

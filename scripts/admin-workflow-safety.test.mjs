@@ -4,6 +4,9 @@ import test from 'node:test';
 
 const directory = new URL('../.github/workflows/', import.meta.url);
 const files = [
+  'sync-model-dashboard-routes.yml', 'sync-model-line-link-api-routes.yml',
+  'repair-sigil-jobs-client-lookup-routes.yml',
+  'deploy-events-worker.yml',
   'deploy-member-pages-worker.yml', 'sync-control-room-dashboard-ingress.yml',
   'retire-mmd-redirect-worker-production.yml',
   'deploy-admin-worker.yml', 'audience-production-ingress.yml',
@@ -21,7 +24,7 @@ const files = [
 ];
 const read = file => readFileSync(new URL(file, directory), 'utf8');
 const condition = "github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha";
-const localValidation = new Set(['validate', 'contract', 'validate-contract']);
+const localValidation = new Set(['route-contract', 'validate', 'contract', 'validate-contract']);
 function jobs(source) {
   return [...source.split('\njobs:\n')[1].matchAll(/^  ([\w-]+):\n([\s\S]*?)(?=^  [\w-]+:\n|$(?![\s\S]))/gm)]
     .map(([, id, body]) => ({ id, body }));
@@ -62,7 +65,7 @@ for (const file of files) test(`${file}: production work is independently approv
   const source = read(file);
   assertSafety(source, file);
   // Only Calendar retains a legacy branch CI trigger. No push can reach production.
-  if (!['calendar-production-connection.yml', 'deploy-member-pages-worker.yml', 'sync-control-room-dashboard-ingress.yml', 'retire-mmd-redirect-worker-production.yml'].includes(file)) assert.doesNotMatch(source.split('\njobs:')[0], /^  push:/m);
+  if (!['repair-sigil-jobs-client-lookup-routes.yml', 'calendar-production-connection.yml', 'deploy-member-pages-worker.yml', 'sync-control-room-dashboard-ingress.yml', 'retire-mmd-redirect-worker-production.yml'].includes(file)) assert.doesNotMatch(source.split('\njobs:')[0], /^  push:/m);
 });
 
 test('no remaining workflow automatically fans out from Deploy admin-worker', () => {
@@ -154,3 +157,15 @@ test('owner request dispatch is manual and cannot itself deploy', () => {
   assert.match(source, /actions\/workflows\/deploy-admin-worker.yml\/dispatches/);
   assert.doesNotMatch(source, /environment:|secrets\.|wrangler|CLOUDFLARE_API_TOKEN|can_admins_bypass|prevent_self_review: false/);
 });
+
+for (const file of ['sync-model-dashboard-routes.yml', 'sync-model-line-link-api-routes.yml', 'repair-sigil-jobs-client-lookup-routes.yml']) {
+  test(`${file}: route mutation cannot bypass owner approval`, () => {
+    const source = read(file);
+    for (const altered of [
+      source.replaceAll(condition, "github.event_name == 'push'"),
+      source.replace(/    needs: \[production-approval[^\n]*\n/g, ''),
+      source.replaceAll('    environment: mmd-production-mutation\n', ''),
+      source.replace('        default: false', '        default: true'),
+    ]) assert.throws(() => assertSafety(altered, file));
+  });
+}

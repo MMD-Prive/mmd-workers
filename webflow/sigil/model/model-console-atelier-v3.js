@@ -8,6 +8,7 @@ function consoleAtelierLane(session) {
 }
 function renderConsoleAtelier(root, session) {
   if (!root || typeof consoleAtelierAssets === 'undefined') return;
+  if(typeof renderModelJobBrief==='function')renderModelJobBrief(root,session);
   const icon = (name) => '<svg class="ca-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">' + consoleAtelierAssets.icons[name] + '</svg>';
   const accent = (host, name, show) => {
     if (!host) return;
@@ -23,6 +24,7 @@ function renderConsoleAtelier(root, session) {
     if (node) node.hidden = !show;
   };
   const state = String(session?.normalized_state || session?.state || '').toLowerCase();
+  root.dataset.consoleState=state;
   const lane = consoleAtelierLane(session);
   root.dataset.consoleAtelier = 'v3';
   root.dataset.consoleLane = lane;

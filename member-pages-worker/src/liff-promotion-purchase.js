@@ -37,9 +37,12 @@ export async function handleLiffPromotionPurchase(request, env = {}) {
     if (!upstream.ok || payload?.ok !== true) return json({ ok: false, error: { code: upstream.status === 422 ? "CANONICAL_CLIENT_REQUIRED" : "PROMOTION_UNAVAILABLE" } }, upstream.status === 422 ? 409 : 503);
     if (payload.already_activated === true || payload.status === "already_activated") return json({ ok: true, status: "already_activated", payment_available: false, entitlement_granted: false });
     if (!purchase) {
-      const fields = ["amount_thb", "paid_credit_thb", "bonus_1_thb", "bonus_2_thb", "total_credit_thb", "minimum_service_thb", "validity_days"];
+      const fields = ["amount_thb", "paid_credit_thb", "bonus_1_thb", "bonus_2_thb", "total_credit_thb", "minimum_service_thb"];
+      const v3=payload.policy_version==='v3';
+      if(v3){if(payload.validity_months!==3||payload.maximum_validity_months!==5||payload.moments!==2||payload.paid_credit_per_moment_thb!==10000||payload.validity_days!==undefined)throw new Error('invalid_policy');fields.push('validity_months','maximum_validity_months','moments','paid_credit_per_moment_thb');}
+      else {if(payload.policy_version&&!['v1','v2'].includes(payload.policy_version)||![120,180].includes(payload.validity_days))throw new Error('invalid_policy');fields.push('validity_days');}
       if (payload.status !== "ready" || payload.payment_available !== true || payload.package_code !== "double_moment_20000" || fields.some(key => !Number.isInteger(payload[key]) || payload[key] <= 0)) throw new Error("invalid_offer");
-      return json({ ok: true, status: "ready", payment_available: true, package_code: payload.package_code, ...Object.fromEntries(fields.map(key => [key, payload[key]])), refundable: false, official_verification_required: true, entitlement_granted: false });
+      return json({ ok: true, status: "ready", payment_available: true, package_code: payload.package_code, ...(payload.policy_version?{policy_version:payload.policy_version}:{}), ...Object.fromEntries(fields.map(key => [key, payload[key]])), refundable: false, official_verification_required: true, entitlement_granted: false });
     }
     const checkout = LIFF_RENEWAL_CARD_INTERNALS.canonicalCheckoutUrl(payload.customer_payment_url);
     if (!checkout || !clean(payload.payment_ref) || !clean(payload.session_id) || payload.unified_payment_flow !== "v1" || payload.activation_state !== "awaiting_official_payment_verification" || payload.purchase_amount_thb !== 20000) throw new Error("invalid_payment");

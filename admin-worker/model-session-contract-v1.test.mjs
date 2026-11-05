@@ -2,7 +2,6 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-
 import {
   MODEL_SESSION_ALLOWED_ACTIONS,
   MODEL_SESSION_CONTRACT_VERSION,
@@ -10,11 +9,23 @@ import {
   MODEL_SESSION_STATES,
   MODEL_SESSION_TRANSITIONS,
   getAllowedModelSessionActions,
+  isBangkokJobDay,
   isModelSessionActionVisible,
   normalizeSessionState,
   resolveModelSessionPage,
   resolveModelSessionTransition,
 } from "./src/modelSessionContractV1.js";
+
+test("travel day uses Bangkok date and rejects invalid or adjacent dates", () => {
+  const beforeMidnight = Date.parse("2026-10-30T16:59:59Z");
+  const afterMidnight = Date.parse("2026-10-30T17:00:00Z");
+  assert.equal(isBangkokJobDay("2026-10-31", beforeMidnight), false);
+  assert.equal(isBangkokJobDay("2026-10-31", afterMidnight), true);
+  assert.equal(isBangkokJobDay("2026-10-30", afterMidnight), false);
+  assert.equal(isBangkokJobDay("2026-11-01", afterMidnight), false);
+  assert.equal(isBangkokJobDay("2026-02-30", afterMidnight), false);
+  assert.equal(isBangkokJobDay("", afterMidnight), false);
+});
 
 test("declares canonical model session states in contract order", () => {
   assert.equal(MODEL_SESSION_CONTRACT_VERSION, "model_session_contract_v1");

@@ -522,6 +522,7 @@
 
   function render(payload) {
     lastPayload = payload;
+    if(typeof window.MMDMountConfirmationTravel==='function')window.MMDMountConfirmationTravel(root,{role:'customer',sessionId:payload?.role==='customer'?payload.session_id:null,state:payload?.customer_session?.lifecycle_state,locale:'th',confirmationToken:token});
     seedChangeFields(payload);
     const session = payload?.customer_session;
     if (!session || session.schema !== "customer_session_v2") {

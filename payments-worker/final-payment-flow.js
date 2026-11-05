@@ -2,11 +2,15 @@ import { requestSessionPaidProjection } from './session-paid-projection.js';
 import { stablePaymentRef } from "./unified-payment-proof.js";
 import { formulaValue, httpError } from "./lib/payment-primitives.js";
 import { BALANCE_FIELDS, readVerifiedSessionBalance, balancePayment } from "./verified-session-balance.js";
+import {sessionCreditIdentity,sessionNeedsCreditRead,creditActorRequest} from './double-moment-balance.js';
+import {sessionBalanceView} from '../shared/session-balance-view.mjs';
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 
 export const FINAL_PAYMENT_ACTIVATE_PATH = "/v1/internal/payments/final/activate";
 export const FINAL_PAYMENT_STATUS_PATH = "/v1/internal/payments/final/status";
+export const VERIFIED_BALANCE_PATH = "/v1/internal/payments/balance";
+export const VERIFIED_REPORT_PATH = "/v1/internal/payments/report";
 
 const PAYMENT_FIELDS = Object.freeze({
   paymentRef: "fldOO6SY49iDw8VBZ",
@@ -27,7 +31,7 @@ const FINAL_WAITING_STATES = new Set(["arrived", "met_customer", "final_payment_
 export function isFinalPaymentFlowRequest(path, method) {
   const normalized = normalizePath(path);
   return String(method || "GET").toUpperCase() === "POST"
-    && (normalized === FINAL_PAYMENT_ACTIVATE_PATH || normalized === FINAL_PAYMENT_STATUS_PATH);
+    && [FINAL_PAYMENT_ACTIVATE_PATH, FINAL_PAYMENT_STATUS_PATH, VERIFIED_BALANCE_PATH, VERIFIED_REPORT_PATH].includes(normalized);
 }
 
 export async function handleFinalPaymentFlow(request, env = {}) {
@@ -41,6 +45,21 @@ export async function handleFinalPaymentFlow(request, env = {}) {
   if (!sessionId) return json({ ok: false, error: "session_id_required", authority: "payments-worker" }, 400);
 
   try {
+    if (path === VERIFIED_BALANCE_PATH || path === VERIFIED_REPORT_PATH) {
+      if (!body || Object.keys(body).length !== 1 || typeof body.session_id !== 'string' || !/^[-\w]{1,220}$/.test(body.session_id)) return json({ok:false,error:'invalid_balance_request'},400);
+      const session = await findSession(env, sessionId, true);
+      if (!session?.id) throw httpError(404, 'session_not_found');
+      if(path===VERIFIED_REPORT_PATH){
+        const ns=env.SESSION_PAID_PROJECTION_COORDINATOR;
+        if(!ns?.get||!ns.idFromName)return json({ok:false,error:'report_unavailable',balance:null},503);
+        const response=await ns.get(ns.idFromName('session:'+sessionId)).fetch('https://projection.internal/report',{method:'POST',body:JSON.stringify({session_id:sessionId})});
+        const data=await response.json();
+        if(!response.ok||data.status!=='verified')return json({ok:false,error:'report_unavailable',balance:null},503);
+        return json({ok:true,authority:'payments-worker',balance:sessionBalanceView(data.balance,sessionId)});
+      }
+      const balance = sessionBalanceView(await readVerifiedSessionBalance(env, session), sessionId);
+      return json({ok:true,authority:'payments-worker',balance});
+    }
     if (path === FINAL_PAYMENT_ACTIVATE_PATH) {
       const intent = await ensureFinalPaymentIntent(env, sessionId);
       return json({ ok: true, authority: "payments-worker", ...intent });
@@ -54,6 +73,7 @@ export async function handleFinalPaymentFlow(request, env = {}) {
   } catch (error) {
     return json({
       ok: false,
+      ...(path===VERIFIED_REPORT_PATH?{balance:null}:{}),
       error: clean(error?.message || error || "final_payment_flow_failed", 300),
       authority: "payments-worker",
     }, Number(error?.status || 500));
@@ -61,6 +81,25 @@ export async function handleFinalPaymentFlow(request, env = {}) {
 }
 
 export async function ensureFinalPaymentIntent(env, sessionId) {
+  const session=await findSession(env,sessionId,true);
+  if(!session?.id)throw httpError(404,'session_not_found');
+  if(sessionNeedsCreditRead(env,session)){
+    const result=await creditActorRequest(env,sessionCreditIdentity(session),'final-intent');
+    await refreshFinalPaymentBalanceCache(env,sessionId);
+    return result;
+  }
+  return ensureFinalPaymentIntentUnlocked(env,sessionId);
+}
+
+export async function refreshFinalPaymentBalanceCache(env,sessionId){
+  const session=await findSession(env,sessionId,true);
+  if(!session?.id)throw httpError(404,'session_not_found');
+  const summary=await readVerifiedSessionBalance(env,session);
+  await syncDerivedBalance(env,session.id,summary);
+  return summary;
+}
+
+export async function ensureFinalPaymentIntentUnlocked(env, sessionId, beforeCreate=null) {
   requireAirtable(env);
   const session = await findSession(env, sessionId, true);
   if (!session?.id) throw httpError(404, "session_not_found");
@@ -77,10 +116,10 @@ export async function ensureFinalPaymentIntent(env, sessionId) {
     if (snapshot.session_id !== sessionId) throw httpError(409, "final_payment_session_mismatch");
     if (snapshot.stage !== "final") throw httpError(409, "final_payment_stage_mismatch");
     if (paymentVerified(existing) && balance > 0) throw httpError(409, "balance_after_final_review_required");
-    if (!paymentVerified(existing) && snapshot.amount_thb && Math.abs(snapshot.amount_thb - balance) > 0.009) {
+    if (!paymentVerified(existing) && (!(snapshot.amount_thb > 0) || Math.abs(snapshot.amount_thb - balance) > 0.009)) {
       throw httpError(409, "final_payment_amount_mismatch");
     }
-    await syncDerivedBalance(env, session.id, summary);
+    if(!beforeCreate)await syncDerivedBalance(env, session.id, summary);
     return {
       schema: "final_payment_intent_v1",
       activated: true,
@@ -94,6 +133,7 @@ export async function ensureFinalPaymentIntent(env, sessionId) {
   }
 
   if (!(balance > 0)) throw httpError(409, "no_amount_due");
+  if(beforeCreate)await beforeCreate();
   const now = new Date().toISOString();
   const created = await createRecord(env, paymentsTable(env), {
     [field(env.AT_PAYMENTS__PAYMENT_REF, PAYMENT_FIELDS.paymentRef)]: paymentRef,
@@ -101,7 +141,7 @@ export async function ensureFinalPaymentIntent(env, sessionId) {
     [field(env.AT_PAYMENTS__AMOUNT, PAYMENT_FIELDS.amount)]: balance,
     [field(env.AT_PAYMENTS__PAYMENT_STATUS, PAYMENT_FIELDS.paymentStatus)]: "Pending",
     [field(env.AT_PAYMENTS__PAYMENT_METHOD, PAYMENT_FIELDS.paymentMethod)]: "PromptPay",
-    [field(env.AT_PAYMENTS__NOTES, PAYMENT_FIELDS.notes)]: "Final balance activated when Model marked arrived.",
+    [field(env.AT_PAYMENTS__NOTES, PAYMENT_FIELDS.notes)]: "Final balance based on verified session payments and applied credits.",
     [field(env.AT_PAYMENTS__VERIFICATION_STATUS, PAYMENT_FIELDS.verificationStatus)]: "pending_review",
     [field(env.AT_PAYMENTS__PAYMENT_INTENT_STATUS, PAYMENT_FIELDS.intentStatus)]: "Pending Confirmation",
     [field(env.AT_PAYMENTS__CREATED_AT, PAYMENT_FIELDS.createdAt)]: now,
@@ -109,7 +149,7 @@ export async function ensureFinalPaymentIntent(env, sessionId) {
     [PAYMENT_FIELDS.paymentType]: "final",
   });
 
-  await syncDerivedBalance(env, session.id, summary);
+  if(!beforeCreate)await syncDerivedBalance(env, session.id, summary);
   return {
     schema: "final_payment_intent_v1",
     activated: true,
@@ -246,7 +286,7 @@ async function syncDerivedBalance(env, sessionRecordId, summary) {
 }
 
 function resolveLifecycleField(fields = {}) {
-  for (const candidate of ["session_state", "state", "status"]) {
+  for (const candidate of ["model_session_state", "fld57fhdWqIcOy4Jp", "session_state", "state", "status"]) {
     if (Object.prototype.hasOwnProperty.call(fields, candidate)) return candidate;
   }
   return "status";

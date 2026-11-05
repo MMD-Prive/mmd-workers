@@ -1,5 +1,7 @@
 import { readCredentialBoundAdminActor } from './credential-bound-admin-session.js';
 import { renderOwnerJobEdit } from './owner-job-edit-page.js';
+import { readVerifiedPaymentBalance } from './verified-payment-balance.js';
+import { sessionBalanceView } from '../../shared/session-balance-view.mjs';
 
 export const EDIT_PAGE = '/internal/admin/jobs/edit';
 export const EDIT_API = '/v1/admin/jobs/edit';
@@ -43,11 +45,16 @@ export async function loadJob(env,id){
   if(!validSession(id))fail('invalid_session',400);
   const [ss,jj]=await Promise.all([at(env,'sessions',{formula:`{${S.id}}="${id}"`,fields:Object.values(S)}),at(env,'jobs',{formula:`{${J.id}}="${id}"`,fields:Object.values(J)})]);
   if(ss.records?.length!==1||jj.records?.length!==1)fail('job_not_unique',404);
-  return {session:ss.records[0],job:jj.records[0]};
+  const balance=await readVerifiedPaymentBalance(env,id);
+  if(balance.total_amount_thb!==ss.records[0].fields[S.amount])fail('job_balance_changed',409);
+  return {session:ss.records[0],job:jj.records[0],balance};
 }
 export async function revision(data){const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(data, function(k,v){return v && typeof v==='object' && !Array.isArray(v)?Object.fromEntries(Object.entries(v).sort(([a],[b])=>a.localeCompare(b))):v;})));return [...new Uint8Array(bytes)].map(v=>v.toString(16).padStart(2,'0')).join('');}
 export function assertEditable(data){
   const f=data.session.fields;
+  const balance=sessionBalanceView(data.balance,f[S.id]);
+  if(balance.total_amount_thb!==f[S.amount])fail('job_balance_changed');
+  if(balance.credit_applied_thb>0)fail('credit_settlement_review_required');
   if(/cancel|void|refund|complet|closed/i.test(name(f[S.status])) || (f[S.state]&&!['offered','confirmed','offer_declined','offer_expired'].includes(name(f[S.state]))))fail('job_already_started');
   if(f[S.source]){let src;try{src=JSON.parse(f[S.source]);}catch{fail('pricing_review_required');}if(src.partner_record_id||src.source_kind==='partner')fail('partner_settlement_review_required');}
   if(f[S.partner]||f[S.locked]||marker(f[S.note]||f[S.notes],'SIGIL Partner Snapshot v1'))fail('partner_settlement_review_required');
@@ -62,8 +69,8 @@ export function assertEditable(data){
 export function projectJob(data){
   const f=data.session.fields; let blocked=null,p=null;
   try{p=assertEditable(data);}catch(e){blocked=e.message;}
-  const paid=Math.max(Number(f[S.deposit]||0),Number(f[S.received]||0));
-  return {session_id:f[S.id],client:name(f[S.client]),model_id:f[S.model]?.[0]||'',model_name:name(f[S.name]),date:f[S.date],time:[f[S.start],f[S.end]],location:name(f[S.location]),amount:f[S.amount],payout:f[S.payout],paid,travel:f[S.travel]||0,model_travel:f[S.modelTravel]||0,pricing:p,blocked};
+  const balance=sessionBalanceView(data.balance,f[S.id]),paid=balance.verified_paid_thb;
+  return {session_id:f[S.id],client:name(f[S.client]),model_id:f[S.model]?.[0]||'',model_name:name(f[S.name]),date:f[S.date],time:[f[S.start],f[S.end]],location:name(f[S.location]),amount:f[S.amount],payout:f[S.payout],paid,balance,travel:f[S.travel]||0,model_travel:f[S.modelTravel]||0,pricing:p,blocked};
 }
 export function buildEdit(data,body,model,actor,now=new Date().toISOString()){
   const old=assertEditable(data),f=data.session.fields;
@@ -76,7 +83,7 @@ export function buildEdit(data,body,model,actor,now=new Date().toISOString()){
   for(const a of body.addons){if(!a||Object.keys(a).some(k=>!['option','client_amount_thb','model_payout_thb'].includes(k))||!['mk','burn','live','group'].includes(a.option)||options.has(a.option)||!money(a.client_amount_thb)||!money(a.model_payout_thb))fail('invalid_amount',400);options.add(a.option);}
   const service=round(body.client_base+body.addons.reduce((s,a)=>s+a.client_amount_thb,0));
   const amount=round(service+body.travel),payout=round(body.model_base+body.addons.reduce((s,a)=>s+a.model_payout_thb,0)+body.model_travel);
-  const paid=Math.max(Number(f[S.deposit]||0),Number(f[S.received]||0));
+  const paid=data.balance.verified_paid_thb;
   if(!Number.isFinite(paid)||paid<0||amount<paid||payout>amount)fail('settlement_review_required');
   const pricing={...old,client_base_amount_thb:body.client_base,model_base_payout_thb:body.model_base,addons:body.addons,client_total_amount_thb:service,model_total_payout_thb:payout,travel_fee_thb:body.travel,model_travel_fee_thb:body.model_travel};
   const sigil={...(marker(f[S.note]||f[S.notes],'SIGIL Pricing v1')||{}),full_price_thb:amount,net_price_thb:amount,balance_thb:round(amount-paid),deposit_received_thb:paid,deposit_percent:round(paid/amount*100),deposit_basis_thb:amount,deposit_minimum_percent:30,deposit_minimum_thb:Math.ceil(amount*.3),deposit_below_minimum:paid<Math.ceil(amount*.3),deposit_shortfall_thb:Math.max(0,round(Math.ceil(amount*.3)-paid))};
@@ -127,6 +134,16 @@ export async function handleOwnerJobEdit(request,env){
     const raw=await request.text();if(raw.length>12000)fail('invalid_edit',400);
     let body;try{body=JSON.parse(raw);}catch{fail('invalid_edit',400);}
     if(!validSession(body?.session_id)||!recordId(body?.model_id)||!/^[-\w]{16,80}$/.test(body?.request_id||'')||!env.JOB_EDIT_COORDINATOR?.getByName)fail('edit_unavailable',503);
-    return env.JOB_EDIT_COORDINATOR.getByName(body.session_id).fetch(new Request('https://job-edit.internal/edit',{method:'POST',body:JSON.stringify({body,actor:{id:actor.id,role:actor.role}})}));
+    const edited=await env.JOB_EDIT_COORDINATOR.getByName(body.session_id).fetch(new Request('https://job-edit.internal/edit',{method:'POST',body:JSON.stringify({body,actor:{id:actor.id,role:actor.role}})}));
+    if(!edited.ok)return edited;
+    let reportStatus='unavailable';
+    try{
+      if(env.PAYMENTS_WORKER?.fetch&&env.AUTH_SERVICE_ADMIN_TO_PAYMENTS){
+        const r=await env.PAYMENTS_WORKER.fetch(new Request('https://payments.internal/v1/internal/payments/report',{method:'POST',headers:{'content-type':'application/json','x-internal-token':env.AUTH_SERVICE_ADMIN_TO_PAYMENTS},body:JSON.stringify({session_id:body.session_id}),signal:AbortSignal.timeout(12000)}));
+        const data=await r.json();if(r.ok&&data.ok===true&&data.authority==='payments-worker'){sessionBalanceView(data.balance,body.session_id);reportStatus='verified';}
+      }
+    }catch{}
+    const headers=new Headers(edited.headers);headers.set('x-mmd-report-status',reportStatus);
+    return new Response(edited.body,{status:edited.status,headers});
   }catch(e){return reply({ok:false,error:e.status?e.message:'edit_unavailable'},e.status||503);}
 }

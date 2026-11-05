@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { memoryR2 } from "../shared/test/payment-memory-r2.mjs";
 
 import {
   handleCustomerAftercare,
@@ -18,7 +19,7 @@ function request(body, origin = "https://www.mmdbkk.com") {
   });
 }
 
-function envFor({ state = "separated", events = [], paymentOk = true } = {}) {
+function envFor({ state = "under_review", events = [], paymentOk = true, approved = true } = {}) {
   let patchCount = 0;
   let patchedFields = null;
   const job = {
@@ -26,15 +27,17 @@ function envFor({ state = "separated", events = [], paymentOk = true } = {}) {
     fields: {
       session_id: SESSION_ID,
       job_id: "JOB-AFTERCARE-001",
-      status: state,
-      events_json: JSON.stringify(events),
+      model_session_state: state,
+      customer_completed_at: approved ? "2026-09-10T10:00:00.000Z" : null,
+      customer_aftercare_json: approved ? JSON.stringify({ schema:"mmd_customer_completion_v1", session_id:SESSION_ID, approved_at:"2026-09-10T10:00:00.000Z", review:events[0] || null }) : null,
       last_update_at: "2026-09-10T10:00:00.000Z",
     },
   };
 
   const env = {
+    SESSION_COMPLETION_STATE: memoryR2(),
     AIRTABLE_BASE_ID: "app_test",
-    AIRTABLE_TABLE_JOBS: "jobs",
+    AIRTABLE_TABLE_SESSIONS: "Sessions",
     AIRTABLE_API_KEY: "pat_test",
     ALLOWED_ORIGINS: "https://mmdbkk.com,https://www.mmdbkk.com",
     PAYMENTS_HTTP: {
@@ -59,6 +62,7 @@ function envFor({ state = "separated", events = [], paymentOk = true } = {}) {
           patchCount += 1;
           const body = await req.json();
           patchedFields = body.fields;
+          Object.assign(job.fields, body.fields);
           return new Response(JSON.stringify({
             ...job,
             fields: { ...job.fields, ...body.fields },
@@ -102,7 +106,7 @@ test("normalizer accepts canonical fields and deduplicates tags", () => {
 });
 
 test("normalizer rejects invalid ratings, keys, and tags", () => {
-  assert.throws(() => normalizeAftercareInput(validBody({ rating: 0 })), /rating_must_be_1_to_5/);
+  assert.throws(() => normalizeAftercareInput(validBody({ rating: 0 })), /rating_out_of_range/);
   assert.throws(() => normalizeAftercareInput(validBody({ idempotency_key: "short" })), /idempotency_key_invalid/);
   assert.throws(() => normalizeAftercareInput(validBody({ quick_tags: ["public_review"] })), /quick_tag_invalid/);
   assert.throws(() => normalizeAftercareInput(validBody({ issue_tags: ["other"] })), /issue_tag_invalid/);
@@ -122,8 +126,8 @@ test("work_finished remains locked until separated", async () => {
   assert.equal(ctx.patchCount, 0);
 });
 
-test("separated submission records private aftercare and advances to under_review", async () => {
-  const ctx = envFor({ state: "separated" });
+test("approved completion records private review without advancing lifecycle", async () => {
+  const ctx = envFor({ state: "under_review" });
   const response = await handleCustomerAftercare(request(validBody()), ctx.env);
   assert.equal(response.status, 201);
   const data = await response.json();
@@ -135,15 +139,12 @@ test("separated submission records private aftercare and advances to under_revie
   assert.equal(data.private_mmd_message_received, true);
   assert.equal(data.private_care.recommended, false);
   assert.equal(ctx.patchCount, 1);
-  assert.equal(ctx.patchedFields.status, "under_review");
+  assert.equal(ctx.patchedFields.model_session_state, undefined);
 
-  const events = JSON.parse(ctx.patchedFields.events_json);
-  assert.equal(events.at(-2).event, "aftercare_submitted");
-  assert.equal(events.at(-2).rating, 5);
-  assert.deepEqual(events.at(-2).quick_tags, ["on_time", "polite"]);
-  assert.equal(events.at(-1).event, "request_review");
-  assert.equal(events.at(-1).from, "separated");
-  assert.equal(events.at(-1).to, "under_review");
+  const evidence = JSON.parse(ctx.patchedFields.customer_aftercare_json);
+  assert.equal(evidence.review.event, "aftercare_submitted");
+  assert.equal(evidence.review.rating, 5);
+  assert.deepEqual(evidence.review.quick_tags, ["on_time", "polite"]);
 
   const serialized = JSON.stringify(data);
   assert.equal(serialized.includes("ขอบคุณครับ"), false);
@@ -151,7 +152,7 @@ test("separated submission records private aftercare and advances to under_revie
 });
 
 test("low rating and sensitive tags return signed Private Care continuation", async () => {
-  const ctx = envFor({ state: "separated" });
+  const ctx = envFor({ state: "under_review" });
   const response = await handleCustomerAftercare(request(validBody({
     rating: 2,
     issue_tags: ["safety", "payment"],
@@ -188,4 +189,49 @@ test("untrusted origin is rejected before token or storage access", async () => 
   assert.equal(response.status, 403);
   assert.equal((await response.json()).error, "origin_not_allowed");
   assert.equal(ctx.patchCount, 0);
+});
+
+
+test("explicit approval is separate from optional review and is replay-safe", async () => {
+  const ctx = envFor({ state: "separated", approved: false });
+  const body = { t:TOKEN, action:"approve_completion", confirm_completed:true, idempotency_key:"approve-test-001" };
+  const response = await handleCustomerAftercare(request(body), ctx.env);
+  const data = await response.json();
+  assert.equal(response.status, 201);
+  assert.equal(data.customer_approved, true);
+  assert.equal(data.aftercare_complete, false);
+  assert.equal(ctx.patchedFields.model_session_state, "under_review");
+  assert.equal(ctx.patchedFields.completion_review_status, "pending_review");
+  assert.ok(ctx.patchedFields.customer_completed_at);
+  assert.equal((await handleCustomerAftercare(request(body), ctx.env)).status, 200);
+  assert.equal(ctx.patchCount, 1);
+});
+
+test("review or forged body session id cannot approve an unapproved session", async () => {
+  const ctx = envFor({state:"separated",approved:false});
+  const res = await handleCustomerAftercare(request(validBody({session_id:"someone-else"})),ctx.env);
+  assert.equal(res.status,409);
+  assert.equal(ctx.patchCount,0);
+  assert.throws(()=>normalizeAftercareInput({t:TOKEN,action:"approve_completion",idempotency_key:"approve-test-001"}),/explicit_completion/);
+});
+
+test("unverified customer token never writes completion", async () => {
+  const ctx = envFor({paymentOk:false});
+  const res = await handleCustomerAftercare(request(validBody()),ctx.env);
+  assert.equal(res.status,401);
+  assert.equal(ctx.patchCount,0);
+});
+
+test("sensitive review holds payout and records rating scale", async () => {
+  const ctx=envFor();
+  const res=await handleCustomerAftercare(request(validBody({rating:3,rating_scale:10,issue_tags:["safety"]})),ctx.env);
+  assert.equal(res.status,201);
+  assert.equal(ctx.patchedFields.completion_review_status,"hold");
+  assert.equal(JSON.parse(ctx.patchedFields.customer_aftercare_json).review.rating_scale,10);
+});
+
+test("missing shared completion lock fails closed without any Airtable write", async () => {
+  const ctx=envFor({state:'separated',approved:false});delete ctx.env.SESSION_COMPLETION_STATE;
+  const res=await handleCustomerAftercare(request({t:TOKEN,action:'approve_completion',confirm_completed:true,idempotency_key:'approval-fixture'}),ctx.env);
+  assert.equal(res.status,503);assert.equal(ctx.patchCount,0);
 });

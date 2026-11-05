@@ -56,7 +56,8 @@ test("Double Moment numbers, validity and credit constraints render; double-tap 
   assert.match(elements.get("double-moment-rows").children.map(row => row.children.map(x => x.textContent).join(":")).join("\n"), /27,000[\s\S]*180 วัน/);
   assert.match(elements.get("double-moment-note").textContent, /ไม่ใช่เงินสด[\s\S]*20,000[\s\S]*คืนเงินไม่ได้/);
   assert.match(elements.get("double-moment-note").textContent, /คนละงานที่ยืนยันแล้ว/);
-  assert.match(elements.get("double-moment-note").textContent, /1 แพ็กเกจต่อสมาชิกต่อแคมเปญ/);
+  assert.match(elements.get("double-moment-note").textContent, /ซื้อได้ตามรอบสิทธิ์ที่อนุมัติ/);
+  assert.match(elements.get("double-moment-note").textContent, /ใช้หลายชุดกับงานเดียวกันไม่ได้/);
   const button = elements.get("double-moment-action");
   const first = button.onclick(); const second = button.onclick(); assert.equal(requests, 1);
   resolve(Response.json({ok:false}, {status:503})); await Promise.all([first, second]);

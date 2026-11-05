@@ -1,4 +1,5 @@
 import { formulaValue } from "./lib/payment-primitives.js";
+import { readCustomerCompletion } from "../shared/session-completion.mjs";
 const AIRTABLE_API = "https://api.airtable.com/v0";
 
 export const CUSTOMER_SESSION_DETAILS_PATH = "/v1/confirm/details";
@@ -55,16 +56,28 @@ export async function handleCustomerSessionDetails(request, env = {}, next) {
 
   const body = await tokenBodyPromise;
   const token = text(body?.t || body?.token, 12000);
+  let session = null;
   let job = null;
   let sourceAvailable = true;
 
   try {
-    job = await findJobBySessionId(env, payload.session_id);
+    session = await findRecordBySessionId(env, env.AIRTABLE_TABLE_SESSIONS || "Sessions", payload.session_id);
+    sourceAvailable = Boolean(session);
   } catch {
     sourceAvailable = false;
   }
 
+  // Jobs supply ETA only; their status never supplies or unlocks lifecycle state.
+  if (TRAVEL_STATES.has(normalizeLifecycleState(session?.fields?.model_session_state))) {
+    try {
+      job = await findRecordBySessionId(env, env.AIRTABLE_TABLE_JOBS || "jobs", payload.session_id);
+    } catch {
+      // An unavailable ETA does not invalidate the canonical session.
+    }
+  }
+
   const tracker = buildCustomerSessionTracker({
+    sessionFields: session?.fields || null,
     jobFields: job?.fields || null,
     confirmation: payload,
     token,
@@ -77,19 +90,21 @@ export async function handleCustomerSessionDetails(request, env = {}, next) {
   });
 }
 
-export function buildCustomerSessionTracker({ jobFields, confirmation = {}, token = "", sourceAvailable = true } = {}) {
-  const state = normalizeLifecycleState(jobFields?.status);
-  const aftercareAvailable = POST_SEPARATION_STATES.has(state);
+export function buildCustomerSessionTracker({ sessionFields, jobFields, confirmation = {}, token = "", sourceAvailable = true } = {}) {
+  const available = Boolean(sourceAvailable && sessionFields);
+  const state = available ? normalizeLifecycleState(sessionFields.model_session_state) : "";
+  const aftercareAvailable = available && POST_SEPARATION_STATES.has(state);
   const eta = TRAVEL_STATES.has(state) ? latestEta(jobFields?.events_json) : null;
   const signedToken = text(token, 12000);
+  const completion = readCustomerCompletion(sessionFields || {});
 
   return {
     schema: "customer_session_v2",
-    source: jobFields ? "jobs" : "confirmation",
-    source_available: Boolean(sourceAvailable),
+    source: sessionFields ? "Sessions" : "confirmation",
+    source_available: available,
     lifecycle_state: state || null,
     customer_stage: customerStage(state),
-    status_updated_at: text(jobFields?.last_update_at, 120) || null,
+    status_updated_at: available ? text(sessionFields.model_session_state_updated_at, 120) || null : null,
     eta,
     privacy: {
       live_gps: false,
@@ -98,6 +113,8 @@ export function buildCustomerSessionTracker({ jobFields, confirmation = {}, toke
     },
     aftercare: {
       available: aftercareAvailable,
+      customer_approved: available && Boolean(completion.approved),
+      review_submitted: available && Boolean(completion.review?.ts),
       unlock_state: "separated",
       url: aftercareAvailable && signedToken ? signedPath("/aftercare", signedToken) : null,
       rating_min: 1,
@@ -117,7 +134,7 @@ export function buildCustomerSessionTracker({ jobFields, confirmation = {}, toke
     context: {
       session_id: text(confirmation?.session_id, 200) || null,
       payment_ref: text(confirmation?.payment_ref, 200) || null,
-      job_id: text(jobFields?.job_id, 200) || null,
+      job_id: text(sessionFields?.job_id || jobFields?.job_id, 200) || null,
     },
   };
 }
@@ -155,9 +172,9 @@ export function customerStage(stateValue) {
   return "confirmed";
 }
 
-async function findJobBySessionId(env, sessionId) {
+async function findRecordBySessionId(env, tableName, sessionId) {
   const baseId = text(env.AIRTABLE_BASE_ID, 100);
-  const table = text(env.AIRTABLE_TABLE_JOBS || "jobs", 120);
+  const table = text(tableName, 120);
   const apiKey = text(env.AIRTABLE_API_KEY, 5000);
   if (!baseId || !table || !apiKey) throw new Error("customer_session_storage_not_ready");
 
@@ -175,7 +192,8 @@ async function findJobBySessionId(env, sessionId) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error("customer_session_storage_lookup_failed");
   const records = Array.isArray(data?.records) ? data.records : [];
-  if (records.length > 1) throw new Error("customer_session_id_ambiguous");
+  if (records.length > 1 || data.offset) throw new Error("customer_session_id_ambiguous");
+  if (records[0] && records[0].fields?.session_id !== sessionId) throw new Error("customer_session_id_mismatch");
   return records[0] || null;
 }
 

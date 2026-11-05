@@ -1,0 +1,28 @@
+{
+  "state": "LOCAL_REVIEW_ONLY",
+  "table": "Sessions",
+  "table_id": "tblC98mKWbzmPuNzX",
+  "production_enabled": false,
+  "fields": [
+    {"key":"total_amount_thb","name":"balance_total_thb","type":"currency","precision":2,"field_id":null},
+    {"key":"verified_paid_thb","name":"balance_cash_thb","type":"currency","precision":2,"field_id":null},
+    {"key":"paid_credit_thb","name":"paid_credit_applied_thb","type":"currency","precision":2,"field_id":null},
+    {"key":"bonus_credit_thb","name":"bonus_credit_applied_thb","type":"currency","precision":2,"field_id":null},
+    {"key":"remaining_amount_thb","name":"balance_cash_due_thb","type":"currency","precision":2,"field_id":null},
+    {"key":"overpaid_amount_thb","name":"balance_overpaid_thb","type":"currency","precision":2,"field_id":null},
+    {"key":"status","name":"balance_truth_status","type":"singleLineText","field_id":null},
+    {"key":"expires","name":"balance_snapshot_expires_at","type":"dateTime","field_id":null},
+    {"key":"session","name":"balance_session_id","type":"singleLineText","field_id":null}
+  ],
+  "bindings_template": {
+    "SESSION_REPORT_PROJECTION_ENABLED":"false",
+    "SESSION_REPORT_FIELD_IDS":{
+      "total_amount_thb":null,"verified_paid_thb":null,"paid_credit_thb":null,
+      "bonus_credit_thb":null,"remaining_amount_thb":null,"overpaid_amount_thb":null,
+      "status":null,"expires":null,"session":null
+    }
+  },
+  "formula_target":"balance_due_calc (formula, not customer_amount_due_thb)",
+  "formula":"IF(AND({balance_truth_status}=\"verified\",{balance_session_id}={session_id},COUNT({balance_total_thb},{balance_cash_thb},{paid_credit_applied_thb},{bonus_credit_applied_thb},{balance_cash_due_thb},{balance_overpaid_thb})=6,{balance_total_thb}>0,MIN({balance_cash_thb},{paid_credit_applied_thb},{bonus_credit_applied_thb},{balance_cash_due_thb},{balance_overpaid_thb})>=0,{balance_cash_due_thb}=ROUND(MAX(0,{balance_total_thb}-{balance_cash_thb}-{paid_credit_applied_thb}-{bonus_credit_applied_thb}),2),{balance_overpaid_thb}=ROUND(MAX(0,{balance_cash_thb}+{paid_credit_applied_thb}+{bonus_credit_applied_thb}-{balance_total_thb}),2),{balance_snapshot_expires_at},IS_AFTER({balance_snapshot_expires_at},NOW())),{balance_cash_due_thb},BLANK())",
+  "limitations":["Field IDs remain null until separately approved schema creation and readback.","Offline tests simulate formula conditions; the Airtable formula engine is not exercised.","NOW refresh is not instantaneous; formula output must not authorize payment or entitlement."]
+}

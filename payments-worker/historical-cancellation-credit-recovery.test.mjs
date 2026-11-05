@@ -148,8 +148,9 @@ test("historical cancellation recovery verifies a cancelled same-client session 
 
     const payment = state.db.payments[0].fields;
     assert.deepEqual(payment.fldcrLuJijj7xr0y8, [IDs.client]);
-    assert.equal(payment.fld5rTIVEF1DXwfe2, 4500);
-    assert.equal(payment.fldJ7a0Ube9F0bmRy, "official_verified");
+    assert.equal(payment.fldvCSwrUW8OMAooS, 4500);
+    assert.equal(Object.hasOwn(payment,'fld5rTIVEF1DXwfe2'),false,'computed amount field is not writable');
+    assert.equal(payment.fldJ7a0Ube9F0bmRy, "verified");
     assert.equal(payment.fldD0mQWTfdmyBAeT, "official_verified");
     assert.equal(payment.flddkMKy5H8RbFwt9, PAYMENT_REF);
     assert.equal(payment.fld208LCmQZB5llNo, "payments-worker");

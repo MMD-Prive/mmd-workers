@@ -3,6 +3,7 @@ export { ModelDiscoveryCoordinator } from "./model-customer-discovery-settings.j
 import { isAdminRecoveryPage, renderAdminRecoveryPage } from "./admin-recovery-pages.js";
 import { isHypeConsoleRequest, handleHypeConsole } from "./hype-console.js";
 import { handleOwnerJobEdit, isOwnerJobEditRequest } from './owner-job-edit.js';
+import {handleDoubleMomentOwnerRequest,isDoubleMomentOwnerRequest} from './double-moment-owner.js';
 export { JobEditCoordinator } from './owner-job-edit-do.js';
 import { JOB_PREFLIGHT_PATH, handleJobPreflight, guardDuplicateJob } from './create-job-preflight.js';
 import {isMyMmdOperationsRequest, handleMyMmdOperations} from './my-mmd-operations-queue.js';
@@ -17,6 +18,8 @@ import { handleHypeJobDailyOwnerRequest, isHypeJobDailyOwnerRequest } from "./hy
 import { handlePremiumGroupCleanupOwnerRequest, isPremiumGroupCleanupOwnerRequest } from "./premium-group-cleanup/owner.js";
 import { handleModelReconfirmOwnerRequest, isModelReconfirmOwnerRequest } from "./model-reconfirm-owner.js";
 import { drainApprovedJobLinkNotifications } from "./payment-approved-job-link-dispatch.js";
+import {drainOwnerTravelAlerts} from './model-travel-owner.js';
+import {drainOwnerPayoutInstructions} from './model-payout-destination.js';
 import { reconcilePendingMembershipRecoveries } from "./membership-payment-pending-recovery.js";
 import { observeGenuineLiffAcceptance } from "./membership-genuine-liff-acceptance-observer.js";
 import { isBookingModelsRequest, handleBookingModels } from "./booking-models.js";
@@ -64,7 +67,7 @@ import {
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
 import { handleVerification } from "./mms-partner-line-verification.mjs";
 import { APP_JS, OWNER_HTML } from "./mms-partner-line-ui.mjs";
-import { applyCredentialBoundAdminGate } from "./admin-login-hero-worker-core.js";
+import { ADMIN_OWNER_DASHBOARD_PATH, applyCredentialBoundAdminGate } from "./admin-login-hero-worker-core.js";
 import { handleLineJobBriefRequest, isLineJobBriefRequest } from "./model-line-job-briefs.js";
 import { lineBriefDiagnosticRuntimeDependencies } from "./model-line-brief-diagnostic-runtime.js";
 import {
@@ -127,11 +130,22 @@ import {
   isAdminShopOperationsApiRequest,
   isAdminShopOperationsPageRequest,
 } from "./mmd-shop-operations-admin.js";
-export * from "./admin-login-hero-worker-pre-model-line-link.js";
+// Worker exports must be handlers/classes, not the core module's UI constants.
+export {
+  KenjiKnowledgeCoordinator,
+  ModelActivationCoordinator,
+  ModelLocationCoordinator,
+  LineOfcConsoleBackfillCoordinator,
+  ModelMediaSlotCoordinator,
+  ModelCardCoordinator,
+  MmsPartnerAuthStore,
+  applyCredentialBoundAdminGate,
+  injectAdminAiOpsPage,
+  normalizeNext,
+  renderAdminLogin,
+} from "./admin-login-hero-worker-pre-model-line-link.js";
 export { HypeJobDailyRunState } from "./hype-job-daily/run-state-do.js";
 
-export { MEMBER_RESOLVER_DIAGNOSTIC_TRIGGER_PATH };
-export const ADMIN_OWNER_DASHBOARD_PATH = "/internal/admin/dashboard";
 const ADMIN_LOGIN_SESSION_PATH = "/internal/admin/login/session";
 const MMS_PARTNER_PATH = "/internal/admin/mms";
 const MODEL_ACTIVATE_PATH = "/v1/model/liff/activate";
@@ -262,6 +276,7 @@ const adminLoginHeroWorker = {
     if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(hypeJobDaily);
     else await hypeJobDaily;
     await drainApprovedJobLinkNotifications(runtimeEnv);
+    await Promise.allSettled([drainOwnerTravelAlerts(runtimeEnv),drainOwnerPayoutInstructions(runtimeEnv)]);
     await reconcilePendingMembershipRecoveries(runtimeEnv);
     await observeGenuineLiffAcceptance(runtimeEnv);
     if (typeof worker.scheduled === "function") await worker.scheduled(event, runtimeEnv, ctx);
@@ -269,6 +284,7 @@ const adminLoginHeroWorker = {
   async fetch(request, env, ctx) {
     const runtimeEnv = modelMoneyRuntimeEnv(env);
     if (isSocialMediaRequest(request)) return handleSocialMedia(request, runtimeEnv);
+    if (isDoubleMomentOwnerRequest(request)) return handleDoubleMomentOwnerRequest(request, runtimeEnv);
     if (isHeldDocumentRequest(request)) return handleHeldDocumentRequest(request, runtimeEnv, handleMoneyControlWorkerHome);
     if (isHypeConsoleRequest(request)) return handleHypeConsole(request, runtimeEnv);
     if (isMyMmdOperationsRequest(request)) return handleMyMmdOperations(request, runtimeEnv);
@@ -521,5 +537,3 @@ export default {
     return decorateInternalSilverTheme(request, await adminLoginHeroWorker.fetch(request, env, ctx));
   },
 };
-
-

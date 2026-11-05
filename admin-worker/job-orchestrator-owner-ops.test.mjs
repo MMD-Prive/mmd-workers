@@ -32,9 +32,24 @@ test('owner projection fail-closes payout when care or completion review is open
 
 test('owner projection exposes ready-to-pay only after review clear, verified money and no care case', () => {
   const session = { fields: { [F.session.sessionId]: 'SES-2', [F.session.state]: 'under_review', [F.session.modelPayout]: 7500, [F.session.completion]: 'clear', [F.session.customerAckAt]: '2026-09-13', [F.session.modelAckAt]: '2026-09-13' } };
-  const out = projectOwnerAction(session, { payment: { id: 'pay' }, payout: null, openCare: [] });
+  session.fields.fldj3m3CxELpYZO4f = '2026-09-13T12:00:00Z';
+  session.fields.fldflz9XwR9vAQIBZ = JSON.stringify({schema:'mmd_customer_completion_v1',session_id:'SES-2',approved_at:'2026-09-13T12:00:00Z'});
+  const out = projectOwnerAction(session, { payment: { id: 'pay', fields:{[F.payment.verification]:'verified',[F.payment.stage]:'final'} }, payout: null, openCare: [] });
   assert.equal(out.confirmation_complete, true);
   assert.equal(out.actions.can_mark_payout_ready, true);
+  const payout={fields:{[F.payout.status]:'payout_pending'}};
+  const payment={fields:{[F.payment.verification]:'verified',[F.payment.stage]:'final'}};
+  assert.equal(projectOwnerAction(session,{payment,payout}).actions.can_mark_payout_ready,true);
+  session.fields[F.session.state]='payout_pending';
+  const pending=projectOwnerAction(session,{payment,payout});
+  assert.equal(pending.actions.can_clear_completion,false);
+  assert.equal(pending.actions.can_resend_payout_instructions,true);
+  assert.equal(pending.actions.can_mark_payout_paid,true);
+  session.fields[F.session.completion]='hold';
+  const held=projectOwnerAction(session,{payment,payout});
+  assert.equal(held.actions.can_clear_completion,true);
+  assert.equal(held.actions.can_resend_payout_instructions,false);
+  assert.equal(held.actions.can_mark_payout_paid,false);
 });
 
 test('dashboard augmentation preserves existing queues and adds owner queues', () => {
@@ -43,7 +58,7 @@ test('dashboard augmentation preserves existing queues and adds owner queues', (
   const out = augmentDashboardPayload(base, ops);
   assert.equal(out.counts.payment_review, 2);
   assert.equal(out.counts.completion_review, 3);
-  assert.equal(out.queues.payout_ready.href, '/internal/admin/jobs/all?ops=payout');
+  assert.equal(out.queues.payout_ready.href, '/internal/admin/jobs/completion');
 });
 
 test('dashboard job links never point at nonexistent dynamic admin job routes', () => {

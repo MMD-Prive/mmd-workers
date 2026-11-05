@@ -74,9 +74,9 @@ export const MODEL_SESSION_ALLOWED_ACTIONS = Object.freeze({
   offer_declined: Object.freeze([]),
   offer_expired: Object.freeze([]),
   confirmed: Object.freeze(["start_travel"]),
-  en_route: Object.freeze(["mark_nearby", "mark_arrived", "send_eta"]),
-  nearby: Object.freeze(["mark_arrived", "send_eta"]),
-  arrived: Object.freeze(["mark_met_customer", "report_delay"]),
+  en_route: Object.freeze(["mark_nearby", "mark_arrived", "send_eta", "report_wrong_location"]),
+  nearby: Object.freeze(["mark_arrived", "send_eta", "report_wrong_location"]),
+  arrived: Object.freeze(["mark_met_customer", "report_delay", "report_wrong_location"]),
   met_customer: Object.freeze(["mark_final_payment_pending", "request_payment_check"]),
   final_payment_pending: Object.freeze(["request_payment_check"]),
   final_payment_confirmed: Object.freeze(["start_work"]),
@@ -113,6 +113,7 @@ export const MODEL_SESSION_TRANSITIONS = Object.freeze({
     from: Object.freeze(["en_route", "nearby"]),
     to: "arrived",
   }),
+  report_wrong_location: Object.freeze({from:Object.freeze(['en_route','nearby','arrived']),to:'en_route'}),
   mark_met_customer: Object.freeze({
     from: Object.freeze(["arrived"]),
     to: "met_customer",
@@ -231,4 +232,11 @@ export function resolveModelSessionTransition(action, currentState) {
     to: transition.to,
     requires: [...(transition.requires || [])],
   };
+}
+export function isBangkokJobDay(jobDate, nowMs = Date.now()) {
+  const match = String(jobDate || "").trim().match(/^(\d{4}-\d{2}-\d{2})(?:$|T)/);
+  if (!match || !Number.isFinite(nowMs)) return false;
+  const date = new Date(`${match[1]}T00:00:00Z`);
+  if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== match[1]) return false;
+  return new Date(nowMs + 7 * 60 * 60 * 1000).toISOString().slice(0, 10) === match[1];
 }
