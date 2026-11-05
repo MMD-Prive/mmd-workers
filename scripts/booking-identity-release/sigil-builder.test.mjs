@@ -87,7 +87,7 @@ for(const owners of [[A,B],[B,A],[A,A],[],[B],A,null])test('compiled Public writ
  const f=fixture(t,{owners});
  const access=await legacy.privateAccess(request('/'),f.env,A,memberRef);assert.equal(access.viewerRef,'');assert.equal(access.allowedFolders.length,0);
  for(const path of ['/sigil/api/client/resolve','/sigil/api/booking/intake']){
-  const res=await released.fetch(request(path,{lane:'public',budget_thb:4500,client_contact:'victim@example.invalid'}),f.env,{});
+  const res=await released.fetch(request(path,{lane:'public',budget_thb:5000,client_contact:'victim@example.invalid'}),f.env,{});
   assert.equal(res.status,403,await res.clone().text());assert.equal((await res.json()).error,'public_membership_required');
  }
  for(const scope of ['private','booking']){
@@ -107,7 +107,7 @@ test('actual old search baseline reproduces shared-owner reveal; candidate close
 });
 test('compiled singleton entitlement still permits Private search and verified Public draft',async t=>{
  const f=fixture(t,{booking:null});
- const draft=await released.fetch(request('/sigil/api/booking/intake',{lane:'public',budget_thb:4500,booking_ref:'book_A'}),f.env,{});
+ const draft=await released.fetch(request('/sigil/api/booking/intake',{lane:'public',budget_thb:5000,booking_ref:'book_A'}),f.env,{});
  assert.equal(draft.status,200,await draft.clone().text());assert.ok(f.writes.length>0);assert.ok(f.writes.every(w=>w.fields['Request Status']!=='Confirmed'));
 });
 test('compiled singleton Private search still returns eligible model through global path',async t=>{

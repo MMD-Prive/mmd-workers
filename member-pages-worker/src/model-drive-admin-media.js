@@ -15,12 +15,12 @@ export async function listModelFolderMedia(accessToken,folder,audience,coverOnly
     const meta=await metadata(read,current.id);if(meta.trashed||meta.mimeType!==FOLDER|| (current.id!==folder && meta.parents?.length!==1))continue;
     let cursor='',pages=0;const seen=new Set();
     do {
-      const q=new URLSearchParams({q:`'${current.id}' in parents and trashed=false`,pageSize:'100',fields:'files(id,mimeType,parents,trashed,size),nextPageToken',supportsAllDrives:'true',includeItemsFromAllDrives:'true'});if(cursor)q.set('pageToken',cursor);
+      const q=new URLSearchParams({q:`'${current.id}' in parents and trashed=false`,pageSize:'100',fields:'files(id,mimeType,parents,trashed,size,createdTime),nextPageToken',supportsAllDrives:'true',includeItemsFromAllDrives:'true'});if(cursor)q.set('pageToken',cursor);
       const page=await (await read('?'+q)).json();if(!Array.isArray(page.files))fail('drive_inventory_unavailable');
       for(const f of page.files) {
         if(!ID.test(f.id)||f.trashed||f.parents?.length!==1||f.parents[0]!==current.id)continue;
         if(f.mimeType===FOLDER) {if(current.depth<4)queue.push({id:f.id,depth:current.depth+1});else partial=true;}
-        else if(TYPES.has(f.mimeType)) {items.push({file_id:f.id,kind:f.mimeType.startsWith('video/')?'clip':'photo',audience,status:'source_only',preview_available:true}); if(coverOnly && !f.mimeType.startsWith('video/'))return {ok:true,items:[items.at(-1)],partial:false};}
+        else if(TYPES.has(f.mimeType)) {items.push({file_id:f.id,kind:f.mimeType.startsWith('video/')?'clip':'photo',audience,status:'source_only',preview_available:true,created_time:typeof f.createdTime==='string'?f.createdTime.slice(0,40):''}); if(coverOnly && !f.mimeType.startsWith('video/'))return {ok:true,items:[items.at(-1)],partial:false};}
       }
       cursor=page.nextPageToken||'';pages++;
       if(cursor && seen.has(cursor))fail('drive_inventory_incomplete');if(cursor)seen.add(cursor);

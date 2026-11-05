@@ -29,7 +29,7 @@ for(const owners of [[memberRecordId,other],[other,memberRecordId],[memberRecord
   const access=await currentPrivateAccess(request('/'),env,memberRecordId,await hash());
   assert.deepEqual(access.allowedFolders,[]);assert.equal(access.viewerRef,'');
   for(const path of ['/sigil/api/client/resolve','/sigil/api/booking/intake']){
-   const res=await runtime.fetch(request(path,{lane:'public',budget_thb:4500,client_contact:'B@example.invalid'}),env,{});
+   const res=await runtime.fetch(request(path,{lane:'public',budget_thb:5000,client_contact:'B@example.invalid'}),env,{});
    assert.equal(res.status,403);assert.equal((await res.json()).error,'public_membership_required');
   }
   assert.equal(f.writes.length,0);assert.ok(f.reads.every(r=>!['Bookings','Payments'].includes(r.table)));

@@ -103,3 +103,26 @@ test("Create Job restores the published Payment Mini App contract", async () => 
   assert.match(html, /2010830159-0n1O3ANK/);
   assert.match(html, /คัดลอก URL ชำระมัดจำผ่าน LINE/);
 });
+
+test("Create Job shows up to five recent photos for members and models without a horizontal scroller", async () => {
+  const html = await handleCreateJobWorkerPage(new Request("https://mmdbkk.com/internal/admin/jobs/create-job")).text();
+  assert.match(html, /PHOTO_MAX=5/);
+  assert.match(html, /\/v1\/admin\/booking-models\/'\+encodeURIComponent\(id\)\+'\/drive/);
+  assert.match(html, /\/v1\/admin\/clients\/profile-photo\/sync/);
+  assert.match(html, /\.thumbs\{display:flex;flex-wrap:wrap/);
+  assert.doesNotMatch(html, /overflow-x:\s*(auto|scroll)/);
+});
+
+test("Travel fee option gives the 25 km Siam Square case only as an example and readiness failure shows its cause", async () => {
+  const html = await handleCreateJobWorkerPage(new Request("https://mmdbkk.com/internal/admin/jobs/create-job")).text();
+  assert.match(html, /เช่น สถานที่ไกลเกิน 25 กม\./);
+  assert.match(html, /สยามสแควร์ กรุงเทพ/);
+  assert.match(html, /สาเหตุ: /);
+  for (const script of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) new Function(script[1]);
+});
+
+test("client search result without Client ID explains pending reconcile", async () => {
+  const html = await handleCreateJobWorkerPage(new Request("https://mmdbkk.com/internal/admin/jobs/create-job")).text();
+  assert.match(html, /ยังไม่มี Client ID · รอจับคู่ลูกค้าหลัก/);
+  assert.match(html, /ยังไม่ผูกลูกค้าหลัก/);
+});
