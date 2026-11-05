@@ -2,6 +2,20 @@ name: Repair SIGIL Jobs Client Lookup Routes
 
 on:
   workflow_dispatch:
+    inputs:
+      production_approved:
+        description: 'Owner approval for this workflow and its production side effects only'
+        type: boolean
+        required: true
+        default: false
+      approval_ref:
+        description: 'Owner approval reference for this workflow and commit'
+        type: string
+        required: true
+      approved_sha:
+        description: 'Full main commit SHA approved for this workflow'
+        type: string
+        required: true
   pull_request:
     paths:
       - ".github/workflows/repair-sigil-jobs-client-lookup-routes.yml"
@@ -19,6 +33,14 @@ permissions:
   contents: read
 
 jobs:
+  production-approval:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha
+    uses: ./.github/workflows/admin-production-approval.yml
+    with:
+      approval_ref: ${{ inputs.approval_ref }}
+      approved_sha: ${{ inputs.approved_sha }}
+      environment_name: mmd-production-mutation
+
   route-contract:
     runs-on: ubuntu-latest
     steps:
@@ -39,8 +61,9 @@ jobs:
           grep -Fq 'pattern = "www.mmdbkk.com/v1/admin/models/search*"' immigrate-worker/wrangler.toml
 
   repair-production:
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-    needs: route-contract
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha
+    needs: [production-approval, route-contract]
+    environment: mmd-production-mutation
     runs-on: ubuntu-latest
     env:
       CLOUDFLARE_ROUTES_API_TOKEN: ${{ secrets.CLOUDFLARE_ROUTES_API_TOKEN }}
