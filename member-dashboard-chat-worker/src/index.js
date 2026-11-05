@@ -1,6 +1,7 @@
 import { restrictedReplyCategories } from './kenji-reply-category-gate.mjs';
 import { careBackOctoberReply } from './kenji-care-back-october.mjs';
 import { deliverTravelNotice } from '../../shared/model-travel-line.mjs';
+import { handleServiceBoundLineProfile } from './line-profile-service.mjs';
 import {
   isRenewalRoute,
   renderRenewalResponse,
@@ -3755,6 +3756,11 @@ export default {
 
     if (url.pathname === SERVICE_LINE_SHOP_SHIPPING_PATH) {
       return handleServiceBoundShopShipping(request, env);
+    }
+
+    if (url.pathname === '/__internal/line/profile') {
+      if (!hasServiceBindingAuth(request, ['admin-worker']) || !hasBearerInternalAuth(request, env)) return json({ ok: false, error: 'internal_auth_required' }, 401);
+      return handleServiceBoundLineProfile(request, env);
     }
 
     if (url.pathname === '/__internal/line/model-travel-notify') {
