@@ -5,17 +5,17 @@ import {legacyHandlerSource} from './model-response-legacy-writer.fixture.mjs';
 import {normalizeModelDecline} from './model-decline-options.mjs';
 import {createModelResponseAdapter} from './model-response-adapter.mjs';
 import {createModelResponseRuntime} from './model-response-runtime.mjs';
-import {offerWriterContract} from './model-response-contract.mjs';
+import {offerWriterContract, crossWorkerOfferContract} from './model-response-contract.mjs';
 
 export const deferred = () => {let resolve; const promise = new Promise(r => {resolve = r;}); return {promise, resolve};};
 const copy = value => structuredClone(value);
 const digest = async value => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))), x => x.toString(16).padStart(2, '0')).join('');
 export function createOfferFixture() {
-  const records = new Map(), outbox = new Map();
+  const records = new Map(), outbox = new Map(), workerReceipts = new Map();
   const durable = {generation: 1, model: 'model_A', binding: 'binding_A', terms: 'terms_A',
-    state: 'offered', eligible: true, pending: null, credentials: 1};
+    state: 'offered', eligible: true, pending: null, credentials: 1, model_ack: false, customer_ack: false, reconfirm_ack: false, ready: false};
   let tail = Promise.resolve(), etag = 0, writes = 0, writeAttempts = 0, notificationCalls = 0;
-  const faults = {loseResponse: false, receiptFailure: false, claimBarrier: null, beforeWrite: null};
+  const faults = {loseResponse: false, receiptFailure: false, claimBarrier: null, beforeWrite: null, workerBeforeWrite: null, workerAfterWrite: null, workerUnknown: false};
   const lock = async callback => {
     const previous = tail; let release;
     tail = new Promise(resolve => {release = resolve;});
@@ -92,6 +92,60 @@ export function createOfferFixture() {
       action: input.action, operation_id: result.receipt.operation_id,
     }} : result)};
   }
+  // Proposed cross-worker seam, using no production credentials or handlers.
+  // Existing auth, financial guards and real token issuance remain outside it.
+  const workerInput = () => ({session_id: 'sess_fixture', generation: durable.generation,
+    model: durable.model, binding: durable.binding, operation_id: 'worker_operation_' + durable.generation});
+  const workerInstance = worker => ({run: (kind, input) => {
+    input = copy(input);
+    return lock(async () => {
+    const rule = crossWorkerOfferContract[kind];
+    if (!rule || rule.worker !== worker) return {ok: false, code: 'worker_not_authorized'};
+    if (!input || typeof input.operation_id !== 'string' || !input.operation_id) return {ok: false, code: 'operation_required'};
+    if (durable.pending) return {ok: false, code: 'pending_reconciliation'};
+    const key = JSON.stringify([worker, input.operation_id]);
+    const fingerprint = await digest(JSON.stringify([kind, input]));
+    const saved = workerReceipts.get(key);
+    if (saved && saved.fingerprint !== fingerprint) return {ok: false, code: 'operation_conflict'};
+    const expected = saved ? saved.after : input;
+    if (input.session_id !== 'sess_fixture' || expected.generation !== durable.generation ||
+        expected.model !== durable.model || expected.binding !== durable.binding) return {ok: false, code: 'offer_changed'};
+    if (!durable.eligible) return {ok: false, code: 'offer_closed'};
+    if (saved) return copy(saved.result);
+    if (kind === 'ownerEdit' && !['offered', 'confirmed', 'offer_declined', 'offer_expired'].includes(durable.state)) return {ok: false, code: 'job_already_started'};
+    if (kind === 'acknowledge' && !['model', 'customer'].includes(input.role)) return {ok: false, code: 'role_invalid'};
+    if (kind === 'reissue' && !rule.modes.includes(input.mode)) return {ok: false, code: 'mode_invalid'};
+    const pending = {worker, kind, operation_id: input.operation_id, generation: durable.generation};
+    durable.pending = pending;
+    let writeStarted = false;
+    try {
+      if (faults.workerBeforeWrite) {const hook = faults.workerBeforeWrite; faults.workerBeforeWrite = null; await hook();}
+      // Mark the attempt before the first simulated external mutation.
+      writeStarted = true;
+      if (kind === 'ownerEdit') {
+        durable.generation++; durable.state = 'offered';
+        for (const field of rule.resets) durable[field] = false;
+      } else if (kind === 'acknowledge') {
+        durable[input.role + '_ack'] = true;
+        if (input.role === 'model' && !durable.state) durable.state = 'confirmed';
+      } else durable.credentials++;
+      if (faults.workerAfterWrite) {const hook = faults.workerAfterWrite; faults.workerAfterWrite = null; await hook();}
+      if (faults.workerUnknown) return {ok: false, code: 'outcome_unknown'};
+      const result = {ok: true, session: projection(), generation: durable.generation, credentials: durable.credentials};
+      workerReceipts.set(key, {fingerprint, after: workerInput(), result: copy(result)});
+      durable.pending = null;
+      return result;
+    } catch {
+      if (!writeStarted) {
+        // Release only this operation's marker; never clear a replacement.
+        if (durable.pending === pending) durable.pending = null;
+        return {ok: false, code: 'prewrite_rejected'};
+      }
+      // Once attempted, even a thrown error leaves pending for reconciliation.
+      return {ok: false, code: 'outcome_unknown'};
+    }
+    });
+  }});
   const mutate = (kind, patch = {}) => lock(async () => {
     if (durable.pending) return {ok: false, code: 'pending_reconciliation'};
     const rule = offerWriterContract[kind];
@@ -107,7 +161,7 @@ export function createOfferFixture() {
     }
     Object.assign(durable, copy(patch)); return {ok: true};
   });
-  return {instance, mutate, faults, records, outbox, snapshot: () => copy(durable),
+  return {instance, mutate, workerInput, workerInstance, faults, records, outbox, snapshot: () => copy(durable),
     input: () => ({action: 'accept_job', session_id: 'sess_fixture', offer_revision: String(durable.generation), operation_id: 'operation_fixture_' + durable.generation}),
     writes: () => writes, notificationCalls: () => notificationCalls,
     // Bypasses the contract intentionally, modelling the unverified writer.

@@ -207,3 +207,156 @@ test('LOCAL_FIXTURE: intent must match the exact committed session, generation, 
   }
   assert.equal(f.outbox.size, 0); assert.ok(await f.emitIntent(saved.event)); assert.equal(f.outbox.size, 1);
 });
+
+// Cross-worker tests specify the proposed coordination, not deployed handlers.
+for (const state of ['offer_declined', 'offer_expired']) test(`LOCAL_FIXTURE: owner edit reopens ${state}, invalidates old offer and resets acknowledgements`, async () => {
+  const f = createOfferFixture(), old = f.input();
+  f.external({state, model_ack: true, customer_ack: true, reconfirm_ack: true, ready: true});
+  const input = f.workerInput(), admin = f.workerInstance('admin-worker');
+  const first = await admin.run('ownerEdit', input);
+  assert.equal(first.ok, true); assert.equal(f.snapshot().generation, input.generation + 1);
+  assert.equal(f.snapshot().state, 'offered');
+  for (const field of ['model_ack', 'customer_ack', 'reconfirm_ack', 'ready']) assert.equal(f.snapshot()[field], false);
+  assert.deepEqual(await f.workerInstance('admin-worker').run('ownerEdit', input), first);
+  assert.equal(f.snapshot().generation, input.generation + 1);
+  assert.equal((await f.instance().respond(old)).receipt.code, 'offer_revision_changed');
+  assert.equal((await f.instance().respond(f.input())).ok, true);
+});
+
+for (const kind of ['acknowledge', 'reissue']) test(`LOCAL_FIXTURE: delayed payments ${kind} cannot mutate reopened generation`, async () => {
+  const f = createOfferFixture(), stale = {...f.workerInput(), role: 'model', mode: 'pair'};
+  await f.workerInstance('admin-worker').run('ownerEdit', f.workerInput());
+  const before = f.snapshot();
+  assert.equal((await f.workerInstance('payments-worker').run(kind, stale)).code, 'offer_changed');
+  assert.deepEqual(f.snapshot(), before);
+});
+
+for (const role of ['model', 'customer']) test(`LOCAL_FIXTURE: ${role} acknowledgement retains generation and only model seeds empty state`, async () => {
+  const f = createOfferFixture(); f.external({state: ''});
+  const input = {...f.workerInput(), role}, before = f.snapshot();
+  const first = await f.workerInstance('payments-worker').run('acknowledge', input);
+  assert.equal(first.ok, true); assert.equal(f.snapshot().generation, before.generation);
+  assert.equal(f.snapshot()[role + '_ack'], true);
+  assert.equal(f.snapshot().state, role === 'model' ? 'confirmed' : '');
+  assert.deepEqual(await f.workerInstance('payments-worker').run('acknowledge', input), first);
+});
+
+test('LOCAL_FIXTURE: model acknowledgement does not replace a nonempty offered lifecycle', async () => {
+  const f = createOfferFixture();
+  await f.workerInstance('payments-worker').run('acknowledge', {...f.workerInput(), role: 'model'});
+  assert.equal(f.snapshot().state, 'offered');
+  assert.equal((await f.instance().respond(f.input())).ok, true);
+});
+
+for (const mode of ['pair', 'model-only']) test(`LOCAL_FIXTURE: ${mode} reissue duplicates across workers instances publish one credential revision`, async () => {
+  const f = createOfferFixture(), input = {...f.workerInput(), mode}, before = f.snapshot();
+  const results = await Promise.all([f.workerInstance('payments-worker').run('reissue', input), f.workerInstance('payments-worker').run('reissue', input)]);
+  assert.equal(results[0].ok, true); assert.deepEqual(results[0], results[1]);
+  assert.equal(f.snapshot().generation, before.generation); assert.equal(f.snapshot().credentials, before.credentials + 1);
+  assert.equal((await f.workerInstance('payments-worker').run('reissue', {...input, mode: mode === 'pair' ? 'model-only' : 'pair'})).code, 'operation_conflict');
+});
+
+for (const kind of ['acknowledge', 'reissue']) test(`LOCAL_FIXTURE: closed offer rejects payments ${kind} before mutation`, async () => {
+  const f = createOfferFixture(); await f.mutate('cancel'); const before = f.snapshot();
+  assert.equal((await f.workerInstance('payments-worker').run(kind, {...f.workerInput(), role: 'model', mode: 'pair'})).code, 'offer_closed');
+  assert.deepEqual(f.snapshot(), before);
+});
+
+test('LOCAL_FIXTURE: owner edit holds shared fence across simulated external write and receipt', async () => {
+  const f = createOfferFixture(), entered = deferred(), release = deferred(), stale = f.workerInput();
+  f.faults.workerBeforeWrite = async () => {entered.resolve(); await release.promise;};
+  const edit = f.workerInstance('admin-worker').run('ownerEdit', stale); await entered.promise;
+  const ack = f.workerInstance('payments-worker').run('acknowledge', {...stale, role: 'model'});
+  const response = f.instance().respond(f.input());
+  await new Promise(setImmediate);
+  assert.equal(f.snapshot().model_ack, false); assert.equal(f.writes(), 0); assert.ok(f.snapshot().pending);
+  release.resolve(); assert.equal((await edit).ok, true);
+  assert.equal((await ack).code, 'offer_changed'); assert.equal((await response).ok, false);
+  assert.equal(f.writes(), 0); assert.equal(f.snapshot().pending, null);
+});
+
+for (const kind of ['ownerEdit', 'acknowledge', 'reissue']) test(`LOCAL_FIXTURE: uncertain ${kind} blocks all participating paths and restart retry`, async () => {
+  const f = createOfferFixture(), worker = kind === 'ownerEdit' ? 'admin-worker' : 'payments-worker';
+  const input = {...f.workerInput(), role: 'model', mode: 'pair'}; f.faults.workerUnknown = true;
+  assert.equal((await f.workerInstance(worker).run(kind, input)).code, 'outcome_unknown');
+  assert.ok(f.snapshot().pending); const before = f.snapshot();
+  assert.equal((await f.workerInstance(worker).run(kind, input)).code, 'pending_reconciliation');
+  for (const next of ['ownerEdit', 'acknowledge', 'reissue']) assert.equal((await f.workerInstance(next === 'ownerEdit' ? 'admin-worker' : 'payments-worker').run(next, {...f.workerInput(), role: 'model', mode: 'pair'})).code, 'pending_reconciliation');
+  assert.equal((await f.instance().respond(f.input())).ok, false);
+  assert.deepEqual(f.snapshot(), before); assert.equal(f.notificationCalls(), 0);
+});
+
+test('LOCAL_FIXTURE: worker mismatch, wrong session and wrong binding are rejected without effects', async () => {
+  const f = createOfferFixture(), before = f.snapshot(), input = f.workerInput();
+  assert.equal((await f.workerInstance('payments-worker').run('ownerEdit', input)).code, 'worker_not_authorized');
+  for (const patch of [{session_id: 'sess_other'}, {binding: 'other_binding'}, {model: 'model_B'}]) assert.equal((await f.workerInstance('payments-worker').run('reissue', {...input, ...patch, mode: 'pair'})).code, 'offer_changed');
+  assert.deepEqual(f.snapshot(), before); assert.equal(f.notificationCalls(), 0);
+});
+
+test('LOCAL_FIXTURE: queued payments request captures input before waiting for the fence', async () => {
+  const f = createOfferFixture(), entered = deferred(), release = deferred();
+  const input = {...f.workerInput(), role: 'model'};
+  f.faults.workerBeforeWrite = async () => {entered.resolve(); await release.promise;};
+  const edit = f.workerInstance('admin-worker').run('ownerEdit', f.workerInput()); await entered.promise;
+  const queued = f.workerInstance('payments-worker').run('acknowledge', input);
+  input.generation++; // Cannot turn the queued old request into a fresh one.
+  release.resolve(); await edit;
+  assert.equal((await queued).code, 'offer_changed'); assert.equal(f.snapshot().model_ack, false);
+});
+
+for (const kind of ['acknowledge', 'reissue']) test(`LOCAL_FIXTURE: uncertain Console writer blocks payments ${kind}`, async () => {
+  const f = createOfferFixture(); f.faults.loseResponse = true;
+  assert.equal((await f.instance().respond(f.input())).receipt.outcome, 'unknown');
+  const before = f.snapshot();
+  assert.equal((await f.workerInstance('payments-worker').run(kind, {...f.workerInput(), role: 'model', mode: 'pair'})).code, 'pending_reconciliation');
+  assert.deepEqual(f.snapshot(), before);
+});
+
+test('LOCAL_FIXTURE: owner edit cannot reopen a lifecycle that has started travel', async () => {
+  const f = createOfferFixture(); f.external({state: 'en_route'}); const before = f.snapshot();
+  assert.equal((await f.workerInstance('admin-worker').run('ownerEdit', f.workerInput())).code, 'job_already_started');
+  assert.deepEqual(f.snapshot(), before);
+});
+
+for (const kind of ['ownerEdit', 'acknowledge', 'reissue']) {
+  const worker = kind === 'ownerEdit' ? 'admin-worker' : 'payments-worker';
+  test(`LOCAL_FIXTURE: ${kind} pre-write failure releases own pending and permits retry`, async () => {
+    const f = createOfferFixture(), before = f.snapshot();
+    const input = {...f.workerInput(), role: 'model', mode: 'pair'};
+    f.faults.workerBeforeWrite = () => {throw Error('fixture-private pre-write rejection');};
+    const rejected = await f.workerInstance(worker).run(kind, input);
+    assert.deepEqual(rejected, {ok: false, code: 'prewrite_rejected'});
+    assert.deepEqual(f.snapshot(), before);
+    assert.doesNotMatch(JSON.stringify(rejected), /fixture-private/);
+    const retried = await f.workerInstance(worker).run(kind, input);
+    assert.equal(retried.ok, true); assert.equal(f.snapshot().pending, null);
+    assert.deepEqual(await f.workerInstance(worker).run(kind, input), retried);
+    assert.equal(f.snapshot().generation, before.generation + (kind === 'ownerEdit' ? 1 : 0));
+    assert.equal(f.snapshot().credentials, before.credentials + (kind === 'reissue' ? 1 : 0));
+    assert.equal(f.notificationCalls(), 0);
+  });
+
+  test(`LOCAL_FIXTURE: ${kind} pre-write failure cannot clear another operation pending`, async () => {
+    const f = createOfferFixture(), input = {...f.workerInput(), role: 'model', mode: 'pair'};
+    const replacement = {operation_id: 'another_operation', generation: input.generation};
+    // Deliberate injected replacement tests marker ownership, not a real writer.
+    f.faults.workerBeforeWrite = () => {f.external({pending: replacement}); throw Error('pre-write rejection');};
+    assert.equal((await f.workerInstance(worker).run(kind, input)).code, 'prewrite_rejected');
+    assert.deepEqual(f.snapshot().pending, replacement);
+    assert.equal((await f.workerInstance(worker).run(kind, input)).code, 'pending_reconciliation');
+  });
+
+  test(`LOCAL_FIXTURE: ${kind} thrown failure after write retains pending and prohibits replay`, async () => {
+    const f = createOfferFixture(), input = {...f.workerInput(), role: 'model', mode: 'pair'};
+    f.faults.workerAfterWrite = () => {throw Error('fixture-private post-write failure');};
+    const result = await f.workerInstance(worker).run(kind, input);
+    assert.deepEqual(result, {ok: false, code: 'outcome_unknown'});
+    const after = f.snapshot(); assert.ok(after.pending);
+    if (kind === 'ownerEdit') assert.equal(after.generation, input.generation + 1);
+    if (kind === 'acknowledge') assert.equal(after.model_ack, true);
+    if (kind === 'reissue') assert.equal(after.credentials, 2);
+    assert.equal((await f.workerInstance(worker).run(kind, input)).code, 'pending_reconciliation');
+    assert.equal((await f.mutate('reopen')).code, 'pending_reconciliation');
+    assert.deepEqual(f.snapshot(), after); assert.equal(f.notificationCalls(), 0);
+  });
+}
