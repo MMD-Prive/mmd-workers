@@ -19,7 +19,7 @@ function fixture(mode){
   if(path===ROOT+'/script-settings')return settings;
   if(path===ROOT+'/versions/'+id(1))return baseline;
   if(path===ROOT+'/versions/'+id(2))return candidate;
-  if(path.endsWith('?include=modules')){const v=path.includes(id(1))?id(1):id(2);return {id:v,modules:[{name:'worker.js',content_base64:Buffer.from(v===id(1)?before:after).toString('base64')}]};}
+  if(path.endsWith('?include=modules')){const v=path.includes(id(1))?id(1):id(2);return {id:v,modules:[{name:v===id(1)?'guide-notification-entry.js':'worker.js',content_base64:Buffer.from(v===id(1)?before:after).toString('base64')}]};}
   throw Error('unexpected read');
  }};return {io,writes,saves,settings,candidate,baseline,get approvals(){return approvals;}};
 }
@@ -66,4 +66,23 @@ test('workflow preserves existing Owner gate and cannot mutate production on PR'
  assert.equal((w.match(/if: github.event_name == 'workflow_dispatch'.*github.ref == 'refs\/heads\/main'.*github.actor == 'mmdprive'.*github.run_attempt == 1.*inputs.production_approved == true.*inputs.approved_sha == github.sha/g)||[]).length,2);
  assert.doesNotMatch(w,/wrangler deploy|route-sync|secrets: inherit|contents: write/);
  const adapter=fs.readFileSync(new URL('./kenji-3073-entry-release.mjs',import.meta.url),'utf8');assert.match(adapter,/verifyProductionApproval/);assert.match(adapter,/inspectEnvironment/);assert.match(adapter,/validateSourceState/);assert.match(adapter,/git\('ls-files'/);assert.match(adapter,/version-specific bytes mismatch/);assert.match(adapter,/GITHUB_RUN_ATTEMPT,'1'/);
+});
+
+test('baseline module mismatch and patch mismatch report separate preflight steps', async () => {
+ const wrongModule=fixture('inspect');
+ const call=wrongModule.io.call;
+ wrongModule.io.call=async (path, init) => {
+  const response=await call(path, init);
+  if(path.endsWith('?include=modules'))response.modules[0].name='worker.js';
+  return response;
+ };
+ await assert.rejects(runEntryRelease(wrongModule.io),/unexpected module name/);
+ assert.equal(wrongModule.saves.at(-1).check,'baseline-artifact-read');
+ assert.deepEqual(wrongModule.writes,[]);
+
+ const wrongPatch=fixture('inspect');
+ wrongPatch.io.manifest.patches[0].before='missing';
+ await assert.rejects(runEntryRelease(wrongPatch.io),/ambiguous patch/);
+ assert.equal(wrongPatch.saves.at(-1).check,'baseline-overlay');
+ assert.deepEqual(wrongPatch.writes,[]);
 });
