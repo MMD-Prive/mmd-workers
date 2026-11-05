@@ -13,7 +13,7 @@ function fixture(mode){
  let latest=mode==='promote'?id(2):id(1),deployment={id:id(3),strategy:'percentage',versions:[{version_id:id(1),percentage:100}]},approvals=0;
  const writes=[],saves=[];
  const io={mode,manifest:m,sha:'a'.repeat(40),candidateVersion:id(2),approve:async()=>{approvals++;},save:x=>saves.push(x),call:async(path,init={})=>{
-  if(init.method==='POST') {writes.push(path);if(path.endsWith('/versions?bindings_inherit=strict')){assert(init.body instanceof FormData);const meta=JSON.parse(init.body.get('metadata'));assert.deepEqual(meta.bindings,[{name:'LINE_KENJI_MODEL_ENABLED',type:'inherit'}]);assert(!meta.vars);latest=id(2);return {id:latest};}if(path.endsWith('/deployments')){deployment={id:id(4),strategy:'percentage',versions:[{version_id:id(2),percentage:100}]};return deployment;}throw Error('unexpected write');}
+  if(init.method==='POST') {writes.push(path);if(path.endsWith('/versions?bindings_inherit=strict')){assert(init.body instanceof FormData);const meta=JSON.parse(init.body.get('metadata'));assert.deepEqual(meta.bindings,[{name:'LINE_KENJI_MODEL_ENABLED',type:'inherit'}]);assert(!meta.vars);latest=id(2);return {id:latest};}if(path.endsWith('/deployments')){const split=JSON.parse(init.body);assert.deepEqual(split.versions,[{version_id:id(1),percentage:99},{version_id:id(2),percentage:1}]);deployment={id:id(4),...split};return deployment;}throw Error('unexpected write');}
   if(path===ROOT+'/deployments')return {deployments:[deployment]};
   if(path===ROOT+'/versions')return {items:[{id:latest}]};
   if(path===ROOT+'/script-settings')return settings;
@@ -50,9 +50,19 @@ test('wrong version-specific bytes after upload cannot trigger promotion',async(
  await assert.rejects(runEntryRelease(f.io),/version-specific bytes mismatch/);assert.deepEqual(f.writes,[ROOT+'/versions?bindings_inherit=strict']);assert.equal(f.saves.at(-1).phase,'uploaded-not-promoted');
 });
 test('pinned manifest bytes and source artifact cannot silently drift',()=>{const m=loadManifest();assert.equal(m.patches.length,4);assert.throws(()=>applyManifest(Buffer.from('wrong')),/baseline artifact drift/);});
+test('canary verifies inspect before upload and allocates exactly 99/1',async()=>{
+ const f=fixture('canary'), original=f.io.call;
+ f.io.call=async(path,init)=>{if(init?.method==='POST')assert(f.saves.some(x=>x.phase==='inspection-complete'));return original(path,init);};
+ const receipt=await runEntryRelease(f.io);assert.equal(receipt.phase,'complete');assert.deepEqual(receipt.traffic.map(x=>x.percentage),[99,1]);
+ assert.deepEqual(f.writes,[ROOT+'/versions?bindings_inherit=strict',ROOT+'/deployments']);
+});
+test('failed inspect records safe checkpoint and cannot upload in canary mode',async()=>{
+ const f=fixture('canary');f.settings.observability.enabled=false;
+ await assert.rejects(runEntryRelease(f.io),/settings drift/);assert.deepEqual(f.writes,[]);assert.equal(f.saves.at(-1).check,'baseline-config');
+});
 test('workflow preserves existing Owner gate and cannot mutate production on PR',()=>{
  const w=fs.readFileSync(new URL('../.github/workflows/kenji-entry-delta-release.yml',import.meta.url),'utf8');
- assert.match(w,/options: \[inspect, upload, promote\]/);assert.match(w,/uses: \.\/\.github\/workflows\/admin-production-approval.yml/);assert.match(w,/environment: mmd-production-mutation/);assert.match(w,/needs: \[contracts, production-approval\]/);
+ assert.match(w,/options: \[inspect, upload, promote, canary\]/);assert.match(w,/uses: \.\/\.github\/workflows\/admin-production-approval.yml/);assert.match(w,/environment: mmd-production-mutation/);assert.match(w,/needs: \[contracts, production-approval\]/);
  assert.equal((w.match(/if: github.event_name == 'workflow_dispatch'.*github.ref == 'refs\/heads\/main'.*github.actor == 'mmdprive'.*github.run_attempt == 1.*inputs.production_approved == true.*inputs.approved_sha == github.sha/g)||[]).length,2);
  assert.doesNotMatch(w,/wrangler deploy|route-sync|secrets: inherit|contents: write/);
  const adapter=fs.readFileSync(new URL('./kenji-3073-entry-release.mjs',import.meta.url),'utf8');assert.match(adapter,/verifyProductionApproval/);assert.match(adapter,/inspectEnvironment/);assert.match(adapter,/validateSourceState/);assert.match(adapter,/git\('ls-files'/);assert.match(adapter,/version-specific bytes mismatch/);assert.match(adapter,/GITHUB_RUN_ATTEMPT,'1'/);
