@@ -147,3 +147,43 @@ test("falls back to the secondary LINE OA token when the primary OA cannot see t
     globalThis.fetch = originalFetch;
   }
 });
+
+test("asks the chat-worker for the profile first and never needs a local LINE token", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(typeof input === "string" ? input : input.url);
+    if (url.hostname === "api.line.me") throw new Error("admin-worker must not call LINE directly");
+    if (url.hostname === "api.airtable.com" && (init.method || "GET") === "GET") {
+      return Response.json({ id: "recClient12345678", fields: { line_user_id: "U" + "a".repeat(32), "Profile Photo": [] } });
+    }
+    if (url.hostname === "api.airtable.com" && init.method === "PATCH") {
+      const incoming = JSON.parse(init.body).fields["Profile Photo"];
+      assert.equal(incoming[0].url, "https://profile.line-scdn.net/via-chat-worker");
+      return Response.json({ id: "recClient12345678", fields: { "Profile Photo": [{ id: "attNew", url: "https://airtable.example/n.jpg", filename: incoming[0].filename }] } });
+    }
+    throw new Error("unexpected fetch " + url);
+  };
+  const binding = {
+    fetch: async (url, init) => {
+      calls.push({ url, headers: init.headers, body: JSON.parse(init.body) });
+      return Response.json({ ok: true, picture_url: "https://profile.line-scdn.net/via-chat-worker" });
+    },
+  };
+  try {
+    const response = await handleClientProfilePhotoSync(
+      req(),
+      { AIRTABLE_API_KEY: "a", AIRTABLE_BASE_ID: "b", AIRTABLE_TABLE_CLIENTS_ID: "clients", INTERNAL_TOKEN: "svc", MEMBER_DASHBOARD_CHAT_WORKER: binding },
+      actor,
+    );
+    const body = await response.json();
+    assert.equal(body.synced, true);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].url, "https://member-dashboard-chat-worker.local/__internal/line/profile");
+    assert.equal(calls[0].headers["x-mmd-service-binding"], "admin-worker");
+    assert.equal(calls[0].headers.authorization, "Bearer svc");
+    assert.equal(calls[0].body.line_user_id, "U" + "a".repeat(32));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

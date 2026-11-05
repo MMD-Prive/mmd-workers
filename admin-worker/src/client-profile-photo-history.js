@@ -87,9 +87,37 @@ function lineProfileTokens(env) {
     .filter(Boolean);
 }
 
+async function readLineProfileViaChatWorker(env, lineUserId) {
+  const binding = env.MEMBER_DASHBOARD_CHAT_WORKER;
+  const internalToken = clean(env.INTERNAL_TOKEN, 5000);
+  if (!binding?.fetch || !internalToken) return null;
+  try {
+    const response = await binding.fetch("https://member-dashboard-chat-worker.local/__internal/line/profile", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${internalToken}`,
+        "x-mmd-internal-call": "true",
+        "x-mmd-service-binding": "admin-worker",
+      },
+      body: JSON.stringify({ line_user_id: lineUserId }),
+    });
+    const data = await response.json().catch(() => null);
+    if (data?.ok && /^https:\/\//i.test(clean(data.picture_url, 3000))) {
+      return { ok: true, pictureUrl: clean(data.picture_url, 3000) };
+    }
+    return { ok: false, error: clean(data?.error, 120) || `chat_worker_http_${response.status}` };
+  } catch {
+    return null;
+  }
+}
+
 async function readLineProfile(env, lineUserId) {
+  // Preferred: the chat-worker owns the OA token. Fall back to a local token if present.
+  const viaChatWorker = await readLineProfileViaChatWorker(env, lineUserId);
+  if (viaChatWorker?.ok) return viaChatWorker;
   const tokens = lineProfileTokens(env);
-  if (!tokens.length) return { ok: false, error: "line_profile_sync_unavailable" };
+  if (!tokens.length) return viaChatWorker || { ok: false, error: "line_profile_sync_unavailable" };
   let lastError = "line_profile_picture_missing";
   for (const token of tokens) {
     const response = await fetch(
