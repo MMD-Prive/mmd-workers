@@ -104,9 +104,9 @@ test("Create Job restores the published Payment Mini App contract", async () => 
   assert.match(html, /คัดลอก URL ชำระมัดจำผ่าน LINE/);
 });
 
-test("Travel fee option explains the 25 km rule and readiness failure shows its cause", async () => {
+test("Travel fee option gives the 25 km Siam Square case only as an example and readiness failure shows its cause", async () => {
   const html = await handleCreateJobWorkerPage(new Request("https://mmdbkk.com/internal/admin/jobs/create-job")).text();
-  assert.match(html, /ไกลเกิน 25 กม\./);
+  assert.match(html, /เช่น สถานที่ไกลเกิน 25 กม\./);
   assert.match(html, /สยามสแควร์ กรุงเทพ/);
   assert.match(html, /สาเหตุ: /);
   for (const script of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) new Function(script[1]);
