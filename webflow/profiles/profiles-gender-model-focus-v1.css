@@ -1,0 +1,291 @@
+/*
+ * /profiles — customer-gender visibility gate + model-first focus
+ * Presentation/orchestration layer only. Canonical visibility still comes from
+ * the existing approved_roles + accepted_customer_genders catalog runtime.
+ */
+#mmdProfilesV8{
+  --mp8-focus-ease:cubic-bezier(.22,1,.36,1);
+  --mp8-focus-ink:#181517;
+  --mp8-focus-wine:#9f1028;
+  --mp8-focus-paper:#fffdfa;
+  --mp8-focus-line:rgba(42,31,35,.11);
+}
+
+/* Customer gender is a visibility gate, not an optional secondary filter. */
+#mmdProfilesV8 .mp8-role-stage2.mp8-visibility-gate{
+  display:grid;
+  gap:13px;
+  margin:0 0 22px;
+  padding:18px;
+  border:1px solid rgba(159,16,40,.14);
+  border-radius:24px;
+  background:
+    radial-gradient(circle at 100% 0,rgba(159,16,40,.07),transparent 42%),
+    rgba(255,255,255,.86);
+  box-shadow:0 18px 48px rgba(54,30,35,.07);
+}
+#mmdProfilesV8 .mp8-role-stage2.mp8-visibility-gate[hidden]{
+  display:grid!important;
+}
+#mmdProfilesV8 .mp8-visibility-gate__eyebrow{
+  margin:0;
+  color:var(--mp8-focus-wine);
+  font-size:9px;
+  font-weight:900;
+  letter-spacing:.15em;
+  text-transform:uppercase;
+}
+#mmdProfilesV8 .mp8-visibility-gate__title{
+  margin:3px 0 0;
+  color:var(--mp8-focus-ink);
+  font-size:clamp(24px,5vw,38px);
+  line-height:1.08;
+  letter-spacing:-.035em;
+}
+#mmdProfilesV8 .mp8-visibility-gate__copy{
+  max-width:650px;
+  margin:6px 0 0;
+  color:#746a6e;
+  font-size:12px;
+  line-height:1.6;
+}
+#mmdProfilesV8 .mp8-visibility-gate .mp8-role-hint{
+  display:none!important;
+}
+#mmdProfilesV8 .mp8-visibility-gate .mp8-segment{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:8px;
+  overflow:visible;
+  padding:0;
+}
+#mmdProfilesV8 .mp8-visibility-gate [data-gender-value="all"]{
+  display:none!important;
+}
+#mmdProfilesV8 .mp8-visibility-gate [data-gender-value]{
+  min-height:52px;
+  width:100%;
+  border:1px solid rgba(42,31,35,.12);
+  border-radius:18px;
+  background:#fff;
+  color:#51474b;
+  font-size:12px;
+  font-weight:850;
+  transition:
+    transform 360ms var(--mp8-focus-ease),
+    background 260ms ease,
+    color 260ms ease,
+    border-color 260ms ease,
+    box-shadow 360ms ease;
+}
+#mmdProfilesV8 .mp8-visibility-gate [data-gender-value][aria-pressed="true"]{
+  border-color:var(--mp8-focus-wine);
+  background:var(--mp8-focus-wine);
+  color:#fff;
+  box-shadow:0 12px 30px rgba(159,16,40,.18);
+}
+@media(hover:hover) and (pointer:fine){
+  #mmdProfilesV8 .mp8-visibility-gate [data-gender-value]:not([aria-pressed="true"]):hover{
+    transform:translateY(-2px);
+    border-color:rgba(159,16,40,.28);
+  }
+}
+
+/* Unknown customer gender = fail closed visually. */
+#mmdProfilesV8.is-visibility-pending .mp8-profile-focus{
+  display:none!important;
+}
+#mmdProfilesV8.is-visibility-pending .mp8-role-grid{
+  opacity:.52;
+}
+#mmdProfilesV8.is-visibility-pending .mp8-role-grid::after{
+  content:"";
+}
+
+/* Profiles become the dominant answer after role + gender are known. */
+#mmdProfilesV8 .mp8-profile-focus{
+  position:relative;
+  margin:30px 0 18px;
+  padding:22px 0 8px;
+  scroll-margin-top:92px;
+}
+#mmdProfilesV8 .mp8-profile-focus::before{
+  content:"";
+  position:absolute;
+  z-index:0;
+  inset:-20px -15px -12px;
+  border-radius:32px;
+  background:
+    radial-gradient(circle at 10% 0,rgba(159,16,40,.055),transparent 36%),
+    linear-gradient(180deg,#fffdfa,#faf5ef);
+  box-shadow:inset 0 0 0 1px rgba(42,31,35,.06);
+  pointer-events:none;
+}
+#mmdProfilesV8 .mp8-profile-focus>*{
+  position:relative;
+  z-index:1;
+}
+#mmdProfilesV8 .mp8-profile-focus__head{
+  display:grid;
+  gap:9px;
+  margin:0 0 17px;
+}
+#mmdProfilesV8 .mp8-profile-focus__eyebrow{
+  margin:0;
+  color:var(--mp8-focus-wine);
+  font-size:9px;
+  font-weight:900;
+  letter-spacing:.15em;
+  text-transform:uppercase;
+}
+#mmdProfilesV8 .mp8-profile-focus__title{
+  margin:0;
+  color:var(--mp8-focus-ink);
+  font-size:clamp(30px,7vw,54px);
+  line-height:1.02;
+  letter-spacing:-.045em;
+}
+#mmdProfilesV8 .mp8-profile-focus__meta{
+  display:flex;
+  flex-wrap:wrap;
+  gap:7px;
+}
+#mmdProfilesV8 .mp8-profile-focus__meta span{
+  display:inline-flex;
+  align-items:center;
+  min-height:28px;
+  padding:0 10px;
+  border:1px solid rgba(159,16,40,.12);
+  border-radius:999px;
+  background:#fff;
+  color:#6f5961;
+  font-size:9px;
+  font-weight:800;
+}
+
+/* Keep the result line quiet; the people are the visual answer. */
+#mmdProfilesV8 .mp8-profile-focus .mp8-results{
+  margin:0 0 10px;
+}
+#mmdProfilesV8 .mp8-profile-focus .mp8-results>p{
+  color:#8a777e;
+  font-size:10px;
+}
+
+/* Stronger profile-card hierarchy. */
+#mmdProfilesV8 .mp8-profile-focus .mp8-profile{
+  border-color:rgba(42,31,35,.10);
+  background:#fff;
+  box-shadow:0 24px 64px rgba(43,28,34,.11);
+  opacity:0;
+  transform:translate3d(0,20px,0) scale(.985);
+  transition:
+    opacity 520ms ease,
+    transform 760ms var(--mp8-focus-ease),
+    box-shadow 420ms ease;
+}
+#mmdProfilesV8 .mp8-profile-focus.is-profile-focus-visible .mp8-profile{
+  opacity:1;
+  transform:none;
+}
+#mmdProfilesV8 .mp8-profile-focus.is-profile-focus-visible .mp8-profile:nth-child(2){transition-delay:55ms}
+#mmdProfilesV8 .mp8-profile-focus.is-profile-focus-visible .mp8-profile:nth-child(3){transition-delay:110ms}
+#mmdProfilesV8 .mp8-profile-focus.is-profile-focus-visible .mp8-profile:nth-child(4){transition-delay:165ms}
+#mmdProfilesV8 .mp8-profile-focus .mp8-card__media{
+  background:#ddd2ca;
+}
+#mmdProfilesV8 .mp8-profile-focus .mp8-card__title h3{
+  font-size:clamp(31px,7vw,42px);
+}
+#mmdProfilesV8 .mp8-profile-focus .mp8-card__cta{
+  margin-top:18px;
+  padding:14px 14px 0;
+  border-top:1px solid rgba(159,16,40,.11);
+  color:var(--mp8-focus-wine)!important;
+  font-size:12px;
+}
+
+/* Offers/packages are secondary after the visible people. */
+#mmdProfilesV8 .mp8-role-offers-secondary{
+  display:grid;
+  gap:12px;
+  margin:18px 0 0;
+}
+#mmdProfilesV8 .mp8-role-offers-secondary>.mp8-driver-packages{
+  margin:0;
+}
+#mmdProfilesV8 .mp8-role-first.has-role-selected .mp8-step01-head,
+#mmdProfilesV8 .mp8-role-first.has-role-selected .mp8-role-grid{
+  transition:opacity 420ms ease,transform 520ms var(--mp8-focus-ease);
+}
+#mmdProfilesV8 .mp8-role-first.has-role-selected .mp8-step01-head{
+  opacity:.72;
+}
+
+/* Small attention cue when a role is chosen before gender. */
+#mmdProfilesV8 .mp8-visibility-gate.needs-attention{
+  animation:mp8GatePulse 720ms var(--mp8-focus-ease) both;
+}
+@keyframes mp8GatePulse{
+  0%,100%{transform:none}
+  40%{transform:translateY(-4px);box-shadow:0 22px 56px rgba(159,16,40,.15)}
+}
+
+@media(min-width:760px){
+  #mmdProfilesV8 .mp8-role-stage2.mp8-visibility-gate{
+    grid-template-columns:minmax(0,1fr) minmax(330px,.7fr);
+    align-items:center;
+    padding:22px 24px;
+  }
+  #mmdProfilesV8 .mp8-visibility-gate__copywrap{
+    min-width:0;
+  }
+  #mmdProfilesV8 .mp8-profile-focus{
+    padding:30px 0 12px;
+  }
+  #mmdProfilesV8 .mp8-profile-focus::before{
+    inset:-24px -24px -16px;
+  }
+  #mmdProfilesV8 .mp8-profile-focus__head{
+    grid-template-columns:minmax(0,1fr) auto;
+    align-items:end;
+  }
+  #mmdProfilesV8 .mp8-profile-focus__meta{
+    justify-content:flex-end;
+    padding-bottom:5px;
+  }
+}
+@media(min-width:1024px){
+  #mmdProfilesV8 .mp8-profile-focus .mp8-track--profiles{
+    gap:22px;
+  }
+  #mmdProfilesV8 .mp8-profile-focus .mp8-profile{
+    min-height:620px;
+  }
+  #mmdProfilesV8 .mp8-profile-focus .mp8-card__body{
+    padding:30px;
+  }
+}
+@media(max-width:759px){
+  #mmdProfilesV8 .mp8-profile-focus{
+    margin-top:24px;
+  }
+  #mmdProfilesV8 .mp8-profile-focus .mp8-track--profiles{
+    margin-inline:-15px;
+    padding-inline:15px;
+  }
+  #mmdProfilesV8 .mp8-profile-focus .mp8-profile{
+    flex-basis:88vw;
+    max-width:360px;
+  }
+}
+@media(prefers-reduced-motion:reduce){
+  #mmdProfilesV8 .mp8-profile-focus .mp8-profile,
+  #mmdProfilesV8 .mp8-visibility-gate,
+  #mmdProfilesV8 .mp8-visibility-gate [data-gender-value]{
+    animation:none!important;
+    transition:none!important;
+    transform:none!important;
+    opacity:1!important;
+  }
+}
