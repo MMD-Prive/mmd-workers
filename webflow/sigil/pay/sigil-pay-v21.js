@@ -617,6 +617,7 @@
     fd.append("payment_stage",clean(payment.payment&&payment.payment.stage||payment.payment_type||"full"));
     fd.append("proof_type","payment_slip");
     fd.append("source_page","sigil_pay_v21");
+    fd.append("payment_method",clean(selectedMethod));
     fd.append("t",token);
     fd.append("file",proofFile);
     fd.append("note",clean(($("[data-sp21-note]")||{}).value));

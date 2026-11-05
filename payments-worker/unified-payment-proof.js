@@ -24,6 +24,15 @@ function code(value) {
   return clean(value, 180).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
 }
 
+// The customer's own pick on the payment page. This is evidence for reviewers only:
+// it never replaces the canonical Payment Method, amount or verification state.
+const CUSTOMER_SELECTABLE_METHODS = new Set(["promptpay", "bank_transfer", "paypal_card"]);
+
+function customerSelectedMethod(form) {
+  const value = code(form.get("payment_method") || form.get("selected_method"));
+  return CUSTOMER_SELECTABLE_METHODS.has(value) ? value : "";
+}
+
 function normalizePath(value) {
   const path = clean(value || "/").replace(/\/{2,}/g, "/");
   return path.length > 1 ? path.replace(/\/+$/g, "") : path;
@@ -716,6 +725,7 @@ async function buildProofFields(env, form, payment, paymentRef, file, session = 
     `payment_lane=${lane}`,
     "evidence_only=true",
     "official_verification_required=true",
+    customerSelectedMethod(form) ? `customer_selected_method=${customerSelectedMethod(form)}` : "",
     storage.key ? `r2_key=${storage.key}` : "",
     storage.sha256 ? `evidence_sha256=${storage.sha256}` : "",
   ].filter(Boolean).join("; ");
