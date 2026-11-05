@@ -4,6 +4,8 @@ import vm from 'node:vm';
 import {createModelResponseAdapter} from './model-response-adapter.mjs';
 import {normalizeModelDecline} from './model-decline-options.mjs';
 import {legacyHandlerSource} from './model-response-legacy-writer.fixture.mjs';
+// Keep the integration suite under the existing CI entry used by PR #3068.
+import './model-response-integration.test.mjs';
 import * as modelSessionContract from '../admin-worker/src/modelSessionContractV1.js';
 const fixtureNow=Date.parse('2026-11-05T02:00:00Z');
 const fixtureJobDate='2026-11-05';
