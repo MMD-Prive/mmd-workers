@@ -113,3 +113,37 @@ test("same LINE picture fingerprint does not append a duplicate", async () => {
     globalThis.fetch = originalFetch;
   }
 });
+
+test("falls back to the secondary LINE OA token when the primary OA cannot see the user", async () => {
+  const originalFetch = globalThis.fetch;
+  const used = [];
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(typeof input === "string" ? input : input.url);
+    if (url.hostname === "api.line.me") {
+      const auth = init.headers.Authorization;
+      used.push(auth);
+      if (auth === "Bearer line-test") return new Response("{}", { status: 404 });
+      return Response.json({ pictureUrl: "https://profile.line-scdn.net/second-oa-avatar" });
+    }
+    if (url.hostname === "api.airtable.com" && (init.method || "GET") === "GET") {
+      return Response.json({ id: "recClient12345678", fields: { line_user_id: "U123", "Profile Photo": [] } });
+    }
+    if (url.hostname === "api.airtable.com" && init.method === "PATCH") {
+      const incoming = JSON.parse(init.body).fields["Profile Photo"];
+      assert.equal(incoming[0].url, "https://profile.line-scdn.net/second-oa-avatar");
+      return Response.json({
+        id: "recClient12345678",
+        fields: { line_user_id: "U123", "Profile Photo": [{ id: "attNew", url: "https://airtable.example/new.jpg", filename: incoming[0].filename }] },
+      });
+    }
+    throw new Error("unexpected fetch " + url);
+  };
+  try {
+    const response = await handleClientProfilePhotoSync(req(), { ...env, LINE_CHANNEL_ACCESS_TOKEN_SECONDARY: "line-second" }, actor);
+    const body = await response.json();
+    assert.equal(body.synced, true);
+    assert.deepEqual(used, ["Bearer line-test", "Bearer line-second"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
