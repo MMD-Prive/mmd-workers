@@ -17,7 +17,7 @@ test('A contact claims cannot borrow B rights, overwrite B reference or erase ow
  return Response.json({records:[]});
  });
  const call=(path,body)=>runtime.fetch(new Request('https://sigil.mmdbkk.com'+path,{method:'POST',headers:{cookie:'__Secure-mmd_discovery_session=a','content-type':'application/json','x-mmd-internal-token':'internal-fixture'},body:JSON.stringify(body)}),env,{});
- const payload={booking_ref:'book_fixture_A',lane:'public',client_contact:'B@example.com',line_or_member_id:'B',budget_thb:4500};
+ const payload={booking_ref:'book_fixture_A',lane:'public',client_contact:'B@example.com',line_or_member_id:'B',budget_thb:5000};
  const resolve=await call('/sigil/api/client/resolve',payload);assert.equal(resolve.status,200,await resolve.clone().text());
  assert.equal(records[0].fields.line_or_member_id,'A');assert.equal(JSON.parse(records[0].fields.resolver_payload_json).public_booking_owner.member_id,'A');
  assert.ok(!reads.some(r=>r.formula.includes('B@example.com')||r.formula.includes('memberstack')));

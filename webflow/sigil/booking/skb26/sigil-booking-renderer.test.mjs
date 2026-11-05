@@ -157,15 +157,15 @@ test('Public and Private scope inputs are mutually exclusive on the digital surf
 });
 
 
-test('Public World budget starts at 4,500 THB while Private keeps its legacy lower band', () => {
-  assert.ok(footer.includes('data-skb26-first-budget data-filter="budget_band" data-value="4500_10000">4.5–10K</button>'));
-  assert.ok(footer.includes('name="budget_thb" type="number" min="4500"'));
-  assert.ok(footer.includes("firstBudgetBtn.textContent=isPrivate?'ต่ำกว่า 10K':'4.5–10K'"));
-  assert.ok(footer.includes("firstBudgetBtn.dataset.value=isPrivate?'under_10000':'4500_10000'"));
-  assert.ok(footer.includes("form.elements.budget_thb.min=isPrivate?'0':'4500'"));
+test('Public World budget starts at 5,000 THB while Private keeps its legacy lower band', () => {
+  assert.ok(footer.includes('data-skb26-first-budget data-filter="budget_band" data-value="5000_10000">5–10K</button>'));
+  assert.ok(footer.includes('name="budget_thb" type="number" min="5000"'));
+  assert.ok(footer.includes("firstBudgetBtn.textContent=isPrivate?'ต่ำกว่า 10K':'5–10K'"));
+  assert.ok(footer.includes("firstBudgetBtn.dataset.value=isPrivate?'under_10000':'5000_10000'"));
+  assert.ok(footer.includes("form.elements.budget_thb.min=isPrivate?'0':'5000'"));
   assert.ok(footer.includes("function publicBudgetBelowFloor()"));
-  assert.ok(footer.includes("amount<4500"));
-  assert.match(footer, /Public Model เริ่มต้นที่ 4,500 บาท/);
+  assert.ok(footer.includes("amount<5000"));
+  assert.match(footer, /Public Model เริ่มต้นที่ 5,000 บาท/);
   assert.match(footer, /public_budget_below_minimum/);
 });
 
