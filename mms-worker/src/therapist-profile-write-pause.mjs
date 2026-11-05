@@ -1,6 +1,10 @@
+export function profileWritesPaused(env) {
+  return env.MMS_PROFILE_WRITES_PAUSED === 'true';
+}
+
 export function profileWritePaused(request, env) {
   const path = new URL(request.url).pathname.replace(/\/$/, '');
-  return env.MMS_PROFILE_WRITES_PAUSED === 'true'
+  return profileWritesPaused(env)
     && (path === '/male-massage/therapists/api/auth/profile' || path.startsWith('/male-massage/therapists/api/auth/profile/'))
     && !['GET', 'HEAD', 'OPTIONS'].includes(request.method);
 }
