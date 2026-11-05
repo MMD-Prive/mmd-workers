@@ -4,6 +4,8 @@ import vm from 'node:vm';
 import {createModelResponseAdapter} from './model-response-adapter.mjs';
 import {normalizeModelDecline} from './model-decline-options.mjs';
 import {legacyHandlerSource} from './model-response-legacy-writer.fixture.mjs';
+// Keep the integration suite under the existing CI entry used by PR #3068.
+import './model-response-integration.test.mjs';
 const consoleProjection={normalized_state:'confirmed',page:'confirmed',route:'/model/session/confirmed',allowed_actions:['start_travel'],job_type:'fixture',job_date:'2099-11-05',start_time:'2099-11-05T12:00:00+07:00',end_time:'2099-11-05T13:00:00+07:00',location_name:'Fixture location',google_map_url:'https://maps.example.invalid/fixture',package_code:'fixture',model_work_lane:'public_model',pay_model_thb:100,payout_terms:{policy_version:'fixture',money_lane:'public_model',compensation_mode:'public_package_matrix',package_code:'fixture',base_payout_thb:100,public_package_matrix_applies:true,public_ot_matrix_applies:true,overtime_payout_thb_per_hour:10,reimbursable_expenses:['parking'],extension_requires_model_approval:true,extension_requires_mmd_confirmation:true}};
 function setup(){
  const cachedAuthority={};
