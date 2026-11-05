@@ -295,14 +295,19 @@ export async function preflightCompcardDaily(env, options = {}) {
   const anyRoomReady = ["premium", "standard", "preview"].some(readyRoom);
   report.model_ready = !identityConflict && anyRoomReady && report.asset_probe?.verified === true;
   report.standard_ready = !identityConflict && (readyRoom("premium") || readyRoom("standard")) && report.standard_asset_probe?.verified === true;
-  const frozenPromotionPlan = (await readCompcardJson(bucket, `plans/${date}/promotion.json`))?.record;
-  const promotion = await choosePromotion(manifest, date, now, frozenPromotionPlan, env, bucket);
-  if (promotion) {
-    try {
+  // Promotion state is independent of the model slots. A corrupt or unknown
+  // monthly reservation must hold the campaign, not the afternoon model.
+  try {
+    const frozenPromotionPlan = (await readCompcardJson(bucket, `plans/${date}/promotion.json`))?.record;
+    const promotion = await choosePromotion(manifest, date, now, frozenPromotionPlan, env, bucket);
+    if (promotion) {
       await preparePromotion(promotion.card, promotion.destination, deps.asset || readApprovedCompcardAsset);
       report.promotion = { id: promotion.card.id, kind: promotion.card.kind || "photo", destination: promotion.destination, valid_to: promotion.card.valid_to, verified: true };
       report.promotion_ready = !identityConflict && readyRoom(promotion.destination);
-    } catch (error) { report.errors.push(safeError(error)); }
+    }
+  } catch (error) {
+    report.promotion_error = safeError(error);
+    report.errors.push(report.promotion_error);
   }
   report.ready = report.model_ready || report.standard_ready || report.promotion_ready;
   report.all_destinations_ready = ["premium", "standard", "preview"].every(readyRoom) && !identityConflict;
@@ -348,6 +353,55 @@ async function readMonthlyRecord(bucket, month) {
   if (!monthlyRecordValid(envelope.record) || envelope.record.month !== month) throw problem("compcard_monthly_promotion_record_invalid", false);
   return envelope;
 }
+async function reconcileExpiredDoubleMomentReservation(bucket, saved, date) {
+  const record = saved.record;
+  if (record.status !== "reserved") return saved;
+  const unknown = () => problem("compcard_double_monthly_prior_reservation_unknown", false);
+  const milliseconds = Date.parse(`${record.date}T00:00:00.000Z`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(record.date || "") || monthOf(record.date) !== record.month
+      || !Number.isFinite(milliseconds) || new Date(milliseconds).toISOString().slice(0, 10) !== record.date
+      || record.destination !== nextDoubleMomentRoom(record.round_index)) throw unknown();
+  if (record.date >= date) return saved;
+  const plan = (await readCompcardJson(bucket, `plans/${record.date}/promotion.json`))?.record;
+  const key = `deliveries/${record.date}/promotion/${record.destination}.json`;
+  const delivery = await readCompcardJson(bucket, key);
+  if (!plan || !delivery) throw unknown();
+  const { digest, ...payload } = plan;
+  const context = { date: record.date, slot: "promotion", destination: record.destination, model_id: null,
+    card_id: DOUBLE_MOMENT_CAMPAIGN_ID, plan_digest: digest, approved_sha256: plan.sha256,
+    expected_chat_id: plan.chat_ids?.[record.destination] };
+  if (plan.schema !== "hype_compcard_plan_v1" || plan.date !== record.date || plan.slot !== "promotion"
+      || plan.card_id !== DOUBLE_MOMENT_CAMPAIGN_ID || plan.model_id !== null || plan.category !== "promotion"
+      || !/^[a-f0-9]{64}$/.test(digest || "") || await jsonDigest(payload) !== digest
+      || plan.destinations?.length !== 1 || plan.destinations[0] !== record.destination
+      || plan.monthly_policy?.version !== 1 || plan.monthly_policy.month !== record.month
+      || plan.monthly_policy.round_index !== record.round_index
+      || !/^[a-f0-9]{64}$/.test(plan.sha256 || "") || typeof context.expected_chat_id !== "string"
+      || !/^-[1-9]\d{0,15}$/.test(context.expected_chat_id) || !Number.isSafeInteger(Number(context.expected_chat_id))
+      || delivery.record.schema !== "hype_compcard_delivery_v1"
+      || Object.entries(context).some(([field, value]) => delivery.record[field] !== value)) throw unknown();
+  const outcome = delivery.record.status;
+  const consumed = outcome === "sent" || outcome === "delivery_uncertain";
+  if (!consumed && outcome !== "not_sent" && outcome !== "blocked") throw unknown();
+  if (!consumed) {
+    // Seal the old delivery with its own CAS before releasing the monthly claim.
+    // A delayed old-date retry either wins this CAS (so we fail closed), or sees
+    // a terminal blocked record and cannot send after the new date is claimed.
+    if (delivery.record.receipt != null || !Number.isInteger(delivery.record.attempts)
+        || delivery.record.attempts < 1 || delivery.record.attempts > 3
+        || delivery.record.lease_until !== 0) throw unknown();
+    if (outcome === "not_sent") {
+      const sealed = { ...delivery.record, status: "blocked",
+        reconciliation: { date, prior_status: outcome, reason: "compcard_window_closed" } };
+      if (!await writeCompcardJson(bucket, key, sealed, delivery.etag)) throw unknown();
+    }
+  }
+  const settled = { ...record, status: consumed ? "consumed" : "released", prior_outcome: outcome,
+    ...(consumed ? { receipt: delivery.record.receipt || null } : {}) };
+  const written = await writeCompcardJson(bucket, monthKey(record.month), settled, saved.etag);
+  if (!written) throw unknown();
+  return { record: settled, etag: written.etag };
+}
 async function legacyDoubleMomentExposure(bucket, month, throughDate) {
   if (month < DOUBLE_MOMENT_MONTHLY_ANCHOR_MONTH) return null;
   const endDate = throughDate || `${month}-31`;
@@ -370,41 +424,13 @@ async function legacyDoubleMomentExposure(bucket, month, throughDate) {
 async function findPriorDoubleMomentRound(bucket, month) {
   let last = null;
   for (let cursor = DOUBLE_MOMENT_MONTHLY_ANCHOR_MONTH; cursor < month; cursor = shiftMonth(cursor, 1)) {
-    const saved = await readMonthlyRecord(bucket, cursor);
+    let saved = await readMonthlyRecord(bucket, cursor);
+    if (saved?.record.status === "reserved") saved = await reconcileExpiredDoubleMomentReservation(bucket, saved, `${month}-01`);
     if (saved?.record.status === "consumed") {
       last = saved.record;
       continue;
     }
-    if (saved?.record.status === "reserved") {
-      const record = saved.record;
-      const plan = (await readCompcardJson(bucket, `plans/${record.date}/promotion.json`))?.record;
-      const delivery = (await readCompcardJson(bucket, `deliveries/${record.date}/promotion/${record.destination}.json`))?.record;
-      if (plan?.card_id !== DOUBLE_MOMENT_CAMPAIGN_ID || plan?.date !== record.date
-          || !plan.destinations?.includes(record.destination) || !delivery) {
-        throw problem("compcard_double_monthly_prior_reservation_unknown", false);
-      }
-      if (delivery.status === "sent" || delivery.status === "delivery_uncertain") {
-        const consumed = { ...record, status: "consumed", prior_outcome: delivery.status, receipt: delivery.receipt || null };
-        const written = await writeCompcardJson(bucket, monthKey(cursor), consumed, saved.etag);
-        if (!written) {
-          const latest = await readMonthlyRecord(bucket, cursor);
-          if (latest?.record.status !== "consumed") throw problem("compcard_double_monthly_prior_reservation_unknown", false);
-          last = latest.record;
-        } else last = consumed;
-        continue;
-      }
-      if (delivery.status !== "not_sent" && delivery.status !== "blocked") {
-        throw problem("compcard_double_monthly_prior_reservation_unknown", false);
-      }
-      // A confirmed no-send did not consume an actual monthly publication round.
-      const released = { ...record, status: "released", prior_outcome: delivery.status };
-      const written = await writeCompcardJson(bucket, monthKey(cursor), released, saved.etag);
-      if (!written) {
-        const latest = await readMonthlyRecord(bucket, cursor);
-        if (latest?.record.status === "reserved") throw problem("compcard_double_monthly_prior_reservation_unknown", false);
-      }
-      continue;
-    }
+    if (saved?.record.status === "reserved") throw problem("compcard_double_monthly_prior_reservation_unknown", false);
     const legacy = await legacyDoubleMomentExposure(bucket, cursor, null);
     if (!legacy) continue;
     if (cursor === DOUBLE_MOMENT_MONTHLY_ANCHOR_MONTH && (legacy.date !== DOUBLE_MOMENT_MONTHLY_ANCHOR_DATE || legacy.destination !== "preview")) {
@@ -422,7 +448,7 @@ async function findPriorDoubleMomentRound(bucket, month) {
 async function currentDoubleMomentMonth(bucket, date) {
   const month = monthOf(date);
   let saved = await readMonthlyRecord(bucket, month);
-  if (saved) return saved;
+  if (saved) return reconcileExpiredDoubleMomentReservation(bucket, saved, date);
   const legacy = await legacyDoubleMomentExposure(bucket, month, date);
   if (legacy) {
     if (month === DOUBLE_MOMENT_MONTHLY_ANCHOR_MONTH
@@ -649,12 +675,16 @@ export async function runCompcardDaily(env = {}, options = {}) {
     clock = compcardClock(now);
     const schedule = compcardSchedule(env);
     const cadence = publicationCadence(env, clock.date);
-    const frozenPromotion = (await readCompcardJson(bucket, `plans/${clock.date}/promotion.json`))?.record;
-    const frozenStandard = (await readCompcardJson(bucket, `plans/${clock.date}/standard.json`))?.record;
+    const eveningDue = due(clock, schedule.promotion) || due(clock, schedule.standard);
+    const frozenPromotion = eveningDue ? (await readCompcardJson(bucket, `plans/${clock.date}/promotion.json`))?.record : null;
+    const frozenStandard = eveningDue ? (await readCompcardJson(bucket, `plans/${clock.date}/standard.json`))?.record : null;
+    const promotionDue = enabled(env.HYPE_PROMOTION_ENABLED) && !frozenStandard && (cadence.promotion_day || frozenPromotion) && due(clock, schedule.promotion);
     const standardDue = enabled(env.HYPE_STANDARD_ENABLED) && (cadence.standard_day || frozenStandard) && !frozenPromotion && due(clock, schedule.standard);
     const readiness = await preflightCompcardDaily(env, { now, deps: { ...deps, bucket, resolvedManifest: manifest } });
     if (!readiness.ready && !(standardDue && !readiness.eligible_counts?.standard)) {
-      const result = { date: clock.date, status: "not_ready", errors: readiness.errors, sent: 0 };
+      const result = promotionDue && readiness.promotion_error
+        ? { date: clock.date, status: "failed", error: readiness.promotion_error, sent: 0 }
+        : { date: clock.date, status: "not_ready", errors: readiness.errors, sent: 0 };
       log(result);
       return result;
     }
@@ -666,7 +696,7 @@ export async function runCompcardDaily(env = {}, options = {}) {
     // Campaign delivery does not depend on an unrelated model's eligibility.
     if (frozenPromotion && frozenStandard && (due(clock, schedule.standard) || due(clock, schedule.promotion))) {
       results.push({ date: clock.date, slot: "standard", status: "blocked", error: "compcard_evening_plan_conflict", sent: 0 });
-    } else if (enabled(env.HYPE_PROMOTION_ENABLED) && !frozenStandard && (cadence.promotion_day || frozenPromotion) && due(clock, schedule.promotion)) {
+    } else if (promotionDue) {
       const selectedPromotion = await choosePromotion(manifest, clock.date, now, frozenPromotion, env, bucket);
       results.push(selectedPromotion && !readiness.promotion_ready
         ? { date: clock.date, slot: "promotion", status: "not_ready", sent: 0, destination: selectedPromotion.destination }

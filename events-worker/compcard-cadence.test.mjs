@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { publicationCadence } from './src/compcard-policy.js';
 import { compcardSchedule, compcardSha256, runCompcardDaily } from './src/compcard-daily.js';
 import { APPROVED_COMPCARD_MANIFEST } from './src/compcard-approved-manifest.js';
-import { COMPCARD_JOURNAL_ROOT } from './src/compcard-journal.js';
+import { COMPCARD_JOURNAL_ROOT, deliverCompcardOnce } from './src/compcard-journal.js';
 
 const at = (date, time = '20:00') => Date.parse(`${date}T${time}:00+07:00`);
 const CADENCE = { HYPE_CADENCE_START_DATE: '2026-10-23', HYPE_PROMOTION_WEEKDAYS: '2,5', HYPE_STANDARD_ENABLED: 'true' };
@@ -334,4 +334,221 @@ test('production config explicitly enables the future Tuesday/Friday cadence', (
   assert.match(config, /HYPE_PROMOTION_SEND_AT_ICT\s*=\s*"10:00"/);
   assert.match(config, /HYPE_STANDARD_ENABLED\s*=\s*"true"/);
   assert.match(config, /HYPE_STANDARD_SEND_AT_ICT\s*=\s*"20:00"/);
+});
+
+// Regression coverage for expired monthly reservations and independent slots.
+const DECEMBER_MONTH = 'monthly-promotions/double-moment/2026-12.json';
+const DECEMBER_PLAN = 'plans/2026-12-01/promotion.json';
+const DECEMBER_DELIVERY = 'deliveries/2026-12-01/promotion/premium.json';
+const putRecord = (f, key, value) => f.bucket.put(COMPCARD_JOURNAL_ROOT + key, JSON.stringify(value));
+const rawRecord = (f, key) => f.bucket.records.get(COMPCARD_JOURNAL_ROOT + key)?.value;
+async function expiredReservation(attempts = 1, lastTime = '11:15') {
+  const f = fixture({ inventory: cards(5), send: (card, destination, count) => count <= attempts
+    ? { delivery_state: 'not_sent', error: 'compcard_mock_outage' }
+    : { ok: true, delivery_state: 'sent', destination, chat_id: ROOM_IDS[destination], message_id: count, approved_sha256: card.sha256 } });
+  f.env.HYPE_PROMOTION_SEND_AT_ICT = '10:00';
+  f.env.HYPE_STANDARD_SEND_AT_ICT = '20:00';
+  await seedNovemberDoubleMomentReceipt(f);
+  if (attempts === 2) await run(f, '2026-12-01', '11:00');
+  await run(f, '2026-12-01', lastTime);
+  assert.equal(f.bucket.read(DECEMBER_MONTH).status, 'reserved');
+  assert.equal(f.bucket.read(DECEMBER_DELIVERY).attempts, attempts);
+  return f;
+}
+
+for (const attempts of [1, 2]) test(`expired confirmed not_sent after ${attempts} attempts recovers in the same room/round`, async () => {
+  const f = await expiredReservation(attempts);
+  const originalPlan = rawRecord(f, DECEMBER_PLAN);
+  const originalDelivery = f.bucket.read(DECEMBER_DELIVERY);
+  const novemberReceipt = rawRecord(f, 'deliveries/2026-11-03/promotion/preview.json');
+  assert.equal((await run(f, '2026-12-01', '11:30')).status, 'not_due');
+  assert.equal((await run(f, '2026-12-04', '10:00')).results[0].status, 'sent');
+  const closed = f.bucket.read(DECEMBER_DELIVERY);
+  assert.equal(closed.status, 'blocked');
+  assert.deepEqual({ ...closed, status: originalDelivery.status, reconciliation: undefined }, { ...originalDelivery, reconciliation: undefined });
+  assert.deepEqual(closed.reconciliation, { date: '2026-12-04', prior_status: 'not_sent', reason: 'compcard_window_closed' });
+  assert.equal(rawRecord(f, DECEMBER_PLAN), originalPlan);
+  assert.equal(rawRecord(f, 'deliveries/2026-11-03/promotion/preview.json'), novemberReceipt);
+  assert.equal(f.bucket.read(DECEMBER_MONTH).round_index, 1);
+  assert.equal(f.bucket.read(DECEMBER_MONTH).destination, 'premium');
+  assert.equal(f.bucket.read(DECEMBER_MONTH).date, '2026-12-04');
+  await run(f, '2026-12-04', '10:15');
+  await run(f, '2026-12-01', '11:20'); // Delayed execution carrying its earlier clock.
+  assert.equal(f.sends.length, attempts + 1);
+  await run(f, '2027-01-05', '10:00');
+  assert.equal(f.bucket.read('monthly-promotions/double-moment/2027-01.json').round_index, 2);
+  assert.equal(f.sends.at(-1).destination, 'standard');
+});
+
+test('promotion reservation errors remain visible without blocking the independent afternoon model', async () => {
+  const f = await expiredReservation();
+  await putRecord(f, DECEMBER_DELIVERY, { ...f.bucket.read(DECEMBER_DELIVERY), status: 'sending' });
+  const before = rawRecord(f, DECEMBER_MONTH);
+  const result = await run(f, '2027-01-05', '16:30');
+  assert.equal(result.results[0].slot, 'model');
+  assert.equal(result.results[0].status, 'sent');
+  assert.equal(f.sends.filter(row => row.card.id === DOUBLE_MOMENT_ID).length, 1);
+  const readiness = f.bucket.read('readiness/latest.json').result;
+  assert.equal(readiness.model_ready, true);
+  assert.equal(readiness.promotion_ready, false);
+  assert.equal(readiness.promotion_error, 'compcard_double_monthly_prior_reservation_unknown');
+  assert.ok(readiness.errors.includes(readiness.promotion_error));
+  assert.equal(rawRecord(f, DECEMBER_MONTH), before);
+  assert.equal(f.bucket.read('monthly-promotions/double-moment/2027-01.json'), null);
+});
+
+test('malformed promotion JSON cannot block the independent afternoon model', async () => {
+  const f = fixture({ inventory: cards(5) });
+  f.env.HYPE_PROMOTION_SEND_AT_ICT = '10:00';
+  f.env.HYPE_STANDARD_SEND_AT_ICT = '20:00';
+  await f.bucket.put(COMPCARD_JOURNAL_ROOT + 'plans/2027-01-05/promotion.json', '{broken');
+  const result = await run(f, '2027-01-05', '16:30');
+  assert.equal(result.results[0].slot, 'model');
+  assert.equal(result.results[0].status, 'sent');
+  assert.equal(f.bucket.read('readiness/latest.json').result.promotion_ready, false);
+  assert.equal(rawRecord(f, 'plans/2027-01-05/promotion.json'), '{broken');
+});
+
+for (const status of ['pending', 'preparing', 'sending', 'unknown']) test(`expired ${status} delivery stays reserved and never resends`, async () => {
+  const f = await expiredReservation();
+  await putRecord(f, DECEMBER_DELIVERY, { ...f.bucket.read(DECEMBER_DELIVERY), status });
+  const before = rawRecord(f, DECEMBER_MONTH);
+  const result = await run(f, '2026-12-04', '10:00');
+  assert.equal(result.status, 'failed');
+  assert.equal(result.error, 'compcard_double_monthly_prior_reservation_unknown');
+  assert.equal(f.sends.length, 1);
+  assert.equal(rawRecord(f, DECEMBER_MONTH), before);
+  assert.equal(f.bucket.read('plans/2026-12-04/promotion.json'), null);
+});
+
+for (const status of ['sent', 'delivery_uncertain']) test(`expired ${status} delivery consumes the month without changing its receipt`, async () => {
+  const f = await expiredReservation();
+  const receipt = status === 'sent' ? { message_id: 781, chat_id: ROOM_IDS.premium, approved_sha256: f.bucket.read(DECEMBER_PLAN).sha256 } : null;
+  await putRecord(f, DECEMBER_DELIVERY, { ...f.bucket.read(DECEMBER_DELIVERY), status, receipt });
+  const before = rawRecord(f, DECEMBER_DELIVERY);
+  await run(f, '2026-12-04', '10:00');
+  assert.equal(f.sends.length, 1);
+  assert.equal(f.bucket.read(DECEMBER_MONTH).status, 'consumed');
+  assert.equal(f.bucket.read(DECEMBER_MONTH).round_index, 1);
+  assert.equal(rawRecord(f, DECEMBER_DELIVERY), before);
+  await run(f, '2027-01-05', '10:00');
+  assert.equal(f.bucket.read('monthly-promotions/double-moment/2027-01.json').round_index, 2);
+  assert.equal(f.sends.at(-1).destination, 'standard');
+});
+
+for (const [label, alter] of [
+  ['missing plan', async f => f.bucket.records.delete(COMPCARD_JOURNAL_ROOT + DECEMBER_PLAN)],
+  ['missing delivery', async f => f.bucket.records.delete(COMPCARD_JOURNAL_ROOT + DECEMBER_DELIVERY)],
+  ['plan integrity', async f => putRecord(f, DECEMBER_PLAN, { ...f.bucket.read(DECEMBER_PLAN), category: 'other' })],
+  ['delivery digest', async f => putRecord(f, DECEMBER_DELIVERY, { ...f.bucket.read(DECEMBER_DELIVERY), plan_digest: 'a'.repeat(64) })],
+  ['delivery destination', async f => putRecord(f, DECEMBER_DELIVERY, { ...f.bucket.read(DECEMBER_DELIVERY), destination: 'preview' })],
+  ['delivery schema', async f => putRecord(f, DECEMBER_DELIVERY, { ...f.bucket.read(DECEMBER_DELIVERY), schema: 'invalid' })],
+  ['contradictory receipt', async f => putRecord(f, DECEMBER_DELIVERY, { ...f.bucket.read(DECEMBER_DELIVERY), receipt: { message_id: 123 } })],
+  ['outstanding lease', async f => putRecord(f, DECEMBER_DELIVERY, { ...f.bucket.read(DECEMBER_DELIVERY), lease_until: at('2026-12-04', '10:10') })],
+  ['invalid attempts', async f => putRecord(f, DECEMBER_DELIVERY, { ...f.bucket.read(DECEMBER_DELIVERY), attempts: 0 })],
+  ['invalid calendar date', async f => putRecord(f, DECEMBER_MONTH, { ...f.bucket.read(DECEMBER_MONTH), date: '2026-12-00' })],
+  ['wrong reservation month', async f => putRecord(f, DECEMBER_MONTH, { ...f.bucket.read(DECEMBER_MONTH), date: '2026-11-01' })],
+  ['wrong room round', async f => putRecord(f, DECEMBER_MONTH, { ...f.bucket.read(DECEMBER_MONTH), round_index: 2 })],
+]) test(`expired reservation with ${label} fails closed`, async () => {
+  const f = await expiredReservation();
+  await alter(f);
+  const before = rawRecord(f, DECEMBER_MONTH);
+  const result = await run(f, '2026-12-04', '10:00');
+  assert.equal(result.status, 'failed');
+  assert.equal(f.sends.length, 1);
+  assert.equal(rawRecord(f, DECEMBER_MONTH), before);
+});
+
+for (const status of ['preparing', 'sending']) test(`a competing ${status} claim defeats the no-send seal and holds the month`, async () => {
+  const f = await expiredReservation();
+  const put = f.bucket.put.bind(f.bucket);
+  let raced = false;
+  f.bucket.put = async (key, value, options) => {
+    const row = JSON.parse(value);
+    if (!raced && key === COMPCARD_JOURNAL_ROOT + DECEMBER_DELIVERY && row.reconciliation) {
+      raced = true;
+      await put(key, JSON.stringify({ ...f.bucket.read(DECEMBER_DELIVERY), status }), {});
+    }
+    return put(key, value, options);
+  };
+  const result = await run(f, '2026-12-04', '10:00');
+  assert.equal(raced, true);
+  assert.equal(result.status, 'failed');
+  assert.equal(f.bucket.read(DECEMBER_MONTH).status, 'reserved');
+  assert.equal(f.bucket.read(DECEMBER_DELIVERY).status, status);
+  assert.equal(f.sends.length, 1);
+});
+
+test('a conflicting consumed monthly CAS is never overwritten or treated as released', async () => {
+  const f = await expiredReservation();
+  const put = f.bucket.put.bind(f.bucket);
+  let raced = false;
+  f.bucket.put = async (key, value, options) => {
+    const row = JSON.parse(value);
+    if (!raced && key === COMPCARD_JOURNAL_ROOT + DECEMBER_MONTH && row.status === 'released') {
+      raced = true;
+      await put(key, JSON.stringify({ ...f.bucket.read(DECEMBER_MONTH), status: 'consumed' }), {});
+    }
+    return put(key, value, options);
+  };
+  await run(f, '2026-12-04', '10:00');
+  assert.equal(raced, true);
+  assert.equal(f.bucket.read(DECEMBER_MONTH).status, 'consumed');
+  assert.equal(f.sends.length, 1);
+});
+
+test('a crash after sealing the old delivery can recover without losing the room or round', async () => {
+  const f = await expiredReservation();
+  const put = f.bucket.put.bind(f.bucket);
+  f.bucket.put = async (key, value, options) => {
+    if (key === COMPCARD_JOURNAL_ROOT + DECEMBER_MONTH && JSON.parse(value).status === 'released') throw new Error('compcard_mock_storage_outage');
+    return put(key, value, options);
+  };
+  assert.equal((await run(f, '2026-12-04', '10:00')).status, 'failed');
+  assert.equal(f.bucket.read(DECEMBER_DELIVERY).status, 'blocked');
+  assert.equal(f.bucket.read(DECEMBER_MONTH).status, 'reserved');
+  assert.equal(f.sends.length, 1);
+  f.bucket.put = put;
+  assert.equal((await run(f, '2026-12-04', '10:30')).results[0].status, 'sent');
+  assert.equal(f.bucket.read(DECEMBER_MONTH).destination, 'premium');
+  assert.equal(f.bucket.read(DECEMBER_MONTH).round_index, 1);
+  assert.equal(f.sends.length, 2);
+});
+
+test('concurrent expired-date recovery sends once across candidate dates', async () => {
+  const f = await expiredReservation();
+  await Promise.all([run(f, '2026-12-04', '10:00'), run(f, '2026-12-04', '10:00'), run(f, '2026-12-08', '10:00')]);
+  assert.equal(f.sends.length, 2);
+  assert.equal(f.bucket.read(DECEMBER_MONTH).status, 'consumed');
+  assert.equal(f.bucket.read(DECEMBER_MONTH).destination, 'premium');
+  assert.equal(f.bucket.read(DECEMBER_MONTH).round_index, 1);
+});
+
+test('cross-month recovery seals earlier no-send before reusing its unconsumed round', async () => {
+  const f = await expiredReservation();
+  const oldPlan = rawRecord(f, DECEMBER_PLAN);
+  assert.equal((await run(f, '2027-01-05', '10:00')).results[0].status, 'sent');
+  assert.equal(f.bucket.read(DECEMBER_DELIVERY).status, 'blocked');
+  assert.equal(f.bucket.read(DECEMBER_MONTH).status, 'released');
+  assert.equal(f.bucket.read('monthly-promotions/double-moment/2027-01.json').round_index, 1);
+  assert.equal(f.sends.at(-1).destination, 'premium');
+  await run(f, '2026-12-01', '11:20');
+  assert.equal(f.sends.length, 2);
+  assert.equal(rawRecord(f, DECEMBER_PLAN), oldPlan);
+});
+
+test('a stale earlier-date executor cannot retry the sealed journal even before its old window closes', async () => {
+  const f = await expiredReservation(1, '10:00');
+  const prior = f.bucket.read(DECEMBER_DELIVERY);
+  await run(f, '2026-12-04', '10:00');
+  const fields = ['date', 'slot', 'destination', 'model_id', 'card_id', 'plan_digest', 'approved_sha256', 'expected_chat_id'];
+  const result = await deliverCompcardOnce({
+    bucket: f.bucket, key: DECEMBER_DELIVERY, now: at('2026-12-01', '10:15'),
+    context: Object.fromEntries(fields.map(key => [key, prior[key]])),
+    prepare: () => assert.fail('The sealed old-date attempt must not prepare'),
+    deliver: () => assert.fail('The sealed old-date attempt must not reach transport'),
+  });
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.duplicate, true);
+  assert.equal(f.sends.length, 2);
 });
