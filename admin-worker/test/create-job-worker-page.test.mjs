@@ -67,6 +67,16 @@ test("Create Job reveals fields in dependency order and avoids unrelated default
   assert.match(html, /ลิงก์ยืนยันลูกค้าและโมเดลยังไม่แสดงจนกว่าระบบ Payment จะยืนยันการชำระ/);
 });
 
+test("Create Job leaves payment method selection to the customer's payment page", async () => {
+  const html = await handleCreateJobWorkerPage(
+    new Request("https://mmdbkk.com/internal/admin/jobs/create-job"),
+  ).text();
+  assert.doesNotMatch(html, /summaryRow\('ช่องทาง'/);
+  assert.doesNotMatch(html, /Payment backend ปัจจุบัน \(payment_method: promptpay\)/);
+  assert.doesNotMatch(html, /payment_method:'promptpay'/);
+  assert.match(html, /ลูกค้าเลือกวิธีชำระเงินเองในหน้าชำระเงิน/);
+});
+
 test("Worker-owned page supports HEAD without returning the HTML body", async () => {
   const response = handleCreateJobWorkerPage(new Request("https://mmdbkk.com/internal/admin/jobs/create-job", { method: "HEAD" }));
   assert.equal(response.status, 200);
