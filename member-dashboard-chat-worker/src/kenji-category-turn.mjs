@@ -3,6 +3,7 @@ import {careBackOctoberReply} from './kenji-care-back-october.mjs';
 import {lineIntakeCommand, readLineIntakeCatalog, resolveLineIntakeReply} from './kenji-line-intake-commands.mjs';
 import {resolveKenjiLineLiveTruth} from './kenji-line-live-truth.mjs';
 import {resolveMembershipStatusReply} from './kenji-membership-status-reply.mjs';
+import {entryTopicCommand, entryTopicReply, entryPromotionReply} from './kenji-entry-topics.mjs';
 
 export async function runApprovedCategoryTurn(env, event, initialRuntime, io) {
   const now = io.now ?? Date.now();
@@ -26,9 +27,12 @@ export async function runApprovedCategoryTurn(env, event, initialRuntime, io) {
   if (eligible) {
     // Native OA owns Q&A. Only exact current-message commands may read truth;
     // never promote stale conversation state into a command or model request.
-    const command = event.type === 'message' && event.message?.type === 'text'
+    const topic = entryTopicCommand(event);
+    const rawCommand = event.type === 'message' && event.message?.type === 'text'
       ? String(event.message.text || '').normalize('NFKC').trim().toLowerCase() : '';
-    const intake = lineIntakeCommand(event);
+    const command = topic || rawCommand;
+    const routedEvent = ['package','regis','apply'].includes(topic) ? {...event,message:{...event.message,text:topic}} : event;
+    const intake = lineIntakeCommand(routedEvent);
     try {
       if (command === 'checkpts' || intake) {
         const continuity = await io.continuity();
@@ -43,11 +47,14 @@ export async function runApprovedCategoryTurn(env, event, initialRuntime, io) {
           decision = {...resolveMembershipStatusReply(truth),intent:'approved_command',reply_source:'category_checkpts'};
         } else {
           const catalog = intake === 'apply' ? null : await readLineIntakeCatalog(env,event);
-          const reply = resolveLineIntakeReply(event,{},catalog,now);
+          const reply = resolveLineIntakeReply(routedEvent,{},catalog,now);
           decision = {text:reply.text,intent:'approved_command',reply_source:`category_${intake}`};
         }
       } else {
-        decision = approvedCategoryReply(event,env,{careBackOctoberReply,now}) || silent;
+        const promotion = ['promotion','member_promotion'].includes(topic)
+          ? approvedCategoryReply({...event,message:{...event.message,text:'โปร'}},env,{careBackOctoberReply,now}) : null;
+        decision = entryTopicReply(topic) || entryPromotionReply(promotion,topic === 'member_promotion') ||
+          approvedCategoryReply(event,env,{careBackOctoberReply,now}) || silent;
       }
     } catch { decision = {...silent, guard_reason:'category_resolution_exception'}; }
     if (decision.text) {
