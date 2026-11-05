@@ -25,9 +25,12 @@ All business dates and times use Asia/Bangkok (UTC+7).
 - Existing D-1 model reconfirm: 16:00, handled by the existing reconfirm runtime.
 - Model card: 16:30, one model each day, routed to that category's approved rooms.
 - Until 22 October: Promotion at 20:00, one room each day. 18 October starts with Premium.
-- From 23 October 2026: Promotion at 20:00 on Tuesday and Friday only.
-  The other five evenings use a separate Standard compcard slot at 20:00,
-  routed to Premium and Standard. The normal 16:30 model slot stays daily.
+- From 23 October through 3 November 2026: Promotion at 20:00 on Tuesday and Friday only.
+  From 6 November onward, scheduled promotion slots move to 10:00 on Tuesday and
+  Friday. Promotions suppressed for campaign-specific frequency limits do not
+  become Standard posts. The normal 16:30 model slot stays daily, and the separate
+  Standard compcard slot remains at 20:00 on evenings outside the promotion calendar,
+  routed to Premium and Standard.
 - The existing events-worker cron remains `*/15 * * * *`.
 - A slot can recover known failed sends for up to 90 minutes, within the same
   Bangkok calendar date. Old cron invocations cannot replay a previous day.
@@ -46,11 +49,15 @@ Standard slot. Its 90-minute delivery window must not overlap the normal model
 slot. Disabling a promotion never substitutes another promotion or model into
 that evening. The two evening categories follow the configured calendar.
 
-Promotion rooms advance once per scheduled promotion date, so skipping the five
-Standard evenings does not skip rooms. The first new date keeps its former
-calendar destination: 23 Oct Preview, 27 Oct Premium, 30 Oct Standard, 3 Nov
-Preview, then repeat. Campaign availability and Double Moment financial terms
-remain unchanged.
+For other eligible promotions, rooms advance once per scheduled Tuesday/Friday
+promotion date; skipped campaign posts do not create a Standard post. The historic
+rotation through 3 November remains unchanged. Double Moment follows a separate
+monthly round sequence: the confirmed 3 November Preview delivery is November's
+publication (round 0); no additional Double Moment is sent on 6 November. The
+reviewed default is the first Tuesday of each following month at 10:00: 1 December
+Premium, 5 January Standard, then 2 February Preview. Room rotation advances only
+when a Double Moment monthly round is actually reserved; skipped global promotion
+slots do not advance it.
 
 Standard cards use the same canonical approval checks and shared seven-day
 per-model exposure history as the 16:30 slot. A model used in either slot cannot
@@ -119,43 +126,51 @@ CARE BACK has `availability_mode: "bounded"` and an exclusive end of
 sent after 31 October. Later private payment honoring rules do not extend this
 public campaign.
 
-Double Moment uses an explicit `availability_mode: "continuous"`, an approved
-start time, `valid_to: null`, and `status: "active"`. It remains eligible until
-the owner pauses it or revokes approval. Missing or malformed dates never imply
-continuous availability; bounded campaigns require a valid exclusive end. The
-same availability predicate is used by readiness, campaign selection and the
-last pre-send check. All campaigns still require approved copy/hash and verified
-destination identity and permissions.
+Double Moment keeps `availability_mode: "continuous"`, `valid_to: null`, and
+`status: "active"`; availability does not override the monthly publication limit.
+Missing or malformed dates never imply continuous availability; bounded campaigns
+require a valid exclusive end. Readiness, selection and the final pre-send check
+share the same availability predicate. Every campaign still requires approved
+copy/hash and verified destination identity and permissions.
 
 The advertising entry is `double-moment-continues-2026-telegram`; its financial
 identity remains `promo_double_moment_sep2026`, package `double_moment_20000`,
-policy `v1`. The approved copy states: pay THB 20,000 for total credit THB
-27,000 (paid credit THB 20,000 plus two separate THB 3,500 Moment bonuses);
-each bonus is for a different confirmed booking with service amount at least
-THB 20,000; credit validity is 180 days from verified payment as recorded by
-the existing system; one package per verified member per campaign. Existing
-Official Verify and credit ledger remain authoritative. Advertising continuity
-does not create/renew a purchase, extend credit validity, or issue credits or
-points. No payment-worker logic was changed.
+policy `v1`. The approved Telegram copy says pay THB 20,000 for total credit THB 27,000:
+paid credit is THB 10,000 for each of two separate jobs, with a THB 3,500 Moment
+bonus for each job; each confirmed job must have service amount of at least
+THB 20,000. It states credit is usable for 120 days from issuance. The manifest's
+120-day term is advertising metadata; payment issuance and ledger logic were not
+changed.
 
 The Double Moment plain-text message is identical for Premium, Standard and
-Preview and pinned by SHA-256 in the approved manifest. It links to the existing
-MY MMD entry at `https://www.mmdbkk.com/member/login`.
+Preview and pinned by SHA-256 in the approved manifest. Its CTA is
+`https://www.mmdbkk.com/promotion/double-moment`. The live page, description and
+Open Graph description were checked read-only on 4 November and display 120 days.
+No Webflow edit or publish was performed. The production Double Moment health
+endpoint reports policy v2, `validity_days: 120`, and `purchase_enabled: false`.
+The currently available repository v1 payment source instead sets a fixed 180-day
+expiry at credit issuance; it contains no 120-to-180 extension cap or expiry
+reminder logic. Production runs a `double-moment-v2` payments-worker version, so
+the v1 source is not proof of live issuance behavior. Do not assume a maximum
+180-day extension or implement reminders until the deployed v2 behavior and
+reminder date rules are confirmed.
 
-When CARE BACK expires, Double Moment remains available on scheduled promotion
-dates; model-card rotation is independent. A scheduled promotion
-can still be paused using `HYPE_PROMOTION_ENABLED=false`, or an individual card
-can be paused/revoked in the approved manifest. Do not use a far-future end date
-to simulate continuous availability.
+When CARE BACK expires, it is no longer eligible; Double Moment remains eligible
+subject to its monthly publication limit. Model-card rotation is independent. A
+scheduled promotion can be paused using `HYPE_PROMOTION_ENABLED=false`, or an
+individual card can be paused/revoked in the approved manifest. Do not use a
+far-future end date to simulate continuous availability.
 
-With both campaigns active, selection is deterministic by Bangkok date and
-sorted campaign ID. For the initial six rounds this yields CARE BACK / Premium
-on 18 Oct, Double Moment / Standard on 19 Oct, CARE BACK / Preview on 20 Oct,
-Double Moment / Premium on 21 Oct, CARE BACK / Standard on 22 Oct, and Double
-Moment / Preview on 23 Oct. From 1 Nov, Double Moment is selected each day while
-the same room rotation continues from the 18 Oct Premium anchor under the
-historical schedule. From the 23 Oct cadence cutover, room advancement counts
-scheduled promotion dates as described above; advertising availability is unchanged.
+The 23 October Tuesday/Friday cadence cutover and its historical room anchor are
+preserved. Existing immutable plans, delivery receipts and deduplication keys are
+not rewritten. A monthly Double Moment record is added at
+`monthly-promotions/double-moment/YYYY-MM.json`; it tracks the round index, room,
+reservation and outcome. Legacy November exposure is read from the existing
+3 November plan and confirmed Preview receipt (message 135) without modifying
+either record. A confirmed send, in-flight or uncertain outcome consumes that
+month. Only bounded, confirmed `not_sent` retries can release the reservation;
+exhaustion allows a later scheduled promotion slot in the same month to retry the
+same room and same monthly round.
 
 ## Delivery and verification
 
@@ -183,6 +198,7 @@ All keys begin with `hype-compcards/v1/`:
 | `plans/YYYY-MM-DD/model.json`, `standard.json` or `promotion.json` | Immutable, integrity-checked daily plan |
 | `deliveries/YYYY-MM-DD/SLOT/ROOM.json` | Independent room lease, result and confirmed receipt; SLOT is model, standard or promotion |
 | `summaries/YYYY-MM-DD/SLOT.json` | Consolidated daily result |
+| `monthly-promotions/double-moment/YYYY-MM.json` | Durable monthly Double Moment reservation, actual round, room and consumed/released status |
 | `history/MODEL_RECORD_ID.json` | Conservative exposure history for rotation |
 | `intake/approved.json` | Reviewed Standard versions and their immutable asset references |
 | `intake/assets/SHA256.json` | Private base64 image envelope, verified against the approved hash |
