@@ -11,7 +11,9 @@ const AIRTABLE_API = "https://api.airtable.com/v0";
 const PAY_INTENT_PATH = "/v1/pay/verify";
 const SLIP_EVIDENCE_PATH = "/v1/pay/slip/evidence";
 const CONFIRM_VERIFY_PATH = "/v1/confirm/verify";
-const CANONICAL_WEB_SOURCES = new Set(["sigil_pay", "sigil_pay_v22", "public_pay", "job_confirmation", "pay_membership", "member_payments"]);
+// Webflow still serves the v21 form. Keep it behind the same signed-customer,
+// canonical-payment and file-required guards as the current web payment forms.
+const CANONICAL_WEB_SOURCES = new Set(["sigil_pay", "sigil_pay_v21", "sigil_pay_v22", "public_pay", "job_confirmation", "pay_membership", "member_payments"]);
 const PAID_STATES = new Set(["paid", "verified", "success", "completed"]);
 const PROOF_STATES = new Set(["submitted", "pending", "pending_review", "review", "review_required", "needs_review", "under_review", "matched", "verified", "approved"]);
 const MAX_FILE_BYTES = 15 * 1024 * 1024;
