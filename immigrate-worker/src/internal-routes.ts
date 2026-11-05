@@ -450,7 +450,6 @@ function normalizeAdminJobPayload(body: Record<string, unknown>): Record<string,
     google_map_url: str(body.google_map_url || jobDetails.google_map_url),
     amount_thb: amount,
     payment_type: str(body.payment_type || payment.payment_type) || "deposit",
-    payment_method: str(body.payment_method || payment.payment_method) || "promptpay",
     note: str(body.note || notes.operation_note || notes.handling_note || body.notes),
   };
 }
