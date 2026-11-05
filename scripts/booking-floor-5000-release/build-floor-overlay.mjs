@@ -52,7 +52,10 @@ export function buildFloorCandidate(baseline,{expectedCandidate=CANDIDATE_HASH}=
  // The edits may only touch the floor, the legacy band and nothing else.
  assert.equal(applied.length,2);
  const out=Buffer.from(candidate,'utf8');
- const proof={baseline_sha256:BASE_HASH,candidate_sha256:sha(out),inverse_sha256:sha(Buffer.from(inverse,'utf8')),baseline_bytes:bytes.length,candidate_bytes:out.length,edits:applied};
+ // Export surface is the module's trailing export block; it must be byte-identical and present.
+ const exportsOf=s=>s.slice(s.lastIndexOf('\nexport {'));
+ assert.ok(text.includes('\nexport {'),'baseline export block missing');
+ const proof={baseline_sha256:BASE_HASH,candidate_sha256:sha(out),inverse_sha256:sha(Buffer.from(inverse,'utf8')),baseline_bytes:bytes.length,candidate_bytes:out.length,exports_unchanged:exportsOf(text)===exportsOf(candidate),migrations:[],settings_changes:[],edits:applied};
  assert.equal(proof.candidate_sha256,expectedCandidate,'unreviewed candidate');
  return {candidate:out,proof};
 }

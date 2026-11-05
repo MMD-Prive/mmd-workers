@@ -32,11 +32,22 @@ SIGIL_BASELINE=<deployed runtime-index.js> node --test scripts/booking-floor-500
 
 Compiled-candidate behaviour checked on public search: 4,499 / 4,500 / 4,999 / `under_10000` are rejected with `public_budget_below_minimum` and cause no Airtable read; 5,000, `5000_10000`, legacy `4500_10000` and `10000_20000` are accepted. Intake sits behind the member login in the deployed bundle, so it was not exercised on the compiled bytes.
 
-## Not included (needs the release owner)
+## Release path (written, never run)
 
-- No deployment wiring. Publishing must reuse the owner-approved code-only pipeline pattern (`scripts/booking-identity-release`: sealed contract, read-only baseline capture, journal, strict-inherit version upload, 100% deployment, protected-environment approval). That contract must be sealed with the live version id, deployment id and configuration fingerprint captured at release time, and is intentionally not guessed here.
-- Only the SIGIL worker changes; `member-pages-worker` is untouched.
-- The old `scripts/booking-code-only` and `scripts/booking-identity-release` tooling describes already-released artifacts and is unchanged.
+Same safety model as `scripts/booking-identity-release`, SIGIL only (`member-pages-worker` is not touched). The workflow `.github/workflows/deploy-sigil-public-floor-5000.yml` is dispatch-only and runs only for the owner on `main`, first attempt, exact SHA, behind the existing protected environment `member-pages-code-only-owner`.
+
+1. **Capture (read-only).** Dispatch with `mode=capture`. It verifies the owner gates, reads the live Worker through a GET allowlist, checks the live module is exactly the pinned baseline, and prints the live version id, deployment id and configuration fingerprint. No writes.
+2. **Seal (a separate PR).** The owner copies those values into `floor-release-contract.json` together with `approval_ref_sha256` (the sha256 of the owner approval reference; the reference itself is not stored). Until all four fields are filled the contract is unsealed and `release` fails closed before any request.
+3. **Release.** Dispatch with `mode=release`. Fresh owner approval, offline tests, read-only baseline fetch (re-verified against the sealed values), offline build, candidate tests against the exact baseline bytes, then one strict-inherit version upload, readback, and one 100% deployment, each write preceded by its own fresh owner gate and journalled first. No PUT, migration, settings change, retry or rollback; an uncertain outcome stops.
+
+Transport is allowlisted: GET on this Worker's snapshot endpoints, POST `versions?bindings_inherit=strict` and POST `deployments` on this Worker only.
+
+Tested only against in-memory fakes of the Cloudflare and GitHub APIs. It has never run against either service. The first real use is the read-only capture.
+
+## Not included
+
+- `member-pages-worker` is untouched; older release tooling is unchanged.
+- The sealed values, which only a real capture can provide.
 
 ## Before anyone releases this
 

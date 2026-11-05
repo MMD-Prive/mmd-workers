@@ -1,0 +1,17 @@
+{
+  "schema": "mmd.sigil-public-floor-5000-release.v1",
+  "scope": "sigil-public-floor-5000-code-only",
+  "account": "b176eda1172b741fd2e58904cc9d77c5",
+  "zone": "2d62396174fa2ddadbbcd0e8cf0f3367",
+  "target": {
+    "name": "sigil-booking-worker",
+    "module": "runtime-index.js",
+    "sha256": "4ce2dd1c1573fa1d5babced3764b1c5c7c77e024c24303b7ba9534fd3f5b19b0",
+    "version": null,
+    "deployment": null,
+    "configuration_sha256": null
+  },
+  "candidate_sha256": "cc092790b18521a8ee78c08ddd29134b8a9050a07a0026ed85bf67f69ac64b68",
+  "proof_sha256": "475af0f1b6d4580b3e6f5bedef2abf6e7a8d18f829fd9228a972f74d35174b9b",
+  "approval_ref_sha256": null
+}

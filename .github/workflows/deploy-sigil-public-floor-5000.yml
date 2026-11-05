@@ -1,0 +1,177 @@
+name: Release SIGIL Public floor 5,000 (code-only)
+on:
+  pull_request:
+    paths:
+      - "scripts/booking-floor-5000-release/**"
+      - ".github/workflows/deploy-sigil-public-floor-5000.yml"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: capture = read-only live capture to seal the contract; release = publish the sealed candidate
+        type: choice
+        options:
+          - capture
+          - release
+        required: true
+        default: capture
+      production_approved:
+        description: Approve this exact run (capture is read-only; release publishes the sealed candidate, no migration, no configuration change)
+        type: boolean
+        required: true
+        default: false
+      approved_sha:
+        description: Full main SHA containing this workflow and tooling
+        type: string
+        required: true
+      approval_ref:
+        description: release = owner approval reference sealed in the contract; capture = any non-empty text
+        type: string
+        required: true
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('sigil-floor-5000-review-{0}', github.event.pull_request.number) || 'deploy-member-pages-worker-production' }}
+  cancel-in-progress: false
+env:
+  APPROVED_SHA: ${{ inputs.approved_sha }}
+  APPROVAL_REF: ${{ inputs.approval_ref }}
+  APPROVED_RELEASE_SCOPE: sigil-public-floor-5000-code-only
+  APPROVED_MIGRATION_POLICY: none-retain-existing
+  RELEASE_ROOT: ${{ github.workspace }}/release-tools
+jobs:
+  review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Offline release, transport and workflow safety regressions
+        run: node --test scripts/booking-floor-5000-release/build-floor-overlay.test.mjs scripts/booking-floor-5000-release/floor-release.test.mjs scripts/booking-floor-5000-release/floor-release-adapter.test.mjs scripts/booking-floor-5000-release/floor-release-workflow.test.mjs
+  owner-policy:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.actor == 'mmdprive' && github.run_attempt == 1 && inputs.production_approved == true && inputs.approved_sha == github.sha && inputs.approval_ref != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          path: release-tools
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Verify existing owner protection without Cloudflare credentials
+        working-directory: release-tools
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUIRE_REF: ${{ inputs.mode == 'release' }}
+        run: node --input-type=module -e 'import {verifyFloorOwnerApproval} from "./scripts/booking-floor-5000-release/floor-release-owner-approval.mjs"; await verifyFloorOwnerApproval(process.env,fetch,{preflight:true,requireRef:process.env.REQUIRE_REF==="true"});'
+  capture:
+    if: inputs.mode == 'capture'
+    needs: owner-policy
+    environment: member-pages-code-only-owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CAPTURE_PATH: ${{ github.workspace }}/sigil-floor-capture.json
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          path: release-tools
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Test release transport and workflow guards
+        working-directory: release-tools
+        run: node --test scripts/booking-floor-5000-release/floor-release.test.mjs scripts/booking-floor-5000-release/floor-release-adapter.test.mjs scripts/booking-floor-5000-release/floor-release-workflow.test.mjs
+      - name: Read-only live capture (GET allowlist only, no writes)
+        working-directory: release-tools
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          node scripts/booking-floor-5000-release/floor-release-adapter.mjs --capture > "$CAPTURE_PATH"
+          cat "$CAPTURE_PATH"
+      - name: Preserve non-sensitive capture values
+        uses: actions/upload-artifact@v4
+        with:
+          name: sigil-floor-5000-capture-${{ github.run_id }}
+          path: ${{ github.workspace }}/sigil-floor-capture.json
+          if-no-files-found: error
+  release:
+    if: inputs.mode == 'release'
+    needs: owner-policy
+    environment: member-pages-code-only-owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      ARTIFACT_ROOT: ${{ github.workspace }}/sigil-floor-artifacts
+      JOURNAL_PATH: ${{ github.workspace }}/sigil-floor-receipt.jsonl
+    steps:
+      - name: Initialize safe receipt before preparation
+        run: printf '%s\n' '{"phase":"preparation-started","writes":0}' > "$JOURNAL_PATH"
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          path: release-tools
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Verify fresh exact-run owner approval before preparation
+        working-directory: release-tools
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node --input-type=module -e 'import {verifyFloorOwnerApproval} from "./scripts/booking-floor-5000-release/floor-release-owner-approval.mjs"; await verifyFloorOwnerApproval(process.env);'
+      - name: Test release transport and workflow guards
+        working-directory: release-tools
+        run: node --test scripts/booking-floor-5000-release/floor-release.test.mjs scripts/booking-floor-5000-release/floor-release-adapter.test.mjs scripts/booking-floor-5000-release/floor-release-workflow.test.mjs
+      - name: Fetch and verify exact live baseline read only
+        working-directory: release-tools
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node scripts/booking-floor-5000-release/floor-release-adapter.mjs --fetch-baseline
+      - name: Build deterministic candidate offline from the exact baseline
+        working-directory: release-tools
+        run: |
+          node scripts/booking-floor-5000-release/build-floor-overlay.mjs --baseline "$ARTIFACT_ROOT/sigil-baseline.js" --output-dir "$ARTIFACT_ROOT"
+          node --check "$ARTIFACT_ROOT/sigil-candidate.mjs"
+      - name: Test actual candidate bytes against the exact baseline
+        working-directory: release-tools
+        env:
+          SIGIL_BASELINE: ${{ github.workspace }}/sigil-floor-artifacts/sigil-baseline.js
+        run: node --test scripts/booking-floor-5000-release/build-floor-overlay.test.mjs
+      - name: Publish exact code-only version with fresh owner gates and readback
+        working-directory: release-tools
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          PRODUCTION_APPROVED: ${{ inputs.production_approved }}
+          RELEASE_MODE: sigil-public-floor-5000-code-only
+        run: node scripts/booking-floor-5000-release/floor-release-adapter.mjs --execute
+      - name: Preserve safe release receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sigil-floor-5000-receipt-${{ github.run_id }}
+          path: ${{ github.workspace }}/sigil-floor-receipt.jsonl
+          if-no-files-found: error
+      - name: Preserve exact candidate bytes and non-sensitive proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sigil-floor-5000-candidate-${{ github.run_id }}
+          path: |
+            ${{ github.workspace }}/sigil-floor-artifacts/sigil-candidate.mjs
+            ${{ github.workspace }}/sigil-floor-artifacts/sigil-floor-proof.json
+          if-no-files-found: warn
