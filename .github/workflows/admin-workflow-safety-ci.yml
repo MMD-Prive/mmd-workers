@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - 'admin-worker/**'
+      - 'shared/model-response-*'
+      - 'shared/model-decline-options*'
       - '.github/workflows/**'
       - 'scripts/admin-production-approval*'
       - 'scripts/admin-current-session-code-only*'
@@ -14,6 +16,8 @@ on:
     branches: [main]
     paths:
       - 'admin-worker/**'
+      - 'shared/model-response-*'
+      - 'shared/model-decline-options*'
       - '.github/workflows/**'
       - 'scripts/admin-production-approval*'
       - 'scripts/admin-current-session-code-only*'
@@ -42,6 +46,16 @@ jobs:
           node --test scripts/admin-current-session-code-only.test.mjs scripts/admin-production-validation.test.mjs
           node --check admin-worker/model-session-action-target.test.mjs
           node --experimental-global-webcrypto --test admin-worker/model-current-session.test.mjs admin-worker/model-session-runtime-v1a.test.mjs admin-worker/model-session-action-target.test.mjs
+      - name: Model response adapter regressions (mock only, gate closed)
+        run: |
+          node --check shared/model-response-adapter.mjs
+          node --check shared/model-response-journal.mjs
+          node --check shared/model-response-session.mjs
+          node --check shared/model-response-legacy-writer.fixture.mjs
+          node --check shared/model-response-adapter.test.mjs
+          node --check shared/model-response-journal.test.mjs
+          node --check shared/model-response-session.test.mjs
+          node --experimental-global-webcrypto --test shared/model-response-adapter.test.mjs shared/model-response-journal.test.mjs shared/model-response-session.test.mjs
       - name: Payments confirmation release guard (no production access)
         run: |
           node --check scripts/payments-confirmation-release-guard.mjs
