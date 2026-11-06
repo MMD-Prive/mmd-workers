@@ -150,6 +150,7 @@ export function modelLiffDigitalBootstrapHtml({
     if(!handoff.ok||!handoffBody||handoffBody.ok!==true||!handoffBody.redirect_url)throw new Error(handoffBody&&handoffBody.error||"job_board_handoff_failed");
     var destination=new URL(String(handoffBody.redirect_url));
     if(destination.origin!=="https://sigil.mmdbkk.com"||!destination.pathname.startsWith("/public/api/jobs"))throw new Error("job_board_redirect_invalid");
+    ${directAssignedModel ? "await offerTelegramBind();" : ""}
     window.location.replace(destination.toString());return;` : "";
   const returnScript = returnTo ? `
     var idToken=typeof window.liff.getIDToken==="function"?window.liff.getIDToken():"";
@@ -158,6 +159,7 @@ export function modelLiffDigitalBootstrapHtml({
     var exchange=await boundedFetch("/v1/model/liff/exchange",{method:"POST",credentials:"include",cache:"no-store",headers:{accept:"application/json","content-type":"application/json"},body:JSON.stringify({idToken:idToken,environment:${safeEnvironment}})},15000);
     var exchangeBody=await exchange.json().catch(function(){return null});
     if(exchange.status===202||!exchange.ok||!exchangeBody||exchangeBody.ok!==true)throw new Error(exchangeBody&&exchangeBody.error||"model_session_exchange_failed");
+    await offerTelegramBind();
     window.location.replace(${safeReturnTo});return;` : "";
   const selectedSessionScript = selectedSession ? `
     var idToken=typeof window.liff.getIDToken==="function"?window.liff.getIDToken():"";
@@ -176,6 +178,7 @@ export function modelLiffDigitalBootstrapHtml({
       if(!selected.ok||!selectedBody||selectedBody.ok!==true||!selectedBody.redirect_url)throw new Error(selectedBody&&selectedBody.error||"selected_job_handoff_failed");
       var destination=new URL(String(selectedBody.redirect_url),"https://mmdbkk.com");
       if(destination.origin!=="https://mmdbkk.com"||destination.pathname!=="/sigil/confirm/job-model"||!destination.searchParams.get("t"))throw new Error("selected_job_redirect_invalid");
+      await offerTelegramBind();
       window.location.replace(destination.pathname+destination.search);return;
     }
     throw new Error("selected_job_owner_confirmation_timeout");` : "";
@@ -305,6 +308,49 @@ export function modelLiffDigitalBootstrapHtml({
 
 ${MODEL_JSON_DEADLINE_RUNTIME}
 
+  // After LINE identity is verified (session cookie set), offer the Telegram
+  // bind link once. Never blocks: any failure or "later" continues the flow.
+  async function offerTelegramBind(){
+    try{
+      var res=await boundedFetch("/v1/model/telegram/bind",{method:"POST",credentials:"include",cache:"no-store",headers:{accept:"application/json","content-type":"application/json"},body:"{}"},6000);
+      var data=await res.json().catch(function(){return null});
+      if(!res.ok||!data||data.telegram_connected===true)return;
+      var link=new URL(String(data.connect_url||""));
+      if(link.protocol!=="https:"||link.hostname!=="t.me")return;
+      if(meter)meter.hidden=true;
+      pill.textContent="TELEGRAM";
+      status.textContent="เชื่อม Telegram เพื่อรับแจ้งงาน";
+      detail.textContent="กดเชื่อมแล้วกลับมาที่หน้านี้ จากนั้นกดปุ่ม เข้า MY MODEL (LINE ยังเป็นบัญชีหลัก)";
+      await new Promise(function(resolve){
+        var box=document.createElement("div");
+        box.style.cssText="display:flex;flex-direction:column;gap:10px;margin-top:12px";
+        var connect=document.createElement("a");
+        connect.className="mmd-digital-action";
+        connect.textContent="เชื่อม Telegram";
+        connect.href=link.toString();
+        connect.rel="noreferrer";
+        connect.addEventListener("click",function(event){
+          event.preventDefault();
+          try{
+            if(window.liff&&typeof window.liff.openWindow==="function")window.liff.openWindow({url:link.toString(),external:true});
+            else window.open(link.toString(),"_blank","noopener");
+          }catch(_){window.open(link.toString(),"_blank","noopener");}
+          next.textContent="เข้า MY MODEL";
+        });
+        var next=document.createElement("button");
+        next.type="button";
+        next.className="mmd-digital-action";
+        next.textContent="ไว้ทีหลัง";
+        next.addEventListener("click",function(){box.remove();resolve();});
+        box.appendChild(connect);box.appendChild(next);
+        detail.parentNode.insertBefore(box,detail);
+      });
+      if(meter)meter.hidden=false;
+      status.textContent="กำลังเปิด MY MODEL…";
+      detail.textContent="";
+    }catch(_){}
+  }
+
   async function continueIntoApp(){
     try{
       fallback.hidden=true;
@@ -321,6 +367,7 @@ ${MODEL_JSON_DEADLINE_RUNTIME}
       if(!exchange.ok||!exchangeBody||exchangeBody.ok!==true)throw new Error("model_session_exchange_failed");
       var dashboard=new URL("/sigil/model/dashboard",window.location.origin);
       if(${safeEnvironment}!=="published")dashboard.searchParams.set("liff_env",${safeEnvironment});
+      await offerTelegramBind();
       window.location.replace(dashboard.pathname+dashboard.search);return;` : ""}
     }catch(error){
       // Never echo SDK errors: they can include credential-bearing URLs.
