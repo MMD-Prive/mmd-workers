@@ -1,12 +1,25 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { APPROVED_ANSWERS } from "./fixtures/kenji-sales-v2-approved.mjs";
 import { SALES_CARD_IDS, SALES_ROUTES, SALES_REPLY_VERSION, SALES_REPLY_REVIEW_AT, currentSalesRoute, refineKenjiSalesIntent, publishedSalesCard } from "../src/kenji-sales-reply-v2-policy.mjs";
 import { SALES_REPLY_HASHES, validateSalesCard, resolveKenjiSalesReply, inspectKenjiSalesPublication } from "../src/kenji-sales-reply-v2-runtime.mjs";
 import { createLineSignature } from "../src/index.js";
 import { resolveKenjiSeedDecision, handleKenjiSeedLineRequest as seedLineRequest } from "../src/kenji-seed-line-runtime.mjs";
 import { handleKenjiSeedLineRequestWithRedeliveryRecovery as seedLineRequestWithRecovery } from "../src/kenji-line-redelivery-recovery.mjs";
+
+test("Reply Pack workflow validates PRs but only publishes on manual main dispatch", () => {
+  const workflow = readFileSync(new URL("../../.github/workflows/kenji-sales-v2-rollout.yml", import.meta.url), "utf8");
+  const triggers = /^on:\n([\s\S]*?)(?=^\S)/m.exec(workflow)?.[1];
+  assert.deepEqual([...triggers.matchAll(/^  ([\w_]+):/gm)].map(match => match[1]), ["pull_request", "workflow_dispatch"]);
+  const [validation, publication] = workflow.split(/^  publish:\n/m);
+  assert.match(validation, /kenji-sales-v2-publication\.mjs --validate/);
+  assert.doesNotMatch(validation, /kenji-sales-v2-publication\.mjs --publish/);
+  assert.match(publication, /^    if: github\.event_name == 'workflow_dispatch' && github\.ref == 'refs\/heads\/main'$/m);
+  assert.match(publication, /^    needs: validate$/m);
+  assert.match(publication, /kenji-sales-v2-publication\.mjs --publish/);
+});
 
 // The seed runtime requires a durable intake result before it may reply.
 const legacyWorker = { fetch: async (request) => {

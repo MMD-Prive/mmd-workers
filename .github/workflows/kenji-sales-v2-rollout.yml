@@ -1,16 +1,6 @@
 name: Kenji Reply Pack V2 rollout
 
 on:
-  push:
-    branches: [main, fix/kenji-care-back-live-20260914]
-    paths:
-      - 'member-dashboard-chat-worker/src/kenji-sales-reply-v2-*.mjs'
-      - 'member-dashboard-chat-worker/src/kenji-seed-line-runtime.mjs'
-      - 'member-dashboard-chat-worker/src/kenji-line-redelivery-recovery.mjs'
-      - 'member-dashboard-chat-worker/test/kenji-sales-reply-v2.test.mjs'
-      - 'member-dashboard-chat-worker/test/fixtures/kenji-sales-v2-approved.mjs'
-      - 'tools/kenji-sales-v2-publication.mjs'
-      - '.github/workflows/kenji-sales-v2-rollout.yml'
   pull_request:
     branches: [main]
     paths:
@@ -60,7 +50,7 @@ jobs:
         run: node tools/kenji-sales-v2-publication.mjs --validate
 
   publish:
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 15
