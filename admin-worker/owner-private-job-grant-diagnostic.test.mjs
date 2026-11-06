@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   augmentOwnerJobGrantCreateError,
+  diagnosePendingOwnerPrivateJobGrant,
   ownerGrantSubmittedFingerprint,
   parseOwnerGrantTarget,
 } from "./src/owner-private-job-grant-diagnostic.js";
@@ -140,4 +141,18 @@ test("leaves unrelated errors and ambiguous grant sets untouched", async () => {
     ]),
   );
   assert.equal(ambiguous, original);
+});
+
+test("preflight's grant diagnostic distinguishes exact approval from changed job details", async () => {
+  const exact = await diagnosePendingOwnerPrivateJobGrant(env(), body());
+  assert.equal(exact.code, "OWNER_JOB_GRANT_LOOKUP_INCONSISTENT");
+  assert.deepEqual(exact.mismatched_fields, []);
+  const changed = await diagnosePendingOwnerPrivateJobGrant(env(), body({payout:7500,endTime:"21:30"}));
+  assert.equal(changed.code, "OWNER_JOB_GRANT_MISMATCH");
+  assert.deepEqual(changed.mismatched_fields, ["end_time","model_payout_thb"]);
+});
+test("preflight's diagnostic cannot grant rights on missing or ambiguous records", async () => {
+  assert.equal(await diagnosePendingOwnerPrivateJobGrant(env([]), body()), null);
+  const ambiguous=env([{id:"recA",fields:{Target:TARGET}},{id:"recB",fields:{Target:TARGET}}]);
+  assert.equal(await diagnosePendingOwnerPrivateJobGrant(ambiguous, body()), null);
 });

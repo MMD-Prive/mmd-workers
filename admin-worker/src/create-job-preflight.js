@@ -1,6 +1,7 @@
 import { enforcePrivateCreateAccess } from './index.js';
 import { guardPrivateJobCreateWork } from './private-model-work-policy.js';
 import { isOwnerActor } from './owner-my-mmd-recovery-diagnostic.js';
+import { diagnosePendingOwnerPrivateJobGrant } from './owner-private-job-grant-diagnostic.js';
 
 export const JOB_PREFLIGHT_PATH = '/internal/admin/jobs/create-job/preflight';
 const recordId = value => /^rec[A-Za-z0-9]{14,30}$/.test(String(value || ''));
@@ -63,25 +64,78 @@ export async function readJobConflicts(env, body) {
   return matchExistingJobs(records,input);
 }
 
+const READINESS_REASONS = Object.freeze({
+  AUTHORITATIVE_MEMBER_NOT_FOUND: 'ยังไม่พบสิทธิ์สมาชิกหรือสิทธิ์เฉพาะงานที่ตรงกับข้อมูลนี้',
+  private_eligibility_blocked: 'สิทธิ์สมาชิกยังไม่พร้อมสำหรับงาน Private',
+  private_folder_not_allowed: 'สิทธิ์ลูกค้าไม่ครอบคลุมโฟลเดอร์โมเดลนี้',
+  private_folder_invalid: 'โฟลเดอร์ Private ที่เลือกไม่ถูกต้อง กรุณาตรวจกลุ่มโมเดล',
+  private_orientation_required: 'ต้องเลือกลักษณะงาน Straight หรือ Gay ให้ครบ',
+  private_model_not_found: 'ไม่พบโมเดลในฐานข้อมูลหลัก กรุณาตรวจ Model ID',
+  private_model_not_private: 'โมเดลที่เลือกไม่ได้อยู่ในกลุ่ม Private',
+  private_model_folder_invalid: 'โมเดลยังไม่ถูกกำหนดโฟลเดอร์ Private ที่ถูกต้อง',
+  private_model_folder_denied: 'โฟลเดอร์ของโมเดลไม่ตรงกับสิทธิ์หรือตัวเลือกของงาน',
+  private_model_lane_mismatch: 'ลักษณะงาน Straight/Gay ไม่ตรงกับข้อมูลอนุมัติของโมเดล',
+  private_model_inactive: 'โมเดลยังไม่เปิดรับงานในฐานข้อมูลหลัก',
+  private_model_unavailable: 'โมเดลถูกระบุว่าไม่พร้อมรับงาน',
+  canonical_model_required_for_private_work: 'งาน Private ต้องมี Model ID ที่ยืนยันแล้ว',
+  canonical_model_lookup_failed: 'ตรวจข้อมูลโมเดลจากฐานข้อมูลหลักไม่สำเร็จ',
+  private_model_work_policy_unavailable: 'ตรวจระดับงาน PN/VIP ของโมเดลจากแหล่งอนุมัติไม่ได้ชั่วคราว',
+  private_model_service_level_unclassified: 'โมเดลยังไม่มีระดับงาน PN/VIP ที่ได้รับการยืนยัน กรุณาตรวจข้อมูลโมเดล',
+  private_model_work_not_allowed: 'ระดับ PN/VIP ของโมเดลไม่รองรับงานที่เลือก',
+  OWNER_JOB_GRANT_MISMATCH: 'สิทธิ์เฉพาะงานอนุมัติแล้ว แต่รายละเอียดงานปัจจุบันไม่ตรงกับรายการที่อนุมัติ',
+  OWNER_JOB_GRANT_LOOKUP_INCONSISTENT: 'พบสิทธิ์เฉพาะงานที่ตรงกัน แต่ระบบตรวจสิทธิ์หลักยังไม่รับรายการนี้ กรุณาตรวจ Backend และ Access Log โดยไม่อนุมัติซ้ำ',
+  readiness_unavailable: 'ระบบตรวจสอบสิทธิ์หรือโมเดลไม่พร้อม กรุณาตรวจ Backend ก่อนสร้างงาน',
+});
+const GRANT_ACCESS_ERRORS = new Set(['AUTHORITATIVE_MEMBER_NOT_FOUND','private_eligibility_blocked','private_folder_not_allowed']);
+function readinessBlock(code, stage, details = {}) {
+  const safe = typeof code === 'string' && /^[A-Za-z][A-Za-z0-9_]{0,79}$/.test(code) ? code : 'readiness_unavailable';
+  const fields = Array.isArray(details.mismatched_fields)
+    ? details.mismatched_fields.filter(v => /^[a-z_]{2,32}$/.test(v)).slice(0, 9)
+    : [];
+  return { ok: true, can_create: false, state: 'blocked', stage, code: safe,
+    ...(fields.length ? { mismatched_fields: fields } : {}),
+    message: (Object.prototype.hasOwnProperty.call(READINESS_REASONS,safe) ? READINESS_REASONS[safe] : 'รายการนี้ยังไม่ผ่านการตรวจสอบจากระบบหลังบ้าน') +
+      (fields.length ? ' · ข้อมูลที่ไม่ตรง: ' + fields.join(', ') : '') + ' · รหัส: ' + safe };
+}
+
 export async function checkJobReadiness(env, body, deps={}) {
   let conflicts;
   try { conflicts = await (deps.readConflicts || readJobConflicts)(env,body); }
-  catch { return {ok:true,can_create:false,state:'unknown',message:'ตรวจงานเดิมไม่ได้ กรุณาตรวจใหม่ก่อนสร้างงาน'}; }
-  if (conflicts.length) return {ok:true,can_create:false,state:'existing',message:'พบงานเดิมหรือคิวโมเดลทับช่วงเวลานี้ กรุณาเปิดงานเดิมก่อน',jobs:conflicts};
+  catch { return {ok:true,can_create:false,state:'unknown',stage:'jobs',code:'job_check_unavailable',message:'ตรวจงานเดิมไม่ได้ · รหัส: job_check_unavailable กรุณาตรวจระบบก่อนสร้างงาน'}; }
+  if (conflicts.length) return {ok:true,can_create:false,state:'existing',stage:'jobs',code:'existing_job',message:'พบงานเดิมหรือคิวโมเดลทับช่วงเวลานี้ กรุณาเปิดงานเดิมก่อน',jobs:conflicts};
   const privateJob = [body.job_visibility,body.work?.job_visibility,body.visibility,body.booking_visibility,body.job_details?.world].some(v=>String(v).toLowerCase()==='private');
   if (!privateJob) return {ok:true,can_create:true,state:'checked',message:'ไม่พบงานซ้ำในข้อมูลที่ตรวจ งาน Public ไม่ใช้สิทธิ์ Private'};
+
+  let gate;
+  try { gate = await (deps.checkAccess || enforcePrivateCreateAccess)(env,body); }
+  catch(error) {
+    const code = error?.code;
+    if (GRANT_ACCESS_ERRORS.has(code)) {
+      // Diagnostic only: never turns a denied grant into create permission.
+      let diagnostic = null;
+      try { diagnostic = await (deps.diagnoseGrant || diagnosePendingOwnerPrivateJobGrant)(env, body); }
+      catch { /* Keep the canonical access denial if the diagnostic cannot be read. */ }
+      if (diagnostic?.code === 'OWNER_JOB_GRANT_MISMATCH' ||
+          diagnostic?.code === 'OWNER_JOB_GRANT_LOOKUP_INCONSISTENT') {
+        return readinessBlock(diagnostic.code,'membership',diagnostic);
+      }
+    }
+    return readinessBlock(code, String(code || '').startsWith('private_model') ? 'model' : 'membership');
+  }
+
   try {
-    const gate = await (deps.checkAccess || enforcePrivateCreateAccess)(env,body);
     const policyRequest = new Request('https://mmdbkk.com/v1/admin/job/create',{method:'POST',body:JSON.stringify(body)});
     const blocked = await (deps.checkWork || guardPrivateJobCreateWork)(policyRequest,env);
-    if (blocked) return {ok:true,can_create:false,state:'blocked',message:'ชนิดงานของโมเดลยังไม่ผ่าน กรุณาตรวจข้อมูลโมเดล'};
+    if (blocked) {
+      const data = typeof blocked.clone === 'function' && typeof blocked.json === 'function'
+        ? await blocked.clone().json().catch(()=>({})) : {};
+      return readinessBlock(data?.error?.code || data?.error_code || 'private_model_work_not_allowed','model_work');
+    }
     return {ok:true,can_create:true,state:'checked',membership:gate.ownerJobGrant?'one_job_grant':'eligible',
       availability:gate.profile.availableNow?'available':'unknown',
       message:(gate.ownerJobGrant?'สิทธิ์เฉพาะงานตรงกับรายละเอียดนี้':'สิทธิ์ลูกค้าผ่าน')+' · ไม่พบคิวทับในระบบ · '+(gate.profile.availableNow?'โมเดลระบุว่าพร้อม':'โมเดลยังไม่แจ้งความพร้อม ต้องยืนยันวันเวลากับโมเดลก่อน')};
   } catch(error) {
-    const code = typeof error.code === 'string' ? error.code : 'readiness_unavailable';
-    const messages = {AUTHORITATIVE_MEMBER_NOT_FOUND:'ยังไม่พบสิทธิ์สมาชิกหรือสิทธิ์เฉพาะงานที่ใช้ได้',private_eligibility_blocked:'สิทธิ์สมาชิกยังไม่พร้อมสำหรับงาน Private',private_folder_not_allowed:'สิทธิ์ลูกค้าไม่ครอบคลุมกลุ่มโมเดลนี้',private_model_unavailable:'โมเดลระบุว่าไม่พร้อมรับงาน',private_model_inactive:'โมเดลยังไม่เปิดรับงาน'};
-    return {ok:true,can_create:false,state:'blocked',code,message:messages[code] || 'ตรวจสิทธิ์หรือโมเดลไม่ผ่าน กรุณาตรวจข้อมูลก่อนสร้างงาน'};
+    return readinessBlock(error?.code,'model_work');
   }
 }
 
