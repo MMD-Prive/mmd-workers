@@ -32,7 +32,7 @@ export function categoryReplyTransportAllowed(env, token, text, button = null, e
 export function withCategoryReplyGrant(env, token, decision) {
   if (env?.KENJI_LINE_REPLY_CATEGORY_MODE !== 'approved_qa_promo') return env;
   if (!decision?.text || !(decision.intent === 'approved_promotion' ||
-      (decision.intent === 'approved_command' && /^category_(checkpts|package|regis|apply|membership_intro|models|jobs)$/.test(decision.reply_source)))) return env;
+      (decision.intent === 'approved_command' && /^category_(checkpts|package|regis|apply|membership_intro|models|jobs|profile_link)$/.test(decision.reply_source)))) return env;
   const button = membershipUriButton(decision);
   return {...env, [CATEGORY_REPLY_GRANT]: Object.freeze({token, text:decision.text, button:button ? Object.freeze(button) : null})};
 }

@@ -11,6 +11,7 @@ import {
   privateCampaignInternalGroup,
   projectKenjiSafeModel,
   resolveKenjiModelAccess,
+  resolveKenjiProfileLink,
 } from "./src/kenji-model-access-rpc.js";
 
 const LINE_USER_ID = "U1234567890abcdef1234567890abcdef";
@@ -564,6 +565,13 @@ test("GWs and EMs require one current Per approval for this exact client and Mod
   const allowed = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "EMs19" }, { fetchImpl });
   assert.equal(allowed.status, "match");
   assert.equal(allowed.model.model_code, "EMs19");
+  const profile = (data, query = "EMs19") => resolveKenjiProfileLink(ENV, {line_user_id:LINE_USER_ID,query}, airtableFetch(data));
+  assert.deepEqual(await profile(baseData([member],[model],[],[],[],[decision])), {status:"profile_link",destination:"ems"});
+  assert.deepEqual(await profile(baseData([],[model],[],[],[],[decision])), {status:"silent"});
+  assert.deepEqual(await profile(baseData([member],[model])), {status:"silent"});
+  assert.deepEqual(await profile(baseData([],[publicModel()]), "น้องซิน"), {status:"profile_link",destination:"public"});
+  assert.deepEqual(await profile(baseData([],[publicModel(),privateModel()]), "น้องซิน"), {status:"clarification"});
+  assert.deepEqual(await profile(baseData([],[publicModel()]), "น้อง"), {status:"silent"});
   for (const patch of [
     { allow_profile: false },
     { Model: ["rec-other"] },

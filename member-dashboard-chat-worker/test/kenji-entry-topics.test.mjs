@@ -3,11 +3,79 @@ import assert from 'node:assert/strict';
 import {entryTopicCommand} from '../src/kenji-entry-topics.mjs';
 import {isExplicitCategoryCommand,categoryReplyTransportAllowed} from '../src/kenji-reply-category-gate.mjs';
 import {runApprovedCategoryTurn} from '../src/kenji-category-turn.mjs';
+import {currentProfileQuery} from '../src/kenji-profile-link.mjs';
+import {readRecentProfileAnchor} from '../src/kenji-line-conversation-history.mjs';
 const env={KENJI_LINE_REPLY_CATEGORY_MODE:'approved_qa_promo',KENJI_LINE_APPROVED_PROMO_ENABLED:'true',LINE_AUTO_REPLY_ENABLED:'true',LINE_KENJI_AI_ENABLED:'true',LINE_KENJI_MODEL_ENABLED:'false'};
 const runtime={ok:true,controls:{model_keyword_auto_reply:true}};
 const now=Date.parse('2026-11-05T12:00:00+07:00');
 const event=text=>({type:'message',mode:'active',timestamp:now,replyToken:'synthetic',source:{type:'user',userId:'U'+'1'.repeat(32)},message:{type:'text',text}});
+test('profile navigation reads only current exact names or explicit requests and stays behind both runtime guards',async()=>{
+ const calls=[];let outcome={ok:true,status:'profile_link',destination:'public'};
+ const e={...env,LINE_KENJI_MODEL_ACCESS_ENABLED:'true',INTERNAL_TOKEN:'fixture',ADMIN_WORKER:{fetch:async req=>{
+  const body=await req.json();calls.push(body);
+  return Response.json(body.query==='Hiro'?outcome:{ok:true,status:'silent'});
+ }}};
+ const clear={ok:true,controls:{}};
+ const run=(text,initial=clear,fresh=clear)=>runApprovedCategoryTurn(e,event(text),initial,io({runtime:async()=>fresh}));
+ assert.equal(currentProfileQuery(event('เมื่อวานคุยเรื่อง Hiro')),null);
+ assert.equal((await run('เมื่อวานคุยเรื่อง Hiro')).delivered,false);assert.equal(calls.length,0);
+ assert.equal((await run('ขอถามเรื่องเดิม')).delivered,false);calls.length=0;
+ assert.match((await run('Hiro')).decision.text,/mmdbkk\.com\/profiles/);
+ assert.deepEqual(calls[0],{line_user_id:event('').source.userId,query:'Hiro',purpose:'profile_link'});
+ outcome={ok:true,status:'profile_link',destination:'ems',url:'https://evil.invalid/'};
+ const allowed=await run('ขอดูโปรไฟล์ Hiro ครับ');
+ assert.equal(calls.at(-1).query,'Hiro');assert.equal(allowed.delivered,true);
+ assert.match(allowed.decision.text,/mmdbkk\.com\/my-mmd\/ems/);assert.doesNotMatch(allowed.decision.text,/evil|จองสำเร็จ/);
+ assert.equal(allowed.decision.model_attempted,false);
+ outcome={ok:true,status:'clarification'};
+ assert.doesNotMatch((await run('Hiro')).decision.text,/https?:/);
+ outcome={ok:true,status:'silent'};
+ assert.equal((await run('Hiro')).delivered,false);
+ assert.match((await run('ขอดู Hiro')).decision.text,/mmdbkk\.com\/profiles/);
+ const before=calls.length;
+ assert.equal((await run('Hiro',runtime)).delivered,false);assert.equal(calls.length,before);
+ outcome={ok:true,status:'profile_link',destination:'ems'};
+ assert.equal((await run('Hiro',clear,runtime)).delivered,false);
+});
 function io(overrides={}){const sent=[];return {now,sent,continuity:async()=>({available:true,matrix:{last_customer_intent:'booking',payload_json:{model_name:'Hiro'}}}),runtime:async()=>runtime,owner:async()=>({ok:true,active:false}),send:async(e,t,text,button)=>{assert(categoryReplyTransportAllowed(e,t,text,button));sent.push(text);return {ok:true,status:200};},...overrides};}
+test('profile follow-up requires latest same-user inbound and confirmed named-profile delivery, then rechecks access',async()=>{
+ const ev={...event('ขอดูเพิ่ม'),message:{...event('ขอดูเพิ่ม').message,id:'msg-current'}};
+ const user=ev.source.userId;
+ const iso=ms=>new Date(now+ms).toISOString();
+ const inbound=(id,when,raw='')=>({fields:{source:'line',line_user_id:user,line_id:id,inbox_id:`line_${id}`,created_at:iso(when),
+  payload_json:JSON.stringify({source_user_id:user,source_message_id:id,received_at:iso(when),raw_text:raw})}});
+ const previous=inbound('msg-previous',-2000,'ขอดู Hiro');
+ const current=inbound('msg-current',100,'ขอดูเพิ่ม');
+ const receipt={fields:{event_id:'kai_line_msg-previous',linked_console_inbox_id:'line_msg-previous',channel:'LINE_OFC',final_status:'sent',created_at:iso(-1000),
+  payload_json:JSON.stringify({reply_source:'category_profile_link',cta_type:'profile_anchor',line_delivery_succeeded:true})}};
+ let rows=[current,previous], receipts=[receipt], rpc=[];
+ const clear={ok:true,controls:{}};
+ const e={...env,AIRTABLE_BASE_ID:'fixture',AIRTABLE_API_KEY:'fixture',LINE_KENJI_MODEL_ACCESS_ENABLED:'true',INTERNAL_TOKEN:'fixture',
+  ADMIN_WORKER:{fetch:async req=>{rpc.push(await req.json());return Response.json({ok:true,status:'profile_link',destination:'public'});}}};
+ const read=(env,event,now)=>readRecentProfileAnchor(env,event,now,async url=>{
+  const filter=new URL(url).searchParams.get('filterByFormula');
+  assert(filter.includes(user)||filter.includes('kai_line_'));
+  return Response.json({records:filter.includes('kai_line_')?receipts:rows});
+ });
+ const run=()=>runApprovedCategoryTurn(e,ev,clear,io({runtime:async()=>clear,readProfileAnchor:read}));
+ const resolved=await run();assert.match(resolved.decision.text,/mmdbkk\.com\/profiles/);
+ assert.equal(resolved.decision.cta_type,undefined);assert.equal(rpc[0].query,'Hiro');
+ assert.equal(rpc[0].line_user_id,user);assert.equal(resolved.delivered,true);
+ e.ADMIN_WORKER.fetch=async req=>{rpc.push(await req.json());return Response.json({ok:true,status:'silent'});};
+ assert.doesNotMatch((await run()).decision.text,/https?:/);assert.equal(rpc.length,2);
+ for(const [history,delivery] of [
+  [[current,inbound('msg-topic',-100,'โปรเดือนนี้'),previous],[receipt]],
+  [[current,inbound('msg-previous',-301000,'Hiro')],[receipt]],
+  [[current,previous],[]],
+  [[current,previous],[receipt,receipt]],
+  [[current,{fields:{...previous.fields,line_user_id:'U'+'2'.repeat(32)}}],[receipt]],
+  [[current,inbound('msg-previous',-2000,'คนนี้')],[receipt]],
+ ]){
+  rows=history;receipts=delivery;
+  const result=await run();assert.match(result.decision.text,/หมายถึงนายแบบคนไหน/);assert.doesNotMatch(result.decision.text,/Hiro|https?:/);
+ }
+ assert.equal(rpc.length,2);
+});
 for(const text of ['รู้จัก MMD / สมาชิก','โปรเดือนนี้','น้องมาใหม่','สนใจสมัครงาน','โปรสมาชิก'])test(`exact Thai entry bypasses old booking and replies once: ${text}`,async()=>{
  assert(isExplicitCategoryCommand(event(text),env));const x=io();const r=await runApprovedCategoryTurn(env,event(text),runtime,x);
  assert.equal(r.delivered,true);assert.equal(x.sent.length,1);assert.doesNotMatch(r.decision.text,/Hiro|รับ.*ไว้แล้ว|ต้องการวันไหน/);
