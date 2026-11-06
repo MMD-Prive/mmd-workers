@@ -1,7 +1,7 @@
 /*!
  * SĪGIL brand overlay for /sigil/confirm/job-confirmation.
  * Presentation only. Runs after the page's inline customer bridge (v10) has built
- * #mmd-job-confirm-v16: swaps the header brand to the SĪGIL mark + wordmark and
+ * #mmd-job-confirm-v16: swaps the header brand to the SĪGIL mark + "MY SĪGIL" wordmark and
  * applies LINE Seed Sans TH, matching /sigil/pay. Contracts, data hooks and
  * payment logic are untouched. Public-lane jobs keep "MMD PRIVÉ".
  */
@@ -34,7 +34,7 @@
     const root = document.getElementById(ROOT_ID);
     const brand = root?.querySelector(".mjc16__brand");
     if (!brand) return false;
-    const name = publicLane ? "MMD PRIVÉ" : "SĪGIL";
+    const name = publicLane ? "MMD PRIVÉ" : "MY SĪGIL";
     const marked = !!brand.querySelector(".mjc16__sigil-mark");
     if (publicLane) {
       if (marked || brand.textContent !== name) brand.replaceChildren(document.createTextNode(name));
