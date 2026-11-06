@@ -21,6 +21,7 @@ export function customerBillingBreakdown(pricing, totalValue, travelValue, servi
     discount_thb: priceValid ? discount : null,
     discount_percent: priceValid && amount(pricing?.discount_percent) > 0 && amount(pricing?.discount_percent) <= 100
       && Math.abs(full * amount(pricing.discount_percent) / 100 - discount) <= 1 ? amount(pricing.discount_percent) : null,
+    discount_kind: priceValid && ['coupon', 'discount', 'promotion', 'special_price'].includes(pricing?.discount_kind) ? pricing.discount_kind : null,
     travel_fee_thb: travel,
     travel_treatment: included ? 'included' : added ? 'added' : travel > 0 ? 'review_required' : 'none',
     breakdown_status: priceValid && !(travel > 0 && !included && !added) ? 'complete' : 'review_required',

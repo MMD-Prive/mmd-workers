@@ -309,3 +309,45 @@ test('Co-Partner without addons and legacy included-in-rate use the same settlem
   b.job_details.partner_relationship = { settlement_method: 'included_in_rate', partner_quoted_rate_thb: 12000 };
   assert.equal(validateJobServicePricing(b).client_total_amount_thb, 15000);
 });
+
+// ---- discount kind (coupon / discount / promotion / special_price) ----
+const discountedBody = (kind, amount, extra = {}) => {
+  const b = body();
+  const modelShare = kind === 'promotion' ? amount / 2 : 0;
+  b.service_pricing.client_gross_amount_thb = 13000;
+  b.service_pricing.model_gross_payout_thb = 6200;
+  b.service_pricing.client_total_amount_thb = 13000 - amount;
+  b.service_pricing.model_total_payout_thb = 6200 - modelShare;
+  b.service_pricing.discount = { mode: kind === 'promotion' ? 'promotion' : 'customer_request', type: 'amount', value: amount,
+    amount_thb: amount, mmd_share_thb: amount - modelShare, model_share_thb: modelShare, kind,
+    ...(kind === 'promotion' ? { reason: 'Launch promo' } : {}), ...extra };
+  b.amount_thb = b.payment.amount_thb = b.service_amount_thb = b.payment.service_amount_thb = 13000 - amount;
+  b.original_amount_thb = 13000;
+  b.pay_model_thb = b.model_payout_thb = b.payment.model_payout_thb = 6200 - modelShare;
+  return b;
+};
+test('discount kinds: only promotion is split with the model; coupon/discount/special price are absorbed by MMD', () => {
+  for (const kind of ['coupon', 'discount', 'special_price']) {
+    const p = validateJobServicePricing(discountedBody(kind, 1000));
+    assert.equal(p.discount.kind, kind);
+    assert.equal(p.discount.model_share_thb, 0);
+    assert.equal(p.model_total_payout_thb, 6200);
+    assert.equal(p.client_total_amount_thb, 12000);
+  }
+  const promo = validateJobServicePricing(discountedBody('promotion', 1000));
+  assert.equal(promo.discount.kind, 'promotion');
+  assert.equal(promo.discount.model_share_thb, 500);
+  assert.equal(promo.discount.mmd_share_thb, 500);
+  assert.equal(promo.model_total_payout_thb, 5700);
+});
+test('discount kinds: rejects bad kind, kind/mode mismatch, non-500 steps and more than 25%', () => {
+  const bad = [
+    discountedBody('coupon', 1000, { kind: 'freebie' }),
+    discountedBody('coupon', 1000, { kind: 'promotion' }),
+    discountedBody('promotion', 1000, { kind: 'discount' }),
+    discountedBody('discount', 750),
+    discountedBody('discount', 3500),
+  ];
+  for (const b of bad) assert.throws(() => validateJobServicePricing(b), { code: 'service_pricing_invalid', status: 400 });
+  assert.ok(validateJobServicePricing(discountedBody('discount', 3000)).discount); // largest 500-step within 25% of 13,000
+});
