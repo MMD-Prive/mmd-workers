@@ -94,7 +94,7 @@ function readinessBlock(code, stage, details = {}) {
     : [];
   return { ok: true, can_create: false, state: 'blocked', stage, code: safe,
     ...(fields.length ? { mismatched_fields: fields } : {}),
-    message: (READINESS_REASONS[safe] || 'รายการนี้ยังไม่ผ่านการตรวจสอบจากระบบหลังบ้าน') +
+    message: (Object.prototype.hasOwnProperty.call(READINESS_REASONS,safe) ? READINESS_REASONS[safe] : 'รายการนี้ยังไม่ผ่านการตรวจสอบจากระบบหลังบ้าน') +
       (fields.length ? ' · ข้อมูลที่ไม่ตรง: ' + fields.join(', ') : '') + ' · รหัส: ' + safe };
 }
 
@@ -112,7 +112,9 @@ export async function checkJobReadiness(env, body, deps={}) {
     const code = error?.code;
     if (GRANT_ACCESS_ERRORS.has(code)) {
       // Diagnostic only: never turns a denied grant into create permission.
-      const diagnostic = await (deps.diagnoseGrant || diagnosePendingOwnerPrivateJobGrant)(env, body).catch(()=>null);
+      let diagnostic = null;
+      try { diagnostic = await (deps.diagnoseGrant || diagnosePendingOwnerPrivateJobGrant)(env, body); }
+      catch { /* Keep the canonical access denial if the diagnostic cannot be read. */ }
       if (diagnostic?.code === 'OWNER_JOB_GRANT_MISMATCH' ||
           diagnostic?.code === 'OWNER_JOB_GRANT_LOOKUP_INCONSISTENT') {
         return readinessBlock(diagnostic.code,'membership',diagnostic);
