@@ -161,6 +161,29 @@ async function listPendingGrants(env, clientId, modelId) {
     .filter((record) => record.id && record.target.startsWith(prefix));
 }
 
+/**
+ * Bounded, read-only explanation for a grant already approved for this Client + Model.
+ * Never grants access or changes membership; used only after the canonical access
+ * gate rejects an otherwise valid job.
+ */
+export async function diagnosePendingOwnerPrivateJobGrant(env, body = {}) {
+  const submitted = ownerGrantSubmittedFingerprint(body);
+  if (!submitted.client_id || !submitted.model_id) return null;
+  let grants;
+  try { grants = await listPendingGrants(env, submitted.client_id, submitted.model_id); }
+  catch { return null; } // Diagnostic lookup must not replace the canonical denial.
+  if (grants.length !== 1) return null;
+  const expected = parseOwnerGrantTarget(grants[0].target);
+  if (!expected) return null;
+  if (submitted.target && submitted.target === expected.target) {
+    return { code: "OWNER_JOB_GRANT_LOOKUP_INCONSISTENT", mismatched_fields: [] };
+  }
+  return {
+    code: "OWNER_JOB_GRANT_MISMATCH",
+    mismatched_fields: mismatch(expected, submitted),
+  };
+}
+
 function responseJson(payload, status, sourceResponse) {
   const headers = new Headers(sourceResponse?.headers || {});
   headers.set("content-type", "application/json; charset=utf-8");
