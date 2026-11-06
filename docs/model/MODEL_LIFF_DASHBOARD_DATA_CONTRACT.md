@@ -172,3 +172,8 @@ Before exposing this live:
 3. Snapshot generation must read only verified/reviewed evidence.
 4. Real smoke must confirm LIFF does not expose any forbidden field.
 5. No Cloudflare deploy without explicit owner approval.
+
+## Implementation status (2026-11-06)
+
+- Implemented (read-only, additive): `GET /v1/model/history` `summary.paid_confirmed_12m_thb`, `paid_12m_undated_count`, `paid_12m_window`. Source is verified Payout Evidence only (`payout_paid` + `verified`). Payout Evidence has no payout date, so each payout is dated by its linked session's job date (Bangkok). Payouts that cannot be dated are excluded and counted in `paid_12m_undated_count` (never guessed into the window); the total is `null`, not 0, when there is no verified payout. This is not the snapshot table below.
+- Not implemented: the Snapshot table (`tblCOnh0G4jNAfdWI`), verified ratings, and a model-readable request-status route. These are still plans.

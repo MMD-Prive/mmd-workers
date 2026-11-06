@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { handleModelWorkHistoryRequest, isModelVisibleApprovedImport, isVerifiedPaidPayout, projectSession } from "./src/model-work-history.js";
+import { handleModelWorkHistoryRequest, isModelVisibleApprovedImport, isVerifiedPaidPayout, projectSession, summarizePaidLast12Months } from "./src/model-work-history.js";
 
 const MODEL_ID = "recModelABC123456789";
 const SECRET = "model-history-test-secret";
@@ -181,4 +181,57 @@ test("production routes send both canonical hosts to the work history endpoint",
   assert.match(wrangler, /pattern = "mmdbkk\.com\/v1\/model\/history"/);
   assert.match(wrangler, /pattern = "www\.mmdbkk\.com\/v1\/model\/history"/);
   assert.match(deployWorkflow, /"\/v1\/model\/history"/);
+});
+
+const NOW = Date.parse("2026-11-06T08:00:00Z"); // 6 Nov 2026 Bangkok
+
+test("12-month paid total counts only verified payouts dated by their linked session and never guesses undated ones", () => {
+  const owned = [
+    session("in", "closed", "2026-01-05", 10000),
+    session("edge-out", "closed", "2025-11-06", 4000), // exactly 12 months ago: outside
+    session("edge-in", "closed", "2025-11-07", 1500),
+    session("old", "closed", "2025-02-04", 5000),
+    session("future", "closed", "2026-12-01", 7000),
+  ];
+  const paid = [
+    payout("p1", "in", 10000), payout("p2", "edge-out", 4000), payout("p3", "edge-in", 1500),
+    payout("p4", "old", 5000), payout("p5", "future", 7000),
+    payout("p6", "", 25000), payout("p7", "missing-session", 800),
+  ];
+  const r = summarizePaidLast12Months(paid, owned, NOW);
+  assert.equal(r.total, 11500);
+  assert.equal(r.undatedCount, 2);
+  assert.deepEqual(r.window, { from: "2025-11-06", to: "2026-11-06" });
+});
+
+test("12-month paid total is null (not 0) when there is no verified payout at all", () => {
+  const r = summarizePaidLast12Months([], [session("a", "closed", "2026-01-05", 100)], NOW);
+  assert.equal(r.total, null);
+  assert.equal(r.undatedCount, 0);
+});
+
+test("history summary exposes paid_confirmed_12m_thb without changing existing totals", async () => {
+  const originalFetch = globalThis.fetch;
+  const token = await signedToken();
+  globalThis.fetch = async input => {
+    const url = new URL(input.url || input);
+    if (url.pathname.endsWith("/tblC98mKWbzmPuNzX")) return Response.json({ records: [
+      session("s1", "closed", "2026-01-05", 10000), session("s2", "work_finished", "2025-02-04", 5000),
+    ] });
+    if (url.pathname.endsWith("/tblMvsl7qYozD05e5")) return Response.json({ records: [
+      payout("p1", "s1", 10000), payout("p2", "s2", 5000), payout("p3", "", 25000),
+      payout("p4", "s1", 999, { verification: "pending" }), // unverified: never counted anywhere
+    ] });
+    if (url.pathname.endsWith("/tbljrlOK5m4iBXgST")) return Response.json({ records: [] });
+    throw new Error(`unexpected Airtable request: ${url}`);
+  };
+  try {
+    const response = await handleModelWorkHistoryRequest(new Request("https://mmdbkk.com/v1/model/history", { headers: { cookie: `mmd_model_session_v1=${token}`, origin: "https://mmdbkk.com" } }), { AIRTABLE_BASE_ID: "appsV1ILPRfIjkaYg", AIRTABLE_API_KEY: "test", MODEL_SESSION_SIGNING_SECRET: SECRET }, { now: NOW });
+    assert.equal(response.status, 200);
+    const { summary } = await response.json();
+    assert.equal(summary.paid_confirmed_12m_thb, 10000);
+    assert.equal(summary.paid_12m_undated_count, 1);
+    assert.deepEqual(summary.paid_12m_window, { from: "2025-11-06", to: "2026-11-06" });
+    assert.equal(summary.paid_confirmed_total_thb, 40000);
+  } finally { globalThis.fetch = originalFetch; }
 });

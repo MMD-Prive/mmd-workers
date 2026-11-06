@@ -53,7 +53,7 @@ export function isModelWorkHistoryRequest(request) {
   return normalizePath(new URL(request.url).pathname) === PATH;
 }
 
-export async function handleModelWorkHistoryRequest(request, env = {}) {
+export async function handleModelWorkHistoryRequest(request, env = {}, { now = Date.now() } = {}) {
   const url = new URL(request.url);
   if (!isModelWorkHistoryRequest(request)) return json({ ok: false, error: "not_found" }, 404);
   if (request.method.toUpperCase() !== "GET") return json({ ok: false, error: "method_not_allowed" }, 405, { allow: "GET" });
@@ -102,6 +102,7 @@ export async function handleModelWorkHistoryRequest(request, env = {}) {
     }).length;
     const importCount = reviewedImports.length;
     const truncated = false;
+    const paid12m = summarizePaidLast12Months(verifiedPaid, ownedSessions, now);
 
     return json({
       ok: true,
@@ -111,6 +112,9 @@ export async function handleModelWorkHistoryRequest(request, env = {}) {
         completed_job_count: items.length,
         earned_total_thb: truncated ? null : money(earned),
         paid_confirmed_total_thb: truncated ? null : money(paidTotal),
+        paid_confirmed_12m_thb: paid12m.total,
+        paid_12m_undated_count: paid12m.undatedCount,
+        paid_12m_window: paid12m.window,
         payouts_without_slip_count: verifiedPaid.filter(row => !hasSlip(row)).length,
         completed_jobs_without_payout_record_count: canonicalItems.filter(item => item.payment_evidence === "not_recorded").length,
         history_items_waiting_review: pendingReviewCount,
@@ -125,6 +129,36 @@ export async function handleModelWorkHistoryRequest(request, env = {}) {
   } catch (error) {
     return json({ ok: false, error: error?.message === "airtable_not_configured" ? error.message : "history_unavailable" }, 503);
   }
+}
+
+// Verified paid total for the last 12 months (Bangkok days, inclusive of today).
+// Payout Evidence has no payout date of its own, so a payout is dated by the job date
+// of the session it is linked to. A payout whose session or date cannot be resolved is
+// NEVER guessed into the window: it is excluded and counted in undatedCount so the UI
+// can say the figure is incomplete. total is null only when there is no verified payout
+// at all (no data), never 0 for "unknown".
+export function summarizePaidLast12Months(verifiedPaid, ownedSessions, now = Date.now()) {
+  const today = bangkokDay(now);
+  const from = `${Number(today.slice(0, 4)) - 1}${today.slice(4)}`;
+  const window = { from, to: today };
+  const dateBySession = new Map();
+  for (const row of ownedSessions) {
+    const date = dateOnly(field(row, SESSION_FIELDS.jobDate));
+    const key = clean(field(row, SESSION_FIELDS.sessionId), 120);
+    if (key && date) dateBySession.set(key, date);
+  }
+  let sum = 0, undatedCount = 0;
+  for (const row of verifiedPaid) {
+    const date = dateBySession.get(clean(field(row, PAYOUT_FIELDS.sessionId), 120));
+    if (!date) { undatedCount += 1; continue; }
+    if (date > from && date <= today) sum += number(field(row, PAYOUT_FIELDS.amount)) ?? 0;
+  }
+  return { total: verifiedPaid.length ? money(sum) : null, undatedCount, window };
+}
+
+function bangkokDay(ms) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(ms)).map(p => [p.type, p.value]));
+  return `${parts.year}-${parts.month}-${parts.day}`;
 }
 
 export function isVerifiedPaidPayout(row) {
