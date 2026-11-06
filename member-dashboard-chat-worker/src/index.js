@@ -76,6 +76,7 @@ const SERVICE_LINE_SHOP_SHIPPING_PATH = "/__internal/line/shop-shipping-notify";
 const SERVICE_LINE_REFUND_RECEIPT_PATH = "/__internal/line/refund-receipt-notify";
 const SERVICE_LINE_SHOP_SHIPPING_SMOKE_PATH = "/__internal/line/shop-shipping-notify/smoke";
 const SERVICE_LINE_MODEL_AVAILABILITY_REMINDER_PATH = "/__internal/line/model-availability-reminder";
+const SERVICE_LINE_MODEL_TELEGRAM_BIND_LINK_PATH = "/__internal/line/model-telegram-bind-link";
 const SERVICE_LINE_MODEL_AVAILABILITY_REMINDER_SMOKE_PATH = "/__internal/line/model-availability-reminder/smoke";
 const SERVICE_KENJI_CONVERSATION_SHADOW_RECEIPT_PATH = "/__internal/kenji/conversation-shadow-receipt";
 const DEFAULT_SYNC_TABLE = "MMD — Console Inbox";
@@ -2741,6 +2742,40 @@ async function handleServiceBoundModelAvailabilityReminder(request, env) {
   }, result.ok === true ? 200 : 502);
 }
 
+async function handleServiceBoundModelTelegramBindLink(request, env) {
+  if (!hasServiceBindingAuth(request, ["admin-worker"])) return json({ ok: false, error: "internal_auth_required" }, 401);
+  if (request.method !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405);
+  const body = await readJson(request);
+  if (!body || typeof body !== "object" || Array.isArray(body)) return json({ ok: false, error: "invalid_json" }, 400);
+  const lineUserId = getLineUserId(body);
+  if (!lineUserId) return json({ ok: false, error: "line_user_id_required" }, 400);
+  let link;
+  try { link = new URL(asString(body.connect_url)); } catch { return json({ ok: false, error: "connect_url_invalid" }, 400); }
+  if (link.protocol !== "https:" || link.hostname !== "t.me") return json({ ok: false, error: "connect_url_invalid" }, 400);
+  const name = asString(body.display_name).slice(0, 80);
+  const message = [
+    "MY MODEL · เชื่อม Telegram",
+    name ? `${name} เชื่อม Telegram ไว้รับแจ้งงานได้เลย (ไม่บังคับ)` : "เชื่อม Telegram ไว้รับแจ้งงานได้เลย (ไม่บังคับ)",
+    "",
+    "แตะลิงก์แล้วกด Start ครั้งเดียวก็เสร็จ ลิงก์ใช้ได้ 15 นาที",
+    link.toString(),
+  ].join("\n");
+  // Bypass sanitizeLineText on purpose: it redacts "telegram"/"r2"/"kv" and would
+  // corrupt the bind URL. Text is fixed copy and the link is pinned to https://t.me.
+  const token = asString(env.LINE_CHANNEL_ACCESS_TOKEN);
+  if (!token) return json({ ok: false, status: "line_token_missing", transport: "member-dashboard-chat-worker" }, 502);
+  const pushed = await fetch(LINE_PUSH_URL, {
+    method: "POST",
+    headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body: JSON.stringify({ to: lineUserId, messages: [{ type: "text", text: message }] }),
+  });
+  return json({
+    ok: pushed.ok,
+    status: pushed.ok ? "sent" : "line_push_failed",
+    transport: "member-dashboard-chat-worker",
+  }, pushed.ok ? 200 : 502);
+}
+
 function buildMmdShopShippingMessage({ customerName = "", orderId = "", courier = "Courier", tracking = "" } = {}) {
   return [
     "MMD SHOP · จัดส่งสินค้าแล้ว",
@@ -3739,6 +3774,10 @@ export default {
 
     if (url.pathname === SERVICE_LINE_MODEL_AVAILABILITY_REMINDER_SMOKE_PATH) {
       return handleServiceBoundModelAvailabilityReminderSmoke(request, env);
+    }
+
+    if (url.pathname === SERVICE_LINE_MODEL_TELEGRAM_BIND_LINK_PATH) {
+      return handleServiceBoundModelTelegramBindLink(request, env);
     }
 
     if (url.pathname === SERVICE_LINE_MODEL_AVAILABILITY_REMINDER_PATH) {

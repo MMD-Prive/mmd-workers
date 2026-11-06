@@ -6,6 +6,7 @@ import {
   availabilityStateFromModelProfile,
 } from "../../shared/sigil-availability-snapshot-v1.mjs";
 import { issueModelTelegramBind, telegramConnectedFromFields } from "./telegram-identity-bind-authority.js";
+import { maybeSendModelTelegramBindLink } from "./model-telegram-bind-link-push.js";
 import { writeSigilAvailabilitySnapshot } from "./sigil-availability-snapshot.js";
 import { enqueuePrimaryCard, readModelCardStatus } from "./model-card-automation.js";
 import { handleModelTravelApi, isModelTravelPath } from "./model-travel-api.js";
@@ -88,7 +89,7 @@ export default {
 
     if (path === EXCHANGE_PATH) {
       if (method !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405, request, env);
-      return handleExchange(request, env);
+      return handleExchange(request, env, ctx);
     }
 
     if (path === PROFILE_PATH) {
@@ -349,7 +350,7 @@ function isModelLiffPath(path) {
   return path === EXCHANGE_PATH || path === CURRENT_PATH || path === ACTION_PATH || path === PROFILE_PATH || path === TELEGRAM_BIND_PATH || path === MEDIA_PATH || path === MEDIA_UPLOAD_PATH || path === MEDIA_UPLOAD_URL_PATH || path === MY_CARD_REQUEST_PATH || path.startsWith(`${MEDIA_PATH}/`);
 }
 
-async function handleExchange(request, env) {
+async function handleExchange(request, env, ctx) {
   if (!isAllowedOrigin(request, env)) return json({ ok: false, error: "origin_not_allowed" }, 403, request, env);
 
   const body = await request.json().catch(() => ({}));
@@ -414,6 +415,15 @@ async function handleExchange(request, env) {
     } : null,
   }, 200, request, env);
   response.headers.append("set-cookie", serializeSessionCookie(token, ttlSeconds, request, env));
+  if (intent !== "job_board") {
+    const push = maybeSendModelTelegramBindLink(env, {
+      model_record_id: model.record.id,
+      line_user_id: lineIdentity.profile.sub,
+      display_name: model.displayName,
+      fields: model.record.fields || {},
+    });
+    if (typeof ctx?.waitUntil === "function") ctx.waitUntil(push);
+  }
   return response;
 }
 
