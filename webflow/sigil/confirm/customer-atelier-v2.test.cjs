@@ -32,11 +32,11 @@ test('returning from LIFF refreshes proof state and removes stale pay CTA',async
 test('pending revision blocks ACK',async()=>{const d=sample();d.confirmation_change_pending=true;const t=await setup(d);try{t.q('[data-c-check]').checked=true;t.q('[data-c-check]').dispatchEvent(new t.dom.window.Event('change'));assert.equal(t.q('[data-c-confirm]').disabled,true);}finally{t.close()}});
 
 test('Private confirmation uses SIGIL mark and PN + MK while Public remains MMD',async()=>{
-  for(const [lane,name] of [['private_model','SĪGIL'],['public_model','MMD PRIVÉ']]){
+  for(const [lane,name] of [['private_model','SĪGIL'],['','SĪGIL'],['public_model','MMD PRIVÉ']]){
     const d=sample();d.model_work_lane=lane;d.job_type='private:standard:pn:mk';
     const t=await setup(d);try{
       assert.equal(t.q('.mjc16__brand').textContent,name);
-      assert.equal(!!t.q('.mjc16__sigil-mark'),lane==='private_model');
+      assert.equal(!!t.q('.mjc16__sigil-mark'),lane!=='public_model');
       assert.match(t.q('[data-c-type]').textContent,/PN.*MK/);
       assert.equal(t.q('#mmd-job-confirm-v16').dataset.workLane,lane);
     }finally{t.close()}

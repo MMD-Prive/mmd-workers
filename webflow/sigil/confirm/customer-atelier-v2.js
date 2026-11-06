@@ -57,6 +57,11 @@
 .mmd-atelier[data-work-lane="private_model"]::before{background:radial-gradient(ellipse at top,rgba(178,141,80,.08),transparent 65%)}
 .mmd-atelier[data-work-lane="private_model"] .mjc16__brand::before{display:none}
 .mmd-atelier .mjc16__sigil-mark{width:32px;height:38px;color:#B28D50}
+#mmd-job-confirm-v16.mmd-atelier,#mmd-job-confirm-v16.mmd-atelier *:not(svg):not(svg *){font-family:"LINE Seed Sans TH","Noto Sans Thai",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif!important}
+.mmd-atelier .mjc16__brand:has(.mjc16__sigil-mark)::before{display:none}
+.mmd-atelier .mjc16__brand:has(.mjc16__sigil-mark){font-size:12px;font-weight:700;letter-spacing:.18em;gap:10px}
+.mmd-atelier .mjc16__brand .mjc16__sigil-mark{width:20px;height:24px}
+.mmd-atelier .mjc16__assistant{margin-left:0;letter-spacing:.02em}
 .mmd-atelier .mjc16__bill-note{padding:8px 0;font-size:12px}
 .mmd-atelier [data-c-service-items]{display:block!important;padding:0!important;border:0!important}
 .mmd-atelier [data-c-service-items]>div{display:flex;justify-content:space-between;gap:12px;padding:8px 0;color:var(--muted)}
@@ -496,9 +501,10 @@
       const lane = ["private_model", "public_model"].includes(d.model_work_lane) ? d.model_work_lane : "";
       R.dataset.workLane = lane;
       const brand = R.querySelector(".mjc16__brand");
-      const name = d.neutral === true ? "JOB CONFIRMATION" : lane === "private_model" ? "SĪGIL" : "MMD PRIVÉ";
+      const sigilBrand = lane !== "public_model"; // job-confirmation lives in SĪGIL; only an explicit Public lane keeps MMD
+      const name = d.neutral === true ? "JOB CONFIRMATION" : sigilBrand ? "SĪGIL" : "MMD PRIVÉ";
       brand.replaceChildren();
-      if (lane === "private_model" && d.neutral !== true) {
+      if (sigilBrand && d.neutral !== true) {
         // Exact SIGIL mark geometry from webflow/global/sigil-brand-v1.mjs.
         brand.innerHTML = '<svg class="mjc16__sigil-mark" aria-label="SĪGIL" role="img" viewBox="0 0 283 360"><g fill="currentColor"><path d="M141.5,35 L201.5,85 L201.5,171 L180.5,157 L180.5,97 L141.5,63 L102.5,97 L102.5,143 L201.5,203 L201.5,274 L141.5,325 L80.5,275 L80.5,182 L101.5,196 L101.5,263 L141.5,298 L180.5,265 L180.5,217 L80.5,157 L80.5,85 Z"/><path d="M39.5,119 L61.5,100 L61.5,258 L39.5,241 Z M218.5,100 L240.5,119 L240.5,241 L218.5,258 Z"/></g></svg>';
       }
