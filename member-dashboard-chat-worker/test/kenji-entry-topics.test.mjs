@@ -10,10 +10,11 @@ const runtime={ok:true,controls:{model_keyword_auto_reply:true}};
 const now=Date.parse('2026-11-05T12:00:00+07:00');
 const event=text=>({type:'message',mode:'active',timestamp:now,replyToken:'synthetic',source:{type:'user',userId:'U'+'1'.repeat(32)},message:{type:'text',text}});
 test('profile navigation reads only current exact names or explicit requests and stays behind both runtime guards',async()=>{
- const calls=[];let outcome={ok:true,status:'profile_link',destination:'public'};
+ const calls=[];let outcome={ok:true,status:'profile_link',destination:'public'}, status=200;
  const e={...env,LINE_KENJI_MODEL_ACCESS_ENABLED:'true',INTERNAL_TOKEN:'fixture',ADMIN_WORKER:{fetch:async req=>{
+  assert.equal(req.redirect,'manual');
   const body=await req.json();calls.push(body);
-  return Response.json(body.query==='Hiro'?outcome:{ok:true,status:'silent'});
+  return Response.json(body.query==='Hiro'?outcome:{ok:true,status:'silent'}, {status,headers:{location:'https://redirect.invalid/'}});
  }}};
  const clear={ok:true,controls:{}};
  const run=(text,initial=clear,fresh=clear)=>runApprovedCategoryTurn(e,event(text),initial,io({runtime:async()=>fresh}));
@@ -36,6 +37,11 @@ test('profile navigation reads only current exact names or explicit requests and
  assert.equal((await run('Hiro',runtime)).delivered,false);assert.equal(calls.length,before);
  outcome={ok:true,status:'profile_link',destination:'ems'};
  assert.equal((await run('Hiro',clear,runtime)).delivered,false);
+ status=302;
+ const beforeRedirect=calls.length;
+ assert.equal((await run('Hiro')).delivered,false);
+ assert.equal(calls.length,beforeRedirect+1);
+ assert.doesNotMatch((await run('ขอดู Hiro')).decision.text,/my-mmd\/ems|redirect\.invalid/);
 });
 function io(overrides={}){const sent=[];return {now,sent,continuity:async()=>({available:true,matrix:{last_customer_intent:'booking',payload_json:{model_name:'Hiro'}}}),runtime:async()=>runtime,owner:async()=>({ok:true,active:false}),send:async(e,t,text,button)=>{assert(categoryReplyTransportAllowed(e,t,text,button));sent.push(text);return {ok:true,status:200};},...overrides};}
 test('profile follow-up requires latest same-user inbound and confirmed named-profile delivery, then rechecks access',async()=>{
@@ -48,14 +54,17 @@ test('profile follow-up requires latest same-user inbound and confirmed named-pr
  const current=inbound('msg-current',100,'ขอดูเพิ่ม');
  const receipt={fields:{event_id:'kai_line_msg-previous',linked_console_inbox_id:'line_msg-previous',channel:'LINE_OFC',final_status:'sent',created_at:iso(-1000),
   payload_json:JSON.stringify({reply_source:'category_profile_link',cta_type:'profile_anchor',line_delivery_succeeded:true})}};
- let rows=[current,previous], receipts=[receipt], rpc=[];
+ let rows=[current,previous], receipts=[receipt], rpc=[], redirectStage='';
  const clear={ok:true,controls:{}};
  const e={...env,AIRTABLE_BASE_ID:'fixture',AIRTABLE_API_KEY:'fixture',LINE_KENJI_MODEL_ACCESS_ENABLED:'true',INTERNAL_TOKEN:'fixture',
   ADMIN_WORKER:{fetch:async req=>{rpc.push(await req.json());return Response.json({ok:true,status:'profile_link',destination:'public'});}}};
- const read=(env,event,now)=>readRecentProfileAnchor(env,event,now,async url=>{
+ const read=(env,event,now)=>readRecentProfileAnchor(env,event,now,async (url,options)=>{
+  assert.equal(options.redirect,'manual');
   const filter=new URL(url).searchParams.get('filterByFormula');
   assert(filter.includes(user)||filter.includes('kai_line_'));
-  return Response.json({records:filter.includes('kai_line_')?receipts:rows});
+  const stage=filter.includes('kai_line_')?'receipt':'inbox';
+  return Response.json({records:stage==='receipt'?receipts:rows},
+    redirectStage===stage?{status:307,headers:{location:'https://redirect.invalid/'}}:{});
  });
  const run=()=>runApprovedCategoryTurn(e,ev,clear,io({runtime:async()=>clear,readProfileAnchor:read}));
  const resolved=await run();assert.match(resolved.decision.text,/mmdbkk\.com\/profiles/);
@@ -63,6 +72,12 @@ test('profile follow-up requires latest same-user inbound and confirmed named-pr
  assert.equal(rpc[0].line_user_id,user);assert.equal(resolved.delivered,true);
  e.ADMIN_WORKER.fetch=async req=>{rpc.push(await req.json());return Response.json({ok:true,status:'silent'});};
  assert.doesNotMatch((await run()).decision.text,/https?:/);assert.equal(rpc.length,2);
+ for (const stage of ['inbox','receipt']) {
+  redirectStage=stage;
+  assert.match((await run()).decision.text,/หมายถึงนายแบบคนไหน/);
+  assert.equal(rpc.length,2);
+ }
+ redirectStage='';
  for(const [history,delivery] of [
   [[current,inbound('msg-topic',-100,'โปรเดือนนี้'),previous],[receipt]],
   [[current,inbound('msg-previous',-301000,'Hiro')],[receipt]],

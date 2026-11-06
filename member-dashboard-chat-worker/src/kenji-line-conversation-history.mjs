@@ -43,7 +43,7 @@ export async function readRecentProfileAnchor(env, event, now, fetchImpl = fetch
       url.searchParams.set("sort[0][direction]", "desc");
     }
     for (const field of fields) url.searchParams.append("fields[]", field);
-    const response = await fetchImpl(url.toString(), {headers:{authorization:`Bearer ${key}`}, redirect:"error", signal});
+    const response = await fetchImpl(url.toString(), {headers:{authorization:`Bearer ${key}`}, redirect:"manual", signal});
     if (!response.ok) return [];
     const result = await response.json();
     return Array.isArray(result.records) ? result.records.map(row=>row.fields || {}) : [];

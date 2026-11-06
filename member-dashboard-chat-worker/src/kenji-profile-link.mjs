@@ -39,7 +39,7 @@ export async function resolveProfileLinkReply(env, event, {now = Date.now(), rea
   let payload;
   try {
     const response = await env.ADMIN_WORKER.fetch(new Request('https://admin-worker.local/v1/internal/kenji/model-access', {
-      method: 'POST', redirect: 'error', signal: AbortSignal.timeout(2500),
+      method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(2500),
       headers: {authorization: `Bearer ${env.INTERNAL_TOKEN}`, 'content-type': 'application/json',
         'x-mmd-internal-call': 'true', 'x-mmd-service-binding': 'member-dashboard-chat-worker'},
       body: JSON.stringify({line_user_id: userId, query: query.name, purpose: 'profile_link'}),
