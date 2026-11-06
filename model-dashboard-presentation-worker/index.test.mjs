@@ -850,8 +850,9 @@ test("selected-job LIFF handoff sends exact Session and opens verified confirmat
       })};
     },
   });
-  assert.equal(calls.length,1);
+  assert.equal(calls.length,2);
   assert.equal(calls[0].url,"/v1/model/selected-job/handoff");
+  assert.equal(calls[1].url,"/v1/model/telegram/bind");
   assert.equal(JSON.parse(calls[0].init.body).session_id,sessionId);
   assert.equal(calls[0].init.credentials,"include");
   assert.ok(calls[0].init.signal);
