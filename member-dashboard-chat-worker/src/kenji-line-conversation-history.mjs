@@ -21,6 +21,67 @@ const AREA_PATTERNS = [
 
 export const KENJI_LINE_CONVERSATION_SHADOW_ENABLED_ENV = "KENJI_LINE_CONVERSATION_SHADOW_ENABLED";
 export const KENJI_LINE_CONVERSATION_HISTORY_SCHEMA = "mmd.kenji_line_conversation_history.v1";
+const PROFILE_FOLLOWUP_WINDOW_MS = 5 * 60 * 1000;
+
+// Read only the immediately preceding inbound and its delivery evidence.
+// Do not use the booking matrix, general history, or a stored entitlement.
+export async function readRecentProfileAnchor(env, event, now, fetchImpl = fetch) {
+  const user = canonicalLineUserId(event);
+  const currentId = eventId(event);
+  const base = text(env.AIRTABLE_BASE_ID);
+  const key = text(env.AIRTABLE_API_KEY);
+  const stamp = Number(event?.timestamp);
+  const safeId = id => /^[A-Za-z0-9._:-]{3,100}$/.test(id);
+  if (event?.source?.type !== "user" || !user || !safeId(currentId) || !base || !key || !Number.isFinite(stamp)) return null;
+  const signal = AbortSignal.timeout(HISTORY_READ_TIMEOUT_MS);
+  const read = async (table, formula, fields, count, sorted = false) => {
+    const url = new URL(`https://api.airtable.com/v0/${encodeURIComponent(base)}/${encodeURIComponent(table)}`);
+    url.searchParams.set("filterByFormula", formula);
+    url.searchParams.set("maxRecords", String(count));
+    if (sorted) {
+      url.searchParams.set("sort[0][field]", "created_at");
+      url.searchParams.set("sort[0][direction]", "desc");
+    }
+    for (const field of fields) url.searchParams.append("fields[]", field);
+    const response = await fetchImpl(url.toString(), {headers:{authorization:`Bearer ${key}`}, redirect:"error", signal});
+    if (!response.ok) return [];
+    const result = await response.json();
+    return Array.isArray(result.records) ? result.records.map(row=>row.fields || {}) : [];
+  };
+  try {
+    const inbox = text(env.AIRTABLE_SYNC_TABLE || env.AIRTABLE_TABLE_CONSOLE_INBOX_ID || CONSOLE_INBOX_TABLE_FALLBACK);
+    const rows = await read(inbox, `AND({line_user_id}="${user}",{source}="line")`,
+      ["inbox_id","line_id","line_user_id","source","created_at","payload_json"], 3, true);
+    const [current, prior, older] = rows;
+    if (!current || !prior || current.line_id !== currentId || current.inbox_id !== `line_${currentId}`) return null;
+    const currentPayload = object(current.payload_json);
+    if (currentPayload.source_message_id !== currentId || currentPayload.source_user_id !== user ||
+        text(currentPayload.raw_text) !== text(event.message?.text)) return null;
+    const priorId = text(prior.line_id);
+    if (!safeId(priorId) || priorId === currentId || prior.inbox_id !== `line_${priorId}`) return null;
+    const times = rows.map(row=>Date.parse(row.created_at));
+    if (!times.every(Number.isFinite) || times[0] <= times[1] || (older && times[1] <= times[2])) return null;
+    const payload = object(prior.payload_json);
+    const received = Date.parse(payload.received_at);
+    if ([current,prior].some(row=>row.source !== "line" || row.line_user_id !== user) ||
+        payload.source_user_id !== user || payload.source_message_id !== priorId ||
+        !Number.isFinite(received) || received >= stamp || now - received > PROFILE_FOLLOWUP_WINDOW_MS) return null;
+    const receiptId = `kai_line_${priorId}`;
+    const receipts = await read(aiMessageEventsTable(env), `{event_id}="${receiptId}"`,
+      ["event_id","linked_console_inbox_id","channel","final_status","created_at","payload_json"], 2);
+    const receipt = receipts[0];
+    const sent = Date.parse(receipt?.created_at);
+    const evidence = object(receipt?.payload_json);
+    if (receipts.length !== 1 || receipt.event_id !== receiptId || receipt.linked_console_inbox_id !== prior.inbox_id ||
+        receipt.channel !== "LINE_OFC" || receipt.final_status !== "sent" ||
+        !Number.isFinite(sent) || sent < received || sent >= stamp ||
+        evidence.reply_source !== "category_profile_link" || evidence.cta_type !== "profile_anchor" ||
+        evidence.line_delivery_succeeded !== true) return null;
+    return typeof payload.raw_text === "string" ? payload.raw_text : null;
+  } catch {
+    return null;
+  }
+}
 
 function text(value) {
   return value == null ? "" : String(value).trim();

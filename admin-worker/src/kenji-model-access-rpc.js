@@ -439,6 +439,34 @@ export async function resolveExactModel(env, query, fetchImpl = fetch) {
   return { status: records.length ? "resolved" : "not_found", records };
 }
 
+// Navigation only. Return a route key, never a record, private asset, or URL
+// supplied by Airtable. The protected album independently checks its session.
+export async function resolveKenjiProfileLink(env, input, fetchImpl = fetch) {
+  const lineUserId = clean(input.line_user_id, 80);
+  const query = typeof input.query === "string" ? input.query.trim() : "";
+  if (!/^U[a-f0-9]{32}$/i.test(lineUserId) || query.length < 2 || query.length > 64) return { status: "silent" };
+  const table = clean(env.AIRTABLE_TABLE_MODELS || "models");
+  const records = uniqueRecords((await Promise.all([
+    queryAcrossFields(env, table, MODEL_CODE_FIELDS, query, fetchImpl, 5),
+    queryAcrossFields(env, table, MODEL_WORKING_NAME_FIELDS, query, fetchImpl, 5),
+  ])).flat());
+  if (records.length > 1) return { status: "clarification" };
+  if (records.length !== 1) return { status: "silent" };
+  const record = records[0];
+  const cls = modelAccessClass(record);
+  if (!cls.active || !projectKenjiSafeModel(record)) return { status: "silent" };
+  const category = privateCampaignCategory(record);
+  if (cls.visibility === "public" && !category) return { status: "profile_link", destination: "public" };
+  if (cls.visibility === "private" && ["ems", "gws"].includes(category)) {
+    const access = await resolveCanonicalMemberAccess(env, lineUserId, fetchImpl);
+    if (access.snapshot?.member_blocked !== true &&
+        await hasPerModelApproval(env, lineUserId, record, access.snapshot, fetchImpl)) {
+      return { status: "profile_link", destination: category };
+    }
+  }
+  return { status: "silent" };
+}
+
 export async function resolveKenjiModelAccess(env = {}, input = {}, options = {}) {
   const lineUserId = clean(input.line_user_id, 80);
   const query = clean(input.query, 80);
@@ -567,6 +595,10 @@ export async function handleKenjiModelAccessRpc(request, env = {}, options = {})
   if (!body || typeof body !== "object" || Array.isArray(body)) return json({ ok: false, error: "invalid_json" }, 400);
 
   try {
+    if (body.purpose === "profile_link") {
+      const result = await resolveKenjiProfileLink(env, body, options.fetchImpl || fetch);
+      return json({ ok: true, ...result });
+    }
     const result = await resolveKenjiModelAccess(env, body, options);
     if (result.status === "match") return json({ ok: true, status: "match", policy_version: KENJI_MODEL_ACCESS_POLICY_VERSION, model: result.model });
     if (result.status === "clarification") return json({ ok: true, status: "clarification", policy_version: KENJI_MODEL_ACCESS_POLICY_VERSION });

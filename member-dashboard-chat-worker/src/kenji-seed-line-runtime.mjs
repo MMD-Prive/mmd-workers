@@ -592,7 +592,8 @@ async function runLegacyShadow(request, env, ctx, legacyWorker, rawBody, events 
   if (profileImages.size) shadowEnv[APPLY_PROFILE_IMAGES] = profileImages;
   // Finish the menu tap's intake state before the reply owner writes its
   // delivered context. A deferred legacy write could otherwise overwrite it.
-  const intakeCtx = profileImages.size || events.some(event => richMenuNavigation(event) || lineIntakeCommand(event)) ? null : ctx;
+  const profileHistory = restrictedReplyCategories(env) && enabled(env.LINE_KENJI_MODEL_ACCESS_ENABLED);
+  const intakeCtx = profileHistory || profileImages.size || events.some(event => richMenuNavigation(event) || lineIntakeCommand(event)) ? null : ctx;
   const response = await legacyWorker.fetch(shadowRequest, shadowEnv, intakeCtx).catch(() => null);
   if (!response?.ok) return null;
   return response.json().catch(() => null);

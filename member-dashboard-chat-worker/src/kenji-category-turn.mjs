@@ -4,6 +4,7 @@ import {lineIntakeCommand, readLineIntakeCatalog, resolveLineIntakeReply} from '
 import {resolveKenjiLineLiveTruth} from './kenji-line-live-truth.mjs';
 import {resolveMembershipStatusReply} from './kenji-membership-status-reply.mjs';
 import {entryTopicCommand, entryTopicReply, entryPromotionReply} from './kenji-entry-topics.mjs';
+import {resolveProfileLinkReply} from './kenji-profile-link.mjs';
 
 export async function runApprovedCategoryTurn(env, event, initialRuntime, io) {
   const now = io.now ?? Date.now();
@@ -54,7 +55,8 @@ export async function runApprovedCategoryTurn(env, event, initialRuntime, io) {
         const promotion = ['promotion','member_promotion'].includes(topic)
           ? approvedCategoryReply({...event,message:{...event.message,text:'โปร'}},env,{careBackOctoberReply,now}) : null;
         decision = entryTopicReply(topic) || entryPromotionReply(promotion,topic === 'member_promotion') ||
-          approvedCategoryReply(event,env,{careBackOctoberReply,now}) || silent;
+          approvedCategoryReply(event,env,{careBackOctoberReply,now}) ||
+          (controls.model_keyword_auto_reply !== true && await resolveProfileLinkReply(env,event,{now,readAnchor:io.readProfileAnchor})) || silent;
       }
     } catch { decision = {...silent, guard_reason:'category_resolution_exception'}; }
     if (decision.text) {
@@ -63,6 +65,7 @@ export async function runApprovedCategoryTurn(env, event, initialRuntime, io) {
         const continuity = await io.continuity();
         const [runtime, owner] = await Promise.all([io.runtime(),io.owner(continuity)]);
         if (runtime?.ok === true && runtime.controls?.all_kenji_mutations !== true && runtime.controls?.line_oa_auto_reply !== true &&
+            (decision.reply_source !== 'category_profile_link' || runtime.controls?.model_keyword_auto_reply !== true) &&
             continuity?.available === true && owner?.ok === true && owner.active !== true) {
           attempted = true;
           const button = membershipUriButton(decision);
