@@ -35,6 +35,58 @@ test('matching one-job grant is distinguished and unknown availability stays unk
  const result=await checkJobReadiness({},body,{readConflicts:async()=>[],checkAccess:async()=>({ownerJobGrant:{id:'grant'},profile:{availableNow:false}}),checkWork:async()=>null});
  assert.equal(result.membership,'one_job_grant');assert.equal(result.availability,'unknown');
 });
+test('preflight reports the exact canonical model blocker without enabling creation',async()=>{
+  const err=Object.assign(new Error('not allowed'),{code:'private_model_lane_mismatch'});
+  const result=await checkJobReadiness({},body,{readConflicts:async()=>[],checkAccess:async()=>{throw err}});
+  assert.equal(result.can_create,false);
+  assert.equal(result.stage,'model');
+  assert.equal(result.code,'private_model_lane_mismatch');
+  assert.match(result.message,/Straight\/Gay/);
+  assert.doesNotMatch(result.message,/ตรวจสิทธิ์หรือโมเดลไม่ผ่าน/);
+});
+test('pending owner grant mismatch is diagnosed but never opens the create gate',async()=>{
+  let diagnostics=0;
+  const result=await checkJobReadiness({},body,{
+    readConflicts:async()=>[],
+    checkAccess:async()=>{throw Object.assign(new Error('missing'),{code:'AUTHORITATIVE_MEMBER_NOT_FOUND'})},
+    diagnoseGrant:async(_,snapshot)=>{diagnostics++;assert.equal(snapshot.client_id,body.client_id);return {code:'OWNER_JOB_GRANT_MISMATCH',mismatched_fields:['amount_thb']};}
+  });
+  assert.equal(diagnostics,1);
+  assert.equal(result.can_create,false);
+  assert.equal(result.code,'OWNER_JOB_GRANT_MISMATCH');
+  assert.deepEqual(result.mismatched_fields,['amount_thb']);
+  assert.match(result.message,/amount_thb/);
+});
+test('exact pending grant inconsistent with member gate is a backend blocker, not approval',async()=>{
+  const result=await checkJobReadiness({},body,{
+    readConflicts:async()=>[],
+    checkAccess:async()=>{throw Object.assign(new Error('membership'),{code:'private_eligibility_blocked'})},
+    diagnoseGrant:async()=>({code:'OWNER_JOB_GRANT_LOOKUP_INCONSISTENT',mismatched_fields:[]})
+  });
+  assert.equal(result.can_create,false);
+  assert.equal(result.code,'OWNER_JOB_GRANT_LOOKUP_INCONSISTENT');
+  assert.match(result.message,/ไม่อนุมัติซ้ำ/);
+});
+test('diagnostic failure retains canonical membership denial',async()=>{
+  const result=await checkJobReadiness({},body,{
+    readConflicts:async()=>[],
+    checkAccess:async()=>{throw Object.assign(new Error('membership'),{code:'AUTHORITATIVE_MEMBER_NOT_FOUND'})},
+    diagnoseGrant:()=>{throw new Error('offline')}
+  });
+  assert.equal(result.can_create,false);
+  assert.equal(result.code,'AUTHORITATIVE_MEMBER_NOT_FOUND');
+});
+test('private PN/VIP work policy failures identify the model policy blocker',async()=>{
+  const result=await checkJobReadiness({},body,{
+    readConflicts:async()=>[],
+    checkAccess:async()=>({profile:{availableNow:true}}),
+    checkWork:async()=>Response.json({ok:false,error:{code:'private_model_service_level_unclassified'}},{status:409})
+  });
+  assert.equal(result.can_create,false);
+  assert.equal(result.stage,'model_work');
+  assert.equal(result.code,'private_model_service_level_unclassified');
+  assert.match(result.message,/PN\/VIP/);
+});
 test('preflight without an owner does not access storage',async()=>{
  const response=await handleJobPreflight(new Request('https://example.test',{method:'POST',body:JSON.stringify(body)}),{},null);
  assert.equal(response.status,403);
@@ -60,6 +112,36 @@ async function readinessUi(api) {
  vm.runInContext(script,context);
  return {context,elements,check:()=>vm.runInContext('checkReadiness()',context)};
 }
+test('approved one-job grant automatically rechecks without creating a job',async()=>{
+  const html=await handleCreateJobWorkerPage(new Request('https://example.test/internal/admin/jobs/create-job')).text();
+  const start=html.indexOf("$('grantConfirm').onchange=");
+  const end=html.indexOf(';setStep(1);loadRequestedClient()',start);
+  assert.ok(start>0&&end>start,'grant handler is available');
+  const nodes=new Map([
+    ['grantConfirm',{checked:true}],
+    ['grant',{disabled:false}],
+    ['grantBox',{classList:{add(){}}}],
+    ['grantResult',{textContent:''}],
+    ['create',{disabled:true}]
+  ]);
+  let checks=0;const calls=[];const snapshot={client_id:body.client_id,model:body.model,job_date:body.job_date};
+  const ctx=vm.createContext({
+    $:id=>nodes.get(id),readPayload:()=>({...snapshot}),JSON,
+    readinessSequence:0,readinessKey:'old',readinessResult:{can_create:false},
+    approvedOwnerGrantKey:'',show:()=>{},checkReadiness:async()=>{checks++;return false},
+    api:async(path,opts)=>{calls.push({path,payload:JSON.parse(opts.body)});return {grant_status:'pending'}}
+  });
+  vm.runInContext(html.slice(start,end),ctx);
+  await nodes.get('grant').onclick();
+  assert.equal(checks,1);
+  assert.equal(calls.length,1);
+  assert.equal(calls[0].path,'/v1/admin/job/owner-grant');
+  assert.equal(calls[0].payload.owner_grant_reason_code,'AUTHORITATIVE_MEMBER_NOT_FOUND');
+  assert.equal(ctx.readinessKey,'');
+  assert.equal(ctx.readinessResult,null);
+  assert.equal(ctx.approvedOwnerGrantKey,JSON.stringify(snapshot));
+  assert.equal(nodes.get('create').disabled,true,'grant approval must never auto-create or bypass preflight');
+});
 test('browser keeps create disabled and offers existing job instead',async()=>{
  const ui=await readinessUi(async()=>({can_create:false,message:'พบงานเดิม',jobs:[{kind:'existing_job',href:'/internal/admin/jobs/all?session_id=sess_existing'}]}));
  assert.equal(await ui.check(),false);assert.equal(ui.elements.get('create').disabled,true);
