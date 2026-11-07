@@ -1,0 +1,1 @@
+if(/^\/internal(?:\/|$)/.test(location.pathname)||/^\/partner\/dashboard\/(?:relax-spa|kalima-massage)(?:\/|$)/.test(location.pathname)){if(location.pathname!=="/internal/ceo/dashboard")import("https://rawcdn.githack.com/MMD-Prive/mmd-workers/45dc851da7f7ad1c61d8033aff9654e1971953e8/webflow/global/sigil-internal-theme-loader-v2.mjs");}
