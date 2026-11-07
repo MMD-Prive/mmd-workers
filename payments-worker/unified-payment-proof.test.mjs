@@ -82,6 +82,24 @@ test("web proof job context fails closed when canonical session is missing", () 
   assert.equal(context.reason, "canonical_session_context_missing");
 });
 
+test("owner job receipt reads canonical session total separately from the expected deposit", () => {
+  const context = canonicalWebJobContext({ id: "recSession", fields: {
+    fldLTq2kZbyRv22IA: "sess_receipt", fldMvnQ0BzDfHUYjT: "ลูกค้าทดสอบ",
+    flddVz6eoWRHrzIQr: "โมเดลทดสอบ", fldpnqoIsUMfN7y3c: "2026-11-14",
+    fldBeG0FkWwa8kgnp: "2026-11-14T10:00:00Z", fldiDSz0wW9Ct9I3P: "2026-11-14T11:30:00Z",
+    fldIiRpaxoafjTkFt: "สถานที่ทดสอบ", fldhwC79ndbnEXSZz: 15000,
+  } }, { payment_stage: "deposit", amount_thb: 7500 });
+  assert.equal(context.total_amount_thb, 15000);
+  assert.equal(context.deposit_due_thb, 7500);
+  assert.equal(context.model_name, "โมเดลทดสอบ");
+  assert.equal(context.location_name, "สถานที่ทดสอบ");
+  const missing = canonicalWebJobContext({ id: "recSession", fields: { session_id: "sess_receipt" } }, { payment_stage: "deposit", amount_thb: 7500 });
+  assert.equal(missing.total_amount_thb, null, "never copy a planned deposit into total budget");
+  assert.equal(missing.deposit_due_thb, 7500);
+  const final = canonicalWebJobContext({ id: "recSession", fields: { session_id: "sess_receipt", amount_thb: 15000 } }, { payment_stage: "final", amount_thb: 7500 });
+  assert.equal(final.deposit_due_thb, null, "a final payment is not a deposit");
+});
+
 test("Telegram delivery audit note records message id and thread without exposing bot token", () => {
   const note = telegramDeliveryAuditNote({
     ok: true,
