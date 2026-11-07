@@ -129,7 +129,8 @@ export async function handleCanonicalConfirmLink(request, env) {
     const paymentStage = normalizeStage(body.payment_type || body.payment_stage || "deposit");
     const paymentMethod = canonicalPaymentMethod(body.payment_method);
     // Keep machine-readable membership markers on their own lines.
-    const note = clean(body.note || body.notes).replace(/[\u0000-\u0009\u000B-\u001F\u007F]/g, " ").slice(0, 4000);
+    const rawNote = clean(body.note || body.notes).replace(/[\u0000-\u0009\u000B-\u001F\u007F]/g, " ");
+    const note = rawNote.slice(0, 4000);
     const components = parseSigilMembershipPaymentComponents(note, amountThb);
     const serviceAmountThb = body.service_amount_thb != null
       ? positiveNumber(body.service_amount_thb, "service_amount_thb")
@@ -159,15 +160,17 @@ export async function handleCanonicalConfirmLink(request, env) {
       : null;
     const depositBelowMinimum = paymentStage === "deposit" && selectedDepositThb < minimumDepositThb;
     const depositShortfallThb = depositBelowMinimum ? Math.max(0, minimumDepositThb - selectedDepositThb) : 0;
-    const selectedBalanceThb = Math.max(0, serviceAmountThb - selectedDepositThb);
+    // The deposit basis may exclude travel, while the job total must include it once.
+    const jobTotalThb = components?.service_amount_thb ?? amountThb;
+    const selectedBalanceThb = Math.max(0, jobTotalThb - selectedDepositThb);
     const pricing = paymentStage === "deposit"
       ? {
-          full_price_thb: Math.max(originalAmountThb, serviceAmountThb),
+          full_price_thb: Math.max(originalAmountThb, jobTotalThb),
           discount_mode: discountMode,
           discount_percent: null,
           discount_thb: discountMode === "amount" ? discountThb : 0,
           ...(discountKind ? { discount_kind: discountKind } : {}),
-          net_price_thb: serviceAmountThb,
+          net_price_thb: jobTotalThb,
           deposit_basis_thb: serviceAmountThb,
           deposit_minimum_percent: CUSTOMER_DEPOSIT_PERCENT,
           deposit_minimum_thb: minimumDepositThb,
@@ -181,13 +184,10 @@ export async function handleCanonicalConfirmLink(request, env) {
           deposit_rounding: "ceil_to_baht",
         }
       : null;
-    const pricingMarker = pricing ? `[SIGIL Pricing v1] ${JSON.stringify(pricing)}` : "";
-    const noteWithPricing = pricingMarker && !note.includes("[SIGIL Pricing v1]")
-      ? [note, pricingMarker].filter(Boolean).join("\n").slice(0, 4000)
-      : note;
-    const storedNote = held
-      ? (`[MMD_JOB_HOLD_V1] ${JSON.stringify({ status: "pending_client_link", confirmation_hold: true, dispatch_hold: true, entitlement_release_hold: true })}\n${noteWithPricing}`).slice(0, 4000)
-      : noteWithPricing;
+    const holdMarker = held
+      ? `[MMD_JOB_HOLD_V1] ${JSON.stringify({ status: "pending_client_link", confirmation_hold: true, dispatch_hold: true, entitlement_release_hold: true })}`
+      : "";
+    const storedNote = boundedSessionNote(rawNote, holdMarker, pricing);
     const createdAt = new Date().toISOString();
 
     const { startAt, endAt } = canonicalJobWindow(jobDate, startRaw, endRaw);
@@ -232,7 +232,7 @@ export async function handleCanonicalConfirmLink(request, env) {
       [SESSION_FIELDS.sessionStatus]: "Pending",
       [field(env.AT_SESSIONS__PAYMENT_STATUS, SESSION_FIELDS.paymentStatus)]: "pending",
       [field(env.AT_SESSIONS__PAYMENT_REF, SESSION_FIELDS.paymentRef)]: paymentRef || undefined,
-      [field(env.AT_SESSIONS__AMOUNT_THB, SESSION_FIELDS.amountThb)]: components ? serviceAmountThb : amountThb,
+      [field(env.AT_SESSIONS__AMOUNT_THB, SESSION_FIELDS.amountThb)]: jobTotalThb,
       [SESSION_FIELDS.payModelThb]: payModelThb,
       [SESSION_FIELDS.travelFeeThb]: travelFeeThb,
       [SESSION_FIELDS.modelTravelFeeThb]: modelTravelFeeThb,
@@ -500,6 +500,38 @@ function normalizeStage(value) {
   const stage = clean(value).toLowerCase();
   if (!PAYMENT_STAGES.has(stage)) throw httpError(400, "invalid_payment_stage");
   return stage;
+}
+
+// Reserve space for complete machine snapshots before truncating operator text.
+function boundedSessionNote(note, holdMarker, pricing) {
+  const limit = 4000;
+  const existingPricing = parseMarkedJson(note.slice(0, limit), "SIGIL Pricing v1");
+  const snapshot = existingPricing ?? pricing;
+  const pricingMarker = snapshot ? `[SIGIL Pricing v1] ${JSON.stringify(snapshot)}` : "";
+  const completeNote = [holdMarker, note, existingPricing ? "" : pricingMarker].filter(Boolean).join("\n");
+  if (completeNote.length <= limit) return completeNote;
+
+  const protectedLines = [holdMarker].filter(Boolean);
+  const humanLines = [];
+  const lines = note.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    if (trimmed.startsWith("[SIGIL Pricing v1]")) continue;
+    if (/^\[[^\]\n]+\]\s*\{.*\}$/.test(trimmed)) {
+      protectedLines.push(line);
+    } else if (trimmed === "[SIGIL Partner Snapshot v1]" && lines[i + 1]?.trimStart().startsWith("{")) {
+      protectedLines.push(line, lines[++i]);
+    } else {
+      humanLines.push(line);
+    }
+  }
+  if (pricingMarker) protectedLines.push(pricingMarker);
+  const machineNote = protectedLines.join("\n");
+  if (machineNote.length > limit) throw httpError(400, "session_note_snapshots_too_large");
+  const humanBudget = limit - machineNote.length - (machineNote ? 1 : 0);
+  const humanNote = humanLines.join("\n").slice(0, Math.max(0, humanBudget));
+  return [machineNote, humanNote].filter(Boolean).join("\n");
 }
 
 function canonicalPaymentMethod(value) {

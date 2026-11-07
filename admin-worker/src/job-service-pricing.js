@@ -9,6 +9,12 @@ const sameMoney = (left, right) => money(left) && money(right) && Math.round(lef
 const total = (base, addons, key) => Math.round((base + addons.reduce((sum, a) => sum + a[key], 0)) * 100) / 100;
 
 const round2 = value => Math.round(value * 100) / 100;
+export function jobTotalWithTravel(serviceAmount, customerAmount, travelFee) {
+  const total = Number(customerAmount);
+  const travel = Number(travelFee ?? 0);
+  return travel > 0 && sameMoney(total, round2(serviceAmount + travel)) ? total : serviceAmount;
+}
+
 /** Optional discount record. customer_request: MMD absorbs it alone. promotion: split 50/50 with the working model. */
 function validateDiscount(d, gross, fail) {
   if (d === undefined || d === null) return null;
@@ -72,8 +78,11 @@ export function validateJobServicePricing(body) {
   const customerTotal = components?.customer_total_thb ?? serviceCharge;
   if (components && (components.service_amount_thb !== serviceCharge || components.customer_total_thb !== customerTotal)) fail();
   if (!sameMoney(body.amount_thb, customerTotal)) fail();
-  for (const amount of [body.service_amount_thb, body?.payment?.service_amount_thb]) {
-    if (amount !== undefined && !sameMoney(amount, serviceCharge)) fail();
+  const depositBases = [body.service_amount_thb, body?.payment?.service_amount_thb].filter(amount => amount !== undefined);
+  // Create Job excludes travel from the deposit basis. Legacy callers may include it.
+  for (const amount of depositBases) {
+    if (!sameMoney(amount, depositBases[0]) ||
+      (!sameMoney(amount, serviceCharge) && (components || !sameMoney(amount, clientTotal)))) fail();
   }
   // original_amount_thb is the pre-discount amount when a discount is declared.
   if (body.original_amount_thb !== undefined && !sameMoney(body.original_amount_thb, round2((discount ? clientGross : clientTotal) + travelFee))) fail();

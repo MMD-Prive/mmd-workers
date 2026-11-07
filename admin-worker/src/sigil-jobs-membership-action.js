@@ -1,3 +1,4 @@
+import { jobTotalWithTravel } from "./job-service-pricing.js";
 import { normalizeJobCreateBody } from "./job-create-contract.js";
 import { resolveMemberEntitlements } from "../../auth-worker/src/member-entitlement-resolver.js";
 import { resolveModelSalesOffer } from "../../shared/model-sales-control-v1.mjs";
@@ -91,9 +92,9 @@ export function canonicalizeSigilJobBody(input = {}) {
     });
   }
 
-  const customerTotalThb = serviceAmountThb + (action.type === "renew" && action.include_in_payment
-    ? action.renewal_amount_thb
-    : 0);
+  const customerTotalThb = action.type === "renew" && action.include_in_payment
+    ? serviceAmountThb + action.renewal_amount_thb
+    : jobTotalWithTravel(serviceAmountThb, body.amount_thb ?? body.payment?.amount_thb, body.travel_fee_thb);
 
   body.membership_action = action;
   body.service_amount_thb = serviceAmountThb;
