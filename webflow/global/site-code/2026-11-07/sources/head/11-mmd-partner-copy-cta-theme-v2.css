@@ -1,0 +1,131 @@
+
+html.mmd-partner-canon-v2{
+  --partner-bg:#0a0908;
+  --partner-bg-2:#0f0d0b;
+  --partner-panel:#12100e;
+  --partner-panel-soft:#171310;
+  --partner-ivory:#fff9f0;
+  --partner-copy:#d9d1c7;
+  --partner-muted:#91887f;
+  --partner-gold:#d7af67;
+  --partner-gold-light:#f5e2b5;
+  --partner-gold-line:rgba(215,175,103,.28);
+  --partner-wine:#2a0e13;
+  --partner-ink:#17120b;
+  --partner-sage:#5f9272;
+  color-scheme:dark;
+}
+html.mmd-partner-canon-v2 body{
+  background:
+    radial-gradient(circle at 18% -8%,rgba(64,24,20,.18),transparent 31rem),
+    linear-gradient(180deg,#090807 0%,#0d0b09 52%,#090807 100%)!important;
+  color:var(--partner-copy)!important;
+  font-family:"Anuphan",Tahoma,"Noto Sans Thai",sans-serif!important;
+}
+html.mmd-partner-canon-v2 body :where(h1,h2,h3,h4,h5,h6,p,li,label,small,figcaption,blockquote,input,select,textarea){
+  font-family:"Anuphan",Tahoma,"Noto Sans Thai",sans-serif!important;
+}
+html.mmd-partner-canon-v2 body :where(
+  nav,nav *,[class*="nav"],[class*="kicker"],[class*="eyebrow"],[class*="lane-label"],
+  [class*="pill"],[class*="chip"],[class*="status"],[class*="metric"],[class*="number"],
+  [data-partner-font="en"]
+){
+  font-family:"General Sans","Satoshi",Arial,sans-serif!important;
+}
+html.mmd-partner-canon-v2 body :where(h1,h2,h3,h4){color:var(--partner-ivory)!important;-webkit-text-fill-color:var(--partner-ivory)!important}
+html.mmd-partner-canon-v2 body :where(p,li,label,figcaption){color:var(--partner-copy)}
+html.mmd-partner-canon-v2 body :where(small,[class*="muted"],[class*="micro"]){color:var(--partner-muted)!important}
+html.mmd-partner-canon-v2 body :where([class*="kicker"],[class*="eyebrow"],[class*="pill"],[class*="chip"]){color:var(--partner-gold-light)!important;-webkit-text-fill-color:var(--partner-gold-light)!important}
+html.mmd-partner-canon-v2 body :where([class*="card"],[class*="panel"],[class*="shell"],fieldset,dialog){
+  border-color:var(--partner-gold-line)!important;
+}
+html.mmd-partner-canon-v2 body :where(
+  a[class*="btn--gold"],a[class*="btn-primary"],button[type="submit"],[class*="submit"],
+  [data-open-add],[data-unlock-vault],[data-save-vault]
+){
+  background:linear-gradient(135deg,#f6e2ae 0%,#e7ca86 56%,#d4ae64 100%)!important;
+  border:1px solid rgba(255,240,199,.7)!important;
+  color:var(--partner-ink)!important;
+  -webkit-text-fill-color:var(--partner-ink)!important;
+  box-shadow:0 14px 34px rgba(0,0,0,.24),inset 0 1px 0 rgba(255,255,255,.48)!important;
+  border-radius:999px!important;
+}
+html.mmd-partner-canon-v2 body :where(
+  a[class*="btn--dark"],a[class*="ghost"],button[data-mmd-v7-lane]
+){
+  background:rgba(12,11,10,.72)!important;
+  border-color:rgba(215,175,103,.38)!important;
+  color:var(--partner-gold-light)!important;
+  -webkit-text-fill-color:var(--partner-gold-light)!important;
+}
+html.mmd-partner-canon-v2 body [data-partner-cta="primary"]{
+  min-height:50px!important;
+  display:inline-flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  gap:10px!important;
+  padding:0 20px!important;
+  border:1px solid rgba(255,240,199,.72)!important;
+  border-radius:999px!important;
+  background:linear-gradient(135deg,#f6e2ae 0%,#e7ca86 56%,#d4ae64 100%)!important;
+  color:var(--partner-ink)!important;
+  -webkit-text-fill-color:var(--partner-ink)!important;
+  box-shadow:0 14px 34px rgba(0,0,0,.24),inset 0 1px 0 rgba(255,255,255,.48)!important;
+  font-weight:600!important;
+  text-decoration:none!important;
+}
+html.mmd-partner-canon-v2 body [data-partner-cta="secondary"]{
+  min-height:48px!important;
+  display:inline-flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  gap:9px!important;
+  padding:0 18px!important;
+  border:1px solid rgba(215,175,103,.38)!important;
+  border-radius:999px!important;
+  background:rgba(12,11,10,.72)!important;
+  color:var(--partner-gold-light)!important;
+  -webkit-text-fill-color:var(--partner-gold-light)!important;
+  box-shadow:none!important;
+  font-weight:600!important;
+  text-decoration:none!important;
+}
+html.mmd-partner-canon-v2 body [data-partner-cta="quiet"]{
+  color:var(--partner-copy)!important;
+  -webkit-text-fill-color:var(--partner-copy)!important;
+}
+html.mmd-partner-canon-v2 body [data-partner-cta="primary"]:hover,
+html.mmd-partner-canon-v2 body [data-partner-cta="secondary"]:hover{
+  transform:translateY(-1px);
+  filter:brightness(1.025);
+}
+html.mmd-partner-canon-v2 body :where([class*="success"],[data-state="verified"],[data-status="verified"]){
+  --partner-status-accent:var(--partner-sage);
+}
+html.mmd-partner-canon-v2 body :where([class*="danger"],[data-tone="error"]){
+  --partner-status-accent:#d98282;
+}
+
+html.mmd-partner-canon-v2 body :where(input,textarea,select){
+  background:#0f0e0d!important;border-color:rgba(215,175,103,.24)!important;color:var(--partner-ivory)!important;
+}
+html.mmd-partner-canon-v2 body :where(input,textarea)::placeholder{color:#7f776f!important}
+html.mmd-partner-canon-v2 body :where([class*="burgundy"],[class*="wine"]){background:linear-gradient(145deg,rgba(42,14,19,.62),rgba(15,13,11,.94))!important}
+html.mmd-partner-canon-v2 .mmd-partner-canon-footer{
+  min-height:190px;display:flex;align-items:flex-end;justify-content:space-between;gap:24px;
+  margin-top:clamp(52px,8vw,110px);padding:0 clamp(22px,5vw,64px) 30px;
+  border-top:1px solid rgba(255,255,255,.045);background:#090807;
+  color:#bdb4aa;font:500 12px/1.3 "General Sans","Satoshi",Arial,sans-serif;
+  letter-spacing:.12em;text-transform:uppercase;
+}
+html.mmd-partner-canon-v2 .mmd-partner-canon-footer span:last-child{
+  color:#817970;letter-spacing:.02em;text-transform:none;font-size:13px;
+}
+html.mmd-partner-canon-v2.mmd-partner-footer-fallback-compact .mmd-partner-canon-footer{
+  min-height:112px;margin-top:clamp(36px,5vw,72px);padding:0 clamp(22px,5vw,64px) 24px;
+}
+@media(max-width:767px){
+  html.mmd-partner-canon-v2 .mmd-partner-canon-footer{min-height:128px;padding:0 18px 20px;font-size:10px}
+  html.mmd-partner-canon-v2 .mmd-partner-canon-footer span:last-child{font-size:11px}
+  html.mmd-partner-canon-v2.mmd-partner-footer-fallback-compact .mmd-partner-canon-footer{min-height:96px;margin-top:32px;padding:0 18px 18px}
+}

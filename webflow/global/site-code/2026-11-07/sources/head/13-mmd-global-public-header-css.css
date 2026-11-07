@@ -1,0 +1,31 @@
+
+#mmd-global-public-header,#mmd-global-public-header *{box-sizing:border-box}
+#mmd-global-public-header{position:sticky;top:0;z-index:950;width:100%;background:rgba(255,253,249,.97);color:#25221e;border-bottom:1px solid rgba(37,34,30,.12);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);font:14px/1.5 "LINE Seed Sans TH","Noto Sans Thai",sans-serif}
+#mmd-global-public-header .mmdg-inner{width:min(calc(100% - 40px),1280px);min-height:70px;margin:auto;display:flex;align-items:center;justify-content:space-between;gap:28px}
+#mmd-global-public-header .mmdg-brand{flex:0 0 auto;display:flex;align-items:center}
+#mmd-global-public-header .mmdg-brand img{display:block;width:164px;height:auto;max-height:42px;object-fit:contain}
+#mmd-global-public-header .mmdg-nav{display:flex;align-items:center;justify-content:center;gap:clamp(14px,2vw,30px);margin-left:auto}
+#mmd-global-public-header a{color:#25221e!important;-webkit-text-fill-color:#25221e!important;text-decoration:none}
+#mmd-global-public-header .mmdg-nav a{font-size:12px;letter-spacing:.035em;white-space:nowrap}
+#mmd-global-public-header a:hover{color:#8b5147!important;-webkit-text-fill-color:#8b5147!important}
+#mmd-global-public-header .mmdg-account{display:inline-flex;align-items:center;justify-content:center;gap:12px;min-height:42px;padding:0 16px;border:1px solid #d7c6a5;border-radius:999px;color:#25221e!important;font-size:12px;font-weight:650;white-space:nowrap}
+#mmd-global-public-header .mmdg-menu-button{display:none;align-items:center;justify-content:center;flex-direction:column;gap:5px;width:44px;height:44px;border:1px solid #ded7cd;border-radius:50%;background:transparent;color:#25221e;cursor:pointer}
+#mmd-global-public-header .mmdg-menu-button span{display:block;width:17px;height:1.5px;background:#25221e}
+#mmd-global-public-header .mmdg-mobile-menu{position:absolute;top:100%;left:0;right:0;padding:12px 20px 20px;background:#fffdf9;border-bottom:1px solid #ded7cd;box-shadow:0 12px 22px rgba(33,27,21,.1)}
+#mmd-global-public-header .mmdg-mobile-menu[hidden]{display:none!important}
+#mmd-global-public-header .mmdg-mobile-menu nav{display:grid;grid-template-columns:1fr 1fr;gap:8px;width:min(100%,680px);margin:auto}
+#mmd-global-public-header .mmdg-mobile-menu nav a{display:flex;align-items:center;justify-content:space-between;min-height:48px;padding:10px 13px;border-radius:12px;background:#f1ece4;font-size:13px}
+#mmd-global-public-header :where(a,button):focus-visible{outline:2px solid #7d3137;outline-offset:3px}
+@media(max-width:1000px){
+ #mmd-global-public-header .mmdg-inner{width:calc(100% - 32px);min-height:68px}
+ #mmd-global-public-header .mmdg-nav{display:none}
+ #mmd-global-public-header .mmdg-account{display:none}
+ #mmd-global-public-header .mmdg-menu-button{display:flex}
+}
+@media(max-width:420px){#mmd-global-public-header .mmdg-brand img{width:146px;max-height:38px}}
+#mmd-global-public-header .mmdg-inner .mmdg-nav{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;flex:1 1 auto;min-width:0;margin:0;align-items:stretch}
+#mmd-global-public-header .mmdg-inner .mmdg-nav>a{display:flex;align-items:center;justify-content:center;box-sizing:border-box;min-width:0;min-height:44px;padding:8px 10px;font-size:13px!important;line-height:1.45;letter-spacing:0;text-align:center;text-decoration:none;white-space:normal;overflow-wrap:anywhere;color:inherit;opacity:1}
+#mmd-global-public-header .mmdg-inner .mmdg-nav>a:focus-visible{outline:2px solid currentColor;outline-offset:2px}
+@media(max-width:767px){#mmd-global-public-header .mmdg-inner .mmdg-nav{grid-template-columns:repeat(2,minmax(0,1fr));gap:2px 8px}}
+#mmd-global-public-header .mmdg-inner{gap:12px;padding-block:8px}
+#mmd-global-public-header .mmdg-menu-button{display:flex;flex:0 0 44px}
