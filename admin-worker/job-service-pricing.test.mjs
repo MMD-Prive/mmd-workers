@@ -200,17 +200,20 @@ test('accepts group as a fourth explicitly quoted service option', () => {
   const missing = body(); missing.work.service_options = ['mk', 'burn', 'live', 'group'];
   assert.throws(() => validateJobServicePricing(missing), { code: 'service_pricing_invalid', status: 400 });
 });
-const discounted = (mode, extra = {}) => {
+const discounted = (mode, percent = 10) => {
   const b = body();
-  const amount = 1300; // 10% of 13,000
-  const model = mode === 'promotion' ? 650 : 0;
-  b.service_pricing.discount = { mode, type: 'percent', value: 10, amount_thb: amount, mmd_share_thb: amount - model, model_share_thb: model,
-    ...(mode === 'promotion' ? { reason: 'LINE promo Oct' } : {}), ...extra };
+  const amount = Math.round(13000 * percent) / 100;
+  const model = mode === 'promotion' ? Math.floor(amount * 100 / 2) / 100 : 0;
+  const net = Math.round((13000 - amount) * 100) / 100;
+  b.service_pricing.discount = { mode, type: 'percent', value: percent, amount_thb: amount,
+    mmd_share_thb: Math.round((amount - model) * 100) / 100, model_share_thb: model,
+    ...(mode === 'promotion' ? { reason: 'LINE promo Oct' } : {}) };
   b.service_pricing.client_gross_amount_thb = 13000; b.service_pricing.model_gross_payout_thb = 6200;
-  b.service_pricing.client_total_amount_thb = 11700; b.service_pricing.model_total_payout_thb = 6200 - model;
-  b.amount_thb = b.service_amount_thb = b.payment.amount_thb = b.payment.service_amount_thb = 11700;
+  b.service_pricing.client_total_amount_thb = net;
+  b.service_pricing.model_total_payout_thb = Math.round((6200 - model) * 100) / 100;
+  b.amount_thb = b.service_amount_thb = b.payment.amount_thb = b.payment.service_amount_thb = net;
   b.original_amount_thb = 13000;
-  b.pay_model_thb = b.model_payout_thb = b.payment.model_payout_thb = 6200 - model;
+  b.pay_model_thb = b.model_payout_thb = b.payment.model_payout_thb = b.service_pricing.model_total_payout_thb;
   return b;
 };
 test('customer-request discount: MMD absorbs it alone, model payout unchanged, pre-discount quote kept', () => {
@@ -225,6 +228,15 @@ test('promotion discount splits 50/50 with the model and requires a reason', () 
   assert.equal(snap.discount.model_share_thb, 650); assert.equal(snap.discount.mmd_share_thb, 650);
   const b = discounted('promotion'); delete b.service_pricing.discount.reason;
   assert.throws(() => validateJobServicePricing(b), { code: 'service_pricing_invalid' });
+});
+test('legacy Promotion accepts 25% and rejects a higher percent while preserving its 50/50 split', () => {
+  const pricing = validateJobServicePricing(discounted('promotion', 25));
+  assert.equal(pricing.discount.kind, undefined);
+  assert.equal(pricing.discount.mmd_share_thb, 1625);
+  assert.equal(pricing.discount.model_share_thb, 1625);
+  assert.equal(pricing.model_total_payout_thb, 4575);
+  assert.throws(() => validateJobServicePricing(discounted('promotion', 25.01)),
+    { code: 'service_pricing_invalid', status: 400 });
 });
 test('rejects tampered discount splits, totals and original amount', () => {
   const muts = [
@@ -302,6 +314,23 @@ test('Co-Partner customer discount is validated without a model share', () => {
   Object.assign(b.service_pricing.discount, { mode: 'promotion', reason: 'promo', mmd_share_thb: 450, model_share_thb: 450 });
   assert.throws(() => validateJobServicePricing(b), { code: 'service_pricing_invalid' });
 });
+test('legacy Co-Partner discount is capped at 25% of the customer quote including MK', () => {
+  const quoteWithDiscount = amount => {
+    const b = partnerQuote();
+    const net = Math.round((18000 - amount) * 100) / 100;
+    b.amount_thb = b.service_amount_thb = b.payment.amount_thb = b.payment.service_amount_thb = net;
+    Object.assign(b.service_pricing, { client_gross_amount_thb: 18000, client_total_amount_thb: net,
+      discount: { mode: 'customer_request', type: 'amount', value: amount, amount_thb: amount,
+        mmd_share_thb: amount, model_share_thb: 0 } });
+    return b;
+  };
+  assert.equal(validateJobServicePricing(quoteWithDiscount(900)).discount.amount_thb, 900);
+  const pricing = validateJobServicePricing(quoteWithDiscount(4500));
+  assert.equal(pricing.client_total_amount_thb, 13500);
+  assert.equal(pricing.model_total_payout_thb, null);
+  assert.throws(() => validateJobServicePricing(quoteWithDiscount(4500.01)),
+    { code: 'service_pricing_invalid', status: 400 });
+});
 test('Co-Partner without addons and legacy included-in-rate use the same settlement contract', () => {
   const b = partnerQuote();
   b.work.service_options = []; b.service_pricing.addons = [];
@@ -319,13 +348,21 @@ const discountedBody = (kind, amount, extra = {}) => {
   b.service_pricing.client_total_amount_thb = 13000 - amount;
   b.service_pricing.model_total_payout_thb = 6200 - modelShare;
   b.service_pricing.discount = { mode: kind === 'promotion' ? 'promotion' : 'customer_request', type: 'amount', value: amount,
-    amount_thb: amount, mmd_share_thb: amount - modelShare, model_share_thb: modelShare, kind,
+    amount_thb: amount, mmd_share_thb: amount - modelShare, model_share_thb: modelShare, ...(kind ? { kind } : {}),
     ...(kind === 'promotion' ? { reason: 'Launch promo' } : {}), ...extra };
   b.amount_thb = b.payment.amount_thb = b.service_amount_thb = b.payment.service_amount_thb = 13000 - amount;
   b.original_amount_thb = 13000;
   b.pay_model_thb = b.model_payout_thb = b.payment.model_payout_thb = 6200 - modelShare;
   return b;
 };
+test('legacy Private customer discount accepts 25% without a 500 THB step and rejects one satang over', () => {
+  const pricing = validateJobServicePricing(discountedBody(undefined, 3250));
+  assert.equal(pricing.discount.kind, undefined);
+  assert.equal(pricing.client_total_amount_thb, 9750);
+  assert.equal(pricing.model_total_payout_thb, 6200);
+  assert.throws(() => validateJobServicePricing(discountedBody(undefined, 3250.01)),
+    { code: 'service_pricing_invalid', status: 400 });
+});
 test('discount kinds: only promotion is split with the model; coupon/discount/special price are absorbed by MMD', () => {
   for (const kind of ['coupon', 'discount', 'special_price']) {
     const p = validateJobServicePricing(discountedBody(kind, 1000));
