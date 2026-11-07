@@ -10,7 +10,9 @@ test('owner retry and sweep share lifecycle precedence without replacing termina
   assert.equal(readReconfirmLifecycle({AT_SESSIONS__CANONICAL_STATE:'canonical'}, {canonical:'cancelled',session_state:'confirmed'}),'cancelled');
 });
 
-const NOW = Date.parse("2026-10-17T18:00:00+07:00");
+const NOW = Date.parse("2026-10-17T12:00:00+07:00");
+const REMINDER = Date.parse("2026-10-17T16:00:00+07:00");
+const OVERDUE = Date.parse("2026-10-17T19:00:00+07:00");
 const M1 = "recMODELAAAAAAAAAA";
 const M2 = "recMODELBBBBBBBBBB";
 const LINE1 = `U${"a".repeat(32)}`;
@@ -111,7 +113,7 @@ test("canonical-linked legacy Confirmed record is a read-only preview candidate"
 });
 
 for (const guard of ["false", "true"]) {
-  test(`observed schema gets the 18:00 notice once, with no lifecycle writes (guard ${guard})`, async t => {
+  test(`observed schema gets the 12:00 notice once, with no lifecycle writes (guard ${guard})`, async t => {
     const h = harness(t);
     const before = structuredClone(h.record.fields);
     const env = { ...ENV, MODEL_RECONFIRM_GUARD_V2: guard };
@@ -218,8 +220,8 @@ test("19:00 sends one owner alert without a second model notice", async t => {
   assert.equal(h.log.line.length, 1);
   assert.equal(h.log.telegram.length, 0);
   assert.equal(h.record.fields.reconfirm_acknowledged_at || null, null);
-  await runModelReconfirmSweep(ENV, { now: NOW + 3_600_000 });
-  await runModelReconfirmSweep(ENV, { now: NOW + 3_600_000 + 15 * 60_000 });
+  await runModelReconfirmSweep(ENV, { now: OVERDUE });
+  await runModelReconfirmSweep(ENV, { now: OVERDUE + 15 * 60_000 });
   assert.equal(h.log.line.length, 1);
   assert.equal(h.log.telegram.length, 1);
   assert.equal(h.log.telegram[0].intent, "model_reconfirm_overdue");
@@ -229,12 +231,12 @@ test("canonical acknowledgement suppresses later reminder and escalation", async
   const h = harness(t);
   await runModelReconfirmSweep(ENV, { now: NOW });
   h.record.fields.reconfirm_acknowledged_at = new Date(NOW + 60_000).toISOString();
-  await runModelReconfirmSweep(ENV, { now: NOW + 3_600_000 });
+  await runModelReconfirmSweep(ENV, { now: OVERDUE });
   assert.equal(h.log.line.length, 1);
   assert.equal(h.log.telegram.length, 0);
 });
 
-test("persisted 16:00 schedule waits until 18:00, then alerts owner at 19:00", async t => {
+test("persisted 16:00 schedule is read as the 12:00 notice, then alerts owner at 19:00", async t => {
   const h = harness(t, session({
     reconfirm_status: "scheduled",
     reconfirm_required_at: "2026-10-17T16:00:00+07:00",
@@ -248,17 +250,51 @@ test("persisted 16:00 schedule waits until 18:00, then alerts owner at 19:00", a
   }
   await runModelReconfirmSweep(ENV, { now: NOW });
   assert.equal(h.log.line.length, 1);
-  await runModelReconfirmSweep(ENV, { now: NOW + 60 * 60_000 });
+  await runModelReconfirmSweep(ENV, { now: OVERDUE });
   assert.equal(h.log.line.length, 1);
   assert.equal(h.log.telegram.length, 1);
   assert.equal(h.log.telegram[0].chat_id, OWNER);
+});
+
+test("second model reminder at 16:00, once, then owner alert at 19:00", async t => {
+  const h = harness(t);
+  await runModelReconfirmSweep(ENV, { now: NOW });
+  assert.equal(h.log.line.length, 1);
+  await runModelReconfirmSweep(ENV, { now: REMINDER - 60_000 });
+  assert.equal(h.log.line.length, 1);
+  await runModelReconfirmSweep(ENV, { now: REMINDER });
+  assert.equal(h.log.line.length, 2);
+  assert.match(JSON.stringify(h.log.line[1]), /Reminder/);
+  await runModelReconfirmSweep(ENV, { now: REMINDER + 15 * 60_000 });
+  assert.equal(h.log.line.length, 2);
+  assert.equal(h.log.telegram.length, 0);
+  await runModelReconfirmSweep(ENV, { now: OVERDUE });
+  assert.equal(h.log.line.length, 2);
+  assert.equal(h.log.telegram.length, 1);
+  assert.equal(h.log.telegram[0].intent, "model_reconfirm_overdue");
+});
+
+test("persisted 18:00 schedule that was never notified is read as the 12:00 notice", async t => {
+  const h = harness(t, session({
+    reconfirm_status: "scheduled",
+    reconfirm_required_at: "2026-10-17T18:00:00+07:00",
+    reconfirm_reminder_at: "2026-10-17T18:00:00+07:00",
+    reconfirm_overdue_at: "2026-10-17T19:00:00+07:00",
+  }));
+  await runModelReconfirmSweep(ENV, { now: NOW - 1 });
+  assert.equal(h.log.line.length, 0);
+  await runModelReconfirmSweep(ENV, { now: NOW });
+  assert.equal(h.log.line.length, 1);
+  await runModelReconfirmSweep(ENV, { now: OVERDUE });
+  assert.equal(h.log.line.length, 1);
+  assert.equal(h.log.telegram.length, 1);
 });
 
 test("overdue alert does not fall back to a generic Telegram chat", async t => {
   const h = harness(t);
   const env = { ...ENV, MODEL_RECONFIRM_OWNER_CHAT_ID: "", TELEGRAM_CHAT_ID: OWNER };
   await runModelReconfirmSweep(env, { now: NOW });
-  await runModelReconfirmSweep(env, { now: NOW + 60 * 60_000 });
+  await runModelReconfirmSweep(env, { now: OVERDUE });
   assert.equal(h.log.line.length, 1);
   assert.equal(h.log.telegram.length, 0);
   assert.equal(h.record.fields.reconfirm_ops_alerted_at || null, null);

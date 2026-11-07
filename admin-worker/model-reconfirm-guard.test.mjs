@@ -227,8 +227,8 @@ test("S9 guard ON: cancelled and completed jobs are skipped even for the target 
   assert.equal(h.log.line.length + h.log.telegram.length, 0);
 });
 
-test("S10 guard ON: nothing is sent before D-1 18:00 ICT", async () => {
+test("S10 guard ON: nothing is sent before D-1 12:00 ICT", async () => {
   const h = harness([session("recS10AAAAAAAAAAAA")]);
-  await runModelReconfirmSweep(env({ MODEL_RECONFIRM_GUARD_V2: "true" }), { now: Date.parse("2026-09-30T17:45:00+07:00") });
+  await runModelReconfirmSweep(env({ MODEL_RECONFIRM_GUARD_V2: "true" }), { now: Date.parse("2026-09-30T11:45:00+07:00") });
   assert.equal(h.log.line.length + h.log.telegram.length, 0);
 });

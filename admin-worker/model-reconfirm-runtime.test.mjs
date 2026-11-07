@@ -11,11 +11,11 @@ import {
   shouldOfferReconfirmAction,
 } from "./src/model-reconfirm-runtime.js";
 
-test("D-1 schedule is fixed to Bangkok 18:00 notice / 19:00 owner escalation", () => {
+test("D-1 schedule is fixed to Bangkok 12:00 notice / 16:00 reminder / 19:00 owner escalation", () => {
   assert.deepEqual(buildReconfirmSchedule("2026-09-06"), {
     status: "scheduled",
-    required_at: "2026-09-05T18:00:00+07:00",
-    reminder_at: "2026-09-05T18:00:00+07:00",
+    required_at: "2026-09-05T12:00:00+07:00",
+    reminder_at: "2026-09-05T16:00:00+07:00",
     overdue_at: "2026-09-05T19:00:00+07:00",
     acknowledged_at: null,
     notified_at: null,
@@ -28,15 +28,15 @@ test("D-1 schedule is fixed to Bangkok 18:00 notice / 19:00 owner escalation", (
 });
 
 test("calendar subtraction works across month/year boundaries", () => {
-  assert.equal(buildReconfirmSchedule("2027-01-01").required_at, "2026-12-31T18:00:00+07:00");
-  assert.equal(buildReconfirmSchedule("2028-03-01").required_at, "2028-02-29T18:00:00+07:00");
+  assert.equal(buildReconfirmSchedule("2027-01-01").required_at, "2026-12-31T12:00:00+07:00");
+  assert.equal(buildReconfirmSchedule("2028-03-01").required_at, "2028-02-29T12:00:00+07:00");
   assert.equal(buildReconfirmSchedule("not-a-date"), null);
 });
 
 test("reconfirm status advances without changing job lifecycle", () => {
   const schedule = buildReconfirmSchedule("2026-09-06");
-  assert.equal(deriveReconfirmStatus(schedule, Date.parse("2026-09-05T15:59:59+07:00")), "scheduled");
-  assert.equal(deriveReconfirmStatus(schedule, Date.parse("2026-09-05T16:00:00+07:00")), "scheduled");
+  assert.equal(deriveReconfirmStatus(schedule, Date.parse("2026-09-05T11:59:59+07:00")), "scheduled");
+  assert.equal(deriveReconfirmStatus(schedule, Date.parse("2026-09-05T12:00:00+07:00")), "pending");
   assert.equal(deriveReconfirmStatus(schedule, Date.parse("2026-09-05T18:00:00+07:00")), "pending");
   assert.equal(deriveReconfirmStatus(schedule, Date.parse("2026-09-05T19:00:00+07:00")), "overdue");
   assert.equal(deriveReconfirmStatus({ ...schedule, acknowledged_at: "2026-09-05T17:10:00+07:00" }, Date.parse("2026-09-05T20:00:00+07:00")), "acknowledged");
