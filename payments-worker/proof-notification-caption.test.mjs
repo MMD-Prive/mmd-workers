@@ -6,24 +6,25 @@ import { paymentProofReviewUrl } from "../shared/payment-proof-precheck.mjs";
 const fixture = () => ({
   proofId: "webproof_0123456789abcdef01234567",
   snapshot: { amount_thb: 7500, payment_stage: "deposit", session_id: "sess_test" },
-  jobContext: { status: "exact", client_name: "ลูกค้าทดสอบ", model_name: "โมเดลทดสอบ", job_date: "2026-11-14", start_time: "2026-11-14T10:00:00.000Z", end_time: "2026-11-14T11:30:00.000Z", location_name: "โรงแรมทดสอบ" },
+  jobContext: { status: "exact", client_name: "ลูกค้าทดสอบ", model_name: "โมเดลทดสอบ", job_date: "2026-11-14", start_time: "2026-11-14T10:00:00.000Z", end_time: "2026-11-14T11:30:00.000Z", location_name: "โรงแรมทดสอบ", total_amount_thb: 15000, deposit_due_thb: 7500 },
   route: { topic: "payment", reason: "explicit_service_context" }, precheck: { status: "clear" },
 });
 const visible = html => html.replace(/<[^>]*>/g, "");
 
-test("job caption puts readable amount and Thai context first, with no technical IDs in visible text", () => {
+test("job caption contains only the seven owner-requested fields without claiming planned money was received", () => {
   const input = fixture(), original = structuredClone(input), caption = webProofTelegramCaption(input);
-  assert.match(caption, /ยอดตามรายการ: <b>7,500 บาท<\/b> · มัดจำ/);
+  assert.equal(caption.split("\n").length, 7);
   assert.match(caption, /ลูกค้า: <b>ลูกค้าทดสอบ<\/b>/);
-  assert.match(caption, /วันที่: 14 พ.ย. 2026\nเวลา: 17:00–18:30 น. \(ไทย\)/);
+  assert.match(caption, /โมเดล: <b>โมเดลทดสอบ<\/b>/);
+  assert.match(caption, /สถานะ: รับสลิปมัดจำแล้ว · ยังไม่ยืนยันเงินเข้า/);
+  assert.match(caption, /วันงาน: 14 พ.ย. 2026 · 17:00–18:30 น. \(ไทย\)/);
   assert.match(caption, /สถานที่: โรงแรมทดสอบ/);
-  assert.doesNotMatch(visible(caption), /sess_|webproof_|pay_|Routing:|Job Match:|2026-11-14T/);
-  assert.match(caption, /ยังไม่ยืนยันเงินเข้า/);
-  assert.match(caption, /ยังไม่ปล่อยลิงก์ลูกค้า \/ โมเดล/);
-  assert.match(caption, /Official Verify/);
-  assert.equal(caption.match(/href="([^"]+)"/)[1].replaceAll("&amp;", "&"), paymentProofReviewUrl(input.proofId, input.snapshot.session_id));
+  assert.match(caption, /บัดเจ็ตรวม: <b>15,000 บาท<\/b>/);
+  assert.match(caption, /มัดจำตามรายการ: <b>7,500 บาท<\/b>/);
+  assert.doesNotMatch(visible(caption), /sess_|webproof_|pay_|Routing:|Job Match:|2026-11-14T|Official Verify|รับเงินแล้ว/);
+  assert.doesNotMatch(caption, /href=/);
   assert.ok(caption.length <= 880);
-  assert.deepEqual(input, original, "presentation must not mutate canonical evidence");
+  assert.deepEqual(input, original);
 });
 
 test("Thai wall clocks remain local regardless of host timezone", () => {
@@ -45,13 +46,13 @@ test("invalid and missing dates or times are not guessed", () => {
 
 test("unresolved jobs remain visibly blocked from casual confirmation", () => {
   const caption = webProofTelegramCaption({ ...fixture(), jobContext: { status: "unresolved" } });
-  assert.match(caption, /ยังจับคู่งานไม่ได้ · ตรวจงานก่อนยืนยันเงินเข้า/);
+  assert.match(caption, /ยังจับคู่งานไม่ได้/);
   assert.match(caption, /ยังไม่ยืนยันเงินเข้า/);
   assert.doesNotMatch(caption, /EXACT/);
 });
 
 for (const status of ["duplicate", "needs_review", "unavailable"]) {
-  test(`${status} warnings and canonical review action survive very long escaped labels`, () => {
+  test(`${status} status warnings survive very long escaped labels`, () => {
     const input = fixture();
     input.jobContext.client_name = '<b>"&ลูกค้า'.repeat(30);
     input.jobContext.model_name = "ชื่อโมเดลยาว".repeat(30);
@@ -59,11 +60,10 @@ for (const status of ["duplicate", "needs_review", "unavailable"]) {
     input.precheck = { status, review_url: paymentProofReviewUrl("webproof_primary", "sess_primary"), matches: [{ channel: "line_ofc" }] };
     const caption = webProofTelegramCaption(input);
     assert.ok(caption.length <= 880, `${status}: ${caption.length}`);
-    assert.match(caption, /href="https:\/\/www.mmdbkk.com\/internal\/admin\/payments\?proof_id=webproof_primary&amp;focus=verify&amp;session_id=sess_primary"/);
-    assert.match(caption, /Official Verify/);
-    if (status === "duplicate") assert.match(caption, /อย่านับยอดรับซ้ำ/);
-    if (status === "needs_review") assert.match(caption, /ข้อมูลขัดกัน/);
-    if (status === "unavailable") assert.match(caption, /ตรวจเบื้องต้นยังไม่ครบ/);
+    assert.doesNotMatch(caption, /href=/);
+    if (status === "duplicate") assert.match(caption, /อย่านับยอดซ้ำ/);
+    if (status === "needs_review") assert.match(caption, /ข้อมูลสลิปขัดกัน/);
+    if (status === "unavailable") assert.match(caption, /ตรวจสลิปยังไม่ครบ/);
     assert.equal((caption.match(/<b>/g) || []).length, (caption.match(/<\/b>/g) || []).length);
     assert.doesNotMatch(caption, /<b>"&ลูกค้า/);
   });
@@ -71,12 +71,11 @@ for (const status of ["duplicate", "needs_review", "unavailable"]) {
 
 test("different evidence for the same payment preserves its specific warning", () => {
   const caption = webProofTelegramCaption({ ...fixture(), precheck: { status: "needs_review", issues: ["existing_payment_proof_not_transfer_dedup"] } });
-  assert.match(caption, /ยังไม่ยืนยันว่าภาพใหม่เป็นธุรกรรมซ้ำ/);
-  assert.match(caption, /ตรวจเทียบก่อนนับยอดรับ/);
+  assert.match(caption, /มีหลักฐานเดิม ต้องเทียบสลิป/);
 });
 
 test("all canonical stage labels stay understandable and unknown stages are not guessed", () => {
-  for (const [stage, expected] of Object.entries({ deposit: "มัดจำ", full: "เต็มจำนวน", final: "ยอดคงเหลือ", tips: "ทิป", other: "ตรวจรอบชำระในงาน" })) {
+  for (const [stage, expected] of Object.entries({ deposit: "มัดจำ", full: "เต็มจำนวน", final: "ยอดคงเหลือ", tips: "ทิป", other: "ชำระเงิน" })) {
     const input = fixture(); input.snapshot.payment_stage = stage;
     assert.ok(webProofTelegramCaption(input).includes(expected));
   }
@@ -90,14 +89,18 @@ test("membership and shop routes preserve their identities without irrelevant jo
   }
 });
 
-test("largest canonical URL is intact and risk information is retained under transport cap", () => {
-  const input = fixture(); input.proofId = "p".repeat(120); input.snapshot.session_id = "sess_" + "s".repeat(210);
-  input.precheck = { status: "duplicate", matches: [{ channel: "line_ofc" }, { channel: "web_pay" }] };
+test("missing total never reuses the deposit as the total budget", () => {
+  const input = fixture(); delete input.jobContext.total_amount_thb;
   const caption = webProofTelegramCaption(input);
-  assert.ok(caption.length <= 880);
-  assert.match(caption, /Official Verify/);
-  assert.match(caption, /อย่านับยอดรับซ้ำ/);
-  assert.equal(caption.match(/href="([^"]+)"/)[1].replaceAll("&amp;", "&"), paymentProofReviewUrl(input.proofId, input.snapshot.session_id));
+  assert.match(caption, /บัดเจ็ตรวม: <b>ไม่พบข้อมูล<\/b>/);
+  assert.match(caption, /มัดจำตามรายการ: <b>7,500 บาท<\/b>/);
+});
+
+test("a paid-looking input cannot promote an upload notification to received money", () => {
+  const input = fixture(); input.snapshot.payment_status = "paid"; input.snapshot.verification_status = "verified";
+  const caption = webProofTelegramCaption(input);
+  assert.match(caption, /ยังไม่ยืนยันเงินเข้า/);
+  assert.doesNotMatch(caption, /ชำระเงินผ่าน|ธนาคารยืนยัน|รับเงินแล้ว/);
 });
 
 test("attachment display name is short, safe and retains the type and reference suffix", () => {
