@@ -310,6 +310,7 @@ function customerPricing(raw, netFallback) {
     discount_mode: text(source.discount_mode, 40) || "none",
     discount_percent: numberOrNull(source.discount_percent),
     discount_thb: discount,
+    discount_kind: ["coupon", "discount", "promotion", "special_price"].includes(text(source.discount_kind, 40)) ? text(source.discount_kind, 40) : null,
     net_price_thb: net,
     deposit_basis_thb: basis,
     deposit_percent: numberOrNull(source.deposit_percent),

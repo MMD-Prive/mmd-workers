@@ -7,7 +7,7 @@ import {notifyOwnerWrongLocation} from './model-travel-owner.js';
 import {meetingBinding} from '../../shared/model-travel-store.mjs';
 import { notifyTravelEvent } from "./model-travel-notification.js";
 import { requestMemberReplyRefresh } from "../../shared/member-reply-refresh.mjs";
-import { validateJobServicePricing, withJobServicePricingNote } from "./job-service-pricing.js";
+import { validateJobServicePricing, withJobServicePricingNote, DISCOUNT_KINDS } from "./job-service-pricing.js";
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
 import { requestPaymentsConfirmLink } from "./payments-issuer-transport.js";
 import { assertConfirmationUrlPair } from "./confirmation-link-role-guard.js";
@@ -6303,6 +6303,9 @@ async function createAdminJob(env, body) {
     : service_amount_thb;
   const pricing_adjustment = str(body.pricing_adjustment || payment.pricing_adjustment || "")
     .toLowerCase();
+  // Customer-visible reason for a discount (coupon / discount / promotion / special price).
+  const discountKindRaw = str(servicePricing?.discount?.kind || body.discount_kind || "").toLowerCase();
+  const discountKind = pricing_adjustment === "discount" && DISCOUNT_KINDS.includes(discountKindRaw) ? discountKindRaw : "";
   const deposit_percent = payment_type === "deposit" ? CUSTOMER_DEPOSIT_PERCENT : undefined;
   const deposit_amount_thb = payment_type === "deposit"
     ? computeCustomerDepositAmount(service_amount_thb)
@@ -6331,6 +6334,7 @@ async function createAdminJob(env, body) {
     service_amount_thb,
     original_amount_thb,
     pricing_adjustment,
+    ...(discountKind ? { discount_kind: discountKind } : {}),
     deposit_percent,
     deposit_amount_thb,
     balance_amount_thb,

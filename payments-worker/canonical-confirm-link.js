@@ -60,12 +60,15 @@ const PAYMENT_STAGES = new Set(["deposit", "final", "tips", "full", "membership"
 const PAYMENT_TYPES = new Set(["deposit", "final", "tips", "full"]);
 const CUSTOMER_DEPOSIT_PERCENT = 30;
 const CUSTOMER_DEPOSIT_ROUND_STEP_THB = 1;
+const CUSTOMER_DEPOSIT_MINIMUM_STEP_THB = 500;
+const DISCOUNT_KINDS = ["coupon", "discount", "promotion", "special_price"];
 
 export function computeFixedCustomerDeposit(serviceAmountThb) {
   const total = Number(serviceAmountThb);
   if (!Number.isFinite(total) || total <= 0) return 0;
   const raw = (total * CUSTOMER_DEPOSIT_PERCENT) / 100;
-  return Math.min(total, Math.ceil(raw));
+  // Deposit is 30% of the post-discount service amount, rounded UP to the next 500 THB (never above the total).
+  return Math.min(total, Math.ceil(raw / CUSTOMER_DEPOSIT_MINIMUM_STEP_THB) * CUSTOMER_DEPOSIT_MINIMUM_STEP_THB);
 }
 
 export function isCanonicalConfirmLinkRequest(path, method) {
@@ -117,6 +120,8 @@ export async function handleCanonicalConfirmLink(request, env) {
     const pricingAdjustment = clean(body.pricing_adjustment).toLowerCase();
     const discountThb = Math.max(0, originalAmountThb - amountThb);
     const discountMode = discountThb > 0 && pricingAdjustment === "discount" ? "amount" : "none";
+    const discountKindRaw = clean(body.discount_kind).toLowerCase();
+    const discountKind = discountMode === "amount" && DISCOUNT_KINDS.includes(discountKindRaw) ? discountKindRaw : null;
     const payModelThb = optionalNonNegativeNumber(
       body.pay_model_thb ?? body.pay_model ?? body.model_pay_thb ?? body.model_pay,
       "pay_model_thb",
@@ -161,6 +166,7 @@ export async function handleCanonicalConfirmLink(request, env) {
           discount_mode: discountMode,
           discount_percent: null,
           discount_thb: discountMode === "amount" ? discountThb : 0,
+          ...(discountKind ? { discount_kind: discountKind } : {}),
           net_price_thb: serviceAmountThb,
           deposit_basis_thb: serviceAmountThb,
           deposit_minimum_percent: CUSTOMER_DEPOSIT_PERCENT,

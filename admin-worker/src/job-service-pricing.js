@@ -1,6 +1,8 @@
 import { isPartnerManagedJob } from "./job-create-contract.js";
 import { parseSigilMembershipPaymentComponents } from "../../shared/sigil-membership-payment-components.mjs";
 const OPTIONS = ["mk", "burn", "live", "group"];
+export const DISCOUNT_KINDS = ["coupon", "discount", "promotion", "special_price"];
+const DISCOUNT_STEP_THB = 500;
 export const SERVICE_PRICING_MARKER = "[MMD SERVICE PRICING v1]";
 const money = value => typeof value === "number" && Number.isFinite(value) && value >= 0 && Number.isSafeInteger(Math.round(value * 100)) && Math.abs(value * 100 - Math.round(value * 100)) < 1e-6;
 const sameMoney = (left, right) => money(left) && money(right) && Math.round(left * 100) === Math.round(right * 100);
@@ -18,8 +20,16 @@ function validateDiscount(d, gross, fail) {
   if (!sameMoney(d.model_share_thb, modelShare) || !sameMoney(d.mmd_share_thb, round2(d.amount_thb - modelShare))) fail();
   const reason = typeof d.reason === "string" ? d.reason.trim().slice(0, 200) : "";
   if (d.mode === "promotion" && !reason) fail();
+  // Customer-visible discount kind. Only promotion is shared with the model; every other kind is absorbed by MMD.
+  let kind;
+  if (d.kind !== undefined) {
+    if (!DISCOUNT_KINDS.includes(d.kind) || (d.kind === "promotion") !== (d.mode === "promotion")) fail();
+    // Admin discounts: whole 500 THB steps, 5-25% of the pre-discount quote.
+    if (d.amount_thb % DISCOUNT_STEP_THB !== 0 || d.amount_thb < DISCOUNT_STEP_THB || d.amount_thb > gross * 0.25 + 1e-6) fail();
+    kind = d.kind;
+  }
   return { mode: d.mode, type: d.type, value: d.value, amount_thb: d.amount_thb, mmd_share_thb: round2(d.amount_thb - modelShare),
-    model_share_thb: modelShare, ...(reason ? { reason } : {}) };
+    model_share_thb: modelShare, ...(kind ? { kind } : {}), ...(reason ? { reason } : {}) };
 }
 
 /** Optional, backward-compatible quote envelope. Never grants membership or changes settlement policy. */

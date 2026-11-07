@@ -30,3 +30,10 @@ test('branding uses canonical session lane and never treats PN alone or an unkno
   assert.equal(lane({},'private:standard:pn'),'private_model');
   assert.equal(lane({},'PN'),null); assert.equal(lane({},'public:private:PN'),null);
 });
+
+test('billing breakdown carries a whitelisted discount kind only when the price is valid', () => {
+  const pricing = { full_price_thb: 25000, discount_thb: 2500, discount_kind: 'coupon' };
+  assert.equal(bill(pricing, 22500, 0, null, 'private:pn').discount_kind, 'coupon');
+  assert.equal(bill({ ...pricing, discount_kind: 'freebie' }, 22500, 0, null, 'private:pn').discount_kind, null);
+  assert.equal(bill(pricing, 99999, 0, null, 'private:pn').discount_kind, null);
+});
