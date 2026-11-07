@@ -11,6 +11,7 @@ test('owner retry and sweep share lifecycle precedence without replacing termina
 });
 
 const NOW = Date.parse("2026-10-17T12:00:00+07:00");
+const REMINDER = Date.parse("2026-10-17T16:00:00+07:00");
 const OVERDUE = Date.parse("2026-10-17T19:00:00+07:00");
 const M1 = "recMODELAAAAAAAAAA";
 const M2 = "recMODELBBBBBBBBBB";
@@ -253,6 +254,24 @@ test("persisted 16:00 schedule is read as the 12:00 notice, then alerts owner at
   assert.equal(h.log.line.length, 1);
   assert.equal(h.log.telegram.length, 1);
   assert.equal(h.log.telegram[0].chat_id, OWNER);
+});
+
+test("second model reminder at 16:00, once, then owner alert at 19:00", async t => {
+  const h = harness(t);
+  await runModelReconfirmSweep(ENV, { now: NOW });
+  assert.equal(h.log.line.length, 1);
+  await runModelReconfirmSweep(ENV, { now: REMINDER - 60_000 });
+  assert.equal(h.log.line.length, 1);
+  await runModelReconfirmSweep(ENV, { now: REMINDER });
+  assert.equal(h.log.line.length, 2);
+  assert.match(JSON.stringify(h.log.line[1]), /Reminder/);
+  await runModelReconfirmSweep(ENV, { now: REMINDER + 15 * 60_000 });
+  assert.equal(h.log.line.length, 2);
+  assert.equal(h.log.telegram.length, 0);
+  await runModelReconfirmSweep(ENV, { now: OVERDUE });
+  assert.equal(h.log.line.length, 2);
+  assert.equal(h.log.telegram.length, 1);
+  assert.equal(h.log.telegram[0].intent, "model_reconfirm_overdue");
 });
 
 test("persisted 18:00 schedule that was never notified is read as the 12:00 notice", async t => {

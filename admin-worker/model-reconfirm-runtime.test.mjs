@@ -11,11 +11,11 @@ import {
   shouldOfferReconfirmAction,
 } from "./src/model-reconfirm-runtime.js";
 
-test("D-1 schedule is fixed to Bangkok 12:00 notice / 19:00 owner escalation", () => {
+test("D-1 schedule is fixed to Bangkok 12:00 notice / 16:00 reminder / 19:00 owner escalation", () => {
   assert.deepEqual(buildReconfirmSchedule("2026-09-06"), {
     status: "scheduled",
     required_at: "2026-09-05T12:00:00+07:00",
-    reminder_at: "2026-09-05T12:00:00+07:00",
+    reminder_at: "2026-09-05T16:00:00+07:00",
     overdue_at: "2026-09-05T19:00:00+07:00",
     acknowledged_at: null,
     notified_at: null,

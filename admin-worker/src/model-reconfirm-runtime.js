@@ -253,7 +253,7 @@ export function buildReconfirmSchedule(jobDate) {
   return {
     status: "scheduled",
     required_at: `${ymd}T12:00:00+07:00`,
-    reminder_at: `${ymd}T12:00:00+07:00`,
+    reminder_at: `${ymd}T16:00:00+07:00`,
     overdue_at: `${ymd}T19:00:00+07:00`,
     acknowledged_at: null,
     notified_at: null,
@@ -331,7 +331,7 @@ function isLegacyReconfirmSchedule(reconfirm, schedule) {
   const day = schedule.required_at.slice(0, 10);
   // Persisted 16:00 and 18:00 notice schedules predate the D-1 12:00 notice and stay valid.
   return [`${day}T16:00:00+07:00`, `${day}T18:00:00+07:00`].includes(reconfirm.required_at) &&
-    [schedule.reminder_at, `${day}T18:00:00+07:00`].includes(reconfirm.reminder_at) &&
+    [schedule.reminder_at, `${day}T12:00:00+07:00`, `${day}T18:00:00+07:00`].includes(reconfirm.reminder_at) &&
     reconfirm.overdue_at === schedule.overdue_at;
 }
 async function reconfirmRetryKey(record, step) {
@@ -373,7 +373,7 @@ async function freshForDispatch(env, record, now, counters) {
   return false;
 }
 
-// D-1 notice at 12:00 and owner alert at 19:00. Older persisted 16:00/18:00 schedules remain readable.
+// D-1 notice at 12:00, second model reminder at 16:00 and owner alert at 19:00. Older persisted 16:00/18:00 schedules remain readable.
 // `guard` is only passed by guard v2; without it the behavior is exactly the legacy one.
 async function runReconfirmSteps(env, record, reconfirm, now, counters, guard = null) {
   const requiredMs = Date.parse(reconfirm.required_at);

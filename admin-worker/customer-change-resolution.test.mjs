@@ -18,12 +18,12 @@ for (const [type, requested, day] of [
  ['location_change', {location_name:'New Hotel'}, '2026-10-03'],
  ['date_change', {job_date:'2026-10-05'}, '2026-10-04'],
  ['time_change', {start_time:'17:45'}, '2026-10-03'],
-]) test(type+' resets reconfirm to D-1 12:00 Bangkok and keeps the schedule on exact retry',async()=>{
+]) test(type+' resets reconfirm to D-1 12:00 notice / 16:00 reminder Bangkok and keeps the schedule on exact retry',async()=>{
  const f=fixture(type,requested),body=await f.body();
  await resolveCustomerChange(f.env,body,f.deps);
  const fields=f.data.session.fields;
  assert.equal(fields.fldu1v7jHIllouI7g,day+'T05:00:00.000Z');
- assert.equal(fields.fldPvRothitseULiN,day+'T05:00:00.000Z');
+ assert.equal(fields.fldPvRothitseULiN,day+'T09:00:00.000Z');
  assert.equal(fields.fldVElAODigVt7AcR,day+'T12:00:00.000Z');
  const snapshot=clone(fields),writes=f.writes.length;
  assert.equal((await resolveCustomerChange(f.env,body,f.deps)).idempotent,true);
