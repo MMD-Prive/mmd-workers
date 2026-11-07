@@ -41,6 +41,9 @@ export function proofJobSchedule(job = {}) {
 }
 
 export function webProofTelegramCaption({ proofId, snapshot = {}, jobContext = {}, precheck = {}, route = {}, inferenceLabel = "" } = {}) {
+  if (route.topic !== "membership" && route.topic !== "mmd_shop") {
+    return compactJobProofCaption({ snapshot, jobContext, precheck });
+  }
   const reviewUrl = precheck.review_url || paymentProofReviewUrl(proofId, snapshot.session_id);
   const title = route.topic === "membership" ? "💳 สลิปสมาชิกเข้าแล้ว · รอตรวจ"
     : route.topic === "mmd_shop" ? `💳 ${oneLine(route.shop_title)} · สลิปเข้าแล้ว รอตรวจ`
@@ -74,6 +77,35 @@ export function webProofTelegramCaption({ proofId, snapshot = {}, jobContext = {
   // Canonical URLs and bounded precheck messages normally fit without this.
   // Keep fail-closed review status even for unexpectedly large future input.
   return `<b>💳 รับสลิปแล้ว · ต้องตรวจสอบ</b>\n\n${escape(amountText)} · ${escape(stage)}\nยังไม่ยืนยันเงินเข้า · ยังไม่ปล่อยลิงก์ลูกค้า / โมเดล\n⚠️ ตรวจหลักฐานซ้ำและข้อมูลในคิวชำระเงินก่อนยืนยัน`;
+}
+
+// Owner-facing job receipt: diagnostic IDs, review instructions and routing
+// remain in the back office. A planned amount is never labelled as received.
+export function compactJobProofCaption({ snapshot = {}, jobContext = {}, precheck = {} } = {}) {
+  const money = value => value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value)) && Number(value) >= 0
+    ? Number(value).toLocaleString("th-TH", { maximumFractionDigits: 2 }) + " บาท" : "ไม่พบข้อมูล";
+  const stage = stages[snapshot.payment_stage] || "ชำระเงิน";
+  const issue = jobContext.status !== "exact" ? "ยังจับคู่งานไม่ได้"
+    : precheck.issues?.includes("existing_payment_proof_not_transfer_dedup") ? "มีหลักฐานเดิม ต้องเทียบสลิป"
+    : precheck.status === "duplicate" ? "สลิปซ้ำ อย่านับยอดซ้ำ"
+    : precheck.status === "needs_review" ? "ข้อมูลสลิปขัดกัน"
+    : precheck.status === "clear" ? `รับสลิป${stage}แล้ว`
+    : "ตรวจสลิปยังไม่ครบ";
+  const schedule = proofJobSchedule(jobContext);
+  const when = [schedule.date, schedule.time].filter(Boolean).join(" · ") || "ไม่พบข้อมูล";
+  for (const limit of [64, 40, 24, 12]) {
+    const caption = [
+      `ลูกค้า: <b>${label(jobContext.client_name || "ไม่พบข้อมูล", limit)}</b>`,
+      `โมเดล: <b>${label(jobContext.model_name || "ไม่พบข้อมูล", limit)}</b>`,
+      `สถานะ: ${escape(issue)} · ยังไม่ยืนยันเงินเข้า`,
+      `วันงาน: ${escape(when)}`,
+      `สถานที่: ${label(jobContext.location_name || "ไม่พบข้อมูล", limit)}`,
+      `บัดเจ็ตรวม: <b>${escape(money(jobContext.total_amount_thb))}</b>`,
+      `มัดจำตามรายการ: <b>${escape(money(jobContext.deposit_due_thb ?? (snapshot.payment_stage === "deposit" ? snapshot.amount_thb : null)))}</b>`,
+    ].join("\n");
+    if (caption.length <= 880) return caption;
+  }
+  throw new Error("job_proof_caption_too_long");
 }
 
 export function proofDocumentDisplayName(proofId, originalName) {
