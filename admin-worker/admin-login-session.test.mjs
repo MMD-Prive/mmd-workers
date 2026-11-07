@@ -88,6 +88,7 @@ test("GET login renders a safe deterministic browser login form", async () => {
   assert.match(html, /name="next" value="\/internal\/admin\/kenji"/);
   assert.match(html, /id="adminCredential" type="text" required readonly/);
   assert.match(html, /id="adminCredential"[^>]*data-mask="true"/);
+  assert.match(html, /#adminCredential\[data-mask="true"\]\{-webkit-text-security:disc\}/);
   assert.doesNotMatch(html, /id="adminCredential"[^>]*type="password"/);
   assert.doesNotMatch(html, /MMD Admin Sign In/);
   assert.doesNotMatch(html, /admin-worker\.malemodel-bkk\.workers\.dev/);
