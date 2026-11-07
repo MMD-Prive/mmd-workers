@@ -47,7 +47,7 @@ const repo=path.resolve(here,'../..');
 const source=p=>fs.readFileSync(path.join(repo,p),'utf8');
 const sid='PREVIEW-SESSION-001';
 const steps=[
-  ['notice','D−1 · 18:00 แจ้งเตือน','confirmed','31 ต.ค. · 18:00'],
+  ['notice','D−1 · 12:00 แจ้งเตือน','confirmed','31 ต.ค. · 12:00'],
   ['ack','นายแบบรับทราบแล้ว','confirmed','31 ต.ค. · 18:15'],
   ['overdue','19:00 ยังไม่รับทราบ → แจ้งเปอร์','confirmed','31 ต.ค. · 19:00'],
   ['day','วันนัด · พร้อมออกเดินทาง','confirmed','1 พ.ย. · 18:10'],

@@ -252,8 +252,8 @@ export function buildReconfirmSchedule(jobDate) {
   const ymd = base.toISOString().slice(0, 10);
   return {
     status: "scheduled",
-    required_at: `${ymd}T18:00:00+07:00`,
-    reminder_at: `${ymd}T18:00:00+07:00`,
+    required_at: `${ymd}T12:00:00+07:00`,
+    reminder_at: `${ymd}T12:00:00+07:00`,
     overdue_at: `${ymd}T19:00:00+07:00`,
     acknowledged_at: null,
     notified_at: null,
@@ -329,8 +329,9 @@ function noticeAge(reconfirm, now) {
 function isLegacyReconfirmSchedule(reconfirm, schedule) {
   if (!reconfirm || !schedule) return false;
   const day = schedule.required_at.slice(0, 10);
-  return reconfirm.required_at === `${day}T16:00:00+07:00` &&
-    reconfirm.reminder_at === schedule.reminder_at &&
+  // Persisted 16:00 and 18:00 notice schedules predate the D-1 12:00 notice and stay valid.
+  return [`${day}T16:00:00+07:00`, `${day}T18:00:00+07:00`].includes(reconfirm.required_at) &&
+    [schedule.reminder_at, `${day}T18:00:00+07:00`].includes(reconfirm.reminder_at) &&
     reconfirm.overdue_at === schedule.overdue_at;
 }
 async function reconfirmRetryKey(record, step) {
@@ -372,7 +373,7 @@ async function freshForDispatch(env, record, now, counters) {
   return false;
 }
 
-// D-1 notice at 18:00 and owner alert at 19:00. Older persisted 16:00 schedules remain readable.
+// D-1 notice at 12:00 and owner alert at 19:00. Older persisted 16:00/18:00 schedules remain readable.
 // `guard` is only passed by guard v2; without it the behavior is exactly the legacy one.
 async function runReconfirmSteps(env, record, reconfirm, now, counters, guard = null) {
   const requiredMs = Date.parse(reconfirm.required_at);
@@ -495,7 +496,7 @@ async function runGuardedReconfirmSweep(env, { now, maxRecords }) {
       reconfirm = reconfirmFromFields(env, record.fields, now);
     }
     if (!reconfirm || reconfirm.status === "acknowledged") { counters.skipped += 1; continue; }
-    // Legacy persisted 16:00 schedules must also wait until D-1 18:00 ICT.
+    // Un-notified legacy (16:00/18:00) schedules are read as the current D-1 12:00 ICT schedule.
     const schedule = buildReconfirmSchedule(sessionJobDate(env, record.fields || {}));
     const requiredMs = Math.max(Date.parse(reconfirm.required_at), Date.parse(schedule?.required_at));
     if (Number.isFinite(requiredMs) && now < requiredMs) { counters.skipped += 1; continue; }
@@ -653,6 +654,7 @@ function reconfirmFromFields(env, fields, nowMs) {
   const currentSchedule = buildReconfirmSchedule(sessionJobDate(env, fields));
   if (!reconfirm.notified_at && !reconfirm.acknowledged_at && isLegacyReconfirmSchedule(reconfirm, currentSchedule)) {
     reconfirm.required_at = currentSchedule.required_at;
+    reconfirm.reminder_at = currentSchedule.reminder_at;
   }
   reconfirm.status = reconfirm.status === "acknowledged" ? "acknowledged" : deriveReconfirmStatus(reconfirm, nowMs);
   return reconfirm;
