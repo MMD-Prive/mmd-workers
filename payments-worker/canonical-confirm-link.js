@@ -62,6 +62,17 @@ const CUSTOMER_DEPOSIT_PERCENT = 30;
 const CUSTOMER_DEPOSIT_ROUND_STEP_THB = 1;
 const CUSTOMER_DEPOSIT_MINIMUM_STEP_THB = 500;
 const DISCOUNT_KINDS = ["coupon", "discount", "promotion", "special_price"];
+const SESSION_NOTE_SNAPSHOT_MARKERS = new Set([
+  "[MMD_JOB_HOLD_V1]",
+  "[MMD_PENDING_IDENTITY_V1]",
+  "[MMD_MEMBERSHIP_ACTION_V1]",
+  "[MMD PUBLIC JOB v2]",
+  "[MMD SERVICE PRICING v1]",
+  "[MMD MODEL PAYOUT BREAKDOWN v1]",
+  "[MMD Model Remark v1]",
+  "[SIGIL VIP Detail v1]",
+  "[SIGIL Partner Snapshot v1]",
+]);
 
 export function computeFixedCustomerDeposit(serviceAmountThb) {
   const total = Number(serviceAmountThb);
@@ -517,10 +528,12 @@ function boundedSessionNote(note, holdMarker, pricing) {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const trimmed = line.trim();
-    if (trimmed.startsWith("[SIGIL Pricing v1]")) continue;
-    if (/^\[[^\]\n]+\]\s*\{.*\}$/.test(trimmed)) {
+    const match = /^(\[[^\]\n]+\])\s*\{.*\}$/.exec(trimmed);
+    if (match?.[1] === "[SIGIL Pricing v1]") continue;
+    if (SESSION_NOTE_SNAPSHOT_MARKERS.has(match?.[1]) ||
+      /^\[MMD_JOB_HOLD_RELEASED_V1\] \d{4}-\d{2}-\d{2}T[\d:.]+Z$/.test(trimmed)) {
       protectedLines.push(line);
-    } else if (trimmed === "[SIGIL Partner Snapshot v1]" && lines[i + 1]?.trimStart().startsWith("{")) {
+    } else if (trimmed === "[SIGIL Partner Snapshot v1]" && /^\{.*\}$/.test(lines[i + 1]?.trim() ?? "")) {
       protectedLines.push(line, lines[++i]);
     } else {
       humanLines.push(line);

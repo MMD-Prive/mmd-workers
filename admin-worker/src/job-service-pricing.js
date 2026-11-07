@@ -9,10 +9,12 @@ const sameMoney = (left, right) => money(left) && money(right) && Math.round(lef
 const total = (base, addons, key) => Math.round((base + addons.reduce((sum, a) => sum + a[key], 0)) * 100) / 100;
 
 const round2 = value => Math.round(value * 100) / 100;
-export function jobTotalWithTravel(serviceAmount, customerAmount, travelFee) {
+export function jobTotalWithTravel(serviceAmount, customerAmount, travelFee, note = "") {
   const total = Number(customerAmount);
   const travel = Number(travelFee ?? 0);
-  return travel > 0 && sameMoney(total, round2(serviceAmount + travel)) ? total : serviceAmount;
+  if (travel <= 0 || !sameMoney(total, round2(serviceAmount + travel))) return serviceAmount;
+  const components = parseSigilMembershipPaymentComponents(note, total);
+  return components?.service_amount_thb ?? total;
 }
 
 /** Optional discount record. customer_request: MMD absorbs it alone. promotion: split 50/50 with the working model. */

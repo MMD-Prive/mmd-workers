@@ -6310,7 +6310,7 @@ async function createAdminJob(env, body) {
   const deposit_amount_thb = payment_type === "deposit"
     ? computeCustomerDepositAmount(service_amount_thb)
     : undefined;
-  const customerJobTotal = jobTotalWithTravel(service_amount_thb, amount_thb, body.travel_fee_thb);
+  const customerJobTotal = jobTotalWithTravel(service_amount_thb, amount_thb, body.travel_fee_thb, rawNote);
   const balance_amount_thb = payment_type === "deposit"
     ? Math.max(0, customerJobTotal - deposit_amount_thb)
     : 0;
