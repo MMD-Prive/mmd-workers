@@ -635,15 +635,17 @@ function tgHtml(value, max = 180) {
 export function canonicalWebJobContext(session = null, snapshot = {}) {
   const fields = paymentFields(session);
   const context = {
-    session_id: clean(firstValue(fields, ["session_id", "Session ID"]) || snapshot.session_id, 180) || null,
+    session_id: clean(firstValue(fields, ["session_id", "Session ID", "fldLTq2kZbyRv22IA"]) || snapshot.session_id, 180) || null,
     job_id: clean(firstValue(fields, ["job_id", "Job ID"]), 180) || null,
-    client_name: clean(firstValue(fields, ["client_name", "Client Name"]), 180) || clean(snapshot.payer_name, 180) || null,
-    model_name: clean(firstValue(fields, ["model_name", "Assigned Model", "Model"]), 180) || null,
+    client_name: clean(firstValue(fields, ["client_name", "Client Name", "fldMvnQ0BzDfHUYjT"]), 180) || clean(snapshot.payer_name, 180) || null,
+    model_name: clean(firstValue(fields, ["model_name", "Assigned Model", "Model", "flddVz6eoWRHrzIQr"]), 180) || null,
     job_type: clean(firstValue(fields, ["job_type", "Session Type"]), 180) || null,
-    job_date: clean(firstValue(fields, ["job_date", "Session Date"]), 180) || null,
-    start_time: clean(firstValue(fields, ["start_time", "Start Time"]), 180) || null,
-    end_time: clean(firstValue(fields, ["end_time", "End Time"]), 180) || null,
-    location_name: clean(firstValue(fields, ["location_name", "Location", "Location (สถานที่)"]), 180) || null,
+    job_date: clean(firstValue(fields, ["job_date", "Session Date", "fldpnqoIsUMfN7y3c"]), 180) || null,
+    start_time: clean(firstValue(fields, ["start_time", "Start Time", "fldBeG0FkWwa8kgnp"]), 180) || null,
+    end_time: clean(firstValue(fields, ["end_time", "End Time", "fldiDSz0wW9Ct9I3P"]), 180) || null,
+    location_name: clean(firstValue(fields, ["location_name", "Location", "Location (สถานที่)", "fldIiRpaxoafjTkFt"]), 180) || null,
+    total_amount_thb: positive(firstValue(fields, ["amount_thb", "Total Amount", "total_amount_thb", "final_price_thb", "fldhwC79ndbnEXSZz"])),
+    deposit_due_thb: positive(firstValue(fields, ["deposit_due_thb"])) || (snapshot.payment_stage === "deposit" ? positive(snapshot.amount_thb) : null),
   };
   const exact = Boolean(context.job_id || context.session_id);
   return {
