@@ -24,6 +24,7 @@ function validateDiscount(d, gross, fail) {
     || !money(d.value) || d.value <= 0 || !money(d.amount_thb) || d.amount_thb <= 0 || d.amount_thb >= gross) fail();
   if (d.type === "percent" && (d.value > 100 || !sameMoney(Math.round(gross * d.value) / 100, d.amount_thb))) fail();
   if (d.type === "amount" && !sameMoney(d.value, d.amount_thb)) fail();
+  if (d.amount_thb > gross * 0.25 + 1e-6) fail();
   const modelShare = d.mode === "promotion" ? Math.floor(d.amount_thb * 100 / 2) / 100 : 0;
   if (!sameMoney(d.model_share_thb, modelShare) || !sameMoney(d.mmd_share_thb, round2(d.amount_thb - modelShare))) fail();
   const reason = typeof d.reason === "string" ? d.reason.trim().slice(0, 200) : "";
@@ -32,8 +33,8 @@ function validateDiscount(d, gross, fail) {
   let kind;
   if (d.kind !== undefined) {
     if (!DISCOUNT_KINDS.includes(d.kind) || (d.kind === "promotion") !== (d.mode === "promotion")) fail();
-    // Admin discounts: whole 500 THB steps, 5-25% of the pre-discount quote.
-    if (d.amount_thb % DISCOUNT_STEP_THB !== 0 || d.amount_thb < DISCOUNT_STEP_THB || d.amount_thb > gross * 0.25 + 1e-6) fail();
+    // Typed Create Job discounts use whole 500 THB steps.
+    if (d.amount_thb % DISCOUNT_STEP_THB !== 0 || d.amount_thb < DISCOUNT_STEP_THB) fail();
     kind = d.kind;
   }
   return { mode: d.mode, type: d.type, value: d.value, amount_thb: d.amount_thb, mmd_share_thb: round2(d.amount_thb - modelShare),
