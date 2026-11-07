@@ -3,6 +3,7 @@ import test from 'node:test';
 import worker from './src/admin-login-hero-worker.js';
 import payments from '../payments-worker/index.review-wrapper.js';
 import { createCredentialBoundAdminSession } from './src/credential-bound-admin-session.js';
+import { handleConfirmationDetails, parseMarkedJson } from '../payments-worker/confirmation-details.js';
 import { parseSigilMembershipPaymentComponents } from '../payments-worker/sigil-membership-payment-components.js';
 
 const CLIENT = 'recCLIENT00000001';
@@ -21,7 +22,7 @@ function form() {
     notes: { handling: 'Operator note', internal: 'Second line' },
   };
 }
-function setup({ failPayment = false, failNotification = false } = {}) {
+function setup({ failPayment = false, failNotification = false, privateFixture = false } = {}) {
   const records = new Map();
   const calls = [], issuances = [], kv = new Map();
   let serial = 0;
@@ -37,7 +38,16 @@ function setup({ failPayment = false, failNotification = false } = {}) {
     const body = req.method === 'GET' ? null : await req.json();
     calls.push({ table, id, method: req.method, body });
     if (req.method === 'GET' && id === CLIENT) return Response.json({ id, fields: { 'Client Name': 'Client', line_user_id: 'U-client' } });
-    if (req.method === 'GET' && id === MODEL) return Response.json({ id, fields: { working_name: 'Mira', registry_record_type: 'Existing Model Record', intake_gate_status: 'Complete' } });
+    if (req.method === 'GET' && id === MODEL) return Response.json({ id, fields: {
+      working_name: 'Mira', registry_record_type: 'Existing Model Record', intake_gate_status: 'Complete',
+      ...(privateFixture ? { booking_visibility: 'private', access_folder: 'standard', customer_lane: 'straight', private_service_level: 'PN' } : {}),
+    } });
+    if (privateFixture && req.method === 'GET' && table === 'members') {
+      return Response.json({ records: [{ id: 'recFixtureMember', fields: { email: 'member@example.test' } }] });
+    }
+    if (privateFixture && req.method === 'GET' && table === 'member_packages') {
+      return Response.json({ records: [{ fields: { status: 'active', package_code: 'standard', end_date: '2099-01-01' } }] });
+    }
     const rows = records.get(table) || [];
     if (req.method === 'GET') return Response.json({ records: rows });
     if (failPayment && table === PAYMENTS) return Response.json({ error: { message: 'fixture_payment_write_failure' } }, { status: 503 });
@@ -57,6 +67,7 @@ function setup({ failPayment = false, failNotification = false } = {}) {
   const paymentsEnv = {
     AIRTABLE_BASE_ID: 'test-base', AIRTABLE_API_KEY: 'fixture-key',
     AUTH_SERVICE_ADMIN_TO_PAYMENTS: 'fixture-service', PAYMENT_CONFIRMATION_SIGNING_SECRET: 'fixture-signing',
+    ALLOWED_ORIGINS: 'https://mmdbkk.com',
     AIRTABLE_HTTP: { fetch },
     PAY_SESSIONS_KV: { async put(k,v) { kv.set(k,v); }, async get(k) { return kv.get(k) || null; } },
   };
@@ -66,8 +77,11 @@ function setup({ failPayment = false, failNotification = false } = {}) {
   };
   return { env, fetch, calls, records, issuances, kv };
 }
-async function run(body, options = {}) {
-  const h = setup(options);
+function run(body, options) {
+  return submit(setup(options), body);
+}
+
+async function submit(h, body) {
   const original = globalThis.fetch;
   globalThis.fetch = h.fetch;
   try {
@@ -78,6 +92,17 @@ async function run(body, options = {}) {
     }), h.env, {});
     return { ...h, status: response.status, data: await response.json() };
   } finally { globalThis.fetch = original; }
+}
+
+async function readFixtureConfirmation(h, session) {
+  const token = new URL(session.fldi9ZdoiUXzSv1rI).searchParams.get('t');
+  const response = await handleConfirmationDetails(new Request('https://sigil.mmdbkk.com/v1/confirm/details', {
+    method: 'POST',
+    headers: { Origin: 'https://mmdbkk.com', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ t: token, expected_role: 'customer' }),
+  }), h.env);
+  assert.equal(response.status, 200);
+  return response.json();
 }
 
 test('active Create Job returns only payment URL while storing confirmation links server-side', async () => {
@@ -200,6 +225,63 @@ test('Create Job preserves negotiated discount into SIGIL Pricing v1', async () 
   assert.equal(pricing.balance_thb, 17500);
 });
 
+for (const visibility of ['private', 'public']) {
+  test(`discounted ${visibility} job keeps travel in the total and preserves confirmation pricing with a long note`, async () => {
+    const body = form();
+    const privateFixture = visibility === 'private';
+    Object.assign(body, {
+      job_visibility: visibility,
+      travel_fee_thb: 1000,
+      original_amount_thb: 21000,
+      pricing_adjustment: 'discount',
+      discount_kind: 'coupon',
+      notes: { handling: 'Long operator note '.repeat(220) },
+      job_details: { brief: 'Fixture arrival instructions' },
+      payment: { amount_thb: 19000, service_amount_thb: 18000, pay_model_thb: 8000, payment_type: 'deposit' },
+    });
+    if (privateFixture) {
+      body.job_type = 'pn';
+      body.work = { job_visibility: 'private', job_type: 'pn', service_options: [] };
+      body.private_access = { selected_private_folder: 'standard', selected_orientation: 'straight', settlement_mode: 'direct' };
+      body.service_pricing = { version: 1, currency: 'THB', settlement_mode: 'direct', addons: [],
+        client_base_amount_thb: 20000, client_gross_amount_thb: 20000, client_total_amount_thb: 18000,
+        model_base_payout_thb: 8000, model_gross_payout_thb: 8000, model_total_payout_thb: 8000,
+        discount: { mode: 'customer_request', type: 'amount', value: 2000, amount_thb: 2000,
+          mmd_share_thb: 2000, model_share_thb: 0, kind: 'coupon' } };
+    } else {
+      body.public_job = { schema_version: 'mmd_public_job_v2', format: 'event',
+        duties: 'Host the event', customer_count: 1, care_count: 0 };
+    }
+
+    const h = await run(body, { privateFixture });
+    assert.equal(h.status, 200, JSON.stringify(h.data));
+    assert.equal(h.data.balance_amount_thb, 13500);
+    assert.equal(h.issuances[0].service_amount_thb, 18000);
+    assert.equal(h.issuances[0].amount_thb, 19000);
+    assert.equal(h.records.get(JOBS)[0].fields.Budget, 19000);
+    const session = h.records.get(SESSIONS)[0].fields;
+    assert.equal(session.fldhwC79ndbnEXSZz, 19000);
+    assert.equal(session.fldlTO5aNfqUmlNWm, 8000);
+    assert.equal(h.records.get(PAYMENTS)[0].fields.fldvCSwrUW8OMAooS, 5500);
+    assert.ok(session.fldEcDkF7CH9VixWM.length <= 4000);
+    assert.equal(parseMarkedJson(session.fldEcDkF7CH9VixWM, 'MMD Model Remark v1').text, 'Fixture arrival instructions');
+    const snapshot = privateFixture ? 'MMD SERVICE PRICING v1' : 'MMD PUBLIC JOB v2';
+    assert.ok(parseMarkedJson(session.fldEcDkF7CH9VixWM, snapshot));
+
+    const details = await readFixtureConfirmation(h, session);
+    assert.equal(details.pricing.full_price_thb, 21000);
+    assert.equal(details.pricing.discount_kind, 'coupon');
+    assert.equal(details.pricing.net_price_thb, 19000);
+    assert.equal(details.pricing.deposit_basis_thb, 18000);
+    assert.equal(details.pricing.deposit_due_thb, 5500);
+    assert.equal(details.pricing.balance_thb, 13500);
+    assert.equal(details.billing.total_thb, 19000);
+    assert.equal(details.billing.travel_treatment, 'included');
+    assert.equal(details.payment.amount_due_thb, 5500);
+    if (privateFixture) assert.deepEqual(details.billing.service_items, [{ label: 'PN', amount_thb: 20000 }]);
+  });
+}
+
 for (const visibility of ['private', 'public']) test(`pending ${visibility} creates an operational Job without Payment, tokens, notification or reconfirm`, async () => {
   const body = form();
   delete body.client.client_id; delete body.canonical_only; delete body.create_context;
@@ -224,6 +306,65 @@ for (const visibility of ['private', 'public']) test(`pending ${visibility} crea
   assert.match(h.records.get(JOBS)[0].fields['Internal Notes'], /PENDING CLIENT LINK/);
 });
 
+test('held job release keeps the quoted deposit and both travel amounts', async () => {
+  const body = form();
+  delete body.client.client_id;
+  delete body.canonical_only;
+  delete body.create_context;
+  Object.assign(body, {
+    operational_create_mode: 'pending_client_link',
+    travel_fee_thb: 1000,
+    model_travel_fee_thb: 600,
+    original_amount_thb: 21000,
+    pricing_adjustment: 'discount',
+    discount_kind: 'coupon',
+    notes: { handling: 'Long operator note '.repeat(220) },
+    payment: { amount_thb: 19000, service_amount_thb: 18000, pay_model_thb: 8000, payment_type: 'deposit' },
+  });
+  const h = await run(body);
+  assert.equal(h.status, 200, JSON.stringify(h.data));
+  assert.equal(h.records.has(PAYMENTS), false);
+  const session = h.records.get(SESSIONS)[0].fields;
+  assert.equal(parseMarkedJson(session.fldEcDkF7CH9VixWM, 'SIGIL Pricing v1').deposit_due_thb, 5500);
+
+  const reconcile = { operational_create_mode: 'reconcile_held', session_id: h.data.session_id,
+    client_record_id: CLIENT, model_record_id: MODEL };
+  const released = await submit(h, reconcile);
+  assert.equal(released.status, 200, JSON.stringify(released.data));
+  assert.equal(released.data.pricing_breakdown.deposit_due_thb, 5500);
+  assert.equal(released.data.pricing_breakdown.balance_thb, 13500);
+  assert.equal(released.data.pricing_breakdown.discount_kind, 'coupon');
+  assert.equal(session.fld703jI4zQ0CYMHh, 1000);
+  assert.equal(session.fldqYkGm9Vd3P366W, 600);
+  assert.equal(h.records.get(PAYMENTS)[0].fields.fldvCSwrUW8OMAooS, 5500);
+  const details = await readFixtureConfirmation(h, session);
+  assert.equal(details.pricing.deposit_basis_thb, 18000);
+  assert.equal(details.pricing.deposit_due_thb, 5500);
+  assert.equal(details.payment.amount_due_thb, 5500);
+  assert.equal(details.billing.total_thb, 19000);
+  assert.equal(details.billing.discount_kind, 'coupon');
+
+  const replay = await submit(h, reconcile);
+  assert.equal(replay.data.idempotent_replay, true);
+  assert.equal(h.records.get(PAYMENTS).length, 1);
+  assert.equal(h.issuances.length, 2);
+});
+
+test('JSON-shaped operator text is truncated without dropping Confirmation pricing', async () => {
+  const body = form();
+  body.notes.handling = '[Operator export] ' + JSON.stringify({ text: 'a'.repeat(3800) });
+  body.payment.payment_type = 'deposit';
+  const h = await run(body);
+  assert.equal(h.status, 200, JSON.stringify(h.data));
+  const session = h.records.get(SESSIONS)[0].fields;
+  assert.ok(session.fldEcDkF7CH9VixWM.length <= 4000);
+  assert.match(session.fldEcDkF7CH9VixWM, /\[Operator export\]/);
+  const details = await readFixtureConfirmation(h, session);
+  assert.equal(details.pricing.full_price_thb, 10000);
+  assert.equal(details.pricing.deposit_due_thb, 3000);
+  assert.equal(details.payment.amount_due_thb, 3000);
+});
+
 test('strict create without canonical Client fails before any write or issuer call', async () => {
   const body = form(); delete body.client.client_id;
   const h = await run(body);
@@ -245,6 +386,19 @@ test('combined renewal persists service-only Session/Job and total Payment with 
   assert.match(p.fldjsZIKoJPawlb2u, /\nOperator note\nSecond line/);
   assert.equal(h.data.membership_action.entitlement_mutation_allowed, false);
   assert.deepEqual([...h.records.keys()].sort(), [SESSIONS, PAYMENTS, JOBS].sort());
+});
+
+test('a renewal equal to the travel fee stays out of the Job Budget and service balance', async () => {
+  const body = form();
+  body.travel_fee_thb = 3000;
+  body.payment.payment_type = 'deposit';
+  body.membership_action = { type: 'renew', renewal_amount_thb: 3000, include_in_payment: true, tier_hint: 'standard' };
+  const h = await run(body);
+  assert.equal(h.status, 200, JSON.stringify(h.data));
+  assert.equal(h.data.balance_amount_thb, 7000);
+  assert.equal(h.records.get(SESSIONS)[0].fields.fldhwC79ndbnEXSZz, 10000);
+  assert.equal(h.records.get(JOBS)[0].fields.Budget, 10000);
+  assert.equal(h.records.get(PAYMENTS)[0].fields.fldvCSwrUW8OMAooS, 13000);
 });
 
 test('notification failure preserves successful create and recovery references', async () => {

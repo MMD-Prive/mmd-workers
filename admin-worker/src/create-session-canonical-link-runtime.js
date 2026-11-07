@@ -1,5 +1,5 @@
 import { resolveChosenJobPartner } from "./create-job-drive-discovery.js";
-import { validateJobServicePricing, withJobServicePricingNote, preservePartnerSnapshot } from "./job-service-pricing.js";
+import { validateJobServicePricing, withJobServicePricingNote, preservePartnerSnapshot, jobTotalWithTravel } from "./job-service-pricing.js";
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const CREATE_JOB_PATH = "/v1/admin/job/create";
 
@@ -300,7 +300,9 @@ function buildJobFields(body, canonical, ids) {
   const start = clean(body?.start_time || details?.start_time);
   const end = clean(body?.end_time || details?.end_time);
   const location = clean(body?.location_name || details?.location_name);
-  const amount = Number(body?.service_amount_thb ?? payment?.service_amount_thb ?? body?.amount_thb ?? payment?.amount_thb ?? 0);
+  const customerAmount = body?.amount_thb ?? payment?.amount_thb;
+  const serviceAmount = Number(body?.service_amount_thb ?? payment?.service_amount_thb ?? customerAmount ?? 0);
+  const amount = jobTotalWithTravel(serviceAmount, customerAmount, body?.travel_fee_thb, body?.note);
 
   const noteParts = [
     clientName ? `Client snapshot: ${clientName}` : "",

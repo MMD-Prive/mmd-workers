@@ -7,7 +7,7 @@ import {notifyOwnerWrongLocation} from './model-travel-owner.js';
 import {meetingBinding} from '../../shared/model-travel-store.mjs';
 import { notifyTravelEvent } from "./model-travel-notification.js";
 import { requestMemberReplyRefresh } from "../../shared/member-reply-refresh.mjs";
-import { validateJobServicePricing, withJobServicePricingNote, DISCOUNT_KINDS } from "./job-service-pricing.js";
+import { validateJobServicePricing, withJobServicePricingNote, DISCOUNT_KINDS, jobTotalWithTravel } from "./job-service-pricing.js";
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
 import { requestPaymentsConfirmLink } from "./payments-issuer-transport.js";
 import { assertConfirmationUrlPair } from "./confirmation-link-role-guard.js";
@@ -6235,7 +6235,7 @@ function withCanonicalPublicJobNote(note, publicJob) {
     .filter((line) => !line.trim().startsWith("[MMD PUBLIC JOB v2]"));
   const cleanNote = lines.join("\n").trim();
   if (!publicJob) return cleanNote;
-  return [cleanNote, `[MMD PUBLIC JOB v2] ${JSON.stringify(publicJob)}`]
+  return [`[MMD PUBLIC JOB v2] ${JSON.stringify(publicJob)}`, cleanNote]
     .filter(Boolean)
     .join("\n")
     .slice(0, 4000);
@@ -6310,8 +6310,9 @@ async function createAdminJob(env, body) {
   const deposit_amount_thb = payment_type === "deposit"
     ? computeCustomerDepositAmount(service_amount_thb)
     : undefined;
+  const customerJobTotal = jobTotalWithTravel(service_amount_thb, amount_thb, body.travel_fee_thb, rawNote);
   const balance_amount_thb = payment_type === "deposit"
-    ? Math.max(0, service_amount_thb - deposit_amount_thb)
+    ? Math.max(0, customerJobTotal - deposit_amount_thb)
     : 0;
 
   const webBase = str(env.WEB_BASE_URL || "https://mmdbkk.com").replace(/\/+$/, "");
@@ -6430,7 +6431,7 @@ async function createAdminJob(env, body) {
     notification_status: notificationStatus,
     owner_job_grant_status: ownerJobGrantStatus,
     payment_type,
-    amount_due_thb: payment_type === "full" ? service_amount_thb : deposit_amount_thb,
+    amount_due_thb: payment_type === "full" ? customerJobTotal : deposit_amount_thb,
     ...(publicJob ? { public_job: publicJob } : {}),
     ...(payment_type === "deposit" ? { deposit_percent, deposit_amount_thb } : {}),
     balance_amount_thb,

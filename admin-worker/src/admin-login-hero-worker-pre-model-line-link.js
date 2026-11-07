@@ -5,7 +5,7 @@ import { handleAdminDashboardPaymentLinkRequest, isAdminDashboardPaymentLinkView
 import { handleAdminJobVoidRequest, VOID_PATH } from "./admin-job-void.js";
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
 import { tryHandleEmailLessLineRenewalRecovery } from "./payment-review-line-recovery.js";
-import { tryHandleSigilPendingClientLink } from "./sigil-jobs-pending-client-link.js";
+import { isHeldReconcileRequest, tryHandleSigilPendingClientLink } from "./sigil-jobs-pending-client-link.js";
 import {
   augmentSigilJobCreateResponse,
   isSigilJobMembershipActionRequest,
@@ -129,10 +129,14 @@ export default {
     // verification remains the materialization boundary.
     let membershipActionContext = null;
     if (isSigilJobMembershipActionRequest(path, request.method)) {
-      const prepared = await prepareSigilJobCreateRequest(request, env);
-      if (prepared.response) return prepared.response;
-      request = prepared.request;
-      membershipActionContext = prepared;
+      const body = await request.clone().json().catch(() => null);
+      // Held reconciliation reads money from the Session and has no incoming quote.
+      if (!isHeldReconcileRequest(body || {})) {
+        const prepared = await prepareSigilJobCreateRequest(request, env);
+        if (prepared.response) return prepared.response;
+        request = prepared.request;
+        membershipActionContext = prepared;
+      }
     }
 
     // SIGIL Jobs may create an operationally held private job before a canonical

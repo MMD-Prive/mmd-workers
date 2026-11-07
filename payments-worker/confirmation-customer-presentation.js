@@ -33,7 +33,7 @@ export function customerBillingBreakdown(pricing, totalValue, travelValue, servi
   const addons = service.addons.map(a => ({ label: String(a.option || '').toUpperCase(), amount_thb: amount(a.client_amount_thb) }));
   if (addons.some(a => !allowed.has(a.label.toLowerCase()) || a.amount_thb == null)) return billing;
   const gross = base + addons.reduce((n, a) => n + a.amount_thb, 0);
-  if (!priceValid || !equal(gross, full)) return billing;
+  if (!priceValid || !(equal(gross, full) || (included && equal(gross + travel, full)))) return billing;
   const label = String(jobType || '').toUpperCase().split(/[:+,|\s]+/).find(x => ['PN', 'VIP'].includes(x)) || 'ค่าบริการ';
   billing.service_items = [{ label, amount_thb: base }, ...addons];
   return billing;

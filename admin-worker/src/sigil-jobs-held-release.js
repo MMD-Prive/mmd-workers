@@ -8,10 +8,13 @@ const AIRTABLE_API = "https://api.airtable.com/v0";
 const DEFAULT_SESSIONS_TABLE = "tblC98mKWbzmPuNzX";
 const HOLD_MARKER = "[MMD_JOB_HOLD_V1]";
 const IDENTITY_MARKER = "[MMD_PENDING_IDENTITY_V1]";
+const PRICING_MARKER = "[SIGIL Pricing v1]";
 
 const SESSION_FIELDS = Object.freeze({
   sessionId: "fldLTq2kZbyRv22IA",
   amountThb: "fldhwC79ndbnEXSZz",
+  travelFeeThb: "fld703jI4zQ0CYMHh",
+  modelTravelFeeThb: "fldqYkGm9Vd3P366W",
   paymentRef: "fldojgjSQLaO0uQLX",
   clientName: "fldMvnQ0BzDfHUYjT",
   modelName: "flddVz6eoWRHrzIQr",
@@ -88,12 +91,11 @@ function pendingStatus(hasClient, hasModel) {
   return "linked";
 }
 
-function identityMeta(note) {
-  const raw = clean(note);
-  const line = raw.split(/\r?\n/).find((item) => item.startsWith(IDENTITY_MARKER));
+function noteSnapshot(note, marker) {
+  const line = note.split(/\r?\n/).findLast(item => item.trimStart().startsWith(marker));
   if (!line) return {};
   try {
-    const parsed = JSON.parse(clean(line.slice(IDENTITY_MARKER.length)));
+    const parsed = JSON.parse(line.trimStart().slice(marker.length));
     return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
   } catch {
     return {};
@@ -223,6 +225,16 @@ function paymentPayload(body, session, meta) {
   const note = sessionNote(session);
   const paymentType = firstText(body.payment_type, body.payment_stage, meta.payment_type, "deposit");
   const paymentMethod = firstText(body.payment_method, meta.payment_method, "");
+  const amountThb = Number(fieldValue(session, SESSION_FIELDS.amountThb) || 0);
+  const pricing = noteSnapshot(note, PRICING_MARKER);
+  const basis = pricing.deposit_basis_thb;
+  const deposit = pricing.deposit_due_thb;
+  const heldDeposit = paymentType === "deposit" && pricing.net_price_thb === amountThb
+    && Number.isFinite(basis) && basis > 0 && basis <= amountThb
+    && Number.isFinite(deposit) && deposit > 0 && deposit <= basis;
+  const full = pricing.full_price_thb;
+  const heldDiscount = heldDeposit && Number.isFinite(full) && full > amountThb
+    && Math.abs(full - amountThb - pricing.discount_thb) < 0.005;
   return {
     session_id: clean(body.session_id),
     payment_ref: stablePaymentRef(body.session_id),
@@ -234,13 +246,17 @@ function paymentPayload(body, session, meta) {
     end_time: timeOnly(fieldValue(session, SESSION_FIELDS.endTime)),
     location_name: clean(fieldValue(session, SESSION_FIELDS.locationName)),
     google_map_url: clean(fieldValue(session, SESSION_FIELDS.googleMapUrl)),
-    amount_thb: Number(fieldValue(session, SESSION_FIELDS.amountThb) || 0),
+    amount_thb: amountThb,
+    travel_fee_thb: fieldValue(session, SESSION_FIELDS.travelFeeThb),
+    model_travel_fee_thb: fieldValue(session, SESSION_FIELDS.modelTravelFeeThb),
+    ...(heldDeposit ? { service_amount_thb: basis, deposit_amount_thb: deposit } : {}),
+    ...(heldDiscount ? { original_amount_thb: full, pricing_adjustment: "discount", discount_kind: pricing.discount_kind } : {}),
     pay_model_thb: fieldValue(session, SESSION_FIELDS.payModelThb),
     payment_type: paymentType,
     payment_method: paymentMethod,
     confirm_page: "/confirm/job-confirmation",
     model_confirm_page: "/confirm/job-model",
-    note: `${note}\n[MMD_JOB_HOLD_RELEASED_V1] ${new Date().toISOString()}`.slice(0, 4000),
+    note: `${note}\n[MMD_JOB_HOLD_RELEASED_V1] ${new Date().toISOString()}`,
   };
 }
 
@@ -322,7 +338,7 @@ export async function reconcileHeldSigilJob(request, env, ctx, downstream) {
   }
 
   const note = sessionNote(session);
-  const meta = identityMeta(note);
+  const meta = noteSnapshot(note, IDENTITY_MARKER);
   const requestedWorld = token(body.requested_world || meta.requested_world || body?.job_details?.world || "public");
   if (requestedWorld === "private") {
     try {
