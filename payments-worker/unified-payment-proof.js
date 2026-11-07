@@ -3,9 +3,10 @@ import { resolvePersistedShopBrand, SHOP_BRANDS, shopPaymentThreads } from "../s
 import { classifyPaymentOpsRoute, membershipInferenceLabel, paymentPresentationLane } from "../shared/payment-intelligence.mjs";
 import { verifyConfirmToken } from "./index.js";
 import { withPaymentEvidenceLock } from "../shared/canonical-payment-evidence.mjs";
-import { inspectPaymentProof, paymentProofIdentity, paymentProofReviewUrl, proofPrecheckLines } from "../shared/payment-proof-precheck.mjs";
+import { inspectPaymentProof, paymentProofIdentity, paymentProofReviewUrl } from "../shared/payment-proof-precheck.mjs";
 import { dispatchPaymentNotification, drainPaymentNotifications } from "../shared/payment-notification-outbox.mjs";
 import { formulaValue } from "./lib/payment-primitives.js";
+import { webProofTelegramCaption, proofDocumentDisplayName } from "./proof-notification-caption.mjs";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const PAY_INTENT_PATH = "/v1/pay/verify";
@@ -478,33 +479,8 @@ async function notifyTelegramFile(env, file, { proofId, paymentRef, snapshot, so
   form.append("chat_id", chatId);
   form.append("message_thread_id", String(route.thread_id));
   form.append("parse_mode", "HTML");
-  const captionLines = [
-    route.topic === "membership"
-      ? "<b>💳 สลิปสมาชิกเข้าแล้ว · รอตรวจ</b>"
-      : route.topic === "mmd_shop"
-        ? `<b>💳 ${tgHtml(route.shop_title)} · สลิปเข้าแล้ว รอตรวจ</b>`
-        : "<b>💳 สลิปลูกค้าเข้าแล้ว · รอเปอร์ตรวจ</b>",
-    `<a href="${tgHtml(precheck.review_url || paymentProofReviewUrl(proofId, snapshot.session_id))}">เปิดงานนี้ · ตรวจและยืนยันเงินเข้า</a>`,
-    "👉 <b>ตรวจเงินเข้าจริง แล้วกด ยืนยันเงินเข้า (Official Verify)</b>",
-    "ยังไม่ปล่อยลิงก์ลูกค้า / โมเดลจนกว่าจะอนุมัติ",
-    ...proofPrecheckLines(precheck).map(tgHtml),
-    snapshot.amount_thb ? `ยอดตามรายการ: <b>${snapshot.amount_thb} THB</b> · ตรวจยอดจริงจากสลิป` : "",
-    snapshot.payment_stage ? `รอบชำระ: <b>${tgHtml(snapshot.payment_stage)}</b>` : "",
-    ...(route.topic === "membership" || route.topic === "mmd_shop"
-      ? (route.topic === "mmd_shop" && snapshot.session_id ? [`Order: <code>${tgHtml(snapshot.session_id)}</code>`] : [])
-      : webJobContextCaptionLines(jobContext)),
-    "",
-    "",
-    `Payment Ref: <code>${paymentRef}</code>`,
-    `Proof: <code>${proofId}</code>`,
-    inferenceLabel ? `ประเภท: <b>${tgHtml(inferenceLabel)}</b>` : route.topic === "membership" ? "ประเภท: <b>Membership / Renewal</b>" : route.topic === "mmd_shop" ? `ประเภท: <b>${tgHtml(route.shop_name)} Order</b>` : "",
-    `Routing: <code>${tgHtml(route.reason)}</code>`,
-  ].filter(Boolean);
-  // The transport caps captions at 900 characters. Keep complete HTML lines
-  // within that bound so truncation cannot split a link or closing tag.
-  const caption = captionLines.reduce((value, line) => value.length + line.length + 1 <= 880 ? value + (value ? "\n" : "") + line : value, "");
-  form.append("caption", caption);
-  form.append("document", file, clean(file.name, 180) || "payment-proof");
+  form.append("caption", webProofTelegramCaption({ proofId, snapshot, jobContext, precheck, route, inferenceLabel }));
+  form.append("document", file, proofDocumentDisplayName(proofId, file.name));
 
   const response = await service.fetch(new Request("https://telegram-worker/telegram/internal/payments/proof-document", {
     method: "POST",
@@ -675,25 +651,6 @@ export function canonicalWebJobContext(session = null, snapshot = {}) {
     reason: exact ? "signed_payment_session" : "canonical_session_context_missing",
     ...context,
   };
-}
-
-function webJobContextCaptionLines(jobContext = {}) {
-  if (jobContext.status !== "exact") return [
-    "Job Match: <b>UNRESOLVED</b>",
-    "Action: resolve the canonical Job before Official Verify.",
-  ];
-  const when = [
-    jobContext.job_date,
-    jobContext.start_time && jobContext.end_time ? `${jobContext.start_time} → ${jobContext.end_time}` : jobContext.start_time || jobContext.end_time,
-  ].filter(Boolean).join(" · ");
-  return [
-    "Job Match: <b>EXACT</b>",
-    jobContext.client_name ? `Customer: <b>${tgHtml(jobContext.client_name)}</b>` : "",
-    jobContext.job_id ? `Job: <code>${tgHtml(jobContext.job_id)}</code>` : jobContext.session_id ? `Session: <code>${tgHtml(jobContext.session_id)}</code>` : "",
-    jobContext.model_name ? `Model: <b>${tgHtml(jobContext.model_name)}</b>` : "",
-    when ? `When: ${tgHtml(when, 300)}` : "",
-    jobContext.location_name ? `Location: ${tgHtml(jobContext.location_name)}` : "",
-  ].filter(Boolean);
 }
 
 export function canonicalProofRecordFields({ proofId, note, snapshot = {}, paymentRef, links = {} } = {}) {
