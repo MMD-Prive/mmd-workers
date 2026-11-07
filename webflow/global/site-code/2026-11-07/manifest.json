@@ -1,0 +1,337 @@
+{
+  "date": "2026-11-07",
+  "siteId": "68f879d546d2f4e2ab186e90",
+  "status": "source-only; Webflow not changed",
+  "length": {
+    "head": 49214,
+    "footer": 49340
+  },
+  "blocks": [
+    {
+      "location": "head",
+      "order": 1,
+      "kind": "script",
+      "id": "mmd-rules-lane-js-20260803",
+      "scope": "rules",
+      "path": "webflow/global/site-code/2026-11-07/sources/head/01-mmd-rules-lane-js-20260803.js",
+      "characters": 1173,
+      "originalAttributes": "id=\"mmd-rules-lane-js-20260803\""
+    },
+    {
+      "location": "head",
+      "order": 2,
+      "kind": "style",
+      "id": "mmd-studio-onsen-visual-css-20260803",
+      "scope": "studio",
+      "path": "webflow/global/site-code/2026-11-07/sources/head/02-mmd-studio-onsen-visual-css-20260803.css",
+      "characters": 1869,
+      "originalAttributes": "id=\"mmd-studio-onsen-visual-css-20260803\""
+    },
+    {
+      "location": "head",
+      "order": 3,
+      "kind": "script",
+      "id": "mmd-studio-onsen-visual-js-20260803",
+      "scope": "studio",
+      "path": "webflow/global/site-code/2026-11-07/sources/head/03-mmd-studio-onsen-visual-js-20260803.js",
+      "characters": 1325,
+      "originalAttributes": "id=\"mmd-studio-onsen-visual-js-20260803\""
+    },
+    {
+      "location": "head",
+      "order": 4,
+      "kind": "script",
+      "id": "mmd-studio-operational-bridge-20260803",
+      "scope": "studio",
+      "path": "webflow/global/site-code/2026-11-07/sources/head/04-mmd-studio-operational-bridge-20260803.js",
+      "characters": 3174,
+      "originalAttributes": "id=\"mmd-studio-operational-bridge-20260803\""
+    },
+    {
+      "location": "head",
+      "order": 5,
+      "kind": "style",
+      "id": "mmd-final-logo-canon-static-20260826",
+      "scope": "legacy-global-review",
+      "path": "webflow/global/site-code/2026-11-07/sources/head/05-mmd-final-logo-canon-static-20260826.css",
+      "characters": 2590,
+      "originalAttributes": "id=\"mmd-final-logo-canon-static-20260826\""
+    },
+    {
+      "location": "head",
+      "order": 6,
+      "kind": "style",
+      "id": "mmd-header-logo-scale-20260826",
+      "scope": "legacy-global-review",
+      "path": "webflow/global/site-code/2026-11-07/sources/head/06-mmd-header-logo-scale-20260826.css",
+      "characters": 1708,
+      "originalAttributes": "id=\"mmd-header-logo-scale-20260826\""
+    },
+    {
+      "location": "head",
+      "order": 7,
+      "kind": "style",
+      "id": "mmd-footer-logo-scale-20260827",
+      "scope": "legacy-global-review",
+      "path": "webflow/global/site-code/2026-11-07/sources/head/07-mmd-footer-logo-scale-20260827.css",
+      "characters": 850,
+      "originalAttributes": "id=\"mmd-footer-logo-scale-20260827\""
+    },
+    {
+      "location": "head",
+      "order": 8,
+      "kind": "style",
+      "id": "mmd-global-type-contrast-20260827",
+      "scope": "legacy-global-review",
+      "path": "webflow/global/site-code/2026-11-07/sources/head/08-mmd-global-type-contrast-20260827.css",
+      "characters": 1059,
+      "originalAttributes": "id=\"mmd-global-type-contrast-20260827\""
+    },
+    {
+      "location": "head",
+      "order": 9,
+      "kind": "style",
+      "id": "mms-brand-header-override-20260829",
+      "scope": "mms",
+      "path": "webflow/global/site-code/2026-11-07/sources/head/09-mms-brand-header-override-20260829.css",
+      "characters": 1718,
+      "originalAttributes": "id=\"mms-brand-header-override-20260829\""
+    },
+    {
+      "location": "head",
+      "order": 10,
+      "kind": "script",
+      "id": "script-anonymous-10",
+      "scope": "review",
+      "path": "webflow/global/site-code/2026-11-07/sources/head/10-script-anonymous-10.js",
+      "characters": 172,
+      "originalAttributes": ""
+    },
+    {
+      "location": "head",
+      "order": 11,
+      "kind": "style",
+      "id": "mmd-partner-copy-cta-theme-v2",
+      "scope": "partner",
+      "path": "webflow/global/site-code/2026-11-07/sources/head/11-mmd-partner-copy-cta-theme-v2.css",
+      "characters": 6184,
+      "originalAttributes": "id=\"mmd-partner-copy-cta-theme-v2\""
+    },
+    {
+      "location": "head",
+      "order": 12,
+      "kind": "style",
+      "id": "mmd-partner-cta-contrast-v3",
+      "scope": "partner",
+      "path": "webflow/global/site-code/2026-11-07/sources/head/12-mmd-partner-cta-contrast-v3.css",
+      "characters": 1863,
+      "originalAttributes": "id=\"mmd-partner-cta-contrast-v3\""
+    },
+    {
+      "location": "head",
+      "order": 13,
+      "kind": "style",
+      "id": "mmd-global-public-header-css",
+      "scope": "public",
+      "path": "webflow/global/site-code/2026-11-07/sources/head/13-mmd-global-public-header-css.css",
+      "characters": 3789,
+      "originalAttributes": "id=\"mmd-global-public-header-css\""
+    },
+    {
+      "location": "head",
+      "order": 14,
+      "kind": "script",
+      "id": "mmd-global-public-header-js",
+      "scope": "public",
+      "path": "webflow/global/site-code/2026-11-07/sources/head/14-mmd-global-public-header-js.js",
+      "characters": 3482,
+      "originalAttributes": "id=\"mmd-global-public-header-js\""
+    },
+    {
+      "location": "head",
+      "order": 15,
+      "kind": "script",
+      "id": "sigil-internal-silver-loader-v1",
+      "scope": "internal",
+      "path": "webflow/global/site-code/2026-11-07/sources/head/15-sigil-internal-silver-loader-v1.js",
+      "characters": 337,
+      "originalAttributes": "id=\"sigil-internal-silver-loader-v1\""
+    },
+    {
+      "location": "head",
+      "order": 16,
+      "kind": "script",
+      "id": "sigil-admin-contrast-v2",
+      "scope": "internal",
+      "path": "webflow/global/site-code/2026-11-07/sources/head/16-sigil-admin-contrast-v2.js",
+      "characters": 1957,
+      "originalAttributes": "id=\"sigil-admin-contrast-v2\""
+    },
+    {
+      "location": "head",
+      "order": 17,
+      "kind": "script",
+      "id": "sigil-internal-workspace-v3",
+      "scope": "internal",
+      "path": "webflow/global/site-code/2026-11-07/sources/head/17-sigil-internal-workspace-v3.js",
+      "characters": 13485,
+      "originalAttributes": "id=\"sigil-internal-workspace-v3\""
+    },
+    {
+      "location": "footer",
+      "order": 16,
+      "kind": "script",
+      "id": "mms-therapist-canon-20260906",
+      "scope": "mms",
+      "path": "webflow/global/site-code/2026-11-07/sources/footer/16-mms-therapist-canon-20260906.js",
+      "characters": 2761,
+      "originalAttributes": "id=\"mms-therapist-canon-20260906\""
+    },
+    {
+      "location": "footer",
+      "order": 17,
+      "kind": "style",
+      "id": "mmd-internal-admin-canon-20260907",
+      "scope": "internal",
+      "path": "webflow/global/site-code/2026-11-07/sources/footer/17-mmd-internal-admin-canon-20260907.css",
+      "characters": 2923,
+      "originalAttributes": "id=\"mmd-internal-admin-canon-20260907\""
+    },
+    {
+      "location": "footer",
+      "order": 18,
+      "kind": "script",
+      "id": "mmd-internal-admin-canon-js-20260907",
+      "scope": "internal",
+      "path": "webflow/global/site-code/2026-11-07/sources/footer/18-mmd-internal-admin-canon-js-20260907.js",
+      "characters": 2561,
+      "originalAttributes": "id=\"mmd-internal-admin-canon-js-20260907\""
+    },
+    {
+      "location": "footer",
+      "order": 23,
+      "kind": "script",
+      "id": "mmd-partner-plain-thai-warm-v3",
+      "scope": "partner",
+      "path": "webflow/global/site-code/2026-11-07/sources/footer/23-mmd-partner-plain-thai-warm-v3.js",
+      "characters": 37390,
+      "originalAttributes": "id=\"mmd-partner-plain-thai-warm-v3\""
+    }
+  ],
+  "externalScripts": [
+    {
+      "location": "footer",
+      "order": 1,
+      "src": "https://cdn.jsdelivr.net/gh/MMD-Prive/mmd-i18n@main/assets/i18n/i18n.dict.js?v=20260904-rollout-3",
+      "system": "mmd-i18n"
+    },
+    {
+      "location": "footer",
+      "order": 2,
+      "src": "https://cdn.jsdelivr.net/gh/MMD-Prive/mmd-i18n@main/assets/i18n/member-requests.i18n.js?v=20260904-rollout-3",
+      "system": "mmd-i18n"
+    },
+    {
+      "location": "footer",
+      "order": 3,
+      "src": "https://cdn.jsdelivr.net/gh/MMD-Prive/mmd-i18n@main/assets/i18n/pages/blackcard-black-card.js?v=20261005-blackcard-1",
+      "system": "mmd-i18n"
+    },
+    {
+      "location": "footer",
+      "order": 4,
+      "src": "https://cdn.jsdelivr.net/gh/MMD-Prive/mmd-i18n@0598a902ec7ee096f0908f9fc30ed98a7bfdca36/assets/i18n/pages/profiles.core.js?v=20261030-profiles-heading-1",
+      "system": "mmd-i18n"
+    },
+    {
+      "location": "footer",
+      "order": 5,
+      "src": "https://cdn.jsdelivr.net/gh/MMD-Prive/mmd-i18n@main/assets/i18n/pages/profiles.runtime.js?v=20261005-profiles-1",
+      "system": "mmd-i18n"
+    },
+    {
+      "location": "footer",
+      "order": 6,
+      "src": "https://cdn.jsdelivr.net/gh/MMD-Prive/mmd-i18n@main/assets/i18n/pages/mms.js?v=20260904-rollout-3",
+      "system": "mmd-i18n"
+    },
+    {
+      "location": "footer",
+      "order": 7,
+      "src": "https://cdn.jsdelivr.net/gh/MMD-Prive/mmd-i18n@main/assets/i18n/pages/mms-how-to-use.js?v=20260904-rollout-3",
+      "system": "mmd-i18n"
+    },
+    {
+      "location": "footer",
+      "order": 8,
+      "src": "https://cdn.jsdelivr.net/gh/MMD-Prive/mmd-i18n@main/assets/i18n/pages/mms-therapists.js?v=20260905-therapists-2",
+      "system": "mmd-i18n"
+    },
+    {
+      "location": "footer",
+      "order": 9,
+      "src": "https://cdn.jsdelivr.net/gh/MMD-Prive/mmd-i18n@main/assets/i18n/pages/mms-therapist-application.js?v=20260904-rollout-3",
+      "system": "mmd-i18n"
+    },
+    {
+      "location": "footer",
+      "order": 10,
+      "src": "https://cdn.jsdelivr.net/gh/MMD-Prive/mmd-i18n@main/assets/i18n/pages/mmd-shop.js?v=20260904-rollout-3",
+      "system": "mmd-i18n"
+    },
+    {
+      "location": "footer",
+      "order": 11,
+      "src": "https://cdn.jsdelivr.net/gh/MMD-Prive/mmd-i18n@main/assets/i18n/care-back-promotion.i18n.js?v=20260904-rollout-3",
+      "system": "mmd-i18n"
+    },
+    {
+      "location": "footer",
+      "order": 12,
+      "src": "https://cdn.jsdelivr.net/gh/MMD-Prive/mmd-i18n@main/assets/i18n/care-back-wish-submission.i18n.js?v=20260904-rollout-3",
+      "system": "mmd-i18n"
+    },
+    {
+      "location": "footer",
+      "order": 13,
+      "src": "https://cdn.jsdelivr.net/gh/MMD-Prive/mmd-i18n@main/assets/i18n/completed-pages.registry.js?v=20261005-profiles-1",
+      "system": "mmd-i18n"
+    },
+    {
+      "location": "footer",
+      "order": 14,
+      "src": "https://cdn.jsdelivr.net/gh/MMD-Prive/mmd-i18n@main/assets/i18n/i18n.autobind.js?v=20260904-rollout-3",
+      "system": "mmd-i18n"
+    },
+    {
+      "location": "footer",
+      "order": 15,
+      "src": "https://cdn.jsdelivr.net/gh/MMD-Prive/mmd-i18n@main/assets/i18n/i18n.core.v21.js?v=20260904-rollout-3",
+      "system": "mmd-i18n"
+    },
+    {
+      "location": "footer",
+      "order": 19,
+      "src": "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90%2F689e5ba67671442434f3ca35%2F6a9eafdfee3534dc4f0a5ca7%2Fkenjimatrixguardui-1.0.0.js",
+      "system": "kenji"
+    },
+    {
+      "location": "footer",
+      "order": 20,
+      "src": "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90%2F689e5ba67671442434f3ca35%2F6a9eafe03165b10b67d3b7b6%2Fkenjimatrixguardruntime-1.0.0.js",
+      "system": "kenji"
+    },
+    {
+      "location": "footer",
+      "order": 21,
+      "src": "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90%2F689e5ba67671442434f3ca35%2F6ab17172038a9a1445765143%2Fmmdposthogroutes-2.0.0.js",
+      "system": "analytics"
+    },
+    {
+      "location": "footer",
+      "order": 22,
+      "src": "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90%2F689e5ba67671442434f3ca35%2F6ab1718791eb57dac71b1b7a%2Fmmdposthogapi-1.0.0.js",
+      "system": "analytics"
+    }
+  ]
+}

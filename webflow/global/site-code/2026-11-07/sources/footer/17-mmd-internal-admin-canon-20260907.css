@@ -1,0 +1,14 @@
+
+#mmdMemberIntelligence,.sai16,.sos18,#mmdStudioUploadR5,#mmdStudioReviewR5,#mmdModelPreview,#mmdCareBackV2,#mmd-ceo-brief-lv10{font-family:"LINE Seed Sans TH","Noto Sans Thai",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif!important}
+#mmdMemberIntelligence *,.sai16 *,.sos18 *,#mmdStudioUploadR5 *,#mmdStudioReviewR5 *,#mmdModelPreview *,#mmdCareBackV2 *,#mmd-ceo-brief-lv10 *{font-family:inherit!important}
+.mi-hero h1,.sai16__hero h1,.sos18__hero h1,.mu-copy h1,.mmd-review-r5__hero-copy h1,.mp-copy h1{font-size:clamp(38px,6vw,58px)!important;line-height:1!important;letter-spacing:-.045em!important}
+.sai16__ambient,.sos18__glow--violet{display:none!important}.sai16,.sos18{background:radial-gradient(circle at 90% 0,rgba(214,180,106,.08),transparent 28rem),#070706!important;color:#f6f0e5!important}
+.sai16__hero,.sos18__hero-copy,.sos18__visual,.mi-search-card,.mi-panel,.mu-panel,.mmd-review-r5__panel,.mp-panel{border-radius:20px!important}
+.sos18__visual,.sos18__visual img{min-height:340px!important}.sos18__hero-copy,.sos18__setup-card{padding:18px!important}
+.mu-hero,.mmd-review-r5__hero,.mp-hero{min-height:390px!important;aspect-ratio:auto!important;border-radius:22px!important}.mu-note,.mmd-review-r5__pernote,.mp-note{padding:22px!important}
+#mmdCareBackV2{--bg:#070706;--paper:#11110f;--ink:#f6f0e5;--muted:#aaa08d;--line:rgba(255,255,255,.1);--gold:#d6b46a;background:#070706!important;color:var(--ink)!important}
+#mmdCareBackV2 .mcb-hero h1,#mmdCareBackV2 .mcb-sectiontitle h2,#mmdCareBackV2 .mcb-blockhead h3,#mmdCareBackV2 .mcb-stats strong{color:var(--ink)!important;letter-spacing:-.035em!important}#mmdCareBackV2 .mcb-hero h1{font-size:clamp(40px,8vw,58px)!important}
+#mmdCareBackV2 .mcb-filter,#mmdCareBackV2 .mcb-steps article,#mmdCareBackV2 .mcb-flow button{background:#0d0d0c!important}#mmdCareBackV2 .mcb-dialog,#mmdCareBackV2 .mcb-drawer{background:#11110f!important;color:var(--ink)!important}
+#mmd-ceo-brief-lv10{padding:16px!important}#mmd-ceo-brief-lv10 .mcb10-hero{min-height:440px!important;padding:38px!important;border-radius:22px!important}#mmd-ceo-brief-lv10 .mcb10-panel,#mmd-ceo-brief-lv10 .mcb10-closing{padding:30px!important;border-radius:20px!important}
+.mmd-admin-hold{position:relative;z-index:9999;margin:12px auto 20px;width:min(1200px,calc(100% - 32px));padding:14px 16px;border:1px solid rgba(216,185,108,.34);border-radius:14px;background:#11100d;color:#f6f0e5;font:600 13px/1.5 "LINE Seed Sans TH","Noto Sans Thai",sans-serif}.mmd-admin-hold b{color:#d8b96c}.mmd-admin-hold small{display:block;margin-top:3px;color:#aaa08d;font-weight:400}
+@media(max-width:760px){.mi-hero h1,.sai16__hero h1,.sos18__hero h1,.mu-copy h1,.mmd-review-r5__hero-copy h1,.mp-copy h1{font-size:clamp(36px,11vw,50px)!important}.mu-hero,.mmd-review-r5__hero,.mp-hero{min-height:440px!important}#mmd-ceo-brief-lv10 .mcb10-hero{min-height:500px!important;padding:22px 18px!important}}
