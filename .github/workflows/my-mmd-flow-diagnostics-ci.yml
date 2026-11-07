@@ -9,12 +9,15 @@ on:
       - 'member-pages-worker/src/liff-identity-foundation.js'
       - 'member-pages-worker/src/liff-member-shell.js'
       - 'member-pages-worker/test/liff-flow-diagnostics.test.mjs'
+      - 'member-pages-worker/test/liff-start-persistence.test.mjs'
       - 'member-pages-worker/test/liff-loader-diagnostics.test.mjs'
       - 'member-pages-worker/test/liff-entry-session-lane.test.mjs'
       - 'member-pages-worker/test/member-updates.test.mjs'
       - 'scripts/my-mmd-flow-diagnostics-delta.mjs'
       - 'scripts/my-mmd-flow-diagnostics-delta.test.mjs'
       - 'scripts/my-mmd-diagnostics-auth-fixtures.test.mjs'
+      - 'scripts/my-mmd-start-persistence-delta.mjs'
+      - 'scripts/my-mmd-start-persistence-delta.test.mjs'
       - '.github/workflows/my-mmd-flow-diagnostics-ci.yml'
 permissions:
   contents: read
@@ -33,6 +36,7 @@ jobs:
         run: >-
           node --experimental-global-webcrypto --test
           member-pages-worker/test/liff-flow-diagnostics.test.mjs
+          member-pages-worker/test/liff-start-persistence.test.mjs
           member-pages-worker/test/liff-loader-diagnostics.test.mjs
           member-pages-worker/test/liff-entry-session-lane.test.mjs
           member-pages-worker/test/member-updates.test.mjs
@@ -41,5 +45,6 @@ jobs:
           member-pages-worker/test/liff-member-shell.test.mjs
           scripts/my-mmd-flow-diagnostics-delta.test.mjs
           scripts/my-mmd-diagnostics-auth-fixtures.test.mjs
+          scripts/my-mmd-start-persistence-delta.test.mjs
       - name: Whitespace
         run: git diff --check

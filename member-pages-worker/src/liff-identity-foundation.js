@@ -181,7 +181,7 @@ export default {
       } else if (LOGOUT_PATHS.has(path)) {
         response = await handleLogout(request, env);
       } else if (START_PATHS.has(path)) {
-        response = await handleStart(request, env);
+        response = await handleStart(request, env, ctx);
       } else if (INTENT_PATHS.has(path)) {
         response = await handleIntent(request, env);
       } else if (AUDIENCE_PATHS.has(path)) {
@@ -550,8 +550,8 @@ function forwardMmsResponse(upstream, cookies = []) {
   return json(payload, status, { cookies });
 }
 
-export async function handleStart(request, env = {}) {
-  const diagnostic = createStartDiagnostics();
+export async function handleStart(request, env = {}, ctx) {
+  const diagnostic = createStartDiagnostics({kv: env.LIFF_IDENTITY_KV, ctx});
   const aborted = () => diagnostic.disconnected();
   request.signal.addEventListener('abort', aborted, {once:true});
   if (request.signal.aborted) aborted();
