@@ -1,0 +1,58 @@
+{
+  "schema": "kenji-3106-local-release-v1",
+  "source": "830c3e76a2040e3a09c202cbc36fc8ad0874eab6",
+  "profile_merge_sha": "a99adbd31629ea587f2f2a16e78b3b1b73f277a8",
+  "release_ready": false,
+  "upload_targets": [
+    "member-dashboard-chat-worker"
+  ],
+  "workers": {
+    "member-dashboard-chat-worker": {
+      "version": "5e4f2868-6295-420e-8c0d-a67975e127ec",
+      "deployment": "d8288a1a-e9bb-42f6-b1ad-b416bc8cacce",
+      "module": "guide-notification-entry.js",
+      "baseline_sha256": "aa47e9c54aeecbbb08e6d2f86e8b06c311273913c8ea7fcf35617d0234cc38a9",
+      "candidate_sha256": "4e8e89d7e596c75ec7f2af9557708a30115946f1b53dbe233fe5df74d4b2a6bc",
+      "configuration": "efc3831a0343468349579f74b649bc64dd51bd798a543ed613e12e18248d4c6e",
+      "settings": "9c9ebf7825fbffbea427a63ae46722396d62dba1a7b2a831871b842749fb3ec2",
+      "reversible": true,
+      "patch_count": 5,
+      "anchors": [
+        {
+          "before": "8e01f5d58c6b55dd2463f2f14dc04b44e51d79d8fc3985d404ffd75f6b325724",
+          "after": "22965176027ffa0014b05030d6b47d0c76eef3a97cc617741dd27fc744a2628f"
+        },
+        {
+          "before": "bc0cb54a73e23ca1888f1fa3b9c35ca44773535c0e3c60652681ee35e3e239c6",
+          "after": "ab7e6a48897bd3ab524f2444aaac811471f591dc9c278f6c70e752b72260040d"
+        },
+        {
+          "before": "5bc2efe078bac910d461668e565889933020117b6c97f3db6cb0d00ca9c30ffa",
+          "after": "4d8c1862215165e883c393ae3d48a7297c6ae4b7ad16f9290f039ee32b8724c7"
+        },
+        {
+          "before": "41ba4e61c25d3b308bbfbab788d0f187771a6b0df5af176c367514976b6f2256",
+          "after": "656dd01496c42565284fa257e1ac3082e95a9a1b95e668730ef641af7d979b74"
+        },
+        {
+          "before": "a7b0a0e7028288476320fdb08218568993eba946df71308cf0a71e309f2e1a15",
+          "after": "6cb02a842cb8cb82aeecf508d6ea000e127e0c193bd52f1bf0031a89e9b9216f"
+        }
+      ],
+      "model_enabled": false,
+      "baseline_traffic": 100
+    }
+  },
+  "dependencies": {
+    "admin-worker": {
+      "mode": "read_only",
+      "version": "030b5c09-2394-4fdd-9547-6461707f6dd7",
+      "deployment": "7db93a14-c9bd-43a6-88fb-00e837ef4c3a",
+      "module": "admin-login-hero-worker.js",
+      "baseline_sha256": "a42ce804621a2650e29428d4d8ce144bfaa1f036f600ff0755fdf22b347161a9",
+      "configuration": "7c071f3f984b4fcda31451a8e1d415bec2ec49f2da2652af26a8cfb78b7621be",
+      "settings": "d13e83ebe9194fdbde48d1d4a9e2f1fd0b9c653ced072a1aa27fb746062c0e80",
+      "baseline_traffic": 100
+    }
+  }
+}
