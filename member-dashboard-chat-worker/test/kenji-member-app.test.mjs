@@ -89,10 +89,46 @@ test("NEXT LV remains member-only, mobile-first and CSP-nonced", async () => {
   assert.match(html, /data-mode="qa"/);
   assert.match(html, /data-mode="promo"/);
   assert.match(html, /id="kenji-input"[^>]*maxlength="800"/);
-  assert.match(html, /src="https:\/\/cdn\.prod\.website-files\.com\/[^"]+Kenji%20CC%2002\.webp"/);
+  assert.ok(html.includes('<picture class="hero-picture">'));
+  assert.ok(html.includes('media="(max-width: 920px)"'));
+  // Approved Kenji-04 Public art: the owner ZIP was uploaded to Webflow and not replaced by older CC portraits.
+  assert.ok(html.includes("Kenji04%20Member%20NEXT%20LV%20Desktop%2016x9.webp"));
+  assert.ok(html.includes("Kenji04%20Member%20NEXT%20LV%20Mobile%209x16.webp"));
+  assert.ok(html.includes("Kenji04%20Member%20NEXT%20LV%20Chat%20Avatar.webp"));
+  assert.ok(!html.includes("Kenji%20CC%2002.webp"));
+  assert.ok(!html.includes("Kenji%20Alove.webp"));
+  // Official two-brand mapping: MMD = Curated, SIGIL = Private; no local access grant is possible.
+  // Logos are exact Webflow-approved marks, embedded as content-addressed image data
+  // to work in standalone Worker HTML and offline review (not text or broken CDN URLs).
+  const headerLogo = html.match(/<img class="brand-mark" src="data:image\/webp;base64,([^"]+)"/);
+  const privateLogo = html.match(/class="world-link world-link--private"[\s\S]*?<img src="data:image\/png;base64,([^"]+)"/);
+  assert.ok(headerLogo?.[1], "Curated mark must render as an embedded image");
+  assert.ok(privateLogo?.[1], "SIGIL mark must render as an embedded image");
+  assert.equal(Buffer.from(headerLogo[1], "base64").subarray(0, 4).toString("ascii"), "RIFF");
+  assert.equal(Buffer.from(privateLogo[1], "base64").subarray(1, 4).toString("ascii"), "PNG");
+  assert.ok(!html.includes("__KENJI_MMD_MARK__"));
+  assert.ok(!html.includes("__KENJI_SIGIL_MARK__"));
+  assert.match(html, /@font-face/);
+  assert.ok(html.includes("LINESeedSansTH_W_Rg.woff2"));
+  assert.ok(html.includes("Canela-Regular-Trial.otf"));
+  assert.ok(html.includes("Inter_18pt-Regular.ttf"));
+  assert.ok(html.includes("font-family:Canela,Georgia,serif"));
+  assert.ok(html.includes("font-family:Inter"));
+  assert.ok(html.includes('class="world-link world-link--curated"'));
+  assert.ok(html.includes('class="world-link world-link--private"'));
+  assert.ok(html.includes('href="/member/private"'));
+  assert.ok(html.includes("PRIVATE<br>ตรวจสิทธิ์"));
+  assert.ok(!html.includes("grantPrivateAccess"));
+  assert.match(html, /@media\(min-width:921px\)/);
+  assert.match(html, /grid-template-rows:clamp\(146px,22dvh,190px\)/);
+  assert.ok(html.includes('alt="MMD Privé"'));
+  assert.ok(html.includes('href="/my-mmd/"'));
+  assert.ok(!html.includes('href="/member/my-mmd"'));
   assert.match(html, /ดูโปรโมชั่นจากประกาศของ MMD/);
   assert.doesNotMatch(html, /localStorage\.|sessionStorage\.|javascript:/);
   assert.match(response.headers.get("content-security-policy") || "", /connect-src 'self'/);
+  assert.ok((response.headers.get("content-security-policy") || "").includes("https://s3.amazonaws.com"));
+  assert.ok((response.headers.get("content-security-policy") || "").includes("font-src 'self' https://cdn.prod.website-files.com"));
   assert.doesNotMatch(response.headers.get("content-security-policy") || "", /unsafe-inline/);
   assert.equal(response.headers.get("x-mmd-kenji"), "member-app-next-lv");
 });
