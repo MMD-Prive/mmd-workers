@@ -102,7 +102,8 @@ import {
 export const ADMIN_LOGIN_PAGE_PATH = "/internal/admin/login";
 export const SIGIL_ADMIN_LOGIN_PAGE_PATH = "/sigil/internal/admin/login";
 export const ADMIN_DASHBOARD_API_PATH = "/v1/admin/dashboard";
-export const ADMIN_OWNER_DASHBOARD_PATH = "/internal/admin/dashboard";
+// Preserve the established export name; Console is now the owner's homepage.
+export const ADMIN_OWNER_DASHBOARD_PATH = "/internal/admin/console";
 export {
   ADMIN_LOGIN_SESSION_PATH,
   APPROVED_ADMIN_LOGIN_APPLE_TOUCH_ICON,
@@ -343,12 +344,12 @@ export default {
     }
 
     if ((method === "GET" || method === "HEAD") && path === "/internal/admin") {
-      const target = new URL("/internal/admin/control-room", request.url);
+      const target = new URL("/internal/admin/console", request.url);
       return new Response(null, {
         status: 303,
         headers: adminGateHeaders(request, env, {
           location: target.toString(),
-          "x-mmd-admin-entry": "control-room",
+          "x-mmd-admin-entry": "console",
         }),
       });
     }
@@ -620,7 +621,7 @@ function adminSessionCookie(request, value, maxAge) {
 }
 
 function sanitizeNextPath(value) {
-  const fallback = "/internal/admin/control-room";
+  const fallback = "/internal/admin/console";
   const raw = String(value || "").trim();
   if (!raw) return fallback;
   let parsed;

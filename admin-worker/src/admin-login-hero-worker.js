@@ -70,7 +70,7 @@ import {
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
 import { handleVerification } from "./mms-partner-line-verification.mjs";
 import { APP_JS, OWNER_HTML } from "./mms-partner-line-ui.mjs";
-import { ADMIN_OWNER_DASHBOARD_PATH, applyCredentialBoundAdminGate } from "./admin-login-hero-worker-core.js";
+import { ADMIN_OWNER_DASHBOARD_PATH, applyCredentialBoundAdminGate, normalizeNext } from "./admin-login-hero-worker-core.js";
 import { handleLineJobBriefRequest, isLineJobBriefRequest } from "./model-line-job-briefs.js";
 import { lineBriefDiagnosticRuntimeDependencies } from "./model-line-brief-diagnostic-runtime.js";
 import {
@@ -217,18 +217,18 @@ export async function enforceOwnerDashboardFirst(request, response) {
   const sessionCreated = response.headers.get("x-mmd-admin-login") === "session-created";
   if (!sessionCreated || role === "mms_partner") return response;
 
-  const requestedNext = String(response.headers.get("x-mmd-admin-next") || "").trim();
+  const requestedNext = normalizeNext(response.headers.get("x-mmd-admin-next") || "");
   const preserveRefundNext = requestedNext === "/internal/admin/refunds" || requestedNext.startsWith("/internal/admin/refunds?");
-  // The core login has already sanitized this destination. Resume only this
-  // exact workspace; unrelated owner logins retain their dashboard-first rule.
+  // Console is the default home. Resume an explicitly selected, allowlisted
+  // task after login instead of replacing it with the homepage.
   const preserveConsoleNext = requestedNext === ADMIN_CONSOLE_PATH
     || requestedNext.startsWith(`${ADMIN_CONSOLE_PATH}?`)
     || requestedNext.startsWith(`${ADMIN_CONSOLE_PATH}#`);
-  const postLoginTarget = preserveRefundNext || preserveConsoleNext ? requestedNext : ADMIN_OWNER_DASHBOARD_PATH;
+  const postLoginTarget = requestedNext || ADMIN_OWNER_DASHBOARD_PATH;
 
   const headers = new Headers(response.headers);
   headers.set("x-mmd-admin-next", postLoginTarget);
-  headers.set("x-mmd-admin-post-login", preserveRefundNext ? "resume-refund-ops" : preserveConsoleNext ? "resume-admin-console" : "dashboard-first");
+  headers.set("x-mmd-admin-post-login", postLoginTarget === ADMIN_OWNER_DASHBOARD_PATH ? "console-first" : preserveRefundNext ? "resume-refund-ops" : preserveConsoleNext ? "resume-admin-console" : "resume-admin-task");
 
   if (response.status >= 300 && response.status < 400) {
     headers.set("location", new URL(postLoginTarget, requestUrl.origin).toString());
@@ -292,12 +292,21 @@ const adminLoginHeroWorker = {
   async fetch(request, env, ctx) {
     const runtimeEnv = modelMoneyRuntimeEnv(env);
     const consolePath = new URL(request.url).pathname.replace(/\/+$/g, "") || "/";
-    if (consolePath === ADMIN_CONSOLE_PATH) {
+    const isConsoleHome = consolePath === "/internal/admin" && ["GET", "HEAD"].includes(request.method.toUpperCase());
+    if (consolePath === ADMIN_CONSOLE_PATH || isConsoleHome) {
       const method = request.method.toUpperCase();
       const gate = await applyCredentialBoundAdminGate(request, runtimeEnv, consolePath, method);
       if (gate.response) return gate.response;
       if (!["GET", "HEAD"].includes(method)) {
         return new Response(null, { status: 405, headers: { allow: "GET, HEAD", "cache-control": "no-store, private" } });
+      }
+      if (isConsoleHome) {
+        return new Response(null, { status: 303, headers: {
+          location: new URL(ADMIN_CONSOLE_PATH, request.url).toString(),
+          "cache-control": "no-store, private",
+          "x-mmd-admin-gate-version": "credential-bound-v1",
+          "x-mmd-admin-entry": "console",
+        } });
       }
       // Render before the generic admin backfill scheduling path. Opening this
       // read-only workspace must not start a background identity write.

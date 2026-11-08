@@ -9,16 +9,16 @@ const loginRequest = (headers = {}) => new Request(
   { method: "POST", headers },
 );
 
-function sessionHeaders(role = "admin") {
+function sessionHeaders(role = "admin", next = "") {
   return {
     "x-mmd-admin-login": "session-created",
     "x-mmd-admin-role": role,
-    "x-mmd-admin-next": "/internal/admin/control-room",
+    "x-mmd-admin-next": next,
     "set-cookie": "mmd_admin_gate_v1=test; Path=/; HttpOnly; Secure; SameSite=Lax",
   };
 }
 
-test("owner JSON login always lands on dashboard first", async () => {
+test("owner JSON login without a selected task lands on Console", async () => {
   const input = new Response(
     JSON.stringify({ ok: true, next: "/internal/admin/payments", role: "admin" }),
     {
@@ -33,14 +33,14 @@ test("owner JSON login always lands on dashboard first", async () => {
   const output = await enforceOwnerDashboardFirst(loginRequest({ "x-mmd-login-fetch": "1" }), input);
   const body = await output.json();
 
-  assert.equal(ADMIN_OWNER_DASHBOARD_PATH, "/internal/admin/dashboard");
-  assert.equal(body.next, "/internal/admin/dashboard");
-  assert.equal(output.headers.get("x-mmd-admin-next"), "/internal/admin/dashboard");
-  assert.equal(output.headers.get("x-mmd-admin-post-login"), "dashboard-first");
+  assert.equal(ADMIN_OWNER_DASHBOARD_PATH, "/internal/admin/console");
+  assert.equal(body.next, "/internal/admin/console");
+  assert.equal(output.headers.get("x-mmd-admin-next"), "/internal/admin/console");
+  assert.equal(output.headers.get("x-mmd-admin-post-login"), "console-first");
   assert.match(output.headers.get("set-cookie") || "", /mmd_admin_gate_v1=test/);
 });
 
-test("owner redirect login always lands on dashboard first", async () => {
+test("owner redirect login without a selected task lands on Console", async () => {
   const input = new Response(null, {
     status: 303,
     headers: {
@@ -51,8 +51,8 @@ test("owner redirect login always lands on dashboard first", async () => {
 
   const output = await enforceOwnerDashboardFirst(loginRequest(), input);
   assert.equal(output.status, 303);
-  assert.equal(output.headers.get("location"), "https://mmdbkk.com/internal/admin/dashboard");
-  assert.equal(output.headers.get("x-mmd-admin-next"), "/internal/admin/dashboard");
+  assert.equal(output.headers.get("location"), "https://mmdbkk.com/internal/admin/console");
+  assert.equal(output.headers.get("x-mmd-admin-next"), "/internal/admin/console");
 });
 
 test("MMS partner keeps the dedicated MMS landing page", async () => {
@@ -61,7 +61,7 @@ test("MMS partner keeps the dedicated MMS landing page", async () => {
     {
       status: 200,
       headers: {
-        ...sessionHeaders("mms_partner"),
+        ...sessionHeaders("mms_partner", "/internal/admin/mms"),
         "content-type": "application/json; charset=utf-8",
       },
     },
@@ -70,7 +70,7 @@ test("MMS partner keeps the dedicated MMS landing page", async () => {
   const output = await enforceOwnerDashboardFirst(loginRequest({ "x-mmd-login-fetch": "1" }), input);
   const body = await output.json();
   assert.equal(body.next, "/internal/admin/mms");
-  assert.equal(output.headers.get("x-mmd-admin-next"), "/internal/admin/control-room");
+  assert.equal(output.headers.get("x-mmd-admin-next"), "/internal/admin/mms");
   assert.equal(output.headers.get("x-mmd-admin-post-login"), null);
 });
 
@@ -83,7 +83,7 @@ test("non-login responses are untouched", async () => {
 });
 
 
-test("owner login resumes exact Refund Ops task instead of dashboard-first", async () => {
+test("owner login resumes the exact Refund Ops task", async () => {
   const refundNext = "/internal/admin/refunds?inbox_id=refund_manual_man_20260929_pay_mulcs8o4&action=upload";
   const input = new Response(null, {
     status: 303,

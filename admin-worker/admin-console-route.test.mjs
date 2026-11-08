@@ -143,7 +143,7 @@ test('Console next whitelist does not accept sibling routes, external URLs or cr
   assert.equal(normalizeNext(`${PATH}/?date=all#jobs`), `${PATH}?date=all#jobs`);
   for (const next of [`${PATH}-other`, `${PATH}/inbox`, `https://example.com${PATH}`, `${PATH}?token=secret`, `${PATH}?access_code=secret`]) {
     assert.notEqual(normalizeNext(next), next);
-    assert.equal(normalizeNext(next), '/internal/admin/control-room');
+    assert.equal(normalizeNext(next), '/internal/admin/console');
   }
 });
 
