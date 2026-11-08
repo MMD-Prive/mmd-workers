@@ -7,6 +7,7 @@ const AIRTABLE_API = "https://api.airtable.com/v0";
 const DEFAULT_SESSIONS_TABLE_ID = "tblC98mKWbzmPuNzX";
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 50;
+const MAX_QUERY_LENGTH = 160;
 // Finance/pricing columns read by field id (stable) in a second, narrow pass.
 export const JOB_FINANCE_FIELD_IDS = Object.freeze({
   paymentRef: "fldojgjSQLaO0uQLX",
@@ -35,6 +36,11 @@ export async function handleAdminDashboardJobsRequest(request, env, actor) {
   }
 
   const url = new URL(request.url);
+  const rawQuery = url.searchParams.get("q") || "";
+  const query = normalizeSearchText(rawQuery);
+  if (url.searchParams.getAll("q").length > 1 || rawQuery.length > MAX_QUERY_LENGTH || query.length > MAX_QUERY_LENGTH || /[\p{Cc}\p{Cf}]/u.test(rawQuery)) {
+    return jobsJson({ ok: false, error: "invalid_query" }, 400);
+  }
   const rawDate = String(url.searchParams.get("date") || url.searchParams.get("job_date") || "").trim();
   const jobDate = normalizeDateOnly(rawDate);
   if (rawDate && !jobDate) {
@@ -78,6 +84,7 @@ export async function handleAdminDashboardJobsRequest(request, env, actor) {
       sessionId,
       jobId,
       clientId,
+      query,
     });
 
     const body = {
@@ -87,6 +94,7 @@ export async function handleAdminDashboardJobsRequest(request, env, actor) {
       view: "jobs",
       generated_at: new Date().toISOString(),
       filters: {
+        q: query || null,
         job_date: jobDate || null,
         session_id: sessionId || null,
         job_id: jobId || null,
@@ -119,12 +127,17 @@ export function buildJobsPage(records, options = {}) {
   const sessionId = String(options.sessionId || "").trim();
   const jobId = String(options.jobId || "").trim();
   const clientId = String(options.clientId || "").trim();
+  const query = normalizeSearchText(options.query || "");
   const allItems = projectJobs(records, now, options.extrasById || {});
   const filtered = allItems.filter((item) => {
     const dateMatch = !jobDate || item.job_date === jobDate;
     const sessionMatch = !sessionId || item.id === sessionId || item.session_id === sessionId;
     const jobMatch = !jobId || item.job_id === jobId || item.id === jobId;
-    return dateMatch && sessionMatch && jobMatch && (!clientId || item.client_id === clientId);
+    // Search the complete projected set before pagination. These are names saved
+    // on the Job/Session, not a claim about a customer's current Per Rename.
+    const queryMatch = !query || [item.customer_name, item.model_name, item.job_id, item.session_id, item.id]
+      .some((value) => normalizeSearchText(value).includes(query));
+    return dateMatch && sessionMatch && jobMatch && (!clientId || item.client_id === clientId) && queryMatch;
   });
   const total = filtered.length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -211,8 +224,12 @@ export function projectJobs(records, now = new Date(), extrasById = {}) {
 }
 
 const money = (value) => {
-  const n = typeof value === "number" ? value : Number(String(value ?? "").trim());
-  return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : null;
+  if (typeof value !== "number" && typeof value !== "string") return null;
+  if (typeof value === "string" && !value.trim()) return null;
+  const n = typeof value === "number" ? value : Number(value.trim());
+  if (!Number.isFinite(n) || n < 0) return null;
+  const rounded = Math.round(n * 100) / 100;
+  return Number.isFinite(rounded) ? rounded : null;
 };
 const choiceName = (value) => String(value && typeof value === "object" ? value.name : value ?? "").trim().toLowerCase().slice(0, 40);
 
@@ -463,6 +480,11 @@ function compactJoin(values, separator) {
 
 function lower(value) {
   return str(value).toLowerCase();
+}
+
+function normalizeSearchText(value) {
+  return String(value ?? "").normalize("NFKC").toLowerCase()
+    .replace(/\u00df/g, "ss").replace(/\u03c2/g, "\u03c3").trim();
 }
 
 function str(value) {

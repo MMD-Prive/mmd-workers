@@ -1,0 +1,36 @@
+name: Admin Console CI
+
+on:
+  pull_request:
+    paths:
+      - "admin-worker/src/admin-console-*.js"
+      - "admin-worker/admin-console-*.test.mjs"
+      - "admin-worker/src/admin-dashboard-jobs.js"
+      - "admin-worker/admin-dashboard-jobs.test.mjs"
+      - "admin-worker/src/admin-login-hero-worker.js"
+      - "admin-worker/src/admin-login-hero-worker-core.js"
+      - "admin-worker/wrangler.toml"
+      - ".github/workflows/admin-console-ci.yml"
+      - ".github/workflows/deploy-admin-worker.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  console:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm ci --prefix immigrate-worker --ignore-scripts --no-audit --no-fund
+      - name: Validate the Console and existing login/data contracts
+        run: |
+          node --check admin-worker/src/admin-console-page.js
+          node --check admin-worker/src/admin-console-client.js
+          node --check admin-worker/src/admin-console-style.js
+          node --test admin-worker/admin-console-*.test.mjs admin-worker/admin-dashboard-jobs.test.mjs admin-worker/admin-login-dashboard-first.test.mjs admin-worker/admin-login-active-entrypoint.test.mjs

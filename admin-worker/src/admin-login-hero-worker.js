@@ -1,4 +1,6 @@
 import { isSocialMediaRequest, handleSocialMedia } from "./social-media.js";
+import { ADMIN_CONSOLE_PATH, renderAdminConsolePage } from "./admin-console-page.js";
+import { isAdminDashboardJobsView } from "./admin-dashboard-jobs.js";
 export { ModelDiscoveryCoordinator } from "./model-customer-discovery-settings.js";
 import { isAdminRecoveryPage, renderAdminRecoveryPage } from "./admin-recovery-pages.js";
 import { isHypeConsoleRequest, handleHypeConsole } from "./hype-console.js";
@@ -217,11 +219,16 @@ export async function enforceOwnerDashboardFirst(request, response) {
 
   const requestedNext = String(response.headers.get("x-mmd-admin-next") || "").trim();
   const preserveRefundNext = requestedNext === "/internal/admin/refunds" || requestedNext.startsWith("/internal/admin/refunds?");
-  const postLoginTarget = preserveRefundNext ? requestedNext : ADMIN_OWNER_DASHBOARD_PATH;
+  // The core login has already sanitized this destination. Resume only this
+  // exact workspace; unrelated owner logins retain their dashboard-first rule.
+  const preserveConsoleNext = requestedNext === ADMIN_CONSOLE_PATH
+    || requestedNext.startsWith(`${ADMIN_CONSOLE_PATH}?`)
+    || requestedNext.startsWith(`${ADMIN_CONSOLE_PATH}#`);
+  const postLoginTarget = preserveRefundNext || preserveConsoleNext ? requestedNext : ADMIN_OWNER_DASHBOARD_PATH;
 
   const headers = new Headers(response.headers);
   headers.set("x-mmd-admin-next", postLoginTarget);
-  headers.set("x-mmd-admin-post-login", preserveRefundNext ? "resume-refund-ops" : "dashboard-first");
+  headers.set("x-mmd-admin-post-login", preserveRefundNext ? "resume-refund-ops" : preserveConsoleNext ? "resume-admin-console" : "dashboard-first");
 
   if (response.status >= 300 && response.status < 400) {
     headers.set("location", new URL(postLoginTarget, requestUrl.origin).toString());
@@ -284,6 +291,18 @@ const adminLoginHeroWorker = {
   },
   async fetch(request, env, ctx) {
     const runtimeEnv = modelMoneyRuntimeEnv(env);
+    const consolePath = new URL(request.url).pathname.replace(/\/+$/g, "") || "/";
+    if (consolePath === ADMIN_CONSOLE_PATH) {
+      const method = request.method.toUpperCase();
+      const gate = await applyCredentialBoundAdminGate(request, runtimeEnv, consolePath, method);
+      if (gate.response) return gate.response;
+      if (!["GET", "HEAD"].includes(method)) {
+        return new Response(null, { status: 405, headers: { allow: "GET, HEAD", "cache-control": "no-store, private" } });
+      }
+      // Render before the generic admin backfill scheduling path. Opening this
+      // read-only workspace must not start a background identity write.
+      return renderAdminConsolePage(gate.request || request);
+    }
     // Trusted Telegram -> Admin Worker service-binding-only Standard group intake (#2141).
     // Do not let the public admin controller or its generic proxy handle this path.
     if (isStandardJoinIntakeRpcRequest(new URL(request.url).pathname)) {
@@ -304,7 +323,12 @@ const adminLoginHeroWorker = {
     if (isCompcardLibraryRequest(request)) return handleCompcardLibrary(request, runtimeEnv);
     if (isModelMediaFlushPreviewRequest(request)) return handleModelMediaFlushPreview(request, runtimeEnv);
     if (isPrivateMediaReviewRequest(request)) return handlePrivateMediaReview(request, runtimeEnv, ctx);
-    scheduleLineOfcContactBackfill(runtimeEnv, ctx);
+    // Console's data read follows the same read-only boundary as its document.
+    // Existing unrelated admin requests keep their backfill scheduling behavior.
+    const isReadOnlyJobsRead = consolePath === "/v1/admin/dashboard"
+      && ["GET", "HEAD"].includes(request.method.toUpperCase())
+      && isAdminDashboardJobsView(new URL(request.url));
+    if (!isReadOnlyJobsRead) scheduleLineOfcContactBackfill(runtimeEnv, ctx);
     if (isModelConsoleAuditRequest(request)) return handleModelConsoleAudit(request, runtimeEnv);
     let privateModelRequest = null;
     let privateModelSearchRequest = null;
