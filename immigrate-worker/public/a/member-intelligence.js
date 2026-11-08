@@ -4,6 +4,39 @@
   const normalizedPath=(location.pathname.replace(/\/+$/g,"")||"/");
   if(normalizedPath!=="/internal/admin/member-intelligence")return;
 
+  let consoleParentOrigin="";
+  // Webflow redirects the apex to www. Bridge only navigation from this page
+  // when the apex Console is its parent; the runtime and its APIs stay on www.
+  if(location.origin==="https://www.mmdbkk.com"&&window.parent!==window){
+    window.addEventListener("message",event=>{
+      if(consoleParentOrigin||event.origin!=="https://mmdbkk.com"||event.source!==window.parent
+        ||event.data?.type!=="mmd-console:attach"||!Array.isArray(event.data.paths))return;
+      consoleParentOrigin=event.origin;
+      const paths=new Set(event.data.paths);
+      byId("sigil-workspace-directory")?.remove();
+      document.body.classList.remove("sigil-directory-offset");
+      document.addEventListener("click",click=>{
+        const link=click.target.closest?.("a[href]");
+        if(!link||click.defaultPrevented||click.button!==0||click.metaKey||click.ctrlKey
+          ||click.shiftKey||click.altKey||link.hasAttribute("download")
+          ||(link.target&&!["_self","_top"].includes(link.target))
+          ||link.getAttribute("href").startsWith("#"))return;
+        const destination=new URL(link.href);
+        if(!["https://www.mmdbkk.com","https://mmdbkk.com"].includes(destination.origin))return;
+        if(!paths.has(destination.pathname.replace(/\/+$/,""))){
+          link.target="_top";
+          return;
+        }
+        click.preventDefault();
+        click.stopPropagation();
+        window.parent.postMessage({
+          type:"mmd-console:open",path:destination.pathname+destination.search+destination.hash
+        },consoleParentOrigin);
+      },true);
+    });
+  }
+
+
   const byId=(id)=>document.getElementById(id);
   const clean=(value)=>String(value==null?"":value).trim();
   function cleanInlineArtifacts(root){
@@ -110,7 +143,8 @@
     if(options.body&&!headers.has("Content-Type"))headers.set("Content-Type","application/json");
     const response=await fetch(url,{...options,headers,credentials:"same-origin",cache:"no-store"});
     if(response.status===401||response.status===403){
-      location.replace(loginNext);
+      if(consoleParentOrigin)window.parent.postMessage({type:"mmd-console:login"},consoleParentOrigin);
+      else location.replace(loginNext);
       throw new Error("unauthorized");
     }
     const contentType=lower(response.headers.get("content-type"));

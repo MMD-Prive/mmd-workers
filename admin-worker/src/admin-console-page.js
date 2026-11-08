@@ -1,8 +1,10 @@
 import { SYSTEM_LIGHT } from "../../webflow/global/sigil-brand-v1.mjs";
 import { ADMIN_CONSOLE_STYLES } from "./admin-console-style.js";
 import { adminConsoleClient } from "./admin-console-client.js";
+import { adminConsoleWorkspace } from "./admin-console-workspace.js";
+import { ADMIN_CONSOLE_PATH, ADMIN_CONSOLE_VIEWS, consoleViewRouting } from "../../webflow/global/admin-console-views.mjs";
 
-export const ADMIN_CONSOLE_PATH = "/internal/admin/console";
+export { ADMIN_CONSOLE_PATH };
 
 // Bundled Thai fallback for the authenticated Worker page. The same stable keys
 // are mirrored in MMD-Prive/mmd-i18n; this page does not install another engine.
@@ -175,17 +177,20 @@ function icon(name, className = "") {
 }
 
 const NAVIGATION = Object.freeze([
-  ["title", ADMIN_CONSOLE_PATH, "grid"],
-  ["allJobs", "/internal/admin/jobs/all", "jobs"],
-  ["payments", "/internal/admin/payments", "payment"],
-  ["customers", "/internal/admin/customer-data", "people"],
-  ["membership", "/internal/admin/member-intelligence", "membership"],
-  ["recovery", "/internal/admin/recovery", "recovery"],
-  ["modelLink", "/internal/admin/model-link", "link"],
+  ["title", "", "grid"],
+  ["allJobs", "jobs", "jobs"],
+  ["payments", "payments", "payment"],
+  ["customers", "customers", "people"],
+  ["membership", "membership", "membership"],
+  ["recovery", "recovery", "recovery"],
+  ["modelLink", "model-link", "link"],
 ]);
 
-function navigation() {
-  return NAVIGATION.map(([key, href, glyph]) => `<a class="ac-nav-link" href="${href}"${href === ADMIN_CONSOLE_PATH ? ' aria-current="page"' : ""}>${icon(glyph)}${translated(key)}</a>`).join("\n");
+function navigation(activeView) {
+  return NAVIGATION.map(([key, view, glyph]) => {
+    const href = ADMIN_CONSOLE_PATH + (view ? "?view=" + view : "");
+    return `<a class="ac-nav-link" href="${href}"${view === activeView ? ' aria-current="page"' : ""}>${icon(glyph)}${translated(key)}</a>`;
+  }).join("\n");
 }
 
 function toolLink(key, description, href, glyph) {
@@ -198,6 +203,7 @@ export function renderAdminConsolePage(request) {
     return new Response(null, { status: 405, headers: { allow: "GET, HEAD", "cache-control": "no-store, private" } });
   }
   const nonce = crypto.randomUUID().replaceAll("-", "");
+  const url = new URL(request.url);
   const headers = {
     "content-type": "text/html; charset=utf-8",
     "cache-control": "no-store, private",
@@ -214,6 +220,9 @@ export function renderAdminConsolePage(request) {
       "font-src https://cdn.prod.website-files.com",
       "img-src 'self' data: https://cdn.prod.website-files.com",
       "connect-src 'self'",
+      url.origin === "https://mmdbkk.com"
+        ? "frame-src 'self' https://www.mmdbkk.com/internal/admin/member-intelligence"
+        : "frame-src 'self'",
       "form-action 'self'",
       "base-uri 'none'",
       "frame-ancestors 'none'",
@@ -222,10 +231,15 @@ export function renderAdminConsolePage(request) {
   };
   if (method === "HEAD") return new Response(null, { headers });
 
+  const routing = consoleViewRouting(ADMIN_CONSOLE_PATH, ADMIN_CONSOLE_VIEWS, url.origin);
+  const route = routing.resolve(url);
+  const isHome = route?.view === "";
+  const href = path => escapeHtml(routing.toConsole(path));
+  const controlRoomUrl = href("/internal/admin/control-room");
   const serializedCopy = JSON.stringify(ADMIN_CONSOLE_COPY).replace(/</g, "\\u003c").replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
   // Wrangler/esbuild may retain function names with __name; keep its helper in
   // the browser closure so the serialized function remains independently valid.
-  const clientScript = `(()=>{const __name=(target,value)=>{Object.defineProperty(target,"name",{value,configurable:true});return target;};(${adminConsoleClient.toString()})(${serializedCopy});})();`;
+  const clientScript = `(()=>{const __name=(target,value)=>{Object.defineProperty(target,"name",{value,configurable:true});return target;};const path=${JSON.stringify(ADMIN_CONSOLE_PATH)};const routing=(${consoleViewRouting.toString()})(path,${JSON.stringify(ADMIN_CONSOLE_VIEWS)},location.origin);(${adminConsoleWorkspace.toString()})(routing,path,toConsole=>(${adminConsoleClient.toString()})(${serializedCopy},toConsole));})();`;
   const html = `<!doctype html>
 <html lang="th" data-sigil-internal-theme="silver-orange-v1">
 <head>
@@ -233,7 +247,7 @@ export function renderAdminConsolePage(request) {
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="robots" content="noindex,nofollow,noarchive">
   <meta name="theme-color" content="#ffffff">
-  <title>Console · SĪGIL System</title>
+  <title>${escapeHtml(route?.title || "Console")} · SĪGIL System</title>
   <link rel="icon" type="image/webp" href="${FAVICON}">
   <link rel="preconnect" href="https://cdn.prod.website-files.com" crossorigin>
   <style id="sigil-internal-silver-v1" nonce="${nonce}">${ADMIN_CONSOLE_STYLES}</style>
@@ -245,20 +259,30 @@ export function renderAdminConsolePage(request) {
     <aside class="ac-sidebar" aria-label="${text("navigation")}">
       <a class="ac-brand" href="${ADMIN_CONSOLE_PATH}" aria-label="SĪGIL System · Console">${SYSTEM_LIGHT}</a>
       <p class="ac-sidebar-caption">OWNER WORKSPACE</p>
-      <nav class="ac-nav" aria-label="${text("navigation")}">${navigation()}</nav>
-      <a class="ac-room-link" href="/internal/admin/control-room">${icon("grid")}${translated("controlRoom")}${icon("arrow")}</a>
+      <nav class="ac-nav" aria-label="${text("navigation")}">${navigation(route?.view)}</nav>
+      <a class="ac-room-link" href="${controlRoomUrl}"${route?.view === "control-room" ? ' aria-current="page"' : ""}>${icon("grid")}${translated("controlRoom")}${icon("arrow")}</a>
       <div class="ac-sidebar-bottom">${icon("lock")}<span>${translated("ownerOnly", "strong")}${translated("eyebrow", "small")}</span></div>
     </aside>
     <div class="ac-workspace">
       <header class="ac-header">
         <a class="ac-mobile-brand" href="${ADMIN_CONSOLE_PATH}" aria-label="SĪGIL System · Console">${SYSTEM_LIGHT}</a>
-        <nav class="ac-breadcrumb" aria-label="${text("workspace")}">${translated("workspace", "a", 'href="/internal/admin/console"')}<span aria-hidden="true">/</span>${translated("title", "span", 'aria-current="page"')}</nav>
-        <div class="ac-header-actions"><span class="ac-owner-note">${icon("lock")}${translated("ownerOnly")}</span><button id="ac-refresh" class="ac-button ac-button-quiet" type="button">${icon("refresh")}${translated("refresh")}</button><details class="ac-mobile-tools"><summary aria-label="${text("tools")}">${icon("menu")}${translated("tools", "span", 'class="ac-sr-only"')}</summary><nav aria-label="${text("navigation")}">${navigation()}<a class="ac-nav-link" href="/internal/admin/control-room">${icon("grid")}${translated("controlRoom")}</a></nav></details></div>
+        <nav class="ac-breadcrumb" aria-label="${text("workspace")}">${translated("workspace", "a", 'href="/internal/admin/console"')}<span aria-hidden="true">/</span><span id="ac-view-title" aria-current="page">${escapeHtml(route?.title || "Console")}</span></nav>
+        <div class="ac-header-actions"><span class="ac-owner-note">${icon("lock")}${translated("ownerOnly")}</span><button id="ac-refresh" class="ac-button ac-button-quiet" type="button"${isHome ? "" : " hidden"}>${icon("refresh")}${translated("refresh")}</button><details class="ac-mobile-tools"><summary aria-label="${text("tools")}">${icon("menu")}${translated("tools", "span", 'class="ac-sr-only"')}</summary><nav aria-label="${text("navigation")}">${navigation(route?.view)}<a class="ac-nav-link" href="${controlRoomUrl}"${route?.view === "control-room" ? ' aria-current="page"' : ""}>${icon("grid")}${translated("controlRoom")}</a></nav></details></div>
       </header>
       <main id="ac-main" class="ac-main" tabindex="-1">
+        <section id="ac-tool"${isHome ? " hidden" : ""} aria-label="${text("tools")}">
+          <div class="ac-tool-bar"><button id="ac-back" type="button" class="ac-button ac-button-quiet">← ย้อนกลับ</button></div>
+          <p id="ac-tool-missing"${route ? " hidden" : ""}>ไม่พบเครื่องมือนี้ <a href="${ADMIN_CONSOLE_PATH}">กลับไป Console</a></p>
+          <div id="ac-tool-notice" class="ac-notice" role="status" hidden><div>
+            <p>เปิดเครื่องมือใน Console ไม่สำเร็จ</p>
+            <div class="ac-notice-actions"><a id="ac-tool-fallback" class="ac-button ac-button-quiet" target="_blank" rel="noopener noreferrer">เปิดหน้าเครื่องมือ</a><a id="ac-tool-sign-in" class="ac-button ac-button-primary">${text("signIn")}</a></div>
+          </div></div>
+          ${route?.tool ? `<noscript><style nonce="${nonce}">#ac-back{display:none}</style><p>เปิด JavaScript เพื่อใช้งานเครื่องมือใน Console</p><a href="${escapeHtml(route.tool)}">เปิดหน้าเครื่องมือ</a></noscript>` : ""}
+        </section>
+        <div id="ac-home"${isHome ? "" : " hidden"}>
         <section class="ac-heading" aria-labelledby="ac-title">
           <div class="ac-heading-copy"><p class="ac-eyebrow"><time id="ac-today-label"></time><span class="ac-timezone">BANGKOK</span></p>${translated("title", "h1", 'id="ac-title"')}</div>
-          <a class="ac-button ac-button-primary ac-create" href="/internal/admin/jobs/create-job">${icon("plus")}${translated("createJob")}</a>
+          <a class="ac-button ac-button-primary ac-create" href="${href("/internal/admin/jobs/create-job")}">${icon("plus")}${translated("createJob")}</a>
           ${translated("description", "p", 'class="ac-description"')}
         </section>
         <section class="ac-overview" aria-labelledby="ac-overview-title">
@@ -291,16 +315,17 @@ export function renderAdminConsolePage(request) {
           <aside class="ac-tools-panel" aria-labelledby="ac-tools-title">
             ${translated("toolsTitle", "h2", 'id="ac-tools-title"')}
             <div class="ac-tool-links">
-              ${toolLink("payments", "paymentsDescription", "/internal/admin/payments", "payment")}
-              ${toolLink("customers", "customersDescription", "/internal/admin/customer-data", "people")}
-              ${toolLink("recovery", "recoveryDescription", "/internal/admin/recovery", "recovery")}
+              ${toolLink("payments", "paymentsDescription", href("/internal/admin/payments"), "payment")}
+              ${toolLink("customers", "customersDescription", href("/internal/admin/customer-data"), "people")}
+              ${toolLink("recovery", "recoveryDescription", href("/internal/admin/recovery"), "recovery")}
             </div>
-            <details class="ac-more-tools"><summary>${translated("moreTools")}${icon("chevron", "ac-disclosure-icon")}</summary><nav>${translated("membership", "a", 'href="/internal/admin/member-intelligence"')}${translated("modelLink", "a", 'href="/internal/admin/model-link"')}${translated("allJobs", "a", 'href="/internal/admin/jobs/all"')}</nav></details>
-            <a class="ac-system-link" href="/internal/admin/control-room"><span>${translated("controlRoom", "strong")}${translated("controlRoomDescription", "span")}</span>${icon("arrow")}</a>
+            <details class="ac-more-tools"><summary>${translated("moreTools")}${icon("chevron", "ac-disclosure-icon")}</summary><nav>${translated("membership", "a", `href="${href("/internal/admin/member-intelligence")}"`)}${translated("modelLink", "a", `href="${href("/internal/admin/model-link")}"`)}${translated("allJobs", "a", `href="${href("/internal/admin/jobs/all")}"`)}</nav></details>
+            <a class="ac-system-link" href="${controlRoomUrl}"><span>${translated("controlRoom", "strong")}${translated("controlRoomDescription", "span")}</span>${icon("arrow")}</a>
           </aside>
         </div>
         <noscript><div class="ac-notice"><div><p>${text("noJs")}</p><a class="ac-button ac-button-primary" href="/internal/admin/jobs/all">${text("allJobs")}</a></div></div><style nonce="${nonce}">#ac-loading,#ac-progress,#ac-filters,#ac-results-summary{display:none}</style></noscript>
         <footer class="ac-footer">${translated("footer")}<span id="ac-updated">${text("notUpdated")}</span></footer>
+        </div>
       </main>
     </div>
   </div>

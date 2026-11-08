@@ -243,8 +243,8 @@ test('Console brands and workspace breadcrumb lead home while Control Room remai
   const breadcrumb = html.match(/<nav class="ac-breadcrumb"[\s\S]*?<\/nav>/)?.[0];
   assert.ok(breadcrumb, 'workspace breadcrumb must remain available');
   assert.match(breadcrumb, /href="\/internal\/admin\/console"/);
-  assert.match(html, /<a class="ac-room-link" href="\/internal\/admin\/control-room"/);
+  assert.match(html, /<a class="ac-room-link" href="\/internal\/admin\/console\?view=control-room"/);
   const mobileTools = html.match(/<details class="ac-mobile-tools"[\s\S]*?<\/details>/)?.[0];
   assert.ok(mobileTools, 'mobile tools must remain available');
-  assert.match(mobileTools, /<a class="ac-nav-link" href="\/internal\/admin\/control-room"/);
+  assert.match(mobileTools, /<a class="ac-nav-link" href="\/internal\/admin\/console\?view=control-room"/);
 });
