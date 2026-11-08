@@ -27,6 +27,10 @@ on:
         required: false
         default: preserve
         options: [preserve, pause, resume]
+      partner_model_link_cutover_at:
+        description: 'Optional UTC cutover (YYYY-MM-DDTHH:mm:ssZ); requires pause and no migration'
+        type: string
+        required: false
 
 permissions:
   contents: read
@@ -102,6 +106,29 @@ jobs:
           node --check webflow/sigil/confirm/job-model-v15-i18n.js
           node --test payments-worker/confirmation-ack.test.mjs payments-worker/confirmation-ack-revision.test.mjs payments-worker/model-confirm-no-silent-failure.test.mjs webflow/sigil/confirm/job-model-v15-no-silent-failure.test.mjs
 
+      - name: Validate optional Partner issuer cutover
+        env:
+          PARTNER_CUTOVER: ${{ inputs.partner_model_link_cutover_at }}
+          PARTNER_ISSUANCE: ${{ inputs.partner_model_link_issuance }}
+          PARTNER_MIGRATION: ${{ inputs.apply_partner_model_link_migration }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$PARTNER_CUTOVER" ]]; then exit 0; fi
+          if [[ "$PARTNER_ISSUANCE" != pause || "$PARTNER_MIGRATION" != false ]]; then
+            echo "Setting cutover requires pause and no migration." >&2
+            exit 1
+          fi
+          node --input-type=module <<'NODE'
+          const value = process.env.PARTNER_CUTOVER;
+          const time = new Date(value);
+          if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(value) ||
+              !Number.isFinite(time.getTime()) ||
+              time.toISOString() !== value.replace(/Z$/, ".000Z") || time.getTime() > Date.now()) {
+            throw new Error("Cutover must be a valid UTC timestamp at or before the current time.");
+          }
+          NODE
+
       - name: Apply approved Partner issuer migration without route changes
         if: inputs.apply_partner_model_link_migration
         env:
@@ -163,6 +190,7 @@ jobs:
         id: upload
         env:
           PARTNER_ISSUANCE: ${{ inputs.partner_model_link_issuance }}
+          PARTNER_CUTOVER: ${{ inputs.partner_model_link_cutover_at }}
         shell: bash
         run: |
           set -euo pipefail
@@ -173,6 +201,9 @@ jobs:
             resume) args+=(--var PARTNER_MODEL_LINK_ISSUANCE_PAUSED:false) ;;
             *) echo "Invalid Partner issuance setting." >&2; exit 1 ;;
           esac
+          if [[ -n "$PARTNER_CUTOVER" ]]; then
+            args+=(--var "PARTNER_MODEL_LINK_CUTOVER_AT:$PARTNER_CUTOVER")
+          fi
           npx --yes wrangler@4 versions upload "${args[@]}" 2>&1 | tee "$RUNNER_TEMP/payments-upload.log"
           version_id="$(sed -n 's/.*Worker Version ID:[[:space:]]*\([0-9a-fA-F-][0-9a-fA-F-]*\).*/\1/p' "$RUNNER_TEMP/payments-upload.log" | tail -n 1)"
           test -n "$version_id"
