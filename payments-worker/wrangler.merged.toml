@@ -169,3 +169,13 @@ class_name = "DoubleMomentCoordinator"
 [[migrations]]
 tag = "double-moment-v2"
 new_sqlite_classes = ["DoubleMomentCoordinator"]
+
+
+# Set PARTNER_MODEL_LINK_CUTOVER_AT to the production activation time at release.
+[[durable_objects.bindings]]
+name = "PARTNER_MODEL_LINK_ISSUER"
+class_name = "PartnerModelLinkIssuer"
+
+[[migrations]]
+tag = "partner-model-link-issuer-v1"
+new_sqlite_classes = ["PartnerModelLinkIssuer"]

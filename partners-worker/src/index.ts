@@ -2921,7 +2921,12 @@ async function handlePartnerModelLink(request: Request, env: RuntimeEnv): Promis
   const sessionRecordId = readString(body.value, "session_record_id");
   const payModel = Number(body.value.pay_model_thb);
   if (!/^rec[A-Za-z0-9]{14,24}$/.test(sessionRecordId)) return errorResponse(request, env, "session_record_id_invalid", "Invalid session.", 400, false);
-  if (!Number.isInteger(payModel) || payModel <= 0) return errorResponse(request, env, "pay_model_thb_invalid", "Enter the amount the model receives.", 400, false);
+  if (!Number.isSafeInteger(payModel) || payModel <= 0) return errorResponse(request, env, "pay_model_thb_invalid", "Enter the amount the model receives.", 400, false);
+
+  const existingModelToken = body.value.existing_model_token;
+  if (existingModelToken !== undefined && (typeof existingModelToken !== "string" || existingModelToken.length > 4096)) {
+    return errorResponse(request, env, "model_link_legacy_invalid", "Invalid existing model link.", 409, false);
+  }
 
   const tableId = String(env.AIRTABLE_TABLE_SESSIONS || "tblC98mKWbzmPuNzX");
   const session = await getAirtableRecord(env, tableId, sessionRecordId);
@@ -2941,13 +2946,13 @@ async function handlePartnerModelLink(request: Request, env: RuntimeEnv): Promis
   const response = await payments.fetch(new Request("https://payments-worker.internal/v1/internal/confirm/partner-model-link", {
     method: "POST",
     headers: { "content-type": "application/json", "x-internal-token": secret },
-    body: JSON.stringify({ session_id: sessionId, partner_id: partnerId, pay_model_thb: payModel })
+    body: JSON.stringify({ session_id: sessionId, partner_id: partnerId, pay_model_thb: payModel, existing_model_token: existingModelToken })
   }));
   const payload = await response.json().catch(() => null) as { ok?: boolean; error?: string; model_confirmation_url?: string; pay_model_thb?: number; expires_at?: number } | null;
   if (!response.ok || !payload?.ok || !payload.model_confirmation_url) {
-    const known = new Set(["pay_model_already_set", "pay_model_exceeds_job_amount", "payment_not_official_verified", "partner_system_not_allowed"]);
+    const known = new Set(["pay_model_already_set", "pay_model_exceeds_job_amount", "payment_not_official_verified", "partner_system_not_allowed", "partner_confirmation_required", "model_link_legacy_invalid", "model_link_legacy_review_required", "model_link_issuance_conflict", "model_link_result_unknown", "model_link_coordinator_not_ready", "payment_type_not_reissuable"]);
     const code = known.has(String(payload?.error)) ? String(payload?.error) : "model_link_failed";
-    return errorResponse(request, env, code, "Could not issue the model link.", response.status === 409 ? 409 : 502, response.status >= 500);
+    return errorResponse(request, env, code, "Could not issue the model link.", [403, 409, 503].includes(response.status) ? response.status : 502, response.status >= 500);
   }
   const res = json(request, env, { ok: true, model_confirmation_url: payload.model_confirmation_url, pay_model_thb: payload.pay_model_thb, expires_at: payload.expires_at });
   res.headers.set("Cache-Control", "no-store, private");

@@ -2,3 +2,5 @@
 export { default } from './index.review-wrapper.js';
 export * from './index.review-wrapper.js';
 export { SessionPaidProjectionCoordinator } from './session-paid-projection-coordinator.js';
+
+export { PartnerModelLinkIssuer } from "./partner-model-link.js";
