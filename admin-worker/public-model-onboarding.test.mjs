@@ -1,3 +1,4 @@
+import { installReviewTestCoordinator } from './public-model-review-test-coordinator.mjs';
 import test from "node:test";
 import assert from "node:assert/strict";
 import { Script } from "node:vm";
@@ -21,7 +22,7 @@ function fixture({ accepted = true, media = true, conflict = false, signing = tr
   } };
   if (ambiguous) app.fields[F.canonicalModel] = [MODEL, "recothermodel12345"];
   let models = conflict ? [{ id: "recExisting1234567", fields: { working_name: "Big" } }] : [];
-  let creates = 0, queue = Promise.resolve();
+  let creates = 0;
   const assets = media ? [{ id: "recphotoasset12345", fields: {
     [A.assetId]: "pmua_abcdefgh1234", [A.applicationId]: ID, [A.kind]: "photo",
     [A.uploadStatus]: "attached", [A.contentType]: "image/jpeg",
@@ -52,12 +53,7 @@ function fixture({ accepted = true, media = true, conflict = false, signing = tr
   const env = { AIRTABLE_API_KEY: "test", AIRTABLE_BASE_ID: "appsV1ILPRfIjkaYg", AIRTABLE_FETCH: fetcher,
     ...(signing ? { LINK_SIGNING_SECRET: "test-signing-secret-for-public-onboarding" } : {}),
   };
-  const state = { blockConcurrencyWhile(fn) { const next = queue.then(fn); queue = next.catch(() => {}); return next; } };
-  const coordinator = new ModelActivationCoordinator(state, env);
-  env.MODEL_ACTIVATION_COORDINATOR = {
-    idFromName: name => { assert.match(name, /^public-model-create:mdl_pub_app_/); return name; },
-    get: () => ({ fetch: (url, init) => coordinator.fetch(new Request(url, init)) }),
-  };
+  installReviewTestCoordinator(env);
   return { env, fetcher, get creates() { return creates; }, get app() { return app; }, get models() { return models; } };
 }
 
