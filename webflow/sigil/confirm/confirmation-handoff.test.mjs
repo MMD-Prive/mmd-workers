@@ -119,3 +119,62 @@ test("malformed customer token never gets a Payment handoff", () => {
   assert.equal(page.children.length, 1);
   assert.equal(page.children[0].attributes.has("data-mmd-my-mmd"), true);
 });
+
+
+const paymentWebReturn = readFileSync(
+  new URL("./payment-confirmation-web-return-v1.js", import.meta.url), "utf8"
+);
+
+function paymentFixture(path) {
+  const attrs = new Map([["href", "/member/my-mmd"]]);
+  let label = "กลับ MY MMD";
+  let notify = () => {};
+  let onHide = () => {};
+  let disconnected = false;
+  const link = {
+    getAttribute: name => attrs.get(name) || null,
+    setAttribute: (name, value) => attrs.set(name, value),
+    get textContent() { return label; },
+    set textContent(value) { label = value; },
+  };
+  const root = {
+    querySelector: sel => sel === ".mpc-actions .mpc-btn-primary" ? link : null,
+  };
+  const document = {
+    readyState: "complete", body: {},
+    querySelector: sel => sel === "[data-mpc]" ? root : null,
+  };
+  const window = {
+    location: { pathname: path },
+    addEventListener: (_, fn) => { onHide = fn; },
+  };
+  vm.runInNewContext(paymentWebReturn, {
+    document, window,
+    MutationObserver: class {
+      constructor(fn) { notify = fn; }
+      observe() {}
+      disconnect() { disconnected = true; }
+    },
+  });
+  return { link, tick: () => notify(), hide: () => onHide(), isDisconnected: () => disconnected };
+}
+
+test("payment confirmation returns to website payment center without asserting verification", () => {
+  const p = paymentFixture("/sigil/confirm/payment-confirmation");
+  assert.equal(p.link.getAttribute("href"), "/my-mmd/payments");
+  assert.equal(p.link.textContent, "ดูสถานะชำระเงินใน MY MMD");
+  assert.equal(p.link.getAttribute("data-mmd-canonical-target"), "my-mmd-payment-center");
+  p.tick();
+  assert.equal(p.link.getAttribute("href"), "/my-mmd/payments");
+  p.hide();
+  assert.equal(p.isDisconnected(), true);
+  assert.doesNotMatch(paymentWebReturn, /location\\.(?:assign|replace)\\(/);
+  assert.doesNotMatch(paymentWebReturn, /fetch\\(|XMLHttpRequest|sendBeacon/);
+  assert.doesNotMatch(paymentWebReturn, /status.*(?:verified|paid)/i);
+});
+
+test("payment website patch does not run on unrelated paths", () => {
+  const p = paymentFixture("/sigil/confirm/job-model");
+  assert.equal(p.link.getAttribute("href"), "/member/my-mmd");
+  assert.equal(p.link.textContent, "กลับ MY MMD");
+});
