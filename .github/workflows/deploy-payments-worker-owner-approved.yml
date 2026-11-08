@@ -16,6 +16,17 @@ on:
         description: 'Full main commit SHA approved for deployment'
         type: string
         required: true
+      apply_partner_model_link_migration:
+        description: 'Apply the approved Partner issuer Durable Object migration'
+        type: boolean
+        required: false
+        default: false
+      partner_model_link_issuance:
+        description: 'Partner issuer only (preserve, pause, or resume)'
+        type: choice
+        required: false
+        default: preserve
+        options: [preserve, pause, resume]
 
 permissions:
   contents: read
@@ -91,21 +102,84 @@ jobs:
           node --check webflow/sigil/confirm/job-model-v15-i18n.js
           node --test payments-worker/confirmation-ack.test.mjs payments-worker/confirmation-ack-revision.test.mjs payments-worker/model-confirm-no-silent-failure.test.mjs webflow/sigil/confirm/job-model-v15-no-silent-failure.test.mjs
 
+      - name: Apply approved Partner issuer migration without route changes
+        if: inputs.apply_partner_model_link_migration
+        env:
+          PARTNER_ISSUANCE: ${{ inputs.partner_model_link_issuance }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The migration release must start with issuance paused.
+          test "$PARTNER_ISSUANCE" = pause || { echo "Select pause when applying the Partner issuer migration." >&2; exit 1; }
+          migration_config="$(mktemp payments-worker/.wrangler-partner-migration-XXXXXX.toml)"
+          trap 'rm -f "$migration_config"' EXIT
+          # Omitting routes changes Wrangler's workers.dev default. Preserve both live flags.
+          subdomain="$(curl --fail --silent --show-error --max-time 20 \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/payments-worker/subdomain")"
+          python3 - "$migration_config" "$subdomain" <<'PYTHON'
+          import json
+          import pathlib
+          import re
+          import sys
+          import tomllib
+
+          source = pathlib.Path("payments-worker/wrangler.merged.toml").read_text()
+          original = tomllib.loads(source)
+          migrations = original.get("migrations", [])
+          if original.get("name") != "payments-worker" or not migrations or migrations[-1] != {
+              "tag": "partner-model-link-issuer-v1",
+              "new_sqlite_classes": ["PartnerModelLinkIssuer"],
+          }:
+              raise SystemExit("Expected Payments Worker Partner issuer migration is missing or no longer last")
+          rendered, count = re.subn(r"(?ms)^routes[ \t]*=[ \t]*\[.*?^\][ \t]*$", "", source)
+          expected = dict(original)
+          routes = expected.pop("routes", None)
+          if count != 1 or not isinstance(routes, list) or not routes or tomllib.loads(rendered) != expected:
+              raise SystemExit("Migration configuration must differ only by removal of routes")
+          response = json.loads(sys.argv[2])
+          flags = response.get("result") or {}
+          if response.get("success") is not True or any(
+              type(flags.get(key)) is not bool for key in ("enabled", "previews_enabled")
+          ):
+              raise SystemExit("Could not verify the existing workers.dev and preview settings")
+          if any(key in original for key in ("workers_dev", "preview_urls")):
+              raise SystemExit("Explicit subdomain settings require review before migration")
+          pathlib.Path(sys.argv[1]).write_text(
+              f'workers_dev = {str(flags["enabled"]).lower()}\n'
+              f'preview_urls = {str(flags["previews_enabled"]).lower()}\n' + rendered
+          )
+          PYTHON
+          npx --yes wrangler@4 deploy --dry-run --keep-vars --config "$migration_config" --var PARTNER_MODEL_LINK_ISSUANCE_PAUSED:true
+          npx --yes wrangler@4 deploy --keep-vars --config "$migration_config" --var PARTNER_MODEL_LINK_ISSUANCE_PAUSED:true
+
       - name: Validate production Worker configuration without uploading
+        if: ${{ !inputs.apply_partner_model_link_migration }}
         shell: bash
         run: npx --yes wrangler@4 deploy --dry-run --keep-vars --config payments-worker/wrangler.merged.toml
 
       - name: Upload payments-worker version
+        if: ${{ !inputs.apply_partner_model_link_migration }}
         id: upload
+        env:
+          PARTNER_ISSUANCE: ${{ inputs.partner_model_link_issuance }}
         shell: bash
         run: |
           set -euo pipefail
-          npx --yes wrangler@4 versions upload --keep-vars --config payments-worker/wrangler.merged.toml 2>&1 | tee "$RUNNER_TEMP/payments-upload.log"
+          args=(--keep-vars --config payments-worker/wrangler.merged.toml)
+          case "$PARTNER_ISSUANCE" in
+            preserve) ;;
+            pause) args+=(--var PARTNER_MODEL_LINK_ISSUANCE_PAUSED:true) ;;
+            resume) args+=(--var PARTNER_MODEL_LINK_ISSUANCE_PAUSED:false) ;;
+            *) echo "Invalid Partner issuance setting." >&2; exit 1 ;;
+          esac
+          npx --yes wrangler@4 versions upload "${args[@]}" 2>&1 | tee "$RUNNER_TEMP/payments-upload.log"
           version_id="$(sed -n 's/.*Worker Version ID:[[:space:]]*\([0-9a-fA-F-][0-9a-fA-F-]*\).*/\1/p' "$RUNNER_TEMP/payments-upload.log" | tail -n 1)"
           test -n "$version_id"
           echo "version_id=$version_id" >> "$GITHUB_OUTPUT"
 
       - name: Deploy only the uploaded payments-worker version
+        if: ${{ !inputs.apply_partner_model_link_migration }}
         working-directory: payments-worker
         env:
           PAYMENTS_WORKER_VERSION_ID: ${{ steps.upload.outputs.version_id }}
