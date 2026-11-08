@@ -3,6 +3,41 @@
 // Does not approve/decline requests, message members or operators, or change group membership.
 const clean = (v, max = 180) => String(v == null ? "" : v).trim().slice(0, max);
 
+// HYPE reads verified canonical membership from the existing private Admin service.
+// It never infers identity from display name and never authorizes any room action.
+async function checkHypeMembership(telegramId, binding) {
+  if (!binding?.fetch) return { state: "authority_unavailable" };
+  try {
+    const res = await binding.fetch(new Request("https://admin-worker.internal/__internal/hype/operational-status", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-mmd-service-binding": "telegram-worker",
+      },
+      body: JSON.stringify({
+        telegram_user_id: telegramId,
+        intent: { type: "membership", trigger: "telegram_standard_join_request" },
+      }),
+    }));
+    const data = await res.json().catch(() => null);
+    if (data?.state === "connect_required" || data?.code === "telegram_identity_not_linked") {
+      return { state: "needs_telegram_link" };
+    }
+    if (!res.ok || data?.ok !== true) return { state: "authority_unavailable" };
+    const level = clean(data.membership?.level, 60).toLowerCase();
+    const lifecycle = clean(data.membership?.lifecycle, 60).toLowerCase();
+    if (data.membership?.blocked === true) {
+      return { state: "blocked_review", level, lifecycle };
+    }
+    if (data.state === "ready" && level && lifecycle) {
+      return { state: "canonical_verified", level, lifecycle };
+    }
+    return { state: "review_required", level, lifecycle };
+  } catch {
+    return { state: "authority_unavailable" };
+  }
+}
+
 export async function observeStandardJoinRequest(joinRequest, env = {}, deps = {}) {
   const chatId = clean(joinRequest?.chat?.id, 40);
   const standardId = clean(env.TELEGRAM_STANDARD_GROUP_ID, 40);
@@ -22,8 +57,12 @@ export async function observeStandardJoinRequest(joinRequest, env = {}, deps = {
     clean(joinRequest?.from?.last_name, 85),
   ].filter(Boolean).join(" ").slice(0, 180);
   const requestedAt = Number(joinRequest?.date);
+  const hype = await checkHypeMembership(uid, binding);
   const payload = {
     room: "standard",
+    hype_check_state: hype.state,
+    hype_membership_level: hype.level || "",
+    hype_membership_lifecycle: hype.lifecycle || "",
     telegram_user_id_numeric: uid,
     telegram_username: clean(joinRequest?.from?.username, 80),
     telegram_display_name: displayName,
