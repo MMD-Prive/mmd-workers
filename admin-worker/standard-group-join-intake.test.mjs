@@ -122,6 +122,7 @@ test("owner queue uses only Telegram identity candidates; never publishes phone/
         } },
       ] });
     }
+    if (u.pathname.endsWith("tblQVya3rvb1CpRrB")) return Response.json({ records: [] });
     if (u.pathname.endsWith("tblCVwWXwyEhU2AEN")) {
       return Response.json({ records: [
         { id: "recSOURCEEXAMPLE", fields: {
@@ -167,4 +168,83 @@ test("join queue stays owner-only and read-only at /internal/admin/premium-group
   });
   assert.equal(notOwner.status, 403);
   assert.equal(read, 1);
+});
+
+
+test("Premium capture uses a distinct private table, independent feature flag and stable key", async () => {
+  const envPremium = { ...env, TELEGRAM_PREMIUM_JOIN_CAPTURE_ENABLED: "true" };
+  const requestPremium = () => new Request("https://admin-worker.internal/__internal/telegram-group-join-intake", {
+    method: "POST",
+    headers: { "x-mmd-service-binding": "telegram-worker", "content-type": "application/json" },
+    body: JSON.stringify(payload({
+      room: "premium",
+      join_outcome: "approved_by_existing_handler",
+      telegram_user_id_numeric: "1234567890",
+    })),
+  });
+  const calls = [];
+  const fakeFetch = async (raw, options = {}) => {
+    const url = new URL(raw);
+    assert.ok(url.pathname.endsWith("/tblQVya3rvb1CpRrB"));
+    calls.push(options.method || "GET");
+    if (!options.method) return Response.json({ records: [] });
+    const body = JSON.parse(options.body);
+    assert.equal(body.records[0].fields.join_key, "premium:1234567890");
+    assert.equal(body.records[0].fields.room, "premium");
+    assert.equal(body.records[0].fields.join_outcome, "approved_by_existing_handler");
+    assert.equal(body.records[0].fields.telegram_user_id_numeric, "1234567890");
+    assert.ok(!Object.hasOwn(body.records[0].fields, "review_status"));
+    return Response.json({ records: [{ id: "recPREMIUM1234567" }] });
+  };
+  const result = await handleStandardJoinIntakeRpc(requestPremium(), envPremium, { fetch: fakeFetch });
+  assert.equal(result.status, 200);
+  assert.equal((await result.json()).room, "premium");
+  assert.deepEqual(calls, ["GET", "POST"]);
+
+  const disabled = await handleStandardJoinIntakeRpc(requestPremium(), env, {
+    fetch: async () => { throw new Error("No network on disabled capture"); },
+  });
+  assert.deepEqual(await disabled.json(), { ok: true, captured: false, state: "disabled" });
+
+  const legacyPremium = await handleStandardJoinIntakeRpc(request(payload({ room: "premium" })), envPremium);
+  assert.equal(legacyPremium.status, 400);
+});
+
+test("combined Owner queue keeps Premium and Standard independent and redacts identifiers", async () => {
+  const example = (room) => ({
+    join_key: room + ":1234567890", room,
+    telegram_user_id_numeric: "1234567890",
+    telegram_username: "example_member",
+    telegram_display_name: "Example Member",
+    requested_at: "2026-11-08T05:00:00.000Z",
+    hype_check_state: "canonical_verified",
+    hype_membership_level: "private_premium",
+    hype_membership_lifecycle: "active",
+    ...(room === "premium" ? { join_outcome: "approved_by_existing_handler" } : {}),
+  });
+  const fetchFake = async (raw) => {
+    const path = new URL(raw).pathname;
+    if (path.endsWith("tblGFkPcMFsxsW5Ul")) return Response.json({ records: [{ id: "recSTD12345678900", fields: example("standard") }] });
+    if (path.endsWith("tblQVya3rvb1CpRrB")) return Response.json({ records: [{ id: "recPRE12345678900", fields: example("premium") }] });
+    if (path.endsWith("tblCVwWXwyEhU2AEN")) return Response.json({ records: [
+      { id: "recSOURCE12345678", fields: {
+        line_oa_customer_ref: "LINE Ref A",
+        telegram_username: "example_member",
+        telegram_user_id_numeric: "1234567890",
+        phone: "0811111111",
+        email: "private@example.test",
+      } },
+    ] });
+    throw new Error("Unexpected table");
+  };
+  const out = await readStandardJoinQueue(env, { fetch: fetchFake });
+  assert.equal(out.count, 2);
+  assert.deepEqual(out.by_room, { standard: 1, premium: 1 });
+  assert.deepEqual(new Set(out.items.map(i => i.room)), new Set(["standard","premium"]));
+  assert.equal(out.items.find(i => i.room === "premium").join_outcome, "approved_by_existing_handler");
+  assert.equal(out.items.find(i => i.room === "standard").join_outcome, "pending_owner_review");
+  assert.equal(out.roster_complete, false);
+  assert.equal(out.approves_nothing, true);
+  const printed=JSON.stringify(out);
+  for(const secret of ["0811111111","private@example.test","1234567890"]) assert.equal(printed.includes(secret), false);
 });
