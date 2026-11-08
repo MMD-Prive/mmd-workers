@@ -3,8 +3,19 @@
  * HTML / CSS / client JS form one CSP-nonced, same-origin document.
  * Assets: Kenji-04 owner-approved ZIP, uploaded to Webflow Kenji AI 20 (desktop/mobile/avatar); Curated=MMD 2027 gold-white logo, Private=SIGIL Logo 2027. Visual navigation does not grant access.
  */
+import { KENJI_CURATED_LOGO, KENJI_PRIVATE_LOGO } from "./kenji-member-brand-assets.js";
+
 const NEXT_LV_DOCUMENT = String.raw`<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#101113"><meta name="robots" content="noindex,nofollow"><title>Kenji · MY MMD Concierge</title><meta name="description" content="Kenji — ผู้ช่วยข้อมูลสมาชิก MY MMD คำถามทั่วไปและโปรโมชั่นที่ประกาศแล้ว"><style nonce="test_nonce">
 /* MMD Member Concierge · NEXT LV · Mobile-first clean rebuild */
+/* Webflow MMD official registered fonts · fonts declared, not just named in a fallback stack. */
+@font-face{font-family:"LINE Seed Sans TH";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a619dd598baf067153fd1cc_LINESeedSansTH_W_Rg.woff2") format("woff2");font-style:normal;font-weight:400;font-display:swap}
+@font-face{font-family:"LINE Seed Sans TH";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a619dd4dc8d84b48cc84959_LINESeedSansTH_W_Bd.woff2") format("woff2");font-style:normal;font-weight:700;font-display:swap}
+@font-face{font-family:"LINE Seed Sans TH";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a619dd5cdf166a1e9e45b98_LINESeedSansTH_W_XBd.woff2") format("woff2");font-style:normal;font-weight:800;font-display:swap}
+@font-face{font-family:"Canela";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa0f04650d5df1332b66adf_Canela-Regular-Trial.otf") format("opentype");font-style:normal;font-weight:400;font-display:swap}
+@font-face{font-family:"Canela";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa0f046e832801d3092b914_Canela-RegularItalic-Trial.otf") format("opentype");font-style:italic;font-weight:500;font-display:swap}
+@font-face{font-family:"Inter";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aaf0d82bfb82da88bc38b16_Inter_18pt-Regular.ttf") format("truetype");font-style:normal;font-weight:400;font-display:swap}
+@font-face{font-family:"Inter";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aaf094cbae381fe8aed58b5_Inter_18pt-SemiBold.ttf") format("truetype");font-style:normal;font-weight:600;font-display:swap}
+
 :root{color-scheme:dark;--bg:#101113;--panel:#191a1d;--surface2:#252529;--ink:#f6f2e9;--muted:#cbc3b9;--dim:#b0a79c;--border:rgba(239,226,208,.17);--wine:#a21e39;--wine2:#672638;--gold:#d3bc93;--focus:#ffe0a2}
 *,*:before,*:after{box-sizing:border-box}
 html,body{margin:0;width:100%;height:100%;min-height:100%;background:var(--bg)}
@@ -24,7 +35,7 @@ a{color:inherit;text-decoration:none}button,textarea{font:inherit}button{cursor:
 .hero-copy{position:relative;z-index:3;display:flex;align-items:flex-start;flex-direction:column;width:73%;height:100%;padding:15px 17px 18px}
 .eyebrow{font-size:8px;font-weight:800;letter-spacing:.15em;line-height:1.4;color:var(--gold)}
 .hero-title{margin:8px 0 3px;font-family:Canela,"Times New Roman",Georgia,serif;font-size:clamp(45px,12vw,67px);font-weight:400;letter-spacing:-.055em;line-height:.89;color:var(--ink)}
-.hero-italic{font:italic 400 12px/1.5 Georgia,serif;color:var(--ink)}
+.hero-italic{font:italic 500 13px/1.5 Canela,Georgia,serif;color:var(--ink)}
 .hero-copy h1{margin:auto 0 0;font-size:14px;font-weight:650;line-height:1.45;color:var(--ink)}
 .hero-body,.hero-links,.hero-divider,.hero-footnote{display:none}
 .chat-shell{position:relative;z-index:4;display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;margin-top:-13px;border-radius:18px 18px 0 0;background:var(--panel);border-top:1px solid var(--border)}
@@ -50,18 +61,18 @@ a{color:inherit;text-decoration:none}button,textarea{font:inherit}button{cursor:
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
 
 /* Curated and Private are distinct brand worlds; navigation never grants entitlement. */
-.world-nav{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;flex:none;padding:9px 16px 0}
-.world-link{display:flex;align-items:center;justify-content:space-between;gap:6px;min-width:0;min-height:43px;padding:7px 10px;border:1px solid var(--border);border-radius:11px;background:#202125;transition:border-color .16s}
+.world-nav{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;flex:none;padding:9px 16px 0}
+.world-link{display:flex;align-items:center;flex-direction:column;justify-content:center;gap:4px;min-width:0;min-height:73px;padding:8px 10px;border:1px solid var(--border);border-radius:12px;background:#202125;transition:border-color .16s}
 .world-link:hover{border-color:var(--gold)}
-.world-link img{display:block;flex:0 0 auto;max-width:50%;width:68px;height:25px;object-fit:contain;object-position:left center}
-.world-link--private img{width:74px}
-.world-link span{min-width:0;text-align:right;color:var(--muted);font-size:10px;font-weight:750;letter-spacing:.03em;line-height:1.2}
+.world-link img{display:block;flex:0 0 auto;max-width:100%;width:min(100%,132px);height:36px;object-fit:contain;object-position:center}
+.world-link--private img{width:min(100%,140px)}
+.world-link span{min-width:0;text-align:center;color:var(--muted);font-size:10px;font-weight:700;letter-spacing:.11em;line-height:1.2}
 .world-link--curated{border-color:rgba(211,188,147,.39);background:#252123}
 .world-link--curated span{color:var(--gold)}
 .world-link--private{background:#1c2023}
-@media(max-width:360px){.world-nav{gap:5px;padding-left:12px;padding-right:12px}.world-link{padding:6px 7px}.world-link img{max-width:43%;width:60px}.world-link--private img{width:63px}.world-link span{font-size:9px}}
-@media(max-height:670px) and (max-width:920px){.world-nav{padding-top:5px}.world-link{min-height:36px}.world-link img{height:20px}}
-@media(min-width:921px){.world-nav{padding:14px 23px 0;gap:9px}.world-link{min-height:48px;padding:8px 13px}.world-link img{max-width:55%;width:91px;height:30px}.world-link--private img{width:98px}.world-link span{font-size:11px}}
+@media(max-width:360px){.world-nav{gap:6px;padding-left:12px;padding-right:12px}.world-link{padding:6px 7px}.world-link img{width:min(100%,123px);height:31px}.world-link--private img{width:min(100%,128px)}.world-link span{font-size:9px}}
+@media(max-height:670px) and (max-width:920px){.world-nav{padding-top:5px}.world-link{min-height:38px;flex-direction:row;gap:5px}.world-link img{max-width:62%;width:74px;height:24px;object-position:left center}.world-link--private img{width:85px}.world-link span{font-size:9px;letter-spacing:0;text-align:right}}
+@media(min-width:921px){.world-nav{padding:14px 23px 0;gap:9px}.world-link{min-height:84px;padding:10px 13px}.world-link img{width:min(100%,150px);max-width:100%;height:45px}.world-link--private img{width:min(100%,160px)}.world-link span{font-size:11px}}
 
 
 /* Compact landscape/short-phone QA: keep at least one full concierge bubble visible. */
@@ -70,12 +81,26 @@ a{color:inherit;text-decoration:none}button,textarea{font:inherit}button{cursor:
 .hero-copy{padding-top:8px;padding-bottom:9px}.hero-title{font-size:38px;margin:3px 0 2px}.hero-italic{font-size:11px}.hero-copy h1{font-size:11px}
 .chat-head{padding:5px 12px 4px}.small-avatar{width:29px;height:29px}.chat-name strong{font-size:13px}.clear{min-height:31px;padding:5px 9px}
 .member-line{min-height:27px;padding:4px 12px;font-size:10px}
-.world-nav{padding:4px 12px 0}.world-link{min-height:33px;padding:4px 8px}.world-link img{height:21px}
+.world-nav{padding:4px 12px 0}.world-link{min-height:36px;padding:4px 8px}.world-link img{height:23px}
 .mode-row{margin:5px 12px 0;padding:3px}.mode{min-height:35px;padding:5px;font-size:11px}
 .intro-panel{padding:5px 12px 2px}.intro-panel h2{display:none}.prompt{min-height:30px;padding:4px 9px;font-size:11px}
 .history{padding:8px 12px 10px;gap:8px}.message__avatar{width:25px;height:25px}.message__bubble{padding:8px 10px;font-size:11px;line-height:1.5}
 .composer{padding:7px 12px 6px;gap:0}.composer textarea{min-height:43px;padding:9px 11px;font-size:14px}.send{height:43px;width:43px}
 }
+
+/* MMD app typography: LINE Seed TH for Thai UI, Inter for functional labels, Canela for the editorial Kenji name. */
+body,button,textarea{font-family:"LINE Seed Sans TH","Noto Sans Thai",system-ui,sans-serif}
+.eyebrow,.brand-label,.top-link,.chat-name small,.world-link span,.composer-caption{font-family:Inter,"LINE Seed Sans TH","Noto Sans Thai",system-ui,sans-serif}
+.hero-title{font-family:Canela,Georgia,serif;letter-spacing:-.03em}
+.hero-italic{font-family:Canela,Georgia,serif;font-style:italic;font-weight:500}
+.hero-copy h1{font-size:16px;line-height:1.45}
+.message__bubble{font-size:14px;line-height:1.63}
+.mode,.prompt{font-size:13px}
+.brand-mark{width:104px;height:34px}
+@media(max-width:355px){.brand-mark{width:82px;height:28px}}
+@media(min-width:921px){.brand-mark{width:144px;height:44px}}
+@media(max-height:670px) and (max-width:920px){.hero-copy h1{font-size:12px}.message__bubble{font-size:12px;line-height:1.5}.mode,.prompt{font-size:11px}}
+
 /* Final scoped readability guard: all text colors explicit. No global Webflow cascade dependence. */
 .page :where(.hero-title,.hero-copy h1,.chat-name strong,.intro-panel h2,.message__bubble,.promo-info strong){color:var(--ink);-webkit-text-fill-color:var(--ink)}
 .page :where(.hero-body,.promo-info p,.status,.member-line){color:var(--muted);-webkit-text-fill-color:var(--muted)}
@@ -84,7 +109,7 @@ a{color:inherit;text-decoration:none}button,textarea{font:inherit}button{cursor:
   <a href="#kenji-input" class="skip">ข้ามไปช่องพิมพ์คำถาม</a>
   <div class="page">
     <header class="top">
-      <a class="brand" href="/my-mmd/" aria-label="กลับ MY MMD"><img class="brand-mark" src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aec945d0a09b10a4799ebda_transparent-gold-white-240px.webp" alt="MMD Privé" width="240" height="76" decoding="async"><span class="brand-rule" aria-hidden="true"></span><span class="brand-label"><strong>KENJI</strong><small>MEMBER CONCIERGE</small></span></a>
+      <a class="brand" href="/my-mmd/" aria-label="กลับ MY MMD"><img class="brand-mark" src="__KENJI_MMD_MARK__" alt="MMD Privé" width="240" height="76" decoding="async"><span class="brand-rule" aria-hidden="true"></span><span class="brand-label"><strong>KENJI</strong><small>MEMBER CONCIERGE</small></span></a>
       <nav class="top-actions" aria-label="ไปส่วนอื่น"><a class="top-link" href="/my-mmd/">MY MMD <span aria-hidden="true">↗</span></a><a class="top-link top-link--outline" href="/member/liff?intent=status">ตรวจสอบสิทธิ์</a></nav>
     </header>
     <main class="workspace">
@@ -105,10 +130,10 @@ a{color:inherit;text-decoration:none}button,textarea{font:inherit}button{cursor:
         <div class="member-line"><span id="kenji-member">ยังไม่แสดงข้อมูลสมาชิก</span><a id="kenji-member-link" href="/member/liff?intent=status">ตรวจสอบสิทธิ์</a></div>
         <nav class="world-nav" aria-label="ประเภทบริการลูกค้า">
           <a class="world-link world-link--curated" href="/my-mmd/" aria-label="Curated · MY MMD">
-            <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aec945d0a09b10a4799ebda_transparent-gold-white-240px.webp" alt="MMD Privé" width="240" height="76" decoding="async" loading="lazy"><span>CURATED</span>
+            <img src="__KENJI_MMD_MARK__" alt="MMD Privé" width="240" height="76" decoding="async"><span>CURATED</span>
           </a>
           <a class="world-link world-link--private" href="/member/private" aria-label="Private · เปิดหน้า Private เพื่อตรวจสอบสิทธิ์">
-            <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aec9538faadf68fb64e70eb_SIGIL%20Logo%202027.webp" alt="SĪGIL System" width="500" height="250" decoding="async" loading="lazy"><span>PRIVATE<br>ตรวจสิทธิ์</span>
+            <img src="__KENJI_SIGIL_MARK__" alt="SĪGIL System" width="500" height="250" decoding="async"><span>PRIVATE<br>ตรวจสิทธิ์</span>
           </a>
         </nav>
         <div class="mode-row" aria-label="เลือกหัวข้อ"><button class="mode" type="button" data-mode="qa" aria-pressed="true">คำถามทั่วไป (Q&A)</button><button class="mode" type="button" data-mode="promo" aria-pressed="false">โปรโมชั่น</button></div>
@@ -306,13 +331,15 @@ a{color:inherit;text-decoration:none}button,textarea{font:inherit}button{cursor:
 
 export function renderKenjiNextLvPage(nonce) {
   if (!/^[a-zA-Z0-9_-]{8,64}$/.test(nonce)) throw new TypeError("Invalid CSP nonce");
-  const html = NEXT_LV_DOCUMENT.replaceAll("test_nonce", nonce);
+  const html = NEXT_LV_DOCUMENT.replaceAll("test_nonce", nonce)
+    .replaceAll("__KENJI_MMD_MARK__", KENJI_CURATED_LOGO)
+    .replaceAll("__KENJI_SIGIL_MARK__", KENJI_PRIVATE_LOGO);
   return new Response(html, {
     status: 200,
     headers: {
       "content-type": "text/html; charset=utf-8",
       "cache-control": "no-store, private, max-age=0",
-      "content-security-policy": `default-src 'self'; style-src 'self' 'nonce-${nonce}'; script-src 'self' 'nonce-${nonce}'; connect-src 'self'; img-src 'self' data: https://cdn.prod.website-files.com https://s3.amazonaws.com; frame-ancestors 'self'; base-uri 'self'; form-action 'self'`,
+      "content-security-policy": `default-src 'self'; style-src 'self' 'nonce-${nonce}'; script-src 'self' 'nonce-${nonce}'; connect-src 'self'; font-src 'self' https://cdn.prod.website-files.com; img-src 'self' data: https://cdn.prod.website-files.com https://s3.amazonaws.com; frame-ancestors 'self'; base-uri 'self'; form-action 'self'`,
       "referrer-policy": "strict-origin-when-cross-origin",
       "x-content-type-options": "nosniff",
       "x-robots-tag": "noindex, nofollow",
