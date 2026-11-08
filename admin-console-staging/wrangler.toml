@@ -1,0 +1,5 @@
+name = "mmd-admin-console-3143-staging"
+main = ".build/staging.mjs"
+compatibility_date = "2026-11-08"
+workers_dev = true
+preview_urls = false
