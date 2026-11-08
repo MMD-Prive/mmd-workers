@@ -37,6 +37,8 @@ body.ac-page{margin:0;background:#fff;color:#272b30;-webkit-font-smoothing:antia
 #admin-console .ac-button:disabled{background:#f3f4f6;color:var(--ac-muted);border-color:var(--ac-line);opacity:1}
 #admin-console .ac-main{max-width:1490px;margin:0 auto;padding:20px 16px 22px}
 #admin-console .ac-main:focus{outline:none}
+#admin-console .ac-tool-bar{margin-bottom:12px}
+#admin-console .ac-tool-frame{display:block;width:100%;height:calc(100dvh - 150px);min-height:360px;border:1px solid var(--ac-line);border-radius:12px;background:#fff}
 #admin-console .ac-heading{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px 12px;margin-bottom:20px}
 #admin-console .ac-heading-copy{min-width:0}
 #admin-console .ac-eyebrow{display:flex;align-items:center;flex-wrap:wrap;gap:8px;color:var(--ac-muted);font-size:13px;line-height:1.5;min-height:20px}

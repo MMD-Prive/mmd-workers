@@ -1,3 +1,4 @@
+import { allowAdminConsoleFrame } from "../../webflow/global/admin-console-views.mjs";
 import { decorateCeoModels } from "./ceo-models-page.mjs";
 import canonicalWorker from "./control-room-dashboard-ingress-wrapper";
 import { decorateInternalSilverTheme } from "./internal-silver-theme";
@@ -98,14 +99,14 @@ export default {
       return response;
     }
     if (method === "GET" && path === CUSTOMER_PAGE) {
-      if (!url.searchParams.has("client_id")) return decorateCustomerDirectoryQuery(renderCustomerDirectory(response));
+      if (!url.searchParams.has("client_id")) return allowAdminConsoleFrame(request, await decorateCustomerDirectoryQuery(renderCustomerDirectory(response)));
       const isLovable = response.headers.get("x-mmd-presentation-source") === "lovable";
       // The Lovable directory owns its list UI. Legacy exact-client decorators
       // require a different HTML contract; explicit client scopes still fail closed.
       const scope = isLovable && !url.searchParams.has("client_id")
         ? null
         : resolveRequestedClientId(url.searchParams);
-      return decorateCustomer360Page(response, scope);
+      return allowAdminConsoleFrame(request, await decorateCustomer360Page(response, scope));
     }
     if (method === "GET" && path === MEMBERSHIP_ACCESS_PAGE) {
       return decorateMembershipAccessPage(response);
@@ -122,7 +123,7 @@ export default {
       );
       return enforceExactCanonicalClientScope(augmented, clientId);
     }
-    return response;
+    return allowAdminConsoleFrame(request, response);
   },
 };
 

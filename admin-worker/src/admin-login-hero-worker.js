@@ -1,3 +1,4 @@
+import { allowAdminConsoleFrame } from "../../webflow/global/admin-console-views.mjs";
 import { isSocialMediaRequest, handleSocialMedia } from "./social-media.js";
 import { ADMIN_CONSOLE_PATH, renderAdminConsolePage } from "./admin-console-page.js";
 import { isAdminDashboardJobsView } from "./admin-dashboard-jobs.js";
@@ -573,6 +574,7 @@ export default {
       ownerHtml: OWNER_HTML,
     });
     if (verification) return verification;
-    return decorateInternalSilverTheme(request, await adminLoginHeroWorker.fetch(request, env, ctx));
+    const response = await decorateInternalSilverTheme(request, await adminLoginHeroWorker.fetch(request, env, ctx));
+    return allowAdminConsoleFrame(request, response);
   },
 };

@@ -1,3 +1,4 @@
+import { allowAdminConsoleFrame } from "../../webflow/global/admin-console-views.mjs";
 import delegatedWorker from "./admin-login-hero-worker-pre-model-line-link.js";
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
 import {
@@ -41,7 +42,7 @@ export default {
       if (legacyPage) return redirectToCanonicalModelLineLink(request);
 
       const response = renderModelLineLinkPageWithAvatar();
-      if (request.method.toUpperCase() !== "HEAD") return response;
+      if (request.method.toUpperCase() !== "HEAD") return allowAdminConsoleFrame(request, response);
       return new Response(null, { status: response.status, headers: response.headers });
     }
 

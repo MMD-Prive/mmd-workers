@@ -38,6 +38,7 @@ async function screen(t, { url = BASE, fetcher, beforeBoot } = {}) {
   class FixedDate extends Date { constructor(...args) { super(...(args.length ? args : [NOW.toISOString()])); } static now() { return NOW.getTime(); } }
   dom.window.Date = FixedDate;
   dom.window.HTMLElement.prototype.scrollIntoView = () => {};
+  dom.window.scrollTo = () => {};
   dom.window.fetch = async (path, options) => {
     calls.push({ path, options });
     return fetcher ? fetcher(path, options, calls.length) : Response.json(payload(path));
@@ -264,4 +265,78 @@ test('deferred canonical document events repaint dynamic copy even when the init
   assert.equal(document.querySelector('#ac-page-label').textContent, '第 1 页，共 3 页');
   assert.equal(document.querySelector('#ac-status').textContent, '已加载 20 项');
   assert.equal(calls.length, 1);
+});
+
+test('Console switches tools and returns to the mounted draft and filtered workspace', async t => {
+  const { dom, document, calls } = await screen(t, { url: BASE + '?date=all&q=fixture' });
+  const window = dom.window;
+  const shell = document.querySelector('.ac-sidebar');
+  const search = document.querySelector('#ac-query');
+  search.value = 'draft search';
+  document.querySelector('.ac-create').click();
+  assert.equal(window.location.search, '?view=create-job');
+  const draft = document.querySelector('iframe:not([hidden])');
+  assert.equal(draft.getAttribute('src'), '/internal/admin/jobs/create-job');
+  draft.contentDocument.open();
+  draft.contentDocument.write('<!doctype html><input value="unfinished draft">');
+  draft.contentDocument.close();
+  document.querySelector('.ac-nav-link[href$="?view=payments"]').click();
+  assert.equal(window.location.search, '?view=payments');
+  assert.equal(draft.hidden, true);
+
+  const back = async () => {
+    const popped = new Promise(resolve => window.addEventListener('popstate', resolve, { once: true }));
+    document.querySelector('#ac-back').click();
+    await popped;
+  };
+  await back();
+  assert.equal(window.location.search, '?view=create-job');
+  assert.equal(document.querySelector('iframe:not([hidden])'), draft);
+  assert.equal(draft.contentDocument.querySelector('input').value, 'unfinished draft');
+  await back();
+  assert.equal(window.location.search, '?date=all&q=fixture');
+  assert.equal(search.value, 'draft search');
+  assert.equal(document.querySelector('.ac-sidebar'), shell);
+  assert.equal(calls.length, 1);
+});
+
+test('direct view opens only its scoped tool and invalid views mount nothing', async t => {
+  const scoped = '?view=payments&proof_id=proof_1&session_id=sess_2&tool_view=review#detail';
+  const payment = await screen(t, { url: BASE + scoped });
+  assert.equal(payment.calls.length, 0);
+  assert.equal(payment.document.querySelector('#ac-home').hidden, true);
+  assert.equal(payment.document.querySelector('iframe').getAttribute('src'),
+    '/internal/admin/payments?proof_id=proof_1&session_id=sess_2&view=review#detail');
+  assert.match(payment.document.querySelector('.ac-sidebar [aria-current=page]').href, /view=payments$/);
+
+  for (const query of ['view=__proto__', 'view=payments&view=recovery', 'view=jobs&ToKeN=fixture']) {
+    const invalid = await screen(t, { url: BASE + '?' + query });
+    assert.equal(invalid.calls.length, 0);
+    assert.equal(invalid.document.querySelector('iframe'), null);
+    assert.equal(invalid.document.querySelector('#ac-tool-missing').hidden, false);
+  }
+});
+
+test('apex Member Intelligence bridges only scoped navigation from its own www frame', async t => {
+  const { dom, document, calls } = await screen(t, {
+    url: BASE.replace('www.', '') + '?view=membership&client_id=' + CLIENT,
+  });
+  const frame = document.querySelector('iframe');
+  assert.equal(frame.src, 'https://www.mmdbkk.com/internal/admin/member-intelligence?client_id=' + CLIENT);
+  assert.equal(calls.length, 0);
+  const handoff = path => ({ type: 'mmd-console:open', path });
+  const send = (data, origin, source) => dom.window.dispatchEvent(
+    new dom.window.MessageEvent('message', { data, origin, source }),
+  );
+  const path = '/internal/admin/jobs/create-job?client_id=' + CLIENT;
+  send(handoff(path), 'https://www.mmdbkk.com', dom.window);
+  send(handoff(path), 'https://example.com', frame.contentWindow);
+  send(handoff('/v1/admin/clients/intelligence'), 'https://www.mmdbkk.com', frame.contentWindow);
+  assert.equal(dom.window.location.search, '?view=membership&client_id=' + CLIENT);
+  send(handoff(path), 'https://www.mmdbkk.com', frame.contentWindow);
+  assert.equal(dom.window.location.search, '?view=create-job&client_id=' + CLIENT);
+  assert.equal(frame.hidden, true);
+  document.querySelector('.ac-nav-link[href$="?view=membership"]').click();
+  assert.equal(dom.window.location.search, '?view=membership&client_id=' + CLIENT);
+  assert.equal(document.querySelector('iframe:not([hidden])'), frame);
 });

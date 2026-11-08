@@ -156,3 +156,32 @@ test('worker config and explicit deploy sync include both Console hosts', async 
   assert.ok(workflow.includes(`"${PATH}*"`));
   assert.match(workflow, /inputs\.approved_sha == github\.sha/);
 });
+
+test('only an authorized, matching Console iframe request gets the tool frame policy', async () => {
+  const Cookie = await cookie();
+  const path = '/internal/admin/jobs/create-job?client_id=recAAAAAAAAAAAAAA';
+  const referrer = 'https://mmdbkk.com/internal/admin/console?view=create-job&client_id=recAAAAAAAAAAAAAA';
+  const frameHeaders = {
+    'Sec-Fetch-Dest': 'iframe', 'Sec-Fetch-Mode': 'navigate',
+    'Sec-Fetch-Site': 'same-origin', Referer: referrer,
+  };
+  for (const override of [{ Referer: 'https://example.com/internal/admin/console?view=create-job' },
+    { Referer: referrer.replace('view=create-job', 'view=payments') },
+    { Referer: referrer.replace('client_id=', 'wrong_id=') },
+    { 'Sec-Fetch-Dest': 'document' }, { 'Sec-Fetch-Site': 'same-site' }]) {
+    const response = await worker.fetch(request(path, { headers: { Cookie, ...frameHeaders, ...override } }), ENV, {});
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get('content-security-policy'), /frame-ancestors 'none'/);
+  }
+
+  const frame = await worker.fetch(request(path, { headers: { Cookie, ...frameHeaders } }), ENV, {});
+  assert.equal(frame.status, 200);
+  assert.equal(frame.headers.get('x-frame-options'), 'SAMEORIGIN');
+  assert.match(frame.headers.get('content-security-policy'), /frame-ancestors 'self'/);
+  assert.match(frame.headers.get('content-security-policy'), /form-action 'self'/);
+  assert.equal(frame.headers.get('cache-control'), 'no-store, private');
+
+  const denied = await worker.fetch(request(path, { headers: frameHeaders }), ENV, {});
+  assert.equal(denied.status, 303);
+  assert.notEqual(denied.headers.get('x-frame-options'), 'SAMEORIGIN');
+});

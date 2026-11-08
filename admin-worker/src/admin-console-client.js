@@ -1,6 +1,6 @@
 // Self-contained browser boot. The Worker serializes this function and supplies
 // its Thai copy as an argument; do not add references to module-scope helpers.
-export function adminConsoleClient(copy) {
+export function adminConsoleClient(copy, toConsole) {
   "use strict";
   const root = document.querySelector("[data-admin-console]");
   if (!root || root.dataset.initialized === "true") return;
@@ -25,6 +25,7 @@ export function adminConsoleClient(copy) {
   const numberFormat = new Intl.NumberFormat("th-TH");
   const moneyFormat = new Intl.NumberFormat("th-TH", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
   let state = null;
+  let lastHomeUrl;
   let payload = null;
   let activeController = null;
   let requestNumber = 0;
@@ -124,8 +125,9 @@ export function adminConsoleClient(copy) {
 
   function storeHistory(mode) {
     try {
-      if (mode === "push" && window.location.pathname + window.location.search !== pageUrl()) window.history.pushState(null, "", pageUrl());
-      else if (mode === "replace") window.history.replaceState(null, "", pageUrl());
+      if (mode === "push" && window.location.pathname + window.location.search !== pageUrl()) window.history.pushState({ consoleBack: true }, "", pageUrl());
+      else if (mode === "replace") window.history.replaceState(window.history.state, "", pageUrl());
+      lastHomeUrl = window.location.href;
     } catch (_) {
       // History can be unavailable in an embedded browser. It must not block a
       // read-only job request; the explicit login link still keeps the filters.
@@ -257,7 +259,7 @@ export function adminConsoleClient(copy) {
 
   function jobHref(job) {
     const key = safeId(job.job_id) ? "job_id" : safeId(job.session_id, 119) ? "session_id" : "";
-    return key ? `/internal/admin/jobs/all?${new URLSearchParams({ [key]: job[key] })}` : "";
+    return key ? toConsole(`/internal/admin/jobs/all?${new URLSearchParams({ [key]: job[key] })}`) : "";
   }
 
   function fact(list, key, value, reference = false) {
@@ -268,7 +270,7 @@ export function adminConsoleClient(copy) {
 
   function detailLink(key, href) {
     const link = translatedNode("a", "", key);
-    link.href = href;
+    link.href = toConsole(href);
     return link;
   }
 
@@ -329,7 +331,8 @@ export function adminConsoleClient(copy) {
     body.append(facts);
     const links = node("nav", "ac-detail-actions");
     if (clientId(job.client_id)) links.append(detailLink("openCustomer", `/internal/admin/customer-data?${new URLSearchParams({ client_id: job.client_id })}`));
-    links.append(detailLink("reviewPayment", "/internal/admin/payments"));
+    const paymentQuery = safeId(job.session_id, 119) ? "?" + new URLSearchParams({ session_id: job.session_id }) : "";
+    links.append(detailLink("reviewPayment", "/internal/admin/payments" + paymentQuery));
     body.append(links);
     details.append(summary, body);
     row.append(headline, details);
@@ -491,14 +494,13 @@ export function adminConsoleClient(copy) {
   $("next").addEventListener("click", () => {
     if (!busy && payload?.pagination.has_next) navigate({ ...state, page: state.page + 1 });
   });
-  window.addEventListener("popstate", () => readAndLoad("none"));
   window.addEventListener("pagehide", () => {
     requestNumber++;
     activeController?.abort();
     activeController = null;
     clearData();
+    lastHomeUrl = null;
   });
-  window.addEventListener("pageshow", event => { if (event.persisted) readAndLoad("none"); });
   const repaintLanguage = () => {
     if (payload && !busy) render(payload);
     else if (["error", "expired", "forbidden", "invalid", "timeout"].includes(root.dataset.state)) showError(root.dataset.state);
@@ -516,4 +518,7 @@ export function adminConsoleClient(copy) {
   });
   document.addEventListener("click", event => { if (menu.open && !menu.contains(event.target)) menu.open = false; });
   readAndLoad();
+  return () => {
+    if (lastHomeUrl !== window.location.href) readAndLoad("none");
+  };
 }
