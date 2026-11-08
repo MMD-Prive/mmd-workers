@@ -1,0 +1,231 @@
+/* SĪGIL SYSTEM — Job Confirmation skin */
+
+#mmd-job-confirm-v16.mmd-atelier {
+  --bg:#101214; --bg-deep:#0c0e10; --panel:rgba(26,29,31,.94); --panel-soft:rgba(255,248,238,.035);
+  --heading:#fff8ee; --text:#eee2d4; --body:#eee2d4; --muted:#bdae9f; --champagne:#e3bd7c;
+  --gold-start:#f0d39d; --gold-end:#d7a65d; --button-ink:#211d17; --line:rgba(255,241,218,.15);
+  --ok:#b2c9bd; --bad:#edb4a7; --warn:#e3bd7c; --ok-bg:rgba(178,201,189,.07);
+  position:relative; isolation:isolate; min-height:100svh; padding-bottom:calc(24px + env(safe-area-inset-bottom));
+  background:var(--bg); color:var(--text); font:400 14px/1.6 "LINE Seed Sans TH","Noto Sans Thai",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  font-synthesis:none; -webkit-font-smoothing:antialiased;
+}
+#mmd-job-confirm-v16.mmd-atelier::before{content:"";position:absolute;z-index:-1;inset:0 0 auto;height:460px;pointer-events:none;background:linear-gradient(180deg,rgba(16,18,20,.76),var(--bg)),url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aee94e2d8fd63d2fd23cee3_sigil-customer-confirm-bg.webp") center 34%/cover no-repeat}
+#mmd-job-confirm-v16.mmd-atelier *, #mmd-job-confirm-v16.mmd-atelier *::before, #mmd-job-confirm-v16.mmd-atelier *::after{box-sizing:border-box;letter-spacing:0}
+#mmd-job-confirm-v16.mmd-atelier [hidden]{display:none!important}
+#mmd-job-confirm-v16.mmd-atelier [data-final-payment]{display:none!important}
+#mmd-job-confirm-v16.mmd-atelier h1,#mmd-job-confirm-v16.mmd-atelier h2,#mmd-job-confirm-v16.mmd-atelier h3,#mmd-job-confirm-v16.mmd-atelier p,#mmd-job-confirm-v16.mmd-atelier button,#mmd-job-confirm-v16.mmd-atelier input,#mmd-job-confirm-v16.mmd-atelier summary{font-family:inherit;letter-spacing:0}
+#mmd-job-confirm-v16.mmd-atelier h1,#mmd-job-confirm-v16.mmd-atelier h2,#mmd-job-confirm-v16.mmd-atelier h3{color:var(--heading);background:none;-webkit-text-fill-color:var(--heading)}
+#mmd-job-confirm-v16.mmd-atelier p{font-size:14px;font-weight:400;margin:0;color:var(--muted)}
+#mmd-job-confirm-v16.mmd-atelier a{color:var(--champagne);text-decoration:none;overflow-wrap:anywhere}
+#mmd-job-confirm-v16.mmd-atelier button{cursor:pointer;color:var(--text);font-size:14px;font-weight:500}
+#mmd-job-confirm-v16.mmd-atelier :is(a,button,input,summary):focus-visible{outline:2px solid var(--gold-start);outline-offset:4px}
+#mmd-job-confirm-v16.mmd-atelier button:disabled{opacity:.45;cursor:not-allowed}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__wrap{width:min(calc(100% - 32px),1120px);margin:auto;padding-top:12px}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__header{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:64px;border-bottom:1px solid var(--line)}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__brand{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--heading);white-space:nowrap}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__brand::before{content:"";width:20px;height:20px;flex:none;background:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aee826654df354be4f72513_sigil-system-logo-v1.png") center/contain no-repeat}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__assistant{font-size:10px;color:var(--muted);margin:3px 0 0 28px}
+#mmd-job-confirm-v16.mmd-atelier .mmd-confirm-rules-tools{display:flex;gap:8px;align-items:center;justify-content:flex-end;flex-wrap:wrap;max-width:55%}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__pill{font-size:11px;color:var(--muted);text-align:right}
+#mmd-job-confirm-v16.mmd-atelier .mmd-confirm-rules-btn{display:inline-flex;align-items:center;min-height:44px;font-size:11px;padding:0 4px}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__intro{padding:28px 0 24px}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__eyebrow,#mmd-job-confirm-v16.mmd-atelier .mjc16__section-kicker{font-size:10px;font-weight:500;color:var(--champagne)}
+#mmd-job-confirm-v16.mmd-atelier h1{font-size:30px;line-height:1.3;font-weight:500;margin:8px 0 0}
+#mmd-job-confirm-v16.mmd-atelier h2{font-size:18px;line-height:1.4;font-weight:500;margin:0}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__grid{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;align-items:start}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__card--job{position:relative;min-width:0;overflow:hidden;border:1px solid var(--line);border-radius:8px;background:var(--panel);padding:22px}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__card--job::before{content:"";position:absolute;inset:0 0 auto;height:2px;background:var(--champagne)}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__model-name{font-size:30px;line-height:1.3;margin:14px 0 4px}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__job-type{color:var(--muted);font-size:13px;margin-bottom:24px}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__rows>div{display:flex;justify-content:space-between;align-items:baseline;gap:16px;padding:11px 0;border-bottom:1px solid var(--line);min-width:0}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__rows>div:last-child{border:0}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__rows span{color:var(--muted);font-size:13px;flex-shrink:0}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__rows b{font-size:14px;font-weight:500;text-align:right;overflow-wrap:anywhere;min-width:0;color:var(--heading);font-variant-numeric:tabular-nums}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__card--pricing{min-width:0;padding:4px 0 0}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__pricing{margin-top:8px}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__pricing .is-total{padding:18px 0;border-bottom:1px solid var(--line)}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__pricing .is-total b{font-size:26px;color:var(--heading)}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__pricing .is-total span{color:var(--text)}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__bill-note{padding:2px 0 10px;font-size:12px;color:var(--champagne)}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__paycta{margin-top:22px}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__paycta-btn{display:flex;align-items:center;justify-content:center;gap:12px;width:100%;min-height:56px;padding:14px 16px;border:0;border-radius:6px;background:linear-gradient(110deg,var(--gold-start),var(--gold-end));color:var(--button-ink)!important;-webkit-text-fill-color:var(--button-ink)!important;font-size:16px;font-weight:600;text-align:center;text-decoration:none;white-space:normal;line-height:1.4}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__paycta-btn:hover{filter:brightness(1.04)}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__paycta-proof,#mmd-job-confirm-v16.mmd-atelier .mjc16__success{display:grid;gap:6px;padding:16px 0;color:var(--ok);font-size:13px}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__paycta-proof a{display:inline-flex;align-items:center;min-height:44px;color:var(--muted);text-decoration:underline;text-underline-offset:4px}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__methods-panel{border-top:1px solid var(--line);margin-top:16px}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__methods-panel>summary{display:flex;align-items:center;justify-content:space-between;cursor:pointer;min-height:52px;list-style:none;font-size:13px;color:var(--text)}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__methods-panel>summary::-webkit-details-marker{display:none}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__methods-panel>summary::after{content:"+";font-size:22px;color:var(--champagne)}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__methods-panel[open]>summary::after{content:"−"}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__payment{padding:0 0 16px}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__method-links{display:grid;gap:2px}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__method-links>a{display:flex;align-items:center;justify-content:space-between;min-height:48px;border-bottom:1px solid var(--line);font-size:13px;color:var(--text)}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__method-links>a::after{content:"↗";color:var(--champagne)}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__method-links small{display:block;color:var(--muted);font-size:11px}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__methods-note{font-size:11px;margin-top:10px}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__pay-state{font-size:12px;color:var(--muted);margin:8px 0}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__pay-grid{display:grid;gap:12px;margin-top:12px}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__amount-card{display:flex;justify-content:space-between;gap:12px;font-size:12px;color:var(--muted)}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__amount-card strong{color:var(--text);font-size:14px}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__qr-wrap{display:flex;flex-wrap:wrap;gap:16px;align-items:center}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__qr-wrap img{width:144px;height:144px;object-fit:contain;background:var(--heading);padding:6px;border-radius:4px}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__qr-copy{flex:1;min-width:120px;font-size:12px;display:grid;gap:4px}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__qr-copy a{min-height:44px;display:flex;align-items:center}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__qr-empty,#mmd-job-confirm-v16.mmd-atelier .mjc16__proof{font-size:12px;color:var(--muted);margin:8px 0}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__qr-empty span,#mmd-job-confirm-v16.mmd-atelier .mjc16__proof p{font-size:12px}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__bank{font-size:13px;padding:12px 0;border-bottom:1px solid var(--line);overflow-wrap:anywhere}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__bank p{font-size:12px}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__confirm{margin-top:28px;padding-top:20px;border-top:1px solid var(--line)}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__confirm h2{font-size:15px;margin:6px 0 8px}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__check{display:flex;gap:10px;align-items:center;min-height:52px;font-size:12px;color:var(--muted)}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__check input{width:20px;height:20px;flex:none;accent-color:var(--champagne)}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__primary,#mmd-job-confirm-v16.mmd-atelier .mjc16__retry{display:flex;align-items:center;justify-content:center;width:100%;min-height:48px;padding:10px 14px;border:1px solid var(--line);border-radius:6px;color:var(--text);background:var(--panel-soft);white-space:normal}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__status{font-size:13px;color:var(--muted)}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__status.is-error{color:var(--bad)}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__retry{margin-top:12px}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__map{display:inline-flex;align-items:center;min-height:44px;font-size:12px;margin-top:8px}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__footer{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;border-top:1px solid var(--line);margin-top:32px;padding:20px 0;color:var(--muted);font-size:10px}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__footer strong{font-weight:400;color:var(--text)}
+#mmd-job-confirm-v16.mmd-atelier [data-session-tracker]{margin-top:28px;border-top:1px solid var(--line);padding-top:22px}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__tracker-head h2{font-size:18px}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__tracker-head p{font-size:12px}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__timeline{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:16px}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__timeline-step{font-size:11px;padding:8px 0;border-top:1px solid var(--line);overflow-wrap:anywhere}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__timeline-step strong{font-size:10px;display:block;color:var(--muted)}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__timeline-step span{display:block}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__external-payment{max-width:100%;font:inherit}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__external-payment :is(a,button){min-height:44px;max-width:100%;font-size:13px;white-space:normal}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__external-payment :is(h1,h2,h3){font-size:15px}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__external-payment :is(div,section){max-width:100%}
+#mmd-job-confirm-v16.mmd-atelier .mjc16__preview-label{font-size:11px;text-align:center;padding:8px;color:var(--muted);border-bottom:1px solid var(--line)}
+@media(min-width:768px){#mmd-job-confirm-v16.mmd-atelier .mjc16__wrap{width:min(calc(100% - 64px),1120px);padding-top:20px}#mmd-job-confirm-v16.mmd-atelier .mjc16__intro{padding:40px 0 30px}#mmd-job-confirm-v16.mmd-atelier h1{font-size:36px}#mmd-job-confirm-v16.mmd-atelier .mjc16__grid{grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:64px}#mmd-job-confirm-v16.mmd-atelier .mjc16__card--job{padding:28px}#mmd-job-confirm-v16.mmd-atelier .mjc16__model-name{font-size:36px}#mmd-job-confirm-v16.mmd-atelier .mjc16__rows>div{padding:14px 0}}
+@media(prefers-reduced-motion:reduce){#mmd-job-confirm-v16.mmd-atelier *{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+
+#mmd-job-confirm-v16 .mjc16__tracker{margin-top:14px;padding:20px;border:1px solid rgba(217,185,105,.28);border-radius:26px;background:radial-gradient(circle at 90% 0,rgba(217,185,105,.08),transparent 24rem),linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,.012)),#111116;box-shadow:0 22px 65px rgba(0,0,0,.24);animation:mjc16-in .5s ease both}
+#mmd-job-confirm-v16 .mjc16__tracker-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+#mmd-job-confirm-v16 .mjc16__tracker-head p{max-width:620px;margin:9px 0 0;color:#e8e1d7;font-size:13px;font-weight:600;line-height:1.65}
+#mmd-job-confirm-v16 .mjc16__tracker-badge{flex:0 0 auto;padding:8px 11px;border:1px solid rgba(217,185,105,.28);border-radius:999px;background:rgba(217,185,105,.045);color:#fff5b1;font-size:10px;font-weight:900;white-space:nowrap}
+#mmd-job-confirm-v16 .mjc16__tracker-badge.is-live{border-color:rgba(156,227,185,.28);background:rgba(156,227,185,.055);color:#9ce3b9}
+#mmd-job-confirm-v16 .mjc16__tracker-badge.is-warn{border-color:rgba(255,180,168,.28);color:#ffb4a8}
+#mmd-job-confirm-v16 .mjc16__timeline{display:flex;gap:8px;margin-top:18px;padding:2px 0 8px;overflow-x:auto;scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+#mmd-job-confirm-v16 .mjc16__timeline::-webkit-scrollbar{display:none}
+#mmd-job-confirm-v16 .mjc16__timeline-step{flex:0 0 128px;scroll-snap-align:start;padding:12px;border:1px solid rgba(255,255,255,.10);border-radius:16px;background:rgba(255,255,255,.018);opacity:.45;transition:opacity .25s ease,transform .25s ease,border-color .25s ease,background .25s ease}
+#mmd-job-confirm-v16 .mjc16__timeline-step b{display:block;color:#aaa29a;font-size:9px;font-weight:900;letter-spacing:.08em}
+#mmd-job-confirm-v16 .mjc16__timeline-step strong{display:block;margin-top:4px;color:#faf7f1;font-size:11px;font-weight:900}
+#mmd-job-confirm-v16 .mjc16__timeline-step span{display:block;margin-top:3px;color:#aaa29a;font-size:10px;font-weight:650}
+#mmd-job-confirm-v16 .mjc16__timeline-step.is-done{opacity:.75;border-color:rgba(156,227,185,.20)}
+#mmd-job-confirm-v16 .mjc16__timeline-step.is-done b{color:#9ce3b9}
+#mmd-job-confirm-v16 .mjc16__timeline-step.is-active{opacity:1;transform:translateY(-2px);border-color:rgba(217,185,105,.38);background:rgba(217,185,105,.06)}
+#mmd-job-confirm-v16 .mjc16__timeline-step.is-active b,#mmd-job-confirm-v16 .mjc16__timeline-step.is-active strong{color:#fff5b1}
+#mmd-job-confirm-v16 .mjc16__tracker-focus{display:grid;gap:11px;margin-top:12px}
+#mmd-job-confirm-v16 .mjc16__tracker-status,#mmd-job-confirm-v16 .mjc16__eta{padding:17px;border:1px solid rgba(255,255,255,.10);border-radius:20px;background:rgba(7,7,10,.46)}
+#mmd-job-confirm-v16 .mjc16__tracker-status strong{display:block;color:#fff5b1;font-size:20px;font-weight:900;line-height:1.3}
+#mmd-job-confirm-v16 .mjc16__tracker-status span{display:block;margin-top:6px;color:#e8e1d7;font-size:13px;font-weight:650;line-height:1.65}
+#mmd-job-confirm-v16 .mjc16__tracker-status small,#mmd-job-confirm-v16 .mjc16__eta small{display:block;margin-top:8px;color:#aaa29a;font-size:10px;font-weight:700}
+#mmd-job-confirm-v16 .mjc16__eta>span{display:block;color:#f0d78f;font-size:9px;font-weight:900;letter-spacing:.15em}
+#mmd-job-confirm-v16 .mjc16__eta>strong{display:block;margin-top:5px;color:#fff5b1;font-size:clamp(34px,10vw,52px);font-weight:900;letter-spacing:-.04em;line-height:1}
+#mmd-job-confirm-v16 .mjc16__privacy{display:flex;gap:10px;align-items:flex-start;margin-top:11px;padding:12px 13px;border:1px solid rgba(255,255,255,.08);border-radius:15px;background:rgba(255,255,255,.015)}
+#mmd-job-confirm-v16 .mjc16__privacy strong{flex:0 0 auto;color:#f0d78f;font-size:10px;font-weight:900}
+#mmd-job-confirm-v16 .mjc16__privacy span{color:#aaa29a;font-size:10px;font-weight:650;line-height:1.55}
+#mmd-job-confirm-v16 .mjc16__changes{margin-top:14px;padding:20px;border:1px solid rgba(217,185,105,.24);border-radius:24px;background:linear-gradient(180deg,rgba(217,185,105,.055),rgba(255,255,255,.012)),#0d0d11}
+#mmd-job-confirm-v16 .mjc16__changes-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
+#mmd-job-confirm-v16 .mjc16__changes-head h3{margin:5px 0 0;color:#fff5b1;font-size:clamp(19px,5vw,27px);line-height:1.2}
+#mmd-job-confirm-v16 .mjc16__changes-head p{max-width:620px;margin:7px 0 0;color:#d7d0c7;font-size:12px;font-weight:600;line-height:1.65}
+#mmd-job-confirm-v16 .mjc16__change-grid{display:grid;gap:10px;margin-top:16px}
+#mmd-job-confirm-v16 .mjc16__change-card{display:grid;gap:9px;padding:14px;border:1px solid rgba(255,255,255,.09);border-radius:17px;background:rgba(0,0,0,.16)}
+#mmd-job-confirm-v16 .mjc16__change-card label,#mmd-job-confirm-v16 .mjc16__change-more label{color:#f0d78f;font-size:10px;font-weight:800;letter-spacing:.06em}
+#mmd-job-confirm-v16 .mjc16__change-card input,#mmd-job-confirm-v16 .mjc16__change-more input,#mmd-job-confirm-v16 .mjc16__change-more select,#mmd-job-confirm-v16 .mjc16__change-more textarea{width:100%;box-sizing:border-box;border:1px solid rgba(255,255,255,.11);border-radius:13px;background:#09090c;color:#f7f2ea;padding:11px 12px;font:600 13px/1.45 inherit;outline:none}
+#mmd-job-confirm-v16 .mjc16__change-more textarea{min-height:90px;resize:vertical}
+#mmd-job-confirm-v16 .mjc16__change-card input:focus,#mmd-job-confirm-v16 .mjc16__change-more input:focus,#mmd-job-confirm-v16 .mjc16__change-more select:focus,#mmd-job-confirm-v16 .mjc16__change-more textarea:focus{border-color:rgba(240,215,143,.48);box-shadow:0 0 0 3px rgba(240,215,143,.06)}
+#mmd-job-confirm-v16 .mjc16__change-btn{min-height:44px;border:1px solid rgba(240,215,143,.32);border-radius:13px;background:rgba(240,215,143,.08);color:#fff5b1;font-size:12px;font-weight:850;cursor:pointer}
+#mmd-job-confirm-v16 .mjc16__change-btn.is-primary{min-height:50px;border:0;background:linear-gradient(135deg,#f0d78f,#c99f4d);color:#171108}
+#mmd-job-confirm-v16 .mjc16__change-btn:disabled{opacity:.55;cursor:wait}
+#mmd-job-confirm-v16 .mjc16__change-more{display:grid;gap:10px;margin-top:12px;padding-top:14px;border-top:1px solid rgba(255,255,255,.08)}
+#mmd-job-confirm-v16 .mjc16__change-row{display:grid;gap:8px}
+#mmd-job-confirm-v16 .mjc16__change-status{margin:10px 0 0;padding:11px 12px;border-radius:13px;background:rgba(255,255,255,.025);color:#d7d0c7;font-size:11px;font-weight:700;line-height:1.55}
+#mmd-job-confirm-v16 .mjc16__change-status.is-ok{border:1px solid rgba(156,227,185,.22);color:#9ce3b9}
+#mmd-job-confirm-v16 .mjc16__change-status.is-error{border:1px solid rgba(255,180,168,.22);color:#ffb4a8}
+@media(min-width:760px){#mmd-job-confirm-v16 .mjc16__change-grid{grid-template-columns:.72fr 1.28fr}#mmd-job-confirm-v16 .mjc16__change-row.two{grid-template-columns:.7fr 1.3fr}}
+#mmd-job-confirm-v16 .mjc16__final-pay{margin-top:14px;padding:20px;border:1px solid rgba(217,185,105,.34);border-radius:24px;background:linear-gradient(155deg,rgba(217,185,105,.09),rgba(255,255,255,.018) 46%),#0c0c10}
+#mmd-job-confirm-v16 .mjc16__final-pay[hidden]{display:none!important}
+#mmd-job-confirm-v16 .mjc16__final-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+#mmd-job-confirm-v16 .mjc16__final-head h3{margin:5px 0 0;color:#fff5b1;font-size:clamp(21px,5vw,30px);line-height:1.2}
+#mmd-job-confirm-v16 .mjc16__final-amount{flex:0 0 auto;text-align:right;color:#f0d78f;font-size:clamp(24px,7vw,38px);font-weight:950;letter-spacing:-.04em}
+#mmd-job-confirm-v16 .mjc16__final-amount small{display:block;color:#aaa29a;font-size:9px;letter-spacing:.12em}
+#mmd-job-confirm-v16 .mjc16__pay-methods{display:grid;gap:10px;margin-top:16px}
+#mmd-job-confirm-v16 .mjc16__pay-method{padding:13px 14px;border:1px solid rgba(255,255,255,.09);border-radius:15px;background:rgba(255,255,255,.018);color:#e8e1d7;font-size:12px;font-weight:700;line-height:1.55;overflow-wrap:anywhere}
+#mmd-job-confirm-v16 .mjc16__pay-method strong{display:block;color:#fff5b1;font-size:10px;letter-spacing:.08em}
+#mmd-job-confirm-v16 .mjc16__pay-qr{width:180px;max-width:70%;margin:4px auto;padding:9px;border-radius:14px;background:#fff}
+#mmd-job-confirm-v16 .mjc16__proof-form{display:grid;gap:10px;margin-top:15px;padding-top:15px;border-top:1px solid rgba(255,255,255,.08)}
+#mmd-job-confirm-v16 .mjc16__proof-file{width:100%;padding:12px;border:1px dashed rgba(217,185,105,.34);border-radius:14px;background:rgba(0,0,0,.20);color:#e8e1d7;font-size:12px}
+#mmd-job-confirm-v16 .mjc16__proof-submit{min-height:52px;border:0;border-radius:16px;background:linear-gradient(135deg,#f0d78f,#c99f4d);color:#171108;font-size:14px;font-weight:900;cursor:pointer}
+#mmd-job-confirm-v16 .mjc16__proof-submit:disabled{cursor:wait;opacity:.55}
+#mmd-job-confirm-v16 .mjc16__proof-status{margin:12px 0 0;padding:13px 14px;border-radius:15px;background:rgba(255,255,255,.025);color:#e8e1d7;font-size:12px;font-weight:700;line-height:1.6}
+#mmd-job-confirm-v16 .mjc16__proof-status.is-waiting{border:1px solid rgba(240,215,143,.25);color:#fff5b1}
+#mmd-job-confirm-v16 .mjc16__proof-status.is-paid{border:1px solid rgba(156,227,185,.25);color:#9ce3b9}
+#mmd-job-confirm-v16 .mjc16__proof-status.is-error{border:1px solid rgba(255,180,168,.25);color:#ffb4a8}
+#mmd-job-confirm-v16 .mjc16__aftercare{display:flex;align-items:center;justify-content:center;width:100%;min-height:56px;margin-top:12px;border-radius:18px;background:linear-gradient(135deg,#f0d78f,#c99f4d);color:#171108!important;-webkit-text-fill-color:#171108!important;font-size:15px;font-weight:900;text-decoration:none;box-shadow:0 16px 36px rgba(201,159,77,.16)}
+#mmd-job-confirm-v16 .mjc16__aftercare:focus-visible{outline:3px solid rgba(255,245,177,.24);outline-offset:3px}
+@media(min-width:760px){#mmd-job-confirm-v16 .mjc16__tracker{padding:24px}#mmd-job-confirm-v16 .mjc16__tracker-focus{grid-template-columns:1.3fr .7fr}#mmd-job-confirm-v16 .mjc16__timeline-step{flex:1 1 0;min-width:0}}
+@media(max-width:560px){#mmd-job-confirm-v16 .mjc16__tracker-head{display:grid}#mmd-job-confirm-v16 .mjc16__tracker-badge{width:max-content}#mmd-job-confirm-v16 .mjc16__timeline{margin-right:-4px}#mmd-job-confirm-v16 .mjc16__privacy{display:grid}}
+@media(max-width:560px){#mmd-job-confirm-v16 .mjc16__final-head{display:grid}#mmd-job-confirm-v16 .mjc16__final-amount{text-align:left}}
+@media(prefers-reduced-motion:reduce){#mmd-job-confirm-v16 .mjc16__timeline-step{transition:none!important}}
+
+#mmd-job-confirm-v16 .mmd-confirm-rules-btn{
+        display:inline-flex;
+        min-height:40px;
+        align-items:center;
+        justify-content:center;
+        padding:0 15px;
+        border:1px solid rgba(217,185,105,.42);
+        border-radius:999px;
+        background:rgba(217,185,105,.07);
+        color:#fff5b1;
+        -webkit-text-fill-color:#fff5b1;
+        font:900 11px/1 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans Thai",sans-serif;
+        letter-spacing:.12em;
+        text-decoration:none;
+        white-space:nowrap;
+        transition:transform .18s ease,border-color .18s ease,background .18s ease;
+      }
+      #mmd-job-confirm-v16 .mmd-confirm-rules-btn:hover{
+        transform:translateY(-1px);
+        border-color:rgba(240,215,143,.78);
+        background:rgba(217,185,105,.13);
+      }
+      #mmd-job-confirm-v16 .mmd-confirm-rules-btn:focus-visible{
+        outline:3px solid rgba(255,245,177,.24);
+        outline-offset:3px;
+      }
+      #mmd-job-confirm-v16 .mmd-confirm-rules-tools{
+        display:flex;
+        align-items:center;
+        justify-content:flex-end;
+        gap:8px;
+        flex-wrap:wrap;
+      }
+      @media(max-width:560px){
+        #mmd-job-confirm-v16 .mmd-confirm-rules-btn{
+          min-height:36px;
+          padding:0 12px;
+          font-size:10px;
+        }
+        #mmd-job-confirm-v16 .mmd-confirm-rules-tools{
+          max-width:58%;
+        }
+      }
+      @media(prefers-reduced-motion:reduce){
+        #mmd-job-confirm-v16 .mmd-confirm-rules-btn{
+          transition:none!important;
+        }
+      }
+
+html:has(#mmd-job-confirm-v16),body:has(#mmd-job-confirm-v16){margin:0;background:#101214}body:has(#mmd-job-confirm-v16){min-height:100dvh}
+html body #mmd-job-confirm-v16 .mjc16__assistant{display:none!important}
+/* mobile / default: portrait photo, fades to #101214 */
+html body #mmd-job-confirm-v16::before{background-image:linear-gradient(rgba(16,18,20,.62),rgb(16,18,20) 92%),url(https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aee94e2d8fd63d2fd23cee3_sigil-customer-confirm-bg.webp)!important;background-position:0 0,50% 18%!important;background-size:auto,cover!important}
+/* desktop >=900px: landscape photo, dark on the left, face above the Summary column */
+@media(min-width:900px){html body #mmd-job-confirm-v16::before{background-image:linear-gradient(90deg,rgba(16,18,20,.96) 0%,rgba(16,18,20,.85) 38%,rgba(16,18,20,.55) 70%,rgba(16,18,20,.45) 100%),linear-gradient(180deg,rgba(16,18,20,.2) 0%,rgba(16,18,20,0) 35%,#101214 100%),url(https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aee9cef86b87a770052d184_sigil-customer-confirm-desktop-bg.webp)!important;background-repeat:no-repeat!important;background-position:0 0,0 0,center -70px!important;background-size:100% 100%,100% 100%,100% auto!important}}
+
+#mmd-job-confirm-v16 .mjc16__brand::before{display:none!important}
+#mmd-job-confirm-v16 img[data-sg]{display:block!important;content:normal!important;aspect-ratio:auto!important;height:42px!important;width:auto!important;max-width:220px!important;object-fit:contain!important}
