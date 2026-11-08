@@ -22,3 +22,11 @@ test('manual release cannot deploy a sibling, fall back to direct deploy, or cre
  assert.doesNotMatch(source,/name: Authenticated My MMD Payment Center acceptance|name: Smoke internal AI service binding/);
  assert.match(source,/Kenji production model-off contract did not pass/);
 });
+
+test('Kenji deployment smoke locks the current NEXT LV presentation contract',()=>{
+ const workflow=readFileSync(new URL('../../.github/workflows/deploy-member-dashboard-chat-worker.yml',import.meta.url),'utf8');
+ assert.match(workflow,/x-mmd-kenji: member-app-next-lv/);
+ assert.match(workflow,/Kenji04%20Member%20NEXT%20LV%20Mobile%209x16\.webp/);
+ assert.match(workflow,/data:image\/png;base64/);
+ assert.doesNotMatch(workflow,/x-mmd-kenji: member-app-v1/);
+});
