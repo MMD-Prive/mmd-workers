@@ -240,6 +240,7 @@ test("combined Owner queue keeps Premium and Standard independent and redacts id
   const out = await readStandardJoinQueue(env, { fetch: fetchFake });
   assert.equal(out.count, 2);
   assert.deepEqual(out.by_room, { standard: 1, premium: 1 });
+  assert.deepEqual(out.capture_enabled, { standard: true, premium: false });
   assert.deepEqual(new Set(out.items.map(i => i.room)), new Set(["standard","premium"]));
   assert.equal(out.items.find(i => i.room === "premium").join_outcome, "approved_by_existing_handler");
   assert.equal(out.items.find(i => i.room === "standard").join_outcome, "pending_owner_review");
