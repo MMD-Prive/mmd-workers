@@ -1,4 +1,4 @@
-import { createConfirmTokenRecord, getConfirmTokenTtlSeconds, signConfirmToken } from "./index.js";
+import { createConfirmTokenRecord, getConfirmTokenTtlSeconds, signConfirmToken, verifyConfirmToken } from "./index.js";
 
 // Partner-issued model confirmation link.
 // Called by partners-worker (service-to-service) after the Partner is authenticated there.
@@ -9,6 +9,11 @@ const AIRTABLE_API = "https://api.airtable.com/v0";
 export const PARTNER_MODEL_LINK_PATH = "/v1/internal/confirm/partner-model-link";
 
 const SESSION_FIELDS = Object.freeze({
+  confirmation: "fldrAQxUX4pRqz6qr",
+  confirmedAt: "fldLonXanVTSybnpv",
+  lifecycle: "fld57fhdWqIcOy4Jp",
+  status: "fldHAlxnRfpKucnNV",
+  paymentStatus: "fldTY5lE6m0kQf72n",
   sessionId: "fldLTq2kZbyRv22IA",
   amountThb: "fldhwC79ndbnEXSZz",
   paymentRef: "fldojgjSQLaO0uQLX",
@@ -18,6 +23,10 @@ const SESSION_FIELDS = Object.freeze({
 });
 
 const PAYMENT_FIELDS = Object.freeze({
+  sessionId: "fld2wdhBvc8xrV6y5",
+  amount: "fldvCSwrUW8OMAooS",
+  status: "fldEJ1hmm7KwWuI6q",
+  legacyStage: "fldydUWHhqVLMkNSC",
   paymentRef: "fldOO6SY49iDw8VBZ",
   paymentStage: "fldrr9g8ZZjqAbdKQ",
   verificationStatus: "fldJ7a0Ube9F0bmRy",
@@ -85,19 +94,36 @@ export function isPartnerModelLinkRequest(path, method) {
     && String(path || "").replace(/\/+$/g, "") === PARTNER_MODEL_LINK_PATH;
 }
 
-export async function handlePartnerModelLink(request, env = {}) {
+export async function handlePartnerModelLink(request, env = {}, storage) {
   if (!authed(request, env)) return json({ ok: false, error: "service_auth_required" }, 401);
 
   const body = await request.json().catch(() => null);
   const sessionId = clean(body?.session_id, 220);
   const partnerId = clean(body?.partner_id, 120);
   const payModel = Number(body?.pay_model_thb);
-  const allowed = new Set(["session_id", "partner_id", "pay_model_thb"]);
+  const allowed = new Set(["session_id", "partner_id", "pay_model_thb", "existing_model_token"]);
   if (!sessionId || !partnerId || Object.keys(body || {}).some((key) => !allowed.has(key))) {
     return json({ ok: false, error: "session_id_and_partner_id_required" }, 400);
   }
-  if (!Number.isInteger(payModel) || payModel <= 0) {
+  if (!Number.isSafeInteger(payModel) || payModel <= 0) {
     return json({ ok: false, error: "pay_model_thb_invalid" }, 400);
+  }
+
+  if (body.existing_model_token !== undefined && (
+    typeof body.existing_model_token !== "string" || !/^[A-Za-z0-9_-]+\.[a-f0-9]{64}$/.test(body.existing_model_token) ||
+    body.existing_model_token.length > 4096
+  )) return json({ ok: false, error: "model_link_legacy_invalid" }, 409);
+
+  if (!storage) {
+    const issuer = env.PARTNER_MODEL_LINK_ISSUER;
+    if (!issuer) return json({ ok: false, error: "model_link_coordinator_not_ready" }, 503);
+    try {
+      return await issuer.get(issuer.idFromName(sessionId)).fetch(new Request(request.url, {
+        method: "POST", headers: request.headers, body: JSON.stringify(body),
+      }));
+    } catch {
+      return json({ ok: false, error: "model_link_result_unknown" }, 503);
+    }
   }
 
   try {
@@ -111,11 +137,16 @@ export async function handlePartnerModelLink(request, env = {}) {
     if (clean(sf[SESSION_FIELDS.partnerIdSnapshot], 120) !== partnerId) {
       return json({ ok: false, error: "partner_not_owner_of_session" }, 403);
     }
+    if (clean(sf[SESSION_FIELDS.confirmation]).toLowerCase() !== "confirmed" ||
+      [sf[SESSION_FIELDS.lifecycle], sf[SESSION_FIELDS.status]].some(value =>
+        ["cancelled", "canceled", "void", "voided", "refunded", "declined", "closed", "completed"].includes(clean(value).toLowerCase())
+      )) return json({ ok: false, error: "partner_confirmation_required" }, 409);
+
     const system = clean(parseObject(sf[SESSION_FIELDS.referralSnapshotJson]).system, 40).toLowerCase();
     if (!PARTNER_SYSTEMS.has(system)) return json({ ok: false, error: "partner_system_not_allowed" }, 409);
 
     const amount = Number(sf[SESSION_FIELDS.amountThb]);
-    if (Number.isFinite(amount) && amount > 0 && payModel > amount) {
+    if (!Number.isFinite(amount) || amount <= 0 || payModel > amount) {
       return json({ ok: false, error: "pay_model_exceeds_job_amount" }, 409);
     }
     const existingPay = Number(sf[SESSION_FIELDS.payModelThb]);
@@ -127,38 +158,113 @@ export async function handlePartnerModelLink(request, env = {}) {
     if (!paymentRef) return json({ ok: false, error: "session_payment_ref_missing" }, 409);
     const payment = await findSingle(env, paymentsTable, "payment_ref", paymentRef);
     if (!payment?.id) return json({ ok: false, error: "payment_not_found" }, 409);
-    if (clean(payment.fields?.[PAYMENT_FIELDS.verificationStatus], 40).toLowerCase() !== "verified") {
+    const pf = payment.fields || {};
+    const paymentStatus = clean(pf[PAYMENT_FIELDS.status]).toLowerCase();
+    if (!["verified", "deposit_paid", "paid", "settled", "complete", "completed", "success"].includes(clean(sf[SESSION_FIELDS.paymentStatus]).toLowerCase()) ||
+      clean(pf[PAYMENT_FIELDS.sessionId]) !== sessionId ||
+      !(Number.isFinite(Number(pf[PAYMENT_FIELDS.amount])) && Number(pf[PAYMENT_FIELDS.amount]) > 0) ||
+      clean(pf[PAYMENT_FIELDS.verificationStatus]).toLowerCase() !== "verified" ||
+      ["refunded", "void", "voided", "cancelled", "canceled", "rejected", "disputed", "chargeback", "reversed", "reversal"].includes(paymentStatus)) {
       return json({ ok: false, error: "payment_not_official_verified" }, 409);
     }
-    const paymentType = clean(payment.fields?.[PAYMENT_FIELDS.paymentStage] || "deposit", 80).toLowerCase();
-    if (!new Set(["deposit", "full", "final"]).has(paymentType)) {
+    const paymentType = clean(pf[PAYMENT_FIELDS.paymentStage] || pf[PAYMENT_FIELDS.legacyStage], 80).toLowerCase();
+    if (!["deposit", "full", "final"].includes(paymentType)) {
       return json({ ok: false, error: "payment_type_not_reissuable" }, 409);
     }
 
     const secret = clean(env.PAYMENT_CONFIRMATION_SIGNING_SECRET || env.CONFIRM_KEY, 5000);
     if (!secret) return json({ ok: false, error: "confirmation_signing_not_ready" }, 503);
 
-    const issuedAt = Math.floor(Date.now() / 1000);
-    const expiresAt = issuedAt + getConfirmTokenTtlSeconds(env);
-    const claims = {
-      kind: "model_confirm",
-      role: "model",
-      session_id: sessionId,
-      payment_ref: paymentRef,
-      payment_type: paymentType,
-      via: "partner",
-      neutral: true,
-      iat: issuedAt,
-      exp: expiresAt,
-    };
-    const token = await signConfirmToken(claims, secret);
-    await createConfirmTokenRecord(env, token, claims);
+    const now = Math.floor(Date.now() / 1000);
+    const prior = await storage.get("issuance");
+    const legacyToken = body.existing_model_token;
+    let claims;
+    let token;
+    let adopted = false;
+    if (prior) {
+      if ((prior.state === "complete" || prior.registrationStarted) && existingPay !== payModel) {
+        return json({ ok: false, error: "model_link_issuance_conflict" }, 409);
+      }
+      if (prior.partnerId !== partnerId || prior.payModel !== payModel || prior.system !== system ||
+        prior.claims.payment_ref !== paymentRef || prior.claims.payment_type !== paymentType) {
+        return json({ ok: false, error: "model_link_issuance_conflict" }, 409);
+      }
+      if (prior.state !== "complete" && prior.claims.exp <= now) {
+        return json({ ok: false, error: "model_link_result_unknown" }, 503);
+      }
+      if (prior.claims.exp > now) {
+        claims = prior.claims;
+        adopted = prior.adopted === true;
+        token = await signConfirmToken(claims, secret);
+        if (await fingerprint(token) !== prior.fingerprint || (legacyToken && legacyToken !== token)) {
+          return json({ ok: false, error: "model_link_issuance_conflict" }, 409);
+        }
+      } else if (legacyToken) {
+        return json({ ok: false, error: "model_link_legacy_invalid" }, 409);
+      }
+    } else if (legacyToken) {
+      // Older tokens never signed the price. Require the recorded amount before adopting.
+      if (existingPay !== payModel) return json({ ok: false, error: "model_link_legacy_review_required" }, 409);
+      try {
+        claims = await verifyConfirmToken(env, legacyToken, { expectedRole: "model" });
+      } catch {
+        return json({ ok: false, error: "model_link_legacy_invalid" }, 409);
+      }
+      adopted = true;
+      token = await signConfirmToken(claims, secret);
+      if (token !== legacyToken || claims.via !== "partner" || claims.neutral !== true ||
+        claims.session_id !== sessionId || claims.payment_ref !== paymentRef || claims.payment_type !== paymentType) {
+        return json({ ok: false, error: "model_link_legacy_invalid" }, 409);
+      }
+    } else {
+      // The old issuer indexed by token hash only, and could write KV before saving the price.
+      // A pre-cutover job without proof cannot safely be issued a fresh token.
+      const cutover = Date.parse(env.PARTNER_MODEL_LINK_CUTOVER_AT || "");
+      if (!Number.isFinite(cutover)) return json({ ok: false, error: "model_link_coordinator_not_ready" }, 503);
+      if (!(Date.parse(session.createdTime) >= cutover) || !(Date.parse(sf[SESSION_FIELDS.confirmedAt]) >= cutover) || existingPay > 0) {
+        return json({ ok: false, error: "model_link_legacy_review_required" }, 409);
+      }
+    }
 
-    if (!(Number.isFinite(existingPay) && existingPay === payModel)) {
-      await airtable(env, `${encodeURIComponent(sessionsTable)}/${encodeURIComponent(session.id)}`, {
-        method: "PATCH",
-        body: JSON.stringify({ fields: { [SESSION_FIELDS.payModelThb]: payModel }, typecast: false }),
-      });
+    if (!claims) {
+      claims = {
+        kind: "model_confirm", role: "model", session_id: sessionId, payment_ref: paymentRef,
+        payment_type: paymentType, via: "partner", neutral: true, iat: now, exp: now + getConfirmTokenTtlSeconds(env),
+      };
+      token = await signConfirmToken(claims, secret);
+    }
+    const record = { claims, partnerId, payModel, system, adopted, fingerprint: await fingerprint(token) };
+    if (!prior || prior.claims.exp <= now || prior.state !== "complete") {
+      // Persist the exact signed claims before external writes. A retry resumes the same token.
+      const registrationStarted = prior?.claims.exp > now && prior.registrationStarted === true;
+      await storage.put("issuance", { ...record, state: "pending", registrationStarted });
+      if (adopted) await verifyConfirmToken(env, token, { expectedRole: "model" });
+      if (existingPay !== payModel) {
+        await airtable(env, `${encodeURIComponent(sessionsTable)}/${encodeURIComponent(session.id)}`, {
+          method: "PATCH",
+          body: JSON.stringify({ fields: { [SESSION_FIELDS.payModelThb]: payModel }, typecast: false }),
+        });
+      }
+      if (!adopted) {
+        const saved = await env.PAY_SESSIONS_KV.get(`sig:${record.fingerprint.slice(0, 24)}`);
+        if (saved) {
+          await verifyConfirmToken(env, token, { expectedRole: "model" });
+        } else if (registrationStarted) {
+          // A missing KV read after a write attempt can also mean a revoked token.
+          return json({ ok: false, error: "model_link_result_unknown" }, 503);
+        } else {
+          await storage.put("issuance", { ...record, state: "pending", registrationStarted: true });
+          await createConfirmTokenRecord(env, token, claims);
+        }
+      }
+      await storage.put("issuance", { ...record, state: "complete" });
+    } else {
+      // A revoked or unavailable token is never silently recreated.
+      try {
+        await verifyConfirmToken(env, token, { expectedRole: "model" });
+      } catch {
+        return json({ ok: false, error: "model_link_result_unknown" }, 503);
+      }
     }
 
     const base = clean(env.WEB_BASE_URL || "https://mmdbkk.com", 500).replace(/\/+$/, "");
@@ -168,12 +274,24 @@ export async function handlePartnerModelLink(request, env = {}) {
       session_id: sessionId,
       system,
       pay_model_thb: payModel,
-      expires_at: expiresAt,
+      expires_at: claims.exp,
       model_confirmation_url: `${base}/sigil/confirm/job-model?t=${encodeURIComponent(token)}`,
       payment_state_mutated: false,
       notification_sent: false,
     });
   } catch (error) {
-    return json({ ok: false, error: clean(error?.message || "partner_model_link_failed", 160) }, Number(error?.status || 500));
+    return json({ ok: false, error: "model_link_result_unknown" }, Number(error?.status || 500));
+  }
+}
+
+async function fingerprint(token) {
+  const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+  return Array.from(new Uint8Array(bytes), byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
+export class PartnerModelLinkIssuer {
+  constructor(state, env) { this.state = state; this.env = env; }
+  async fetch(request) {
+    return this.state.blockConcurrencyWhile(() => handlePartnerModelLink(request, this.env, this.state.storage));
   }
 }
