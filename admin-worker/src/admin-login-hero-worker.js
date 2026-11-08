@@ -16,6 +16,7 @@ import { handleModelOwnerReviewQueue, isModelOwnerReviewQueueRequest } from "./m
 import { runHypeJobDailyScheduled } from "./hype-job-daily/runner.js";
 import { handleHypeJobDailyOwnerRequest, isHypeJobDailyOwnerRequest } from "./hype-job-daily/owner.js";
 import { handlePremiumGroupCleanupOwnerRequest, isPremiumGroupCleanupOwnerRequest } from "./premium-group-cleanup/owner.js";
+import { isStandardJoinIntakeRpcRequest, handleStandardJoinIntakeRpc } from "./premium-group-cleanup/standard-join-intake.js";
 import { handleModelReconfirmOwnerRequest, isModelReconfirmOwnerRequest } from "./model-reconfirm-owner.js";
 import { drainApprovedJobLinkNotifications } from "./payment-approved-job-link-dispatch.js";
 import {drainOwnerTravelAlerts} from './model-travel-owner.js';
@@ -283,6 +284,11 @@ const adminLoginHeroWorker = {
   },
   async fetch(request, env, ctx) {
     const runtimeEnv = modelMoneyRuntimeEnv(env);
+    // Trusted Telegram -> Admin Worker service-binding-only Standard group intake (#2141).
+    // Do not let the public admin controller or its generic proxy handle this path.
+    if (isStandardJoinIntakeRpcRequest(new URL(request.url).pathname)) {
+      return handleStandardJoinIntakeRpc(request, runtimeEnv);
+    }
     if (isSocialMediaRequest(request)) return handleSocialMedia(request, runtimeEnv);
     if (isDoubleMomentOwnerRequest(request)) return handleDoubleMomentOwnerRequest(request, runtimeEnv);
     if (isHeldDocumentRequest(request)) return handleHeldDocumentRequest(request, runtimeEnv, handleMoneyControlWorkerHome);
