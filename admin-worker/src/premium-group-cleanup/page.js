@@ -34,7 +34,7 @@ button[disabled]{opacity:.55;cursor:not-allowed}.note{color:var(--mute);font-siz
 <header><div><h1>Telegram Rooms</h1><p class="sub">สถานะห้อง Telegram และคนที่ควรเข้า/ออก (อ่านอย่างเดียว)</p></div></header>
 <div class="banner" id="banner">กำลังโหลด…</div>
 <div class="tree" id="tree"></div>
-<h2 class="join-title">Standard · คำขอเข้ากลุ่มที่ยังรอตรวจ</h2>
+<h2 class="join-title">Premium + Standard · HYPE ตรวจคำขอเข้ากลุ่ม</h2>
 <p class="sub">ข้อเสนอจับคู่จากข้อมูล LINE OA เป็นเพียงเบาะแส ไม่ใช่การยืนยันตัวตน</p>
 <div class="tree" id="standard-join-queue"><p class="join-muted">กำลังตรวจคิว…</p></div>
 <p class="note" id="foot"></p>
@@ -76,12 +76,21 @@ fetch(BASE+"/rooms",{credentials:"same-origin",headers:{accept:"application/json
 fetch(BASE+"/join-requests",{credentials:"same-origin",headers:{accept:"application/json"}}).then(r=>r.json()).then(d=>{
   const panel=document.getElementById("standard-join-queue");
   panel.replaceChildren();
-  if(!d.ok){panel.append(el("p","join-muted","ยังอ่านคิว Standard ไม่ได้ (ตรวจการตั้งค่า Airtable/สิทธิ์ Owner)"));return}
-  if(!d.items.length){panel.append(el("p","join-muted","ยังไม่มีคำขอ Standard ที่ระบบบันทึกไว้ ไม่ได้หมายความว่ากลุ่มไม่มีสมาชิก"));return}
-  panel.append(el("p","note","พบ "+d.count+" คำขอ · ระบบไม่อนุมัติ ไม่ส่งข้อความ และไม่เอาใครออก"));
+  if(!d.ok){panel.append(el("p","join-muted","ยังอ่านคิว Premium / Standard ไม่ได้ (ตรวจ Airtable และสิทธิ์ Owner)"));return}
+  if(!d.items.length){panel.append(el("p","join-muted","ยังไม่มีคำขอที่ระบบบันทึกไว้ ไม่ได้หมายความว่าห้อง Premium หรือ Standard ไม่มีสมาชิก"));return}
+  panel.append(el("p","note","คิว "+d.count+" รายการ · Premium "+(d.by_room?.premium||0)+" ("+(d.capture_enabled?.premium?"เปิดรับคำขอ":"ยังปิดรับคำขอ")+") · Standard "+(d.by_room?.standard||0)+" ("+(d.capture_enabled?.standard?"เปิดรับคำขอ":"ยังปิดรับคำขอ")+") · HYPE ตรวจอย่างเดียว ไม่ใช่รายชื่อสมาชิกทั้งหมด"));
   for(const item of d.items){
-    const card=el("div","join-card");const who=el("span","ref",(item.telegram_display_name||"ไม่ระบุชื่อ")+" · "+(item.telegram_username?"@"+item.telegram_username:"ไม่มี username"));
+    const card=el("div","join-card");const who=el("span","ref",(item.room==="premium"?"Premium":"Standard")+" · "+(item.telegram_display_name||"ไม่ระบุชื่อ")+" · "+(item.telegram_username?"@"+item.telegram_username:"ไม่มี username"));
     card.append(who,el("span","why","Telegram ID "+item.telegram_user_id_masked+" · "+(item.requested_at||"ไม่พบวันที่คำขอ")+" · "+item.review_status));
+    if(item.room==="premium"){
+      const observed={
+        approved_by_existing_handler:"ระบบ Premium เดิมอนุมัติคำขอนี้แล้ว",
+        pending_owner_review:"ระบบ Premium เดิมส่งรอเปอร์พิจารณา",
+        approval_failed:"ระบบ Premium เดิมอนุมัติไม่สำเร็จ",
+        unknown:"ยังไม่ทราบผลการอนุมัติจากระบบ Premium",
+      };
+      card.append(el("span","why","ผลคำขอ Premium · "+(observed[item.join_outcome]||observed.unknown)));
+    }
     const hypeText={
       canonical_verified:"HYPE · พบตัวตน Telegram ที่ยืนยันใน MY MMD",
       needs_telegram_link:"HYPE · ยังไม่ได้เชื่อม Telegram กับบัญชีลูกค้า",
@@ -92,16 +101,16 @@ fetch(BASE+"/join-requests",{credentials:"same-origin",headers:{accept:"applicat
     };
     const h=hypeText[item.hype_check_state]||hypeText.not_checked;
     card.append(el("span","why",h+(item.hype_membership_level?" · "+item.hype_membership_level:"")+(item.hype_membership_lifecycle?" · "+item.hype_membership_lifecycle:"")));
-    card.append(el("span","why","ผล HYPE เป็นหลักฐานประกอบ ไม่ใช่สิทธิ์อนุมัติเข้ากลุ่ม หรือยืนยันว่าอยู่ห้อง Standard แล้ว"));
+    card.append(el("span","why","ผล HYPE เป็นหลักฐานประกอบ ไม่ใช่การยืนยันว่าอยู่ห้อง "+(item.room==="premium"?"Premium":"Standard")+" หรืออนุญาตให้เอาใครออก"));
     const matches=el("ul","join-matches");
     if(!item.possible_matches.length){matches.append(el("li","","ยังจับคู่กับ LINE OA ไม่ได้ ต้องให้เปอร์ตรวจเอง"))}
     else{for(const c of item.possible_matches){
       const confidence=c.evidence==="numeric_id_exact"?"ID ตรงกัน":c.evidence==="username_exact"?"username ตรงกัน":"ชื่อคล้ายกันเท่านั้น";
       matches.append(el("li","",c.customer_ref+(c.nickname?" · "+c.nickname:"")+" — "+confidence+(c.possible_duplicate?" · ชื่อซ้ำ/เสี่ยงซ้ำ":"")));
     }}
-    card.append(matches,el("p","note","รอเปอร์ยืนยันผ่านหลักฐานเพิ่มเติมเท่านั้น · ไม่มีปุ่มอนุมัติอัตโนมัติ"));panel.append(card)
+    card.append(matches,el("p","note","ต้องยืนยันตัวตนกับเปอร์ก่อนผูกลูกค้า · คิวนี้ไม่มีปุ่มอนุมัติหรือเอาออก"));panel.append(card)
   }
   if(d.rows_truncated||d.source_truncated)panel.append(el("p","note","ผลบางส่วนถูกจำกัดจำนวน ต้องตรวจข้อมูลทั้งหมดก่อนตัดสิน"));
-}).catch(()=>{const panel=document.getElementById("standard-join-queue");panel.replaceChildren(el("p","join-muted","ไม่สามารถอ่านคิว Standard ได้"));});
+}).catch(()=>{const panel=document.getElementById("standard-join-queue");panel.replaceChildren(el("p","join-muted","ไม่สามารถอ่านคิว Premium / Standard ได้"));});
 </script></body></html>`;
 }

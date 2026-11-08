@@ -1096,9 +1096,13 @@ HYPE_JOB_DAILY_ENABLED = "true"
 # PREMIUM_GROUP_ELIGIBILITY_CLEANUP (#2141) phase 1: owner dry-run audit only. Sends/removes nothing.
 PREMIUM_GROUP_ELIGIBILITY_CLEANUP_ENABLED = "false"
 PREMIUM_GROUP_CLEANUP_DRY_RUN = "true"
-# #2141 Standard chat_join_request -> private Airtable owner-review intake. Disabled until tested/approved.
-TELEGRAM_STANDARD_JOIN_CAPTURE_ENABLED = "false"
+# #2141 Telegram chat_join_request -> private Owner review staging.
+# Standard was explicitly enabled on 2026-11-08 and must survive Wrangler redeploys.
+TELEGRAM_STANDARD_JOIN_CAPTURE_ENABLED = "true"
+# Premium intake is a separate new capture lane; off until owner-approved Admin release & smoke test.
+TELEGRAM_PREMIUM_JOIN_CAPTURE_ENABLED = "false"
 AIRTABLE_TELEGRAM_STANDARD_JOIN_INTAKE_TABLE_ID = "tblGFkPcMFsxsW5Ul"
+AIRTABLE_TELEGRAM_PREMIUM_JOIN_INTAKE_TABLE_ID = "tblQVya3rvb1CpRrB"
 AIRTABLE_TELEGRAM_LINK_SOURCE_STAGING_TABLE_ID = "tblCVwWXwyEhU2AEN"
 # Internal promo grace: expired Premium stays "grace" (never a removal candidate) through this instant. Customer-facing promo deadline stays 31 Oct 2026.
 PREMIUM_GROUP_PROMO_GRACE_UNTIL = "2026-12-31T23:59:59+07:00"

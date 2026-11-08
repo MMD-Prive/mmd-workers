@@ -33,7 +33,7 @@ const TOPIC_SMOKE_CONFIRMATION = "SEND_REDACTED_TOPIC_SMOKE";
 const HYPE_PREVIEW_INTRO_CONFIRMATION = "INTRODUCE_HYPE_PREVIEW_V1";
 import { isPrivateCareBackAnnouncementVisible } from "../../shared/membership-promotion-policy.mjs";
 import { MEMBER_PRESENCE_PATHS, handleMemberPresence } from "./member-presence.js";
-import { observeStandardJoinRequest } from "./standard-join-observer.js";
+import { observeStandardJoinRequest, observePremiumJoinRequest } from "./standard-join-observer.js";
 const HYPE_PREMIUM_ROOM_SYNC_CONFIRMATION = "SYNC_HYPE_PREMIUM_ROOM_V1";
 const TELEGRAM_CANONICAL_WEBHOOK_URL = "https://mmdbkk.com/telegram/webhook";
 const TELEGRAM_WEBHOOK_LOCK_CONFIRMATION = "ENSURE_CANONICAL_TELEGRAM_WEBHOOK_V1";
@@ -695,8 +695,31 @@ async function handleTelegramWebhook(update, env) {
     if (standardId && clean(joinRequest.chat?.id) === standardId) {
       return observeStandardJoinRequest(joinRequest, env);
     }
-    // Preserve the existing Premium handling contract.
-    return handleHypePremiumJoinRequest(joinRequest, env);
+    // Premium already has a separate entitlement-gated join handler. Preserve its
+    // existing approvals and owner alerts; only mirror its outcome to private review staging.
+    const premiumResult = await handleHypePremiumJoinRequest(joinRequest, env);
+    const premiumId = clean(env.TELEGRAM_PREMIUM_GROUP_ID || "-1001668261779");
+    if (premiumId && clean(joinRequest.chat?.id) === premiumId) {
+      const outcome = premiumResult.join_request_state === "approved"
+        ? "approved_by_existing_handler"
+        : premiumResult.code_status === "telegram_approve_failed"
+          ? "approval_failed"
+          : "pending_owner_review";
+      let intake = null;
+      try {
+        intake = await observePremiumJoinRequest(joinRequest, env, { join_outcome: outcome });
+      } catch {
+        // Capture cannot override Telegram's existing Premium join decision.
+      }
+      return {
+        ...premiumResult,
+        owner_intake: {
+          captured: intake?.captured === true,
+          state: intake?.code_status || "capture_unavailable",
+        },
+      };
+    }
+    return premiumResult;
   }
 
   const message = update.message || update.edited_message || null;
