@@ -152,14 +152,14 @@ jobs:
             test "$login_code" = "303"
             stage=login_cookie
             grep -qi '^set-cookie: mmd_admin_gate_v1=' "$headers"
-            stage=login_dashboard_first_header
-            grep -Eqi '^x-mmd-admin-post-login:[[:space:]]*dashboard-first' "$headers"
+            stage=login_resume_task_header
+            grep -Eqi '^x-mmd-admin-post-login:[[:space:]]*resume-admin-task' "$headers"
             stage=login_next_header
-            grep -Eqi '^x-mmd-admin-next:[[:space:]]*/internal/admin/dashboard' "$headers"
+            grep -Eqi '^x-mmd-admin-next:[[:space:]]*/internal/ceo/models' "$headers"
 
             stage=login_redirect_location
             location="$(tr -d '\r' < "$headers" | awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]+:[[:space:]]*/, ""); print; exit}')"
-            node -e 'const u=new URL(process.argv[1],process.argv[2]); if(u.pathname!=="/internal/admin/dashboard") process.exit(1)' "$location" "$origin"
+            node -e 'const u=new URL(process.argv[1],process.argv[2]); if(u.origin!==process.argv[2] || u.pathname!=="/internal/ceo/models" || u.search || u.hash) process.exit(1)' "$location" "$origin"
 
             stage=models_page_request
             page_code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \

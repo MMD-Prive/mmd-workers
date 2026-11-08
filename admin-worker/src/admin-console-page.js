@@ -243,7 +243,7 @@ export function renderAdminConsolePage(request) {
   ${translated("skip", "a", 'class="ac-skip" href="#ac-main"')}
   <div id="admin-console" class="ac-shell" data-admin-console="rebuild-v1">
     <aside class="ac-sidebar" aria-label="${text("navigation")}">
-      <a class="ac-brand" href="/internal/admin/control-room" aria-label="SĪGIL System · Control Room">${SYSTEM_LIGHT}</a>
+      <a class="ac-brand" href="${ADMIN_CONSOLE_PATH}" aria-label="SĪGIL System · Console">${SYSTEM_LIGHT}</a>
       <p class="ac-sidebar-caption">OWNER WORKSPACE</p>
       <nav class="ac-nav" aria-label="${text("navigation")}">${navigation()}</nav>
       <a class="ac-room-link" href="/internal/admin/control-room">${icon("grid")}${translated("controlRoom")}${icon("arrow")}</a>
@@ -251,8 +251,8 @@ export function renderAdminConsolePage(request) {
     </aside>
     <div class="ac-workspace">
       <header class="ac-header">
-        <a class="ac-mobile-brand" href="/internal/admin/control-room" aria-label="SĪGIL System · Control Room">${SYSTEM_LIGHT}</a>
-        <nav class="ac-breadcrumb" aria-label="${text("workspace")}">${translated("workspace", "a", 'href="/internal/admin/control-room"')}<span aria-hidden="true">/</span>${translated("title", "span", 'aria-current="page"')}</nav>
+        <a class="ac-mobile-brand" href="${ADMIN_CONSOLE_PATH}" aria-label="SĪGIL System · Console">${SYSTEM_LIGHT}</a>
+        <nav class="ac-breadcrumb" aria-label="${text("workspace")}">${translated("workspace", "a", 'href="/internal/admin/console"')}<span aria-hidden="true">/</span>${translated("title", "span", 'aria-current="page"')}</nav>
         <div class="ac-header-actions"><span class="ac-owner-note">${icon("lock")}${translated("ownerOnly")}</span><button id="ac-refresh" class="ac-button ac-button-quiet" type="button">${icon("refresh")}${translated("refresh")}</button><details class="ac-mobile-tools"><summary aria-label="${text("tools")}">${icon("menu")}${translated("tools", "span", 'class="ac-sr-only"')}</summary><nav aria-label="${text("navigation")}">${navigation()}<a class="ac-nav-link" href="/internal/admin/control-room">${icon("grid")}${translated("controlRoom")}</a></nav></details></div>
       </header>
       <main id="ac-main" class="ac-main" tabindex="-1">

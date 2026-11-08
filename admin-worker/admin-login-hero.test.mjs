@@ -58,7 +58,7 @@ test("admin login preserves canonical CEO Models return path", () => {
   assert.equal(normalizeNext("/internal/ceo/models?view=readiness"), "/internal/ceo/models?view=readiness");
   assert.equal(
     normalizeNext("/internal/ceo/models?token=secret"),
-    "/internal/admin/control-room",
+    "/internal/admin/console",
   );
 });
 
@@ -73,7 +73,7 @@ test("admin login preserves selected internal work through the return path", asy
     `https://www.mmdbkk.com/internal/admin/login?next=${encodeURIComponent(selected)}`,
   )).text();
   assert.match(html, /name="next" value="\/internal\/admin\/jobs\/all\?session_id=sess_123&amp;page=2#job"/);
-  assert.equal(normalizeNext("/internal/admin/jobs/all?token=secret"), "/internal/admin/control-room");
+  assert.equal(normalizeNext("/internal/admin/jobs/all?token=secret"), "/internal/admin/console");
 });
 
 test("admin login preserves Refund Ops return path and exact case query", () => {
@@ -81,15 +81,15 @@ test("admin login preserves Refund Ops return path and exact case query", () => 
   assert.equal(normalizeNext(refund), refund);
   assert.equal(
     normalizeNext("/internal/admin/refunds?token=secret"),
-    "/internal/admin/control-room",
+    "/internal/admin/console",
   );
 });
 
 test("admin login next route fails closed", () => {
-  assert.equal(normalizeNext("https://evil.example/internal/admin/control-room"), "/internal/admin/control-room");
-  assert.equal(normalizeNext("//evil.example/internal/admin/control-room"), "/internal/admin/control-room");
-  assert.equal(normalizeNext("/internal/admin/control-room?token=secret"), "/internal/admin/control-room");
-  assert.equal(normalizeNext("/internal/admin/../../private"), "/internal/admin/control-room");
+  assert.equal(normalizeNext("https://evil.example/internal/admin/control-room"), "/internal/admin/console");
+  assert.equal(normalizeNext("//evil.example/internal/admin/control-room"), "/internal/admin/console");
+  assert.equal(normalizeNext("/internal/admin/control-room?token=secret"), "/internal/admin/console");
+  assert.equal(normalizeNext("/internal/admin/../../private"), "/internal/admin/console");
   assert.equal(normalizeNext("/internal/admin/control-room?tab=queue"), "/internal/admin/control-room?tab=queue");
 });
 

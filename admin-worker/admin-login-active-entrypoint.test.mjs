@@ -8,7 +8,6 @@ if (!globalThis.crypto) globalThis.crypto = webcrypto;
 
 const SESSION = "/internal/admin/login/session";
 const NEXT = "/internal/admin/control-room";
-const DASHBOARD = "/internal/admin/dashboard";
 
 test('active entrypoint Owner LINE snapshot requires credential session and never writes', async () => {
   const env = runtimeEnv({ ADMIN_LOGIN_CREDENTIAL: 'fixture-owner', ADMIN_SESSION_SECRET: 'fixture-session', AIRTABLE_API_KEY: 'fixture-airtable' });
@@ -83,9 +82,9 @@ test("active entrypoint accepts established ADMIN_BEARER when dedicated browser 
     ADMIN_BEARER: "owner_admin_bearer",
   });
   assert.equal(response.status, 303);
-  assert.equal(response.headers.get("location"), `https://mmdbkk.com${DASHBOARD}`);
-  assert.equal(response.headers.get("x-mmd-admin-next"), DASHBOARD);
-  assert.equal(response.headers.get("x-mmd-admin-post-login"), "dashboard-first");
+  assert.equal(response.headers.get("location"), `https://mmdbkk.com${NEXT}`);
+  assert.equal(response.headers.get("x-mmd-admin-next"), NEXT);
+  assert.equal(response.headers.get("x-mmd-admin-post-login"), "resume-admin-task");
   assert.match(response.headers.get("set-cookie") || "", /^mmd_admin_gate_v1=/);
 });
 
@@ -98,7 +97,7 @@ test("dedicated browser credential stays authoritative when configured", async (
   const dedicated = await login("dedicated_browser_code", env);
   const bearer = await login("owner_admin_bearer", env);
   assert.equal(dedicated.status, 303);
-  assert.equal(dedicated.headers.get("location"), `https://mmdbkk.com${DASHBOARD}`);
+  assert.equal(dedicated.headers.get("location"), `https://mmdbkk.com${NEXT}`);
   assert.equal(bearer.status, 401);
   assert.equal(bearer.headers.get("set-cookie"), null);
 });
@@ -140,7 +139,7 @@ test("active entrypoint recovers a valid owner session when a duplicate stale co
   };
   const loginResponse = await login("dedicated_browser_code", env);
   assert.equal(loginResponse.status, 303);
-  assert.equal(loginResponse.headers.get("location"), `https://mmdbkk.com${DASHBOARD}`);
+  assert.equal(loginResponse.headers.get("location"), `https://mmdbkk.com${NEXT}`);
   const validCookie = cookiePair(loginResponse);
   assert.match(validCookie, /^mmd_admin_gate_v1=/);
 
@@ -306,7 +305,7 @@ async function assertPagesDenied(headers, requests) {
         const target = new URL(response.headers.get("location"));
         assert.equal(target.pathname, "/internal/admin/login");
         const next = path === "/internal/admin/payments" || path === "/internal/admin/jobs/all"
-          ? `${path}?page=2` : "/internal/admin/control-room";
+          ? `${path}?page=2` : "/internal/admin/console";
         assert.equal(target.searchParams.get("next"), next);
         assert.equal(response.headers.get("x-mmd-admin-gate"), "credential-required");
       } else {
