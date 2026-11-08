@@ -150,7 +150,7 @@ test("before 16:30 only readiness is recorded; it does not reserve a daily plan"
   assert.equal(f.bucket.read("plans/2026-10-18/model.json"), null);
 });
 
-for (const [category, expected] of [["exclusive", ["premium", "preview"]], ["premium", ["premium"]], ["standard", ["premium", "standard"]], ["travel", ["preview"]], ["extreme", ["preview"]]]) {
+for (const [category, expected] of [["exclusive", ["premium", "preview"]], ["premium", ["premium"]], ["standard", ["premium"]], ["travel", ["preview"]], ["extreme", ["preview"]]]) {
   test(`${category} sends only the user-approved room combination`, async () => {
     const f = fixture({ cards: [{ ...CARD, category }] });
     const result = await run(f);

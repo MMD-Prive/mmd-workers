@@ -1,0 +1,88 @@
+{
+  "worker": "events-worker",
+  "module": "model-eta-wrapper.js",
+  "expected_version": "88e741df-15bd-40ba-a4ce-f88a2735822b",
+  "expected_deployment": "d9617e88-3f2f-4698-a3e5-3853fd197e06",
+  "baseline_sha256": "d517c7ef259f17f66d1cb991a8cfd69748f08228540ea057b08adc3662cec8ee",
+  "candidate_sha256": "e89dba7fa99721f9bd74f4ac22ae768e42695383bd59147a9f1edd1593a55e16",
+  "unrelated_bytes_preserved": true,
+  "sections": [
+    {
+      "name": "compcard-policy",
+      "baseline_sha256": "3ee69fb6928ad2bc79e87c304665e18d77abafa97f97571f1a86b103bbc015c2",
+      "candidate_sha256": "9c9d1b49206fc3657beb11e76b7adf06084e3a04b0f47d68bf9f35b5ca49e841"
+    },
+    {
+      "name": "compcard-journal",
+      "baseline_sha256": "3a2a8e4d3f47609609f024dd01167bea671f2e6bace885d4b14cd13e605f66d0",
+      "candidate_sha256": "d9ea084eb40a674da93dd5046837fdfc74f3b49b16ead4fd16c4be0601f069b0"
+    },
+    {
+      "name": "compcard-daily",
+      "baseline_sha256": "e7f1404c67104efa263a1bd0d784f8e06db6c7bbe0d13e8a67acf1b1f83ac40b",
+      "candidate_sha256": "bde739b876e05a273aa3c3146289e197654667ae150bf42be71c780bd969d9ee"
+    }
+  ],
+  "replacements": [
+    {
+      "section": "compcard-policy",
+      "before": "function evaluateCard(card, record) {",
+      "after": "function automaticModelAllowed(modelId) {\n  return modelId !== \"recW0Whpu9maVjYF6\";\n}\nfunction destinationsForModelSlot(category, slot) {\n  if (slot === \"standard\") return category === \"standard\" ? [\"standard\"] : [];\n  return destinationsForCategory(category).filter(destination => destination !== \"standard\");\n}\nfunction evaluateCard(card, record) {"
+    },
+    {
+      "section": "compcard-policy",
+      "before": "if (!card || !card.model_id || !CATEGORIES.includes(card.category) || card.selectable === false) return false;",
+      "after": "if (!card || !card.model_id || !automaticModelAllowed(card.model_id) || !CATEGORIES.includes(card.category) || card.selectable === false) return false;"
+    },
+    {
+      "section": "compcard-daily",
+      "before": "const check = evaluateCard(card, byId.get(card.model_id));",
+      "after": "const check = automaticModelAllowed(card.model_id) ? evaluateCard(card, byId.get(card.model_id)) : { ok: false, reason: \"automatic_selection_excluded\" };"
+    },
+    {
+      "section": "compcard-daily",
+      "before": "const card2 = chooseDailyCard(slot === \"standard\" ? eligible.filter((card3) => card3.category === \"standard\") : eligible, history, date);",
+      "after": "const sibling = (await readCompcardJson(bucket, `plans/${date}/${slot === \"standard\" ? \"model\" : \"standard\"}.json`))?.record;\n      const candidates = eligible.filter(card => card.model_id !== sibling?.model_id && (slot !== \"standard\" || card.category === \"standard\"));\n      const card2 = chooseDailyCard(candidates, history, date);"
+    },
+    {
+      "section": "compcard-daily",
+      "before": "const destinations = destinationsForCategory(card2.category);",
+      "after": "const destinations = destinationsForModelSlot(card2.category, slot);"
+    },
+    {
+      "section": "compcard-daily",
+      "before": "sha256: card2.sha256,\n        destinations,",
+      "after": "sha256: card2.sha256,\n        room_selection_policy: 1,\n        destinations,"
+    },
+    {
+      "section": "compcard-daily",
+      "before": "const expected = modelSlot ? destinationsForCategory(card.category) : [frozenPromotionDestination(plan, date)];",
+      "after": "if (modelSlot && plan.room_selection_policy !== undefined && plan.room_selection_policy !== 1) {\n    return { date, slot, status: \"blocked\", error: \"compcard_plan_room_policy_invalid\", sent: 0 };\n  }\n  const expected = modelSlot ? (plan.room_selection_policy === 1 ? destinationsForModelSlot(card.category, slot) : destinationsForCategory(card.category)) : [frozenPromotionDestination(plan, date)];"
+    },
+    {
+      "section": "compcard-daily",
+      "before": "if (plan.chat_ids[destination] !== manifest.destinations[destination]) throw problem(\"compcard_destination_approval_changed\", false);",
+      "after": "if (plan.chat_ids[destination] !== manifest.destinations[destination]) throw problem(\"compcard_destination_approval_changed\", false);\n          if (modelSlot && !destinationsForModelSlot(card.category, slot).includes(destination)) {\n            throw problem(\"compcard_legacy_room_selection_conflict\", false);\n          }"
+    },
+    {
+      "section": "compcard-daily",
+      "before": "if (modelSlot) {\n            const model",
+      "after": "if (modelSlot) {\n            if (!automaticModelAllowed(card.model_id)) throw problem(\"compcard_automatic_selection_excluded\", false);\n            const model"
+    },
+    {
+      "section": "compcard-daily",
+      "before": "if (!sharedAsset) sharedAsset = modelSlot ? await readAsset(card) : await preparePromotion(card, destination, deps.asset || readApprovedCompcardAsset);",
+      "after": "if (modelSlot) {\n            const sibling = (await readCompcardJson(bucket, `plans/${date}/${slot === \"standard\" ? \"model\" : \"standard\"}.json`))?.record;\n            if (sibling?.model_id === card.model_id) throw problem(\"compcard_same_day_model_conflict\", false);\n          }\n          if (!sharedAsset) sharedAsset = modelSlot ? await readAsset(card) : await preparePromotion(card, destination, deps.asset || readApprovedCompcardAsset);"
+    },
+    {
+      "section": "compcard-journal",
+      "before": "async function settleCompcardExposure(bucket, card, date, now, outcomes) {\n  const expected = destinationsForCategory(card.category);",
+      "after": "async function settleCompcardExposure(bucket, card, date, now, outcomes, destinations = destinationsForCategory(card.category)) {\n  const allowed = destinationsForCategory(card.category);\n  const expected = Array.isArray(destinations) && new Set(destinations).size === destinations.length\n    && destinations.every(destination => allowed.includes(destination)) ? destinations : [];"
+    },
+    {
+      "section": "compcard-daily",
+      "before": "await settleCompcardExposure(bucket, card, date, now, outcomes);",
+      "after": "await settleCompcardExposure(bucket, card, date, now, outcomes, plan.destinations);"
+    }
+  ]
+}

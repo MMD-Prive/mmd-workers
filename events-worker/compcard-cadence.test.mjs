@@ -84,9 +84,9 @@ test('a week has two promotions and five Standard evenings with no Preview model
   for (const day of [23, 24, 25, 26, 27, 28, 29]) resultSlots.push((await run(f, `2026-10-${day}`)).results[0].slot);
   assert.deepEqual(resultSlots, ['promotion', 'standard', 'standard', 'standard', 'promotion', 'standard', 'standard']);
   const standardSends = f.sends.filter(row => row.card.category === 'standard');
-  assert.equal(standardSends.length, 10);
+  assert.equal(standardSends.length, 5);
   assert.equal(new Set(standardSends.map(row => row.card.model_id)).size, 5);
-  assert.ok(standardSends.every(row => ['premium', 'standard'].includes(row.destination)));
+  assert.ok(standardSends.every(row => row.destination === 'standard'));
   assert.equal(f.sends.filter(row => row.card.kind === 'text').length, 2);
 });
 
@@ -240,30 +240,31 @@ test('afternoon and Standard evening share same-day exposure and seven-day coold
   assert.notEqual(afternoon.results[0].model_id, evening.results[0].model_id);
   assert.equal((await run(f, '2026-10-25')).results[0].status, 'no_eligible_card');
   assert.equal((await run(f, '2026-10-26', '16:30')).results[0].status, 'no_eligible_card');
-  assert.equal(f.sends.length, 4);
+  assert.equal(f.sends.length, 2);
+  assert.deepEqual(f.sends.map(row => row.destination), ['premium', 'standard']);
   assert.equal((await run(f, '2026-10-31')).results[0].status, 'sent');
-  assert.equal(f.sends.length, 6);
+  assert.equal(f.sends.length, 3);
 });
 
 test('Standard repeats and concurrent cron calls keep independent per-room receipts', async () => {
   const f = fixture();
   await Promise.all([run(f, '2026-10-24'), run(f, '2026-10-24')]);
   await run(f, '2026-10-24', '20:15');
-  assert.equal(f.sends.length, 2);
-  assert.equal(f.bucket.read('deliveries/2026-10-24/standard/premium.json').attempts, 1);
+  assert.equal(f.sends.length, 1);
+  assert.equal(f.bucket.read('deliveries/2026-10-24/standard/premium.json'), null);
   assert.equal(f.bucket.read('deliveries/2026-10-24/standard/standard.json').attempts, 1);
-  assert.equal(f.bucket.read('summaries/2026-10-24/standard.json').result.sent, 2);
+  assert.equal(f.bucket.read('summaries/2026-10-24/standard.json').result.sent, 1);
 });
 
-test('an uncertain Standard destination never retries while its sibling completes', async () => {
-  const f = fixture({ send: (card, destination, count) => destination === 'premium'
+test('an uncertain Standard destination never retries or mirrors to Premium', async () => {
+  const f = fixture({ send: (card, destination, count) => destination === 'standard'
     ? { delivery_state: 'delivery_uncertain', error: 'compcard_mock_timeout' }
     : { ok: true, delivery_state: 'sent', destination, chat_id: ROOM_IDS[destination], message_id: count, approved_sha256: card.sha256 } });
   await run(f, '2026-10-24');
   await run(f, '2026-10-24', '20:30');
-  assert.equal(f.sends.length, 2);
-  assert.equal(f.bucket.read('deliveries/2026-10-24/standard/premium.json').status, 'delivery_uncertain');
-  assert.equal(f.bucket.read('deliveries/2026-10-24/standard/standard.json').status, 'sent');
+  assert.equal(f.sends.length, 1);
+  assert.equal(f.bucket.read('deliveries/2026-10-24/standard/premium.json'), null);
+  assert.equal(f.bucket.read('deliveries/2026-10-24/standard/standard.json').status, 'delivery_uncertain');
   assert.equal((await run(f, '2026-10-25')).results[0].status, 'no_eligible_card');
 });
 
@@ -551,4 +552,119 @@ test('a stale earlier-date executor cannot retry the sealed journal even before 
   assert.equal(result.status, 'blocked');
   assert.equal(result.duplicate, true);
   assert.equal(f.sends.length, 2);
+});
+
+test('excluded Tinn identity never enters either new room plan, including alternate assets', async () => {
+  const inventory = [...cards(2), ...cards(2).map((card, i) => ({ ...card, id: 'tinn-' + i, model_id: 'recW0Whpu9maVjYF6', canonical_name: 'Tinn F', display_name: 'AAA Tinn F' }))];
+  const f = fixture({ inventory });
+  const before = JSON.stringify(f.models);
+  await run(f, '2026-10-24', '16:30');
+  await run(f, '2026-10-24');
+  assert.deepEqual(f.sends.map(row => row.destination), ['premium', 'standard']);
+  assert.notEqual(f.sends[0].card.model_id, f.sends[1].card.model_id);
+  assert.ok(f.sends.every(row => row.card.model_id !== 'recW0Whpu9maVjYF6'));
+  assert.equal(JSON.stringify(f.models), before);
+  assert.ok(f.bucket.read('readiness/latest.json').result.excluded.every(row => row.reason === 'automatic_selection_excluded'));
+});
+
+test('a frozen not_sent afternoon identity is not reused in Standard even without exposure', async () => {
+  const f = fixture({ inventory: cards(2), send: (card, destination) => ({ delivery_state: 'not_sent' }) });
+  await run(f, '2026-10-24', '16:30');
+  await run(f, '2026-10-24');
+  assert.equal(f.sends.length, 2);
+  assert.notEqual(f.sends[0].card.model_id, f.sends[1].card.model_id);
+});
+
+test('one remaining Standard person is skipped rather than mirrored or cooldown relaxed', async () => {
+  const f = fixture({ inventory: [cards()[0], { ...cards()[0], id: 'tinn', model_id: 'recW0Whpu9maVjYF6' }] });
+  await run(f, '2026-10-24', '16:30');
+  assert.equal((await run(f, '2026-10-24')).results[0].status, 'no_eligible_card');
+  assert.equal((await run(f, '2026-10-25')).results[0].status, 'no_eligible_card');
+  assert.equal(f.sends.length, 1);
+  assert.equal(f.bucket.read('plans/2026-10-24/standard.json'), null);
+});
+
+async function seedLegacyModelPlan(f, card, date = '2026-10-24') {
+  const { buildCompcardCaption } = await import('./src/compcard-policy.js');
+  const plan = { schema: 'hype_compcard_plan_v1', date, slot: 'model', card_id: card.id, model_id: card.model_id,
+    category: card.category, file_id: card.file_id, sha256: card.sha256, destinations: ['premium', 'standard'],
+    chat_ids: { premium: ROOM_IDS.premium, standard: ROOM_IDS.standard },
+    captions: Object.fromEntries(['premium', 'standard'].map(room => [room, buildCompcardCaption(card, room)])) };
+  plan.digest = await compcardSha256(new TextEncoder().encode(JSON.stringify(plan)));
+  await putRecord(f, 'plans/' + date + '/model.json', plan);
+  return plan;
+}
+
+test('legacy frozen plan is immutable but its pending mirror fails closed', async () => {
+  const f = fixture({ inventory: cards(2) });
+  await seedLegacyModelPlan(f, f.manifest.cards[0]);
+  const original = rawRecord(f, 'plans/2026-10-24/model.json');
+  await run(f, '2026-10-24', '16:30');
+  const receipt = rawRecord(f, 'deliveries/2026-10-24/model/standard.json');
+  await run(f, '2026-10-24', '16:45');
+  assert.equal(f.sends.length, 1);
+  assert.equal(f.bucket.read('deliveries/2026-10-24/model/standard.json').error, 'compcard_legacy_room_selection_conflict');
+  assert.equal(rawRecord(f, 'plans/2026-10-24/model.json'), original);
+  assert.equal(rawRecord(f, 'deliveries/2026-10-24/model/standard.json'), receipt);
+  await run(f, '2026-10-24');
+  assert.equal(f.sends.length, 2);
+  assert.notEqual(f.sends[1].card.model_id, f.sends[0].card.model_id);
+});
+
+test('pending legacy Tinn sends are held without rewriting the frozen plan', async () => {
+  const tinn = { ...cards()[0], model_id: 'recW0Whpu9maVjYF6' };
+  const f = fixture({ inventory: [tinn, cards(2)[1]] });
+  await seedLegacyModelPlan(f, tinn);
+  const original = rawRecord(f, 'plans/2026-10-24/model.json');
+  await run(f, '2026-10-24', '16:30');
+  assert.equal(f.sends.length, 0);
+  assert.equal(rawRecord(f, 'plans/2026-10-24/model.json'), original);
+  assert.equal(f.bucket.read('deliveries/2026-10-24/model/premium.json').error, 'compcard_automatic_selection_excluded');
+});
+
+test('already sent legacy Tinn receipts and sent summary remain truthful after exclusion', async () => {
+  const tinn = { ...cards()[0], model_id: 'recW0Whpu9maVjYF6' };
+  const f = fixture({ inventory: [tinn, cards(2)[1]] });
+  const plan = await seedLegacyModelPlan(f, tinn);
+  for (const destination of plan.destinations) {
+    await deliverCompcardOnce({
+      bucket: f.bucket, key: `deliveries/2026-10-24/model/${destination}.json`, now: at('2026-10-24', '16:30'),
+      context: { date: plan.date, slot: plan.slot, destination, model_id: plan.model_id, card_id: plan.card_id,
+        plan_digest: plan.digest, approved_sha256: plan.sha256, expected_chat_id: ROOM_IDS[destination] },
+      prepare: async () => ({}),
+      deliver: async () => ({ ok: true, destination, delivery_state: 'sent', message_id: 42, chat_id: ROOM_IDS[destination], approved_sha256: plan.sha256 }),
+    });
+  }
+  const keys = ['plans/2026-10-24/model.json', ...plan.destinations.map(room => `deliveries/2026-10-24/model/${room}.json`)];
+  const before = keys.map(key => rawRecord(f, key));
+  const result = await run(f, '2026-10-24', '16:45');
+  assert.equal(result.results[0].status, 'sent');
+  assert.equal(result.results[0].sent, 2);
+  assert.equal(f.bucket.read('summaries/2026-10-24/model.json').result.status, 'sent');
+  assert.deepEqual(keys.map(key => rawRecord(f, key)), before);
+  assert.equal(f.sends.length, 0);
+});
+
+test('single-room confirmed not_sent keeps prior no-exposure semantics', async () => {
+  const f = fixture({ send: () => ({ delivery_state: 'not_sent' }) });
+  await run(f, '2026-10-24');
+  assert.equal(f.bucket.read('history/' + f.manifest.cards[0].model_id + '.json').status, 'not_sent');
+  assert.equal((await run(f, '2026-10-25')).results[0].status, 'incomplete');
+  assert.equal(f.sends.length, 2);
+});
+
+test('legacy frozen sibling identity collision blocks both pending rooms without rewriting plans', async () => {
+  const f = fixture({ inventory: cards(2) });
+  const plan = await seedLegacyModelPlan(f, f.manifest.cards[0]);
+  const { digest, ...payload } = plan;
+  const sibling = { ...payload, slot: 'standard' };
+  sibling.digest = await compcardSha256(new TextEncoder().encode(JSON.stringify(sibling)));
+  await putRecord(f, 'plans/2026-10-24/standard.json', sibling);
+  const before = ['model', 'standard'].map(slot => rawRecord(f, `plans/2026-10-24/${slot}.json`));
+  await run(f, '2026-10-24', '16:30');
+  await run(f, '2026-10-24');
+  assert.equal(f.sends.length, 0);
+  assert.equal(f.bucket.read('deliveries/2026-10-24/model/premium.json').error, 'compcard_same_day_model_conflict');
+  assert.equal(f.bucket.read('deliveries/2026-10-24/standard/standard.json').error, 'compcard_same_day_model_conflict');
+  assert.deepEqual(['model', 'standard'].map(slot => rawRecord(f, `plans/2026-10-24/${slot}.json`)), before);
 });
