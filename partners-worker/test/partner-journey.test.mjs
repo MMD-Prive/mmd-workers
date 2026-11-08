@@ -64,9 +64,17 @@ const callback = (body={},host="partners-worker.internal") => post("https://"+ho
 test("LINE exchange uses the approved existing identity and opens the LV10 dashboard", async t => {
   const f=await fixture(t);const response=await worker.fetch(lineRequest(),f.env,{});const body=await response.json();
   assert.equal(response.status,200);assert.equal(response.headers.get("Cache-Control"),"no-store");
-  const target=new URL(body.dashboard_url);assert.equal(target.origin,"https://sigil-partner.lovable.app");assert.equal(target.pathname,"/");assert.ok(target.searchParams.get("t"));
+  const target=new URL(body.dashboard_url);assert.equal(target.origin,"https://sigil-partner-dashboard.pages.dev");assert.equal(target.pathname,"/");assert.ok(target.searchParams.get("t"));
   assert.equal(f.writes.length,1);assert.equal(f.writes[0].table,"Partners");assert.equal(f.writes[0].id,PARTNER_ID);assert.deepEqual(Object.keys(f.writes[0].fields),[F.hash]);
   assert.equal(JSON.stringify(f.writes).includes(target.searchParams.get("t")),false);
+  const verify = new URL("https://www.mmdbkk.com/v1/partner/verify");
+  verify.searchParams.set("t", target.searchParams.get("t"));
+  const verified = await worker.fetch(new Request(verify, { headers: { Origin: target.origin } }), {
+    ...f.env, ALLOWED_ORIGINS: f.env.ALLOWED_ORIGINS + "," + target.origin,
+  }, {});
+  assert.equal(verified.status, 200);
+  assert.equal(verified.headers.get("Access-Control-Allow-Origin"), target.origin);
+  assert.equal(f.writes.length, 1);
 });
 
 for (const scenario of ["ambiguous","unapproved","inactive","wrong_link","expired_line","wrong_issuer"]) {
@@ -93,10 +101,10 @@ test("legacy entry and HEAD requests stay private and route under the configured
 test("LINE browser entry initializes once, uses no-referrer, and rejects foreign dashboard redirects",async()=>{
   const response=await worker.fetch(new Request("https://mmdbkk.com/sigil/model/dashboard/partner-login"),{},{});
   const html=await response.text();const script=[...html.matchAll(/<script>([\s\S]*?)<\/script>/g)][0][1];
-  for(const target of ["https://sigil-partner.lovable.app/?t=fixture","https://www.mmdbkk.com/partner/dashboard?t=fixture","https://example.com/partner/dashboard?t=fixture"]){
+  for(const target of ["https://sigil-partner-dashboard.pages.dev/?t=fixture","https://www.mmdbkk.com/partner/dashboard?t=fixture","https://example.com/partner/dashboard?t=fixture"]){
     const button={},state={};let initialized=0,replaced=null;
     const context={URL,window:{addEventListener(){}},document:{getElementById:id=>id==="go"?button:state},liff:{init:async()=>{initialized++;},isLoggedIn:()=>true,getIDToken:()=>"fixture-id-token"},fetch:async(path,options)=>{assert.equal(path,"/v1/partner/line/exchange");assert.equal(options.referrerPolicy,"no-referrer");return Response.json({ok:true,dashboard_url:target});},location:{replace:url=>{replaced=url;}}};
-    vm.runInNewContext(script,context);await new Promise(setImmediate);await button.onclick();assert.equal(initialized,1);assert.equal(replaced,target.startsWith("https://sigil-partner.lovable.app/")?target:null);
+    vm.runInNewContext(script,context);await new Promise(setImmediate);await button.onclick();assert.equal(initialized,1);assert.equal(replaced,target.startsWith("https://sigil-partner-dashboard.pages.dev/")?target:null);
   }
 });
 
