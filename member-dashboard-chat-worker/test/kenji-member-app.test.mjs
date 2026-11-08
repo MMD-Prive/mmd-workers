@@ -98,8 +98,22 @@ test("NEXT LV remains member-only, mobile-first and CSP-nonced", async () => {
   assert.ok(!html.includes("Kenji%20CC%2002.webp"));
   assert.ok(!html.includes("Kenji%20Alove.webp"));
   // Official two-brand mapping: MMD = Curated, SIGIL = Private; no local access grant is possible.
-  assert.ok(html.includes("transparent-gold-white-240px.webp"));
-  assert.ok(html.includes("SIGIL%20Logo%202027.webp"));
+  // Logos are exact Webflow-approved marks, embedded as content-addressed image data
+  // to work in standalone Worker HTML and offline review (not text or broken CDN URLs).
+  const headerLogo = html.match(/<img class="brand-mark" src="data:image\/webp;base64,([^"]+)"/);
+  const privateLogo = html.match(/class="world-link world-link--private"[\s\S]*?<img src="data:image\/png;base64,([^"]+)"/);
+  assert.ok(headerLogo?.[1], "Curated mark must render as an embedded image");
+  assert.ok(privateLogo?.[1], "SIGIL mark must render as an embedded image");
+  assert.equal(Buffer.from(headerLogo[1], "base64").subarray(0, 4).toString("ascii"), "RIFF");
+  assert.equal(Buffer.from(privateLogo[1], "base64").subarray(1, 4).toString("ascii"), "PNG");
+  assert.ok(!html.includes("__KENJI_MMD_MARK__"));
+  assert.ok(!html.includes("__KENJI_SIGIL_MARK__"));
+  assert.match(html, /@font-face/);
+  assert.ok(html.includes("LINESeedSansTH_W_Rg.woff2"));
+  assert.ok(html.includes("Canela-Regular-Trial.otf"));
+  assert.ok(html.includes("Inter_18pt-Regular.ttf"));
+  assert.ok(html.includes("font-family:Canela,Georgia,serif"));
+  assert.ok(html.includes("font-family:Inter"));
   assert.ok(html.includes('class="world-link world-link--curated"'));
   assert.ok(html.includes('class="world-link world-link--private"'));
   assert.ok(html.includes('href="/member/private"'));
@@ -114,6 +128,7 @@ test("NEXT LV remains member-only, mobile-first and CSP-nonced", async () => {
   assert.doesNotMatch(html, /localStorage\.|sessionStorage\.|javascript:/);
   assert.match(response.headers.get("content-security-policy") || "", /connect-src 'self'/);
   assert.ok((response.headers.get("content-security-policy") || "").includes("https://s3.amazonaws.com"));
+  assert.ok((response.headers.get("content-security-policy") || "").includes("font-src 'self' https://cdn.prod.website-files.com"));
   assert.doesNotMatch(response.headers.get("content-security-policy") || "", /unsafe-inline/);
   assert.equal(response.headers.get("x-mmd-kenji"), "member-app-next-lv");
 });
