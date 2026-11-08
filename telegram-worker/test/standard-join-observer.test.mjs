@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import worker from "../src/index.js";
-import { observeStandardJoinRequest } from "../src/standard-join-observer.js";
+import { observeStandardJoinRequest, observePremiumJoinRequest } from "../src/standard-join-observer.js";
 
 const webhook = (update) => new Request("https://telegram-worker.mmd.test/telegram/webhook", {
   method: "POST",
@@ -131,4 +131,102 @@ test("HYPE fails closed on missing Telegram link, blocked member, or incomplete 
     assert.equal(Object.hasOwn(observer[0], "email"), false);
     assert.equal(Object.hasOwn(result, "telegram_user_id_numeric"), false);
   }
+});
+
+
+test("HYPE observes Premium join into a separate private intake without performing group actions", async () => {
+  const calls = [];
+  const binding = { async fetch(req) {
+    const path = new URL(req.url).pathname;
+    const body = await req.json();
+    calls.push({ path, body });
+    if (path === "/__internal/hype/operational-status") {
+      assert.equal(body.intent.trigger, "telegram_premium_join_request");
+      return Response.json({ ok: true, state: "ready", membership: {
+        level: "private_premium", lifecycle: "active", blocked: false,
+      } });
+    }
+    assert.equal(path, "/__internal/telegram-group-join-intake");
+    assert.equal(body.room, "premium");
+    assert.equal(body.join_outcome, "approved_by_existing_handler");
+    assert.equal(body.hype_check_state, "canonical_verified");
+    assert.equal(Object.hasOwn(body, "user_chat_id"), false);
+    return Response.json({ ok: true, captured: true, state: "pending_owner_review" });
+  } };
+  const req = {
+    ...standardJoin().chat_join_request,
+    chat: { id: -100666, type: "supergroup", title: "MMD Premium" },
+  };
+  const res = await observePremiumJoinRequest(req, env({ HYPE_OPERATIONS: binding }), {
+    join_outcome: "approved_by_existing_handler",
+  });
+  assert.equal(res.handled, true);
+  assert.equal(res.captured, true);
+  assert.equal(res.flow, "premium_join_intake");
+  assert.equal(res.join_request_state, "approved");
+  assert.equal(res.approves_nothing, true);
+  assert.equal(res.sends_nothing, true);
+  assert.equal(calls.length, 2);
+  assert.ok(!JSON.stringify(res).includes("1234567890"));
+});
+
+test("existing Premium automatic approval is preserved; new HYPE observation is read-only", { concurrency: false }, async () => {
+  const prior = globalThis.fetch;
+  const telegramMethods = [];
+  globalThis.fetch = async (url, init = {}) => {
+    const op = String(url).split("/").pop();
+    telegramMethods.push(op);
+    return Response.json({ ok: true, result: true });
+  };
+  const bindingCalls = [];
+  const binding = { async fetch(req) {
+    const path = new URL(req.url).pathname;
+    bindingCalls.push(path);
+    if (path === "/__internal/hype/operational-status") return Response.json({
+      ok: true, state: "ready", membership: { level: "private_premium", lifecycle: "active", blocked: false },
+    });
+    assert.equal(path, "/__internal/telegram-group-join-intake");
+    const body = await req.json();
+    assert.equal(body.room, "premium");
+    assert.equal(body.join_outcome, "approved_by_existing_handler");
+    return Response.json({ ok: true, captured: true });
+  } };
+  try {
+    const join = standardJoin();
+    join.chat_join_request.chat.id = -100666;
+    const result = await worker.fetch(webhook(join), env({ TELEGRAM_BOT_TOKEN: "telegram-fixture-token", HYPE_OPERATIONS: binding }));
+    const body = await result.json();
+    assert.equal(result.status, 200);
+    assert.equal(body.flow, "hype_premium_join_request");
+    assert.equal(body.code_status, "premium_join_approved");
+    assert.equal(body.join_request_state, "approved");
+    assert.equal(body.owner_intake.captured, true);
+    assert.deepEqual(telegramMethods, ["approveChatJoinRequest"]);
+    assert.equal(bindingCalls.filter(x => x === "/__internal/telegram-group-join-intake").length, 1);
+  } finally { globalThis.fetch = prior; }
+});
+
+test("Premium capture failures cannot block existing Premium decision", { concurrency: false }, async () => {
+  const oldFetch = globalThis.fetch;
+  globalThis.fetch = async () => Response.json({ ok: true, result: true });
+  let checks = 0;
+  const binding = { async fetch(req) {
+    const path = new URL(req.url).pathname;
+    if (path === "/__internal/hype/operational-status") {
+      checks++;
+      return Response.json({ ok: true, state: "ready", membership: {
+        level: "private_premium", lifecycle: "active", blocked: false,
+      } });
+    }
+    return Response.json({ ok: false, error: "capture_disabled" }, { status: 503 });
+  } };
+  try {
+    const join = standardJoin();join.chat_join_request.chat.id = -100666;
+    const result = await worker.fetch(webhook(join), env({ TELEGRAM_BOT_TOKEN: "fixture", HYPE_OPERATIONS: binding }));
+    const body = await result.json();
+    assert.equal(body.code_status, "premium_join_approved");
+    assert.equal(body.join_request_state, "approved");
+    assert.equal(body.owner_intake.captured, false);
+    assert.equal(checks, 2);
+  } finally { globalThis.fetch = oldFetch; }
 });
