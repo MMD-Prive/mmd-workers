@@ -1,0 +1,38 @@
+name: Standard Telegram join intake safety (#2141)
+on:
+  pull_request:
+    paths:
+      - 'telegram-worker/src/index.js'
+      - 'telegram-worker/src/standard-join-observer.js'
+      - 'telegram-worker/test/standard-join-observer.test.mjs'
+      - 'telegram-worker/test/premium-room-manager.test.mjs'
+      - 'admin-worker/src/premium-group-cleanup/**'
+      - 'admin-worker/standard-group-join-intake.test.mjs'
+      - 'admin-worker/src/admin-login-hero-worker.js'
+      - 'admin-worker/wrangler.toml'
+      - '.github/workflows/standard-join-intake-safety.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  read-only-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Standard intake, owner gate, and existing Premium/Standard policy regressions
+        run: |
+          node --test --test-concurrency=1 \
+            admin-worker/standard-group-join-intake.test.mjs \
+            admin-worker/premium-group-rooms.test.mjs \
+            admin-worker/premium-group-rooms-view.test.mjs \
+            telegram-worker/test/standard-join-observer.test.mjs \
+            telegram-worker/test/premium-room-manager.test.mjs \
+            telegram-worker/test/standard-group-cleanup.test.mjs
