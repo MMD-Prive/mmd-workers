@@ -1,43 +1,55 @@
-# /member/kenji · NEXT LV — MMD member theme and approved Kenji assets
+# KENJI–04 · /member/kenji · Full NEXT LV mobile-first
 
-Date: 2026-11-08 (Asia/Bangkok). Scope: presentation and accessible asset metadata only.
+Status: GitHub review/QA candidate — **not production-deployed**. Updated 2026-11-08 (Asia/Bangkok).
 
-## Route ownership
+## Canonical route and security
 
-- **Canonical customer route:** `/member/kenji`, rendered by `member-dashboard-chat-worker/src/kenji-next-lv-page.js` via `kenji-member-app.js`.
-- **Member chat:** authenticated same-origin `POST /api/member/kenji/chat` with `{ message }` only; the BFF verifies Member Session before calling AI Worker.
-- Webflow page `/member/kenji` is a compatibility Designer/page record; the Worker owns the active app document. Do **not** paste another copy of the chat app into Webflow or initialize duplicate member APIs.
-- Webflow is the approved visual-asset source. This update does not change LINE OA reply categories, Kenji knowledge, entitlement, membership, Points, payments or Model/booking authority.
+- The active /member/kenji HTML is rendered by `member-dashboard-chat-worker/src/kenji-next-lv-page.js`, delegated from `kenji-member-app.js`. The Webflow page record is not a second live chat implementation.
+- Existing authenticated same-origin BFF stays `POST /api/member/kenji/chat` with `{message}` only. All member identity/Points/payment/access/booking and AI Worker authority remains on the server. The browser never grants or infers Private access.
+- Kenji LINE OA reply categories and runtime controls are unchanged. Customer page keeps Q&A and promotion navigation without claiming new promotions are verified.
 
-## Webflow assets selected
+## Owner-provided Kenji–04 image asset set
 
-Site ID: `68f879d546d2f4e2ab186e90`.
+Owner supplied `Kenji04_Member_Concierge_NextLV_4Images(1).zip`. Original images were reviewed and Public/Private separated. Only the **Public** portraits are used by this member UI.
 
-| Use | Approved Webflow folder | Asset display name | Asset ID |
-| --- | --- | --- | --- |
-| Desktop hero | Kenji AI 20 / Concierge | Kenji Alove.webp | `6abd5f961e79f94a6c988e03` |
-| Phone hero | Kenji AI 20 / Concierge | Kenji CC 02.webp | `6aa4b6b02b82617e25beaa4c` |
-| Kenji chat avatar | Kenji AI 20 / Concierge | Kenji CC 01.webp | `6aa4b6b0c8e3decbef9bbd99` |
-| Header mark | MMD Logo | transparent-gold-white-240px.webp | `6aec945d0a09b10a4799ebda` |
+Webflow site ID: `68f879d546d2f4e2ab186e90`. Asset folder: **Kenji AI 20** (`6a690f6ca729a50e536152e0`).
 
-Images use Webflow's returned hosted URLs and remain within the existing asset library. Alternative portrait assets are not embedded. The site asset alt text was updated for the selected three portraits and MMD logo.
+| Use | Official asset | Webflow asset ID | GitHub backup |
+|---|---|---|---|
+| Desktop Hero 16:9 | Kenji04 Member NEXT LV Desktop 16x9.webp | `6af00f6c543fc6f65ec870cc` | `webflow/assets/kenji04/Kenji04_Public_Desktop_16x9.webp` |
+| Mobile Hero 9:16 | Kenji04 Member NEXT LV Mobile 9x16.webp | `6af00f7040441227f49253cf` | `webflow/assets/kenji04/Kenji04_Public_Mobile_9x16.webp` |
+| Chat avatar | Kenji04 Member NEXT LV Chat Avatar.webp | `6af00f73a5e7765e6ebdb688` | `webflow/assets/kenji04/Kenji04_Public_Chat_Avatar.webp` |
 
-## MMD member-world design
+Official Webflow hosted URLs are referenced in the canonical Worker page. Never substitute a generic stock/generated face. The 2 Private editorial images from the ZIP are **excluded** from the Curated member UI.
 
-- Member app atmosphere: matte charcoal + champagne + ivory, with restrained MMD burgundy `#A21E39`; not a SIGIL-only black/gold private page.
-- Small official MMD logo (not recreated as text), unobtrusive Kenji title, one editorial portrait per breakpoint.
-- Compact first viewport with two interaction modes: Q&A and promotions. Prompts **prefill** only; a dedicated send is required.
-- No unsupported current promotion claims. The promotion tab navigates to verified MY MMD Coupons.
-- Mobile phone hero uses a different approved portrait from desktop; chat input respects safe-area padding. Existing reduced-motion, accessible labels, local ephemeral message display and same-origin action validation remain.
-- Replaced compatibility `/member/my-mmd` presentation links with canonical `/my-mmd/` links.
+## Two-logo customer-brand split (owner-supplied URLs)
 
-## CSP and regression
+**Curated** — MMD Privé gold/white transparent mark:
+`https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aec945d0a09b10a4799ebda_transparent-gold-white-240px.webp`
 
-- CSP stays nonced for inline `style` and `script`, and keeps `connect-src 'self'`.
-- `img-src` additionally allows `https://s3.amazonaws.com`, the exact origin of Webflow's `hostedUrl` responses. No new browser API authority or external data transport.
-- Focused tests: `node --test member-dashboard-chat-worker/test/kenji-member-app.test.mjs`.
-- Before production release, review responsive screenshots on iPhone-class widths and desktop, verify the four hosted assets load, and perform authenticated member chat and session-expired checks. Updating code in GitHub is **not** evidence that Cloudflare Worker was deployed.
+**Private** — SĪGIL System 2027:
+`https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aec9538faadf68fb64e70eb_SIGIL%20Logo%202027.webp`
 
-## Deployment gate
+The top-level member page uses Curated branding, while an optional compact Private link shows the separate SĪGIL logo and navigates to `/member/private`, where backend membership/access checks still control the available content. Showing a logo/link never implies entitlement or changes member class.
 
-Do not merge or deploy any customer-facing production change solely because the asset metadata update succeeded. PR review and current member-route acceptance remain separate from Webflow asset changes.
+## NEXT LV UI
+
+- Phone viewport **first**: single-column, short Kenji hero, read-first chat, compact brand navigation, large enough Q&A / promotion touch targets, horizontal prompt chips, a safely anchored composer with `env(safe-area-inset-bottom)`.
+- Desktop expands to a two-column editorial hero + chat layout. Desktop face crop corrected to right-side focus, avoiding off-screen face.
+- Short-phone 320×568 layout compresses top chrome while preserving one full visible greeting bubble.
+- Messages remain ephemeral browser display; no local/session storage, no auto-send prompt, no automatic retry after uncertain delivery.
+- Footer/private navigation never exposes backend tokens, identity or payment info.
+- Nonced CSP remains intact; image URLs use official Webflow asset CDN; connect-src remains `'self'`.
+
+## Verification
+
+Local layout checks using the owner images (embedded preview only) and controlled mocked BFF response:
+
+- `320×568`, `375×812`, `390×844`, `768×1024`, `1440×900`: no document horizontal overflow, composer remains visible, page hierarchy intact.
+- Q&A / Promotions switch and prompt-to-draft behavior verified; mocked `POST /api/member/kenji/chat` updates transcript and member label without issuing other privileged actions.
+- `node --check` passed for the corresponding inline browser script.
+- GitHub Actions/real authenticated iPhone verification and Cloudflare release smoke are separate release gates.
+
+## Release gate
+
+PR review is not a deployment. Before production, confirm GH tests, mobile screenshot comparison and authenticated member/no-session/401 paths; deploy the Worker through the established release path only after owner sign-off. **No need to overwrite the shadowed Webflow page or publish unrelated Webflow site changes.**
