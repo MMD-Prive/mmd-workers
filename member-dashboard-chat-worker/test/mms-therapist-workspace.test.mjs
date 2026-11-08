@@ -115,13 +115,35 @@ test('rendered client parses without interpolating backend data',()=>{
 test('mobile login keeps MMS branding, access guidance, and functional LINE controls',async()=>{
   const response=await maybeHandleTherapistWorkspace(new Request(origin+path+'/login'),{MMS_THERAPIST_UI_SOURCE:'native'});
   const html=await response.text();
-  for(const marker of ['class="auth-page"','class="auth-shell"','LINE Seed Sans TH','data:image/svg+xml;base64,',THERAPIST_AI_LOGO_PATH,'alt="Male Massage AI"','Online / Offline','เลือกเขตบริการ','ดูงานใกล้คุณ','id="line-login"','id="notice"','id="retry"','https://liff.line.me/2011425652-YqK1F6y8','data-login="true"'])assert.ok(html.includes(marker),marker);
+  for(const marker of ['class="auth-page"','class="auth-shell"','LINE Seed Sans TH','data:image/svg+xml;base64,',THERAPIST_AI_LOGO_PATH,'alt="Male Massage AI"','Online / Offline','เลือกเขตบริการ','ดูงานใกล้คุณ','id="line-login"','id="notice"','.auth-card #notice.error{background:#271612;color:#ffe0d2','id="retry"','https://liff.line.me/2011425652-YqK1F6y8','data-login="true"'])assert.ok(html.includes(marker),marker);
   assert.equal(html.includes('คุยกับพี่เปอร์'),false);
   assert.match(response.headers.get('content-security-policy'),/font-src data: https:\/\/cdn\.prod\.website-files\.com/);
   const profile=await maybeHandleTherapistWorkspace(new Request(origin+path+'/me'),{MMS_THERAPIST_UI_SOURCE:'native'});
   assert.doesNotMatch(profile.headers.get('content-security-policy'),/cdn\.prod\.website-files\.com/);
   assert.equal((html.match(/id="line-login"/g)||[]).length,1);
   assert.equal((html.match(/id="notice"/g)||[]).length,1);
+});
+test('responsive login portraits are available through the production front gate', async () => {
+  const env = {MMS_THERAPIST_UI_SOURCE:'native'};
+  const login = await productionWorker.fetch(new Request(origin+path+'/login'), env);
+  const html = await login.text();
+  const mobile = html.match(/<source media="\(max-width: 819px\)" srcset="([^"]+)"/)?.[1];
+  const desktop = html.match(/<img src="([^"]+\/login-desktop\.[^"]+)"/)?.[1];
+  for (const asset of [mobile, desktop]) {
+    assert.match(asset, /^\/male-massage\/therapists\/assets\/login-(mobile|desktop)\.[0-9a-f]{12}\.webp$/);
+    const url = origin + asset;
+    const response = await productionWorker.fetch(new Request(url), env);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('content-type'), 'image/webp');
+    assert.match(response.headers.get('cache-control'), /public.*immutable/);
+    const bytes = Buffer.from(await response.arrayBuffer());
+    assert.equal(bytes.toString('ascii', 8, 12), 'WEBP');
+    assert.ok(asset.endsWith(createHash('sha256').update(bytes).digest('hex').slice(0, 12) + '.webp'));
+    const head = await productionWorker.fetch(new Request(url, {method:'HEAD'}), env);
+    assert.equal(head.status, 200);
+    assert.equal(await head.text(), '');
+    assert.equal((await productionWorker.fetch(new Request(url, {method:'POST'}), env)).status, 405);
+  }
 });
 test('public login logo reuses the approved image bytes without exposing the admin asset route',async()=>{
   const url=origin+THERAPIST_AI_LOGO_PATH;
