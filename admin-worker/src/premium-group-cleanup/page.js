@@ -78,7 +78,7 @@ fetch(BASE+"/join-requests",{credentials:"same-origin",headers:{accept:"applicat
   panel.replaceChildren();
   if(!d.ok){panel.append(el("p","join-muted","ยังอ่านคิว Premium / Standard ไม่ได้ (ตรวจ Airtable และสิทธิ์ Owner)"));return}
   if(!d.items.length){panel.append(el("p","join-muted","ยังไม่มีคำขอที่ระบบบันทึกไว้ ไม่ได้หมายความว่าห้อง Premium หรือ Standard ไม่มีสมาชิก"));return}
-  panel.append(el("p","note","คิว "+d.count+" รายการ · Premium "+(d.by_room?.premium||0)+" · Standard "+(d.by_room?.standard||0)+" · HYPE ตรวจอย่างเดียว ไม่ใช่รายชื่อสมาชิกทั้งหมด"));
+  panel.append(el("p","note","คิว "+d.count+" รายการ · Premium "+(d.by_room?.premium||0)+" ("+(d.capture_enabled?.premium?"เปิดรับคำขอ":"ยังปิดรับคำขอ")+") · Standard "+(d.by_room?.standard||0)+" ("+(d.capture_enabled?.standard?"เปิดรับคำขอ":"ยังปิดรับคำขอ")+") · HYPE ตรวจอย่างเดียว ไม่ใช่รายชื่อสมาชิกทั้งหมด"));
   for(const item of d.items){
     const card=el("div","join-card");const who=el("span","ref",(item.room==="premium"?"Premium":"Standard")+" · "+(item.telegram_display_name||"ไม่ระบุชื่อ")+" · "+(item.telegram_username?"@"+item.telegram_username:"ไม่มี username"));
     card.append(who,el("span","why","Telegram ID "+item.telegram_user_id_masked+" · "+(item.requested_at||"ไม่พบวันที่คำขอ")+" · "+item.review_status));
