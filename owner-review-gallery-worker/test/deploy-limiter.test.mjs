@@ -14,11 +14,13 @@ const ENV = {
   OWNER_REVIEW_SESSION_HMAC_KEY: "fixture-not-a-real-session-key-32-or-more-characters",
 };
 const req = (path, init={}) => new Request(ORIGIN + path, init);
+const body = code => new URLSearchParams({ code }).toString();
 const attempt = code => req("/unlock", {
   method: "POST",
   headers: { "origin": ORIGIN, "content-type": "application/x-www-form-urlencoded" },
-  body: new URLSearchParams({ code }).toString()
+  body: body(code)
 });
+const limiter = () => ({ limit: async () => ({ success: true }) });
 
 test("deployment unlock is unavailable without limiter even with correct code and secrets", async () => {
   const r=await worker.fetch(attempt(CODE), ENV, {});
@@ -53,6 +55,68 @@ test("successful limit continues through normal strong-code validation and signi
   assert.equal(good.headers.get("location"),"/");
   assert.match(good.headers.get("set-cookie"),/HttpOnly; SameSite=Strict/);
   assert.equal(calls,2);
+});
+
+test("LINE or Safari same-origin navigation may omit Origin but remains securely accepted", async () => {
+  const env={...ENV, OWNER_REVIEW_RATE_LIMIT:limiter()};
+  const metadataPost=req("/unlock",{
+    method:"POST",
+    headers:{
+      "content-type":"application/x-www-form-urlencoded",
+      "sec-fetch-site":"same-origin",
+      "sec-fetch-mode":"navigate",
+      "sec-fetch-dest":"document"
+    },
+    body:body(CODE)
+  });
+  const viaMetadata=await worker.fetch(metadataPost,env,{});
+  assert.equal(viaMetadata.status,303);
+
+  const refererPost=req("/unlock",{
+    method:"POST",
+    headers:{
+      "content-type":"application/x-www-form-urlencoded",
+      "referer":ORIGIN+"/"
+    },
+    body:body(CODE)
+  });
+  const viaReferer=await worker.fetch(refererPost,env,{});
+  assert.equal(viaReferer.status,303);
+});
+
+test("absent proof and explicitly foreign Origin still fail closed", async () => {
+  const env={...ENV, OWNER_REVIEW_RATE_LIMIT:limiter()};
+  const noProof=await worker.fetch(req("/unlock",{
+    method:"POST",
+    headers:{"content-type":"application/x-www-form-urlencoded"},
+    body:body(CODE)
+  }),env,{});
+  assert.equal(noProof.status,403);
+  assert.equal((await noProof.json()).error,"origin_rejected");
+
+  const foreign=await worker.fetch(req("/unlock",{
+    method:"POST",
+    headers:{
+      "origin":"https://evil.example",
+      "content-type":"application/x-www-form-urlencoded",
+      "sec-fetch-site":"same-origin",
+      "sec-fetch-mode":"navigate",
+      "sec-fetch-dest":"document",
+      "referer":ORIGIN+"/"
+    },
+    body:body(CODE)
+  }),env,{});
+  assert.equal(foreign.status,403);
+  assert.equal((await foreign.json()).error,"origin_rejected");
+});
+
+test("root forms use same-origin referrer policy without leaking to external routes", async () => {
+  const root=await worker.fetch(req("/"),ENV,{});
+  assert.equal(root.status,200);
+  assert.equal(root.headers.get("referrer-policy"),"same-origin");
+  const view=await worker.fetch(req("/view/control-room"),ENV,{});
+  assert.equal(view.status,200);
+  assert.equal(view.headers.get("referrer-policy"),"no-referrer");
 });
 
 test("health and all non-unlock routes retain existing mock-only behavior", async () => {
