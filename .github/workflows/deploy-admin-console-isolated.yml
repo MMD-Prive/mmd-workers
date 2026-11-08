@@ -1,0 +1,106 @@
+name: Release Admin Console only
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/admin-console-*'
+      - '.github/workflows/deploy-admin-console-isolated.yml'
+  workflow_dispatch:
+    inputs:
+      production_approved:
+        description: 'Owner approval: Console source overlay and exactly two Console route additions'
+        type: boolean
+        required: true
+        default: false
+      approval_ref:
+        description: 'Owner approval reference for this Console release'
+        type: string
+        required: true
+      approved_sha:
+        description: 'Exact full main SHA running this protected release'
+        type: string
+        required: true
+      expected_version:
+        description: 'Reviewed active version: 030b5c09-2394-4fdd-9547-6461707f6dd7'
+        type: string
+        required: true
+      expected_deployment:
+        description: 'Reviewed active deployment: 7db93a14-c9bd-43a6-88fb-00e837ef4c3a'
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ${{ github.event_name == 'workflow_dispatch' && 'deploy-admin-worker-production' || format('admin-console-release-contracts-{0}', github.ref) }}
+  cancel-in-progress: false
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22.23.4'
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm ci --prefix immigrate-worker --ignore-scripts --no-audit --no-fund
+      - run: npm install --global wrangler@4.158.0 --no-audit --no-fund
+      - name: Verify the isolated source, compiled Console and unchanged release guards
+        env:
+          WRANGLER_SEND_METRICS: 'false'
+        run: |
+          node --test scripts/admin-console-*.test.mjs scripts/admin-current-session-code-only.test.mjs scripts/admin-production-approval.test.mjs
+          node --test admin-worker/admin-console-*.test.mjs admin-worker/admin-dashboard-jobs.test.mjs admin-worker/admin-login-dashboard-first.test.mjs admin-worker/admin-login-active-entrypoint.test.mjs
+
+  production-approval:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha
+    uses: ./.github/workflows/admin-production-approval.yml
+    with:
+      approval_ref: ${{ inputs.approval_ref }}
+      approved_sha: ${{ inputs.approved_sha }}
+      environment_name: mmd-production-mutation
+
+  release:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha
+    needs: [production-approval, contracts]
+    environment: mmd-production-mutation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22.23.4'
+      - run: npm install --global wrangler@4.158.0 --no-audit --no-fund
+      - name: Release the pinned Console overlay and activate only its two routes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRODUCTION_APPROVED: ${{ inputs.production_approved }}
+          PRODUCTION_ENVIRONMENT_NAME: mmd-production-mutation
+          APPROVAL_REF: ${{ inputs.approval_ref }}
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+          EXPECTED_VERSION: ${{ inputs.expected_version }}
+          EXPECTED_DEPLOYMENT: ${{ inputs.expected_deployment }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ROUTES_API_TOKEN: ${{ secrets.CLOUDFLARE_ROUTES_API_TOKEN }}
+          WRANGLER_SEND_METRICS: 'false'
+        run: node scripts/admin-console-isolated-release.mjs --execute-approved
+      - name: Save the sanitized Console release receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: admin-console-isolated-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/admin-console-isolated-receipt.json
+          if-no-files-found: ignore
+          retention-days: 90
