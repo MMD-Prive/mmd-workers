@@ -1,0 +1,254 @@
+name: Deploy Kenji Member UI only (isolated baseline)
+
+on:
+  workflow_dispatch:
+    inputs:
+      approved_workflow_sha:
+        description: "Exact reviewed HEAD of main at dispatch (prevents moving target)"
+        type: string
+        required: true
+      candidate_sha:
+        description: "Exact immutable Kenji UI-only source commit"
+        type: string
+        required: true
+      dry_run_only:
+        description: "Validate/build only; cannot upload or deploy"
+        type: boolean
+        required: true
+        default: true
+      production_approved:
+        description: "Explicit owner approval to deploy 100% after verification"
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-member-dashboard-chat-worker-production
+  cancel-in-progress: false
+
+env:
+  BASELINE_SHA: "9f576666e506d78630179604fbb2c4ec7fbd30b5"
+  BASELINE_VERSION: "5e4f2868-6295-420e-8c0d-a67975e127ec"
+  EXACT_CANDIDATE_SHA: "fb2caa7c717a70ff9047485ca0ea45612e1f8093"
+  CLOUDFLARE_ACCOUNT_ID: "b176eda1172b741fd2e58904cc9d77c5"
+  WORKER_NAME: "member-dashboard-chat-worker"
+  NO_COLOR: "1"
+
+jobs:
+  validate-isolated-ui:
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main' &&
+      inputs.approved_workflow_sha == github.sha &&
+      inputs.candidate_sha == 'fb2caa7c717a70ff9047485ca0ea45612e1f8093'
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    steps:
+      - name: Checkout exact isolated candidate, never current main
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Fail closed unless only 3 UI source files and 1 test changed
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXACT_CANDIDATE_SHA"
+          git cat-file -e "$BASELINE_SHA^{commit}"
+          git merge-base --is-ancestor "$BASELINE_SHA" HEAD
+          git diff --name-only --no-renames "$BASELINE_SHA" HEAD | sort > "$RUNNER_TEMP/kenji-actual-paths"
+          cat > "$RUNNER_TEMP/kenji-expected-paths" <<'PATHS'
+          member-dashboard-chat-worker/src/kenji-member-app.js
+          member-dashboard-chat-worker/src/kenji-member-brand-assets.js
+          member-dashboard-chat-worker/src/kenji-next-lv-page.js
+          member-dashboard-chat-worker/test/kenji-member-app.test.mjs
+          PATHS
+          diff -u "$RUNNER_TEMP/kenji-expected-paths" "$RUNNER_TEMP/kenji-actual-paths"
+          test "$(git rev-parse "$BASELINE_SHA:member-dashboard-chat-worker/wrangler.toml")" = "$(git rev-parse HEAD:member-dashboard-chat-worker/wrangler.toml)"
+          test "$(git rev-parse "$BASELINE_SHA:member-dashboard-chat-worker/src/front-gate-index.js")" = "$(git rev-parse HEAD:member-dashboard-chat-worker/src/front-gate-index.js")"
+          test "$(git rev-parse "$BASELINE_SHA:member-dashboard-chat-worker/src/kenji-seed-line-runtime.mjs")" = "$(git rev-parse HEAD:member-dashboard-chat-worker/src/kenji-seed-line-runtime.mjs")"
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { readFileSync } from 'node:fs';
+          import { execFileSync } from 'node:child_process';
+          const path='member-dashboard-chat-worker/src/kenji-member-app.js';
+          const old=execFileSync('git',['show',process.env.BASELINE_SHA+':'+path],{encoding:'utf8'});
+          const current=readFileSync(path,'utf8');
+          const renderStart='export function renderKenjiMemberPage() {';
+          const renderEnd='export async function handleKenjiMemberSurface';
+          const withoutView=(s)=>{
+            const a=s.indexOf(renderStart),b=s.indexOf(renderEnd,a);
+            assert.ok(a>=0&&b>a,'renderer boundaries missing');
+            return s.slice(0,a).replace('import {renderKenjiNextLvPage} from "./kenji-next-lv-page.js";\n','')+'/*UI_ONLY*/\n'+s.slice(b);
+          };
+          assert.equal(withoutView(current),withoutView(old),'BFF/identity/chat logic changed');
+          const html=readFileSync('member-dashboard-chat-worker/src/kenji-next-lv-page.js','utf8');
+          assert.match(html,/Kenji04%20Member%20NEXT%20LV%20Mobile%209x16\.webp/);
+          assert.match(html,/font-src 'self' https:\/\/cdn\.prod\.website-files\.com/);
+          assert.doesNotMatch(html,/localStorage\.|sessionStorage\./);
+          assert.match(readFileSync('member-dashboard-chat-worker/src/kenji-member-brand-assets.js','utf8'),/KENJI_PRIVATE_LOGO/);
+          console.log('ISOLATED KENJI UI ONLY: exactly three runtime UI files + one test; server BFF unchanged');
+          NODE
+      - name: Install baseline lockfile without dependency upgrades
+        run: npm ci
+      - name: Focused member and unchanged LINE contracts
+        run: |
+          node --test member-dashboard-chat-worker/test/kenji-member-app.test.mjs
+          node --test member-dashboard-chat-worker/test/line-webhook.test.mjs
+          node --test scripts/kenji-model-off-workflow.test.mjs
+          node --test member-dashboard-chat-worker/test/manual-release-boundary.test.mjs
+      - name: Verify strict production Kenji runtime switches remain unchanged
+        run: |
+          grep -Eq '^LINE_AUTO_REPLY_ENABLED = "true"$' member-dashboard-chat-worker/wrangler.toml
+          grep -Eq '^LINE_KENJI_MODEL_ENABLED = "false"$' member-dashboard-chat-worker/wrangler.toml
+          grep -Eq '^KENJI_LINE_CONTEXTUAL_SHADOW_ENABLED = "false"$' member-dashboard-chat-worker/wrangler.toml
+          grep -Eq '^LINE_KENJI_DETERMINISTIC_CONVERSATION_ENABLED = "true"$' member-dashboard-chat-worker/wrangler.toml
+      - name: Dry-run exact isolated Worker build
+        working-directory: member-dashboard-chat-worker
+        run: |
+          npx --yes wrangler@4 versions upload --dry-run --keep-vars --outdir "$RUNNER_TEMP/kenji-ui-isolated-bundle"
+          node ../scripts/check-guide-notifier-bundle.mjs "$RUNNER_TEMP/kenji-ui-isolated-bundle/guide-notification-entry.js"
+          node ../scripts/check-mms-therapist-bundle.mjs "$RUNNER_TEMP/kenji-ui-isolated-bundle/guide-notification-entry.js"
+
+  promote-verified-ui:
+    needs: validate-isolated-ui
+    if: >-
+      needs.validate-isolated-ui.result == 'success' &&
+      inputs.production_approved == true &&
+      inputs.dry_run_only == false
+    runs-on: ubuntu-latest
+    environment: mmd-production-mutation
+    timeout-minutes: 18
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - name: Checkout the same immutable candidate
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Baseline must still be the ONLY production version
+        id: live_gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import {writeFileSync} from 'node:fs';
+          const base='https://api.cloudflare.com/client/v4/accounts/'+process.env.CLOUDFLARE_ACCOUNT_ID+'/workers/scripts/'+process.env.WORKER_NAME;
+          async function get(path){
+            const response=await fetch(base+path,{headers:{authorization:'Bearer '+process.env.CLOUDFLARE_API_TOKEN}});
+            const obj=await response.json();
+            assert.ok(response.ok && obj.success, 'Cloudflare lookup failed');
+            return obj.result;
+          }
+          const d=(await get('/deployments?per_page=1')).deployments?.[0];
+          assert.ok(d && d.versions?.length===1 && d.versions[0].percentage===100 &&
+            d.versions[0].version_id===process.env.BASELINE_VERSION,'PRODUCTION CHANGED: refusing isolated release');
+          const v=await get('/versions/'+process.env.BASELINE_VERSION);
+          const bindings=(v.resources?.bindings||[]).map(b=>({
+            name:b.name,type:b.type,
+            value:b.type==='plain_text'?b.text:null,
+            service:b.type==='service'?b.service:null,
+          })).sort((a,b)=>a.name.localeCompare(b.name));
+          assert.ok(bindings.length>50,'Missing existing bindings');
+          for (const [key,want] of [
+            ['LINE_AUTO_REPLY_ENABLED','true'],['LINE_KENJI_MODEL_ENABLED','false'],
+            ['KENJI_LINE_CONTEXTUAL_SHADOW_ENABLED','false'],
+            ['KENJI_LINE_REPLY_CATEGORY_MODE','approved_qa_promo']
+          ]){
+            assert.equal(bindings.find(b=>b.name===key)?.value,want,'Unsafe LIVE LINE switch '+key);
+          }
+          writeFileSync(process.env.RUNNER_TEMP+'/kenji-ui-live-bindings.json',JSON.stringify(bindings));
+          console.log('Live baseline and LINE reply categories validated; captured binding metadata (no secrets)');
+          NODE
+      - name: Upload verified code as a new Worker VERSION, not a deployment
+        id: upload
+        working-directory: member-dashboard-chat-worker
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4 versions upload --keep-vars --tag "kenji-ui-only" --message "Kenji UI only candidate fb2caa7c717a; production baseline 9f576666e506" 2>&1 | tee "$RUNNER_TEMP/kenji-ui-upload.log"
+          version="$(sed -n 's/.*Worker Version ID:[[:space:]]*\([0-9a-fA-F-]*\).*/\1/p' "$RUNNER_TEMP/kenji-ui-upload.log" | tail -n 1)"
+          test -n "$version"
+          echo "KENJI_UPLOADED_VERSION=$version" >> "$GITHUB_ENV"
+      - name: Uploaded version must preserve ALL live bindings and plain values
+        id: binding_gate
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import {readFileSync} from 'node:fs';
+          const base='https://api.cloudflare.com/client/v4/accounts/'+process.env.CLOUDFLARE_ACCOUNT_ID+'/workers/scripts/'+process.env.WORKER_NAME;
+          async function get(path){
+            const r=await fetch(base+path,{headers:{authorization:'Bearer '+process.env.CLOUDFLARE_API_TOKEN}});
+            const v=await r.json();
+            assert.ok(r.ok && v.success,'Cloudflare version lookup failed');return v.result;
+          }
+          const v=await get('/versions/'+process.env.KENJI_UPLOADED_VERSION);
+          const actual=(v.resources?.bindings||[]).map(b=>({
+            name:b.name,type:b.type,
+            value:b.type==='plain_text'?b.text:null,
+            service:b.type==='service'?b.service:null,
+          })).sort((a,b)=>a.name.localeCompare(b.name));
+          const live=JSON.parse(readFileSync(process.env.RUNNER_TEMP+'/kenji-ui-live-bindings.json','utf8'));
+          assert.deepEqual(actual,live,'Binding or flag drift: candidate NOT deployed');
+          const d=(await get('/deployments?per_page=1')).deployments?.[0];
+          assert.ok(d?.versions?.length===1 && d.versions[0].version_id===process.env.BASELINE_VERSION,
+            'Another release started: candidate NOT deployed');
+          console.log('All binding names, types, plain values and service targets preserved');
+          NODE
+      - name: Promote isolated candidate to production
+        id: promote
+        working-directory: member-dashboard-chat-worker
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4 versions deploy "$KENJI_UPLOADED_VERSION@100%" -y
+      - name: Smoke Kenji and untouched LINE/LIFF surfaces
+        id: smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --retry 4 --retry-delay 2 -fsS -D "$RUNNER_TEMP/kenji-headers" -o "$RUNNER_TEMP/kenji-page" https://www.mmdbkk.com/member/kenji
+          grep -qi '^x-mmd-kenji: member-app-next-lv' "$RUNNER_TEMP/kenji-headers"
+          grep -Fq 'Kenji04%20Member%20NEXT%20LV%20Mobile%209x16.webp' "$RUNNER_TEMP/kenji-page"
+          grep -Fq 'data:image/png;base64' "$RUNNER_TEMP/kenji-page"
+          grep -Fq '@font-face' "$RUNNER_TEMP/kenji-page"
+          code="$(curl -sS -o "$RUNNER_TEMP/kenji-anon-chat" -w '%{http_code}' -H 'Origin: https://www.mmdbkk.com' -H 'Content-Type: application/json' --data '{"message":"เช็กสมาชิก"}' https://www.mmdbkk.com/api/member/kenji/chat)"
+          test "$code" = "401"
+          curl --retry 3 --retry-delay 2 -fsS https://www.mmdbkk.com/webhooks/line | node -e 'let t="";process.stdin.on("data",d=>t+=d).on("end",()=>{const v=JSON.parse(t);if(v.ok!==true||v.worker!=="member-dashboard-chat-worker"||v.route!=="line_webhook")process.exit(1)})'
+          curl --retry 3 --retry-delay 2 -fsS https://www.mmdbkk.com/webhooks/line/mms | node -e 'let t="";process.stdin.on("data",d=>t+=d).on("end",()=>{const v=JSON.parse(t);if(v.ok!==true||v.route!=="mms_line_webhook")process.exit(1)})'
+          curl --retry 3 --retry-delay 2 -fsS -o /dev/null https://www.mmdbkk.com/my-mmd/payments
+          curl --retry 3 --retry-delay 2 -fsS -o /dev/null 'https://www.mmdbkk.com/member/liff?intent=status'
+          echo "Kenji NEXT LV + anonymous session boundary + LINE/MMS + MY MMD/LIFF smoke PASS"
+      - name: Roll back ONLY if this run currently owns the failed candidate
+        if: failure() && steps.promote.outcome == 'success'
+        working-directory: member-dashboard-chat-worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          const base='https://api.cloudflare.com/client/v4/accounts/'+process.env.CLOUDFLARE_ACCOUNT_ID+'/workers/scripts/'+process.env.WORKER_NAME;
+          const r=await fetch(base+'/deployments?per_page=1',{headers:{authorization:'Bearer '+process.env.CLOUDFLARE_API_TOKEN}});
+          const x=await r.json();assert.ok(r.ok&&x.success);
+          const d=x.result?.deployments?.[0];
+          if (d?.versions?.length!==1 || d.versions[0].version_id!==process.env.KENJI_UPLOADED_VERSION) {
+            throw new Error('Current live version changed; manual rollback decision required');
+          }
+          NODE
+          npx --yes wrangler@4 versions deploy "$BASELINE_VERSION@100%" -y
+          echo "Candidate failed smoke. Rolled back to prior verified baseline $BASELINE_VERSION" >&2
