@@ -1,10 +1,10 @@
 /** MMD NEXT LV · /member/kenji (presentation only).
  * Never receives tokens, account authority or unverified membership fields.
  * HTML / CSS / client JS form one CSP-nonced, same-origin document.
- * Replace the Kenji hero CDN image in this template only after asset review.
+ * Assets: Kenji Alove (desktop), Kenji CC 02 (mobile), Kenji CC 01 (chat), MMD logo from approved Webflow folders.
  */
-const NEXT_LV_DOCUMENT = String.raw`<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0d0f12"><meta name="robots" content="noindex,nofollow"><title>Kenji · MY MMD Concierge</title><meta name="description" content="Kenji — ผู้ช่วยข้อมูลสมาชิก MY MMD คำถามทั่วไปและโปรโมชั่นที่ประกาศแล้ว"><style nonce="test_nonce">
-:root{color-scheme:dark;--bg:#0d0f12;--surface:#17191d;--surface2:#202126;--ink:#f7f1e7;--muted:#b8b2aa;--dim:#918a85;--border:rgba(239,222,203,.13);--wine:#a21e39;--wine2:#762035;--gold:#cfb28a;--focus:#f4c594}
+const NEXT_LV_DOCUMENT = String.raw`<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#101113"><meta name="robots" content="noindex,nofollow"><title>Kenji · MY MMD Concierge</title><meta name="description" content="Kenji — ผู้ช่วยข้อมูลสมาชิก MY MMD คำถามทั่วไปและโปรโมชั่นที่ประกาศแล้ว"><style nonce="test_nonce">
+:root{color-scheme:dark;--bg:#101113;--surface:#1a1b1d;--surface2:#252529;--ink:#f6f2e9;--muted:#cac4bb;--dim:#b4ada2;--border:rgba(241,232,215,.17);--wine:#a21e39;--wine2:#652b3c;--gold:#d3bc93;--focus:#ffe0a2}
 *{box-sizing:border-box}
 html,body{margin:0;width:100%;min-height:100%;background:var(--bg)}
 body{font-family:"LINE Seed Sans TH","Noto Sans Thai",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink);overflow:hidden}
@@ -13,7 +13,7 @@ a{color:inherit;text-decoration:none}button,textarea{font:inherit}button{cursor:
 .skip{position:fixed;top:4px;left:8px;z-index:20;transform:translateY(-150%);padding:9px 12px;background:var(--ink);color:var(--bg);border-radius:8px}.skip:focus{transform:none}
 .page{height:100vh;height:100dvh;min-height:460px;max-width:1550px;margin:0 auto;display:grid;grid-template-rows:70px minmax(0,1fr);background:var(--bg)}
 .top{display:flex;align-items:center;justify-content:space-between;padding:0 clamp(16px,3vw,38px);gap:16px;border-bottom:1px solid var(--border);min-width:0}
-.brand{display:flex;align-items:center;gap:13px;min-width:0}.brand-mark{font-family:Georgia,serif;font-size:28px;letter-spacing:-.085em;line-height:1;font-weight:600;color:var(--ink)}.brand-rule{height:25px;width:1px;background:var(--border)}.brand-label{display:grid;gap:2px;min-width:0}.brand-label strong{font-size:12px;letter-spacing:.19em;font-weight:700}.brand-label small{font-size:9px;letter-spacing:.18em;color:var(--gold);white-space:nowrap}
+.brand{display:flex;align-items:center;gap:13px;min-width:0}.brand-mark{display:block;width:132px;height:40px;flex:none;object-fit:contain;object-position:left center}.brand-rule{height:25px;width:1px;background:var(--border)}.brand-label{display:grid;gap:2px;min-width:0}.brand-label strong{font-size:12px;letter-spacing:.19em;font-weight:700}.brand-label small{font-size:9px;letter-spacing:.18em;color:var(--gold);white-space:nowrap}
 .top-actions{display:flex;gap:17px;align-items:center}.top-link{font-size:12px;color:var(--muted);white-space:nowrap;transition:color .2s}.top-link:hover{color:var(--ink)}.top-link span{color:var(--gold);margin-left:5px}.top-link--outline{border:1px solid var(--border);padding:9px 14px;border-radius:99px}
 .workspace{display:grid;grid-template-columns:minmax(0,.94fr) minmax(0,1.06fr);min-height:0;gap:18px;padding:18px clamp(16px,2.7vw,38px) 24px}
 .hero{position:relative;isolation:isolate;min-height:0;overflow:hidden;border:1px solid var(--border);border-radius:23px;background:linear-gradient(150deg,#242020,#101113 70%)}
@@ -41,29 +41,53 @@ a{color:inherit;text-decoration:none}button,textarea{font:inherit}button{cursor:
 @media(max-width:920px){.page{grid-template-rows:60px minmax(0,1fr)}.top{padding:0 16px}.top-link--outline{display:none}.workspace{grid-template-columns:1fr;grid-template-rows:minmax(156px,29%) minmax(0,1fr);gap:0;padding:0}.hero{border:0;border-radius:0;min-height:0}.hero:before{background:linear-gradient(90deg,#0c0d10 4%,rgba(11,11,13,.87) 40%,rgba(11,11,13,.08) 100%),linear-gradient(0deg,#151517 0%,transparent 50%)}.hero-image{width:73%;object-position:center 32%}.hero-copy{padding:17px 19px;max-width:78%}.hero-title{font-size:clamp(49px,8vw,82px);margin:9px 0 3px}.hero-italic{font-size:14px}.hero-copy h1{font-size:17px;margin:auto 0 3px}.hero-body{font-size:11px;line-height:1.48;margin:0}.hero-links,.hero-divider,.hero-footnote{display:none}.chat-shell{border:0;border-top:1px solid var(--border);border-radius:21px 21px 0 0;margin-top:-13px;z-index:3}.chat-head{padding:12px 16px 9px}.chat-name strong{font-size:14px}.small-avatar{width:34px;height:34px;font-size:22px}.member-line{padding:8px 16px;font-size:10px}.mode-row{margin:10px 16px 0}.intro-panel{padding:10px 16px 5px}.intro-panel h2{font-size:12px;margin-bottom:7px}.history{padding:13px 16px 16px;gap:11px}.message__bubble{font-size:12px;padding:10px 12px}.composer{padding:10px 16px calc(8px + env(safe-area-inset-bottom))}.composer-caption{font-size:9px}.brand-mark{font-size:23px}.brand-label strong{font-size:10px}.brand-label small{font-size:8px}}
 @media(max-width:450px){.workspace{grid-template-rows:minmax(142px,26%) minmax(0,1fr)}.hero-image{width:78%;object-position:58% 27%}.hero-copy{max-width:75%}.hero-title{font-size:51px}.hero-copy h1{font-size:15px}.hero-body{font-size:10px}.top-actions{gap:8px}.top-link{font-size:10px}.brand{gap:9px}.brand-label small{letter-spacing:.08em}.history{gap:9px}.member-line a{font-size:9px}.clear{font-size:10px;min-height:32px;padding:6px 10px}}
 @media(max-height:660px) and (max-width:920px){.workspace{grid-template-rows:135px minmax(0,1fr)}.hero-title{font-size:40px;margin:5px 0}.hero-copy h1{font-size:14px}.hero-body{display:none}.chat-head{padding-top:8px;padding-bottom:6px}.intro-panel{padding-top:7px;padding-bottom:3px}.mode-row{margin-top:6px}.prompt-row{padding-bottom:0}.composer-caption{display:none}}
+
+/* NEXT LV MMD Member art direction: Webflow-approved portrait/identity, scoped contrast. */
+.hero-picture{position:absolute;inset:0;display:block;pointer-events:none}
+.hero-image{object-position:58% 22%;filter:saturate(.88) contrast(1.04)}
+.hero:before{background:linear-gradient(90deg,rgba(13,13,15,.97) 0%,rgba(14,13,15,.84) 34%,rgba(13,12,14,.15) 90%),linear-gradient(0deg,#111114 0%,transparent 58%)}
+.small-avatar,.message__avatar{overflow:hidden}
+.small-avatar img,.message__avatar img{display:block;width:100%;height:100%;object-fit:cover;object-position:58% 17%}
+.chat-name strong,.hero-copy h1,.intro-panel h2,.promo-info strong,.message__bubble{color:var(--ink)}
+.hero-body,.promo-info p,.member-line,.status{color:var(--muted)}
+.chat-head,.top{background:rgba(19,19,21,.45)}
+.brand-label small{color:var(--gold)}
+.mode[aria-pressed="true"]{background:#552230;box-shadow:inset 0 0 0 1px rgba(223,152,169,.28)}
+.mode{min-height:43px}
+.prompt{min-height:38px;font-size:12px}
+.message__avatar{border-color:rgba(224,184,141,.4)}
+@media(max-width:920px){
+.brand-mark{width:110px;height:34px}
+.hero-image{width:76%;object-position:59% 23%}
+.hero:before{background:linear-gradient(90deg,rgba(13,13,15,.99),rgba(13,13,15,.8) 43%,rgba(13,13,15,.05) 98%),linear-gradient(0deg,#151517 0%,transparent 60%)}
+.mode{min-height:40px}
+.message__bubble{font-size:13px;line-height:1.65}
+.member-line{font-size:11px}
+}
+@media(max-width:450px){.brand-mark{width:94px;height:30px}.brand-label strong{font-size:10px}.hero-image{width:79%;object-position:60% 22%}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
 </style></head><body>
   <a href="#kenji-input" class="skip">ข้ามไปช่องพิมพ์คำถาม</a>
   <div class="page">
     <header class="top">
-      <a class="brand" href="/member/my-mmd" aria-label="กลับ MY MMD"><span class="brand-mark">MMD</span><span class="brand-rule" aria-hidden="true"></span><span class="brand-label"><strong>KENJI</strong><small>MEMBER CONCIERGE</small></span></a>
-      <nav class="top-actions" aria-label="ไปส่วนอื่น"><a class="top-link" href="/member/my-mmd">MY MMD <span aria-hidden="true">↗</span></a><a class="top-link top-link--outline" href="/member/liff?intent=status">ตรวจสอบสิทธิ์</a></nav>
+      <a class="brand" href="/my-mmd/" aria-label="กลับ MY MMD"><img class="brand-mark" src="https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90/6aec945d0a09b10a4799ebda_transparent-gold-white-240px.webp" alt="MMD Privé" width="240" height="76" decoding="async"><span class="brand-rule" aria-hidden="true"></span><span class="brand-label"><strong>KENJI</strong><small>MEMBER CONCIERGE</small></span></a>
+      <nav class="top-actions" aria-label="ไปส่วนอื่น"><a class="top-link" href="/my-mmd/">MY MMD <span aria-hidden="true">↗</span></a><a class="top-link top-link--outline" href="/member/liff?intent=status">ตรวจสอบสิทธิ์</a></nav>
     </header>
     <main class="workspace">
       <section class="hero" aria-labelledby="hero-heading">
-        <img class="hero-image" src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa4b6b02b82617e25beaa4c_Kenji%20CC%2002.webp" alt="Kenji ผู้ช่วย MMD Privé" fetchpriority="high" decoding="async" width="1086" height="1448">
+        <picture class="hero-picture"><source media="(max-width: 920px)" srcset="https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90/6aa4b6b02b82617e25beaa4c_Kenji%20CC%2002.webp"><img class="hero-image" src="https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90/6abd5f961e79f94a6c988e03_Kenji%20Alove.webp" alt="Kenji ในห้องรับรอง MMD Privé" fetchpriority="high" decoding="async" width="1086" height="1448"></picture>
         <div class="hero-grain" aria-hidden="true"></div>
         <div class="hero-copy">
           <div class="eyebrow">MMD PRIVÉ BANGKOK / MEMBER SERVICES</div>
           <div class="hero-title" aria-hidden="true">Kenji.</div><div class="hero-italic">Your MMD Concierge</div>
           <h1 id="hero-heading">มีอะไรให้ผมจัดการครับ</h1>
           <p class="hero-body">คำถามทั่วไป สมาชิก MY MMD และการเข้าถึงโปรโมชั่นที่ประกาศแล้ว ทุกคำตอบยึดข้อมูลที่ตรวจสอบได้ครับ</p>
-          <div class="hero-links"><a href="/member/my-mmd">เข้า MY MMD</a><a href="/my-mmd/coupons">คูปองของฉัน</a></div>
+          <div class="hero-links"><a href="/my-mmd/">เข้า MY MMD</a><a href="/my-mmd/coupons">คูปองของฉัน</a></div>
           <div class="hero-divider"></div><div class="hero-footnote">PRIVATE BY DESIGN · ข้อมูลสมาชิกและสิทธิ์ต่าง ๆ ยืนยันจากระบบเท่านั้น</div>
         </div>
       </section>
       <section class="chat-shell" aria-label="สนทนากับ Kenji">
-        <header class="chat-head"><div class="chat-heading"><div class="small-avatar" aria-hidden="true">K</div><div class="chat-name"><strong>Kenji</strong><small>Q&A · PROMOTIONS</small></div></div><button class="clear" id="kenji-clear" type="button" aria-label="ลบข้อความในหน้าจอนี้">ล้างหน้าจอ</button></header>
+        <header class="chat-head"><div class="chat-heading"><div class="small-avatar" aria-hidden="true"><img src="https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90/6aa4b6b0c8e3decbef9bbd99_Kenji%20CC%2001.webp" alt="" width="40" height="40" decoding="async"></div><div class="chat-name"><strong>Kenji</strong><small>Q&A · PROMOTIONS</small></div></div><button class="clear" id="kenji-clear" type="button" aria-label="ลบข้อความในหน้าจอนี้">ล้างหน้าจอ</button></header>
         <div class="member-line"><span id="kenji-member">ยังไม่แสดงข้อมูลสมาชิก</span><a id="kenji-member-link" href="/member/liff?intent=status">ตรวจสอบสิทธิ์</a></div>
         <div class="mode-row" aria-label="เลือกหัวข้อ"><button class="mode" type="button" data-mode="qa" aria-pressed="true">คำถามทั่วไป (Q&A)</button><button class="mode" type="button" data-mode="promo" aria-pressed="false">โปรโมชั่น</button></div>
         <div class="intro-panel" data-mode-panel="qa"><h2>เลือกคำถาม หรือพิมพ์ด้วยตัวเอง</h2><div class="prompt-row"><button type="button" class="prompt" data-prompt="สมัครสมาชิก MMD ต้องทำอย่างไร">สมัครสมาชิก</button><button type="button" class="prompt" data-prompt="เช็กสถานะสมาชิกที่ระบบยืนยันให้หน่อย">เช็กสมาชิก</button><button type="button" class="prompt" data-prompt="เช็ก Points ที่ระบบยืนยันให้หน่อย">Points</button><button type="button" class="prompt" data-prompt="ต่ออายุสมาชิกต้องทำอย่างไร">ต่ออายุ</button><button type="button" class="prompt" data-prompt="ช่องทางชำระเงินและการตรวจยอดเป็นอย่างไร">ชำระเงิน</button></div></div>
@@ -124,7 +148,13 @@ a{color:inherit;text-decoration:none}button,textarea{font:inherit}button{cursor:
       const mark = document.createElement("div");
       mark.className = "message__avatar";
       mark.setAttribute("aria-hidden", "true");
-      mark.textContent = "K";
+      const portrait = document.createElement("img");
+      portrait.src = "https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90/6aa4b6b0c8e3decbef9bbd99_Kenji%20CC%2001.webp";
+      portrait.alt = "";
+      portrait.width = 40;
+      portrait.height = 40;
+      portrait.decoding = "async";
+      mark.appendChild(portrait);
       wrap.appendChild(mark);
     }
     const bubble = document.createElement("div");
@@ -172,7 +202,7 @@ a{color:inherit;text-decoration:none}button,textarea{font:inherit}button{cursor:
     if (!name && !tier) return;
     member.textContent = "ยืนยันจากระบบ: " + [name, tier].filter(Boolean).join(" · ");
     memberLink.textContent = "MY MMD";
-    memberLink.href = "/member/my-mmd";
+    memberLink.href = "/my-mmd/";
   }
   function markSessionLost() {
     resetDisplay(true);
@@ -260,7 +290,7 @@ export function renderKenjiNextLvPage(nonce) {
     headers: {
       "content-type": "text/html; charset=utf-8",
       "cache-control": "no-store, private, max-age=0",
-      "content-security-policy": `default-src 'self'; style-src 'self' 'nonce-${nonce}'; script-src 'self' 'nonce-${nonce}'; connect-src 'self'; img-src 'self' data: https://cdn.prod.website-files.com; frame-ancestors 'self'; base-uri 'self'; form-action 'self'`,
+      "content-security-policy": `default-src 'self'; style-src 'self' 'nonce-${nonce}'; script-src 'self' 'nonce-${nonce}'; connect-src 'self'; img-src 'self' data: https://cdn.prod.website-files.com https://s3.amazonaws.com; frame-ancestors 'self'; base-uri 'self'; form-action 'self'`,
       "referrer-policy": "strict-origin-when-cross-origin",
       "x-content-type-options": "nosniff",
       "x-robots-tag": "noindex, nofollow",
