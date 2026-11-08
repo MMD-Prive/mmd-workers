@@ -225,6 +225,7 @@ export async function readStandardJoinQueue(env = {}, deps = {}) {
     ok: true, rooms: ["premium", "standard"], mode: "owner_review_only", dry_run: true,
     sends_nothing: true, removes_nothing: true, approves_nothing: true,
     count: queue.length, by_room: counts,
+    capture_enabled: { standard: isEnabled(env, "standard"), premium: isEnabled(env, "premium") },
     rows_truncated: standard.truncated || premium.truncated || valid.length > DEFAULT_LIMIT,
     source_truncated: source.truncated,
     roster_complete: false,
