@@ -1,3 +1,4 @@
+import { installReviewTestCoordinator } from './public-model-review-test-coordinator.mjs';
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -116,6 +117,7 @@ function createEnv({ modelRecords = [], includeAsset = true } = {}) {
       return jsonResponse({ error: { type: "UNEXPECTED_TEST_REQUEST" } }, 500);
     },
   };
+  installReviewTestCoordinator(env);
   return { env, calls, getApplication: () => application, getAsset: () => asset };
 }
 

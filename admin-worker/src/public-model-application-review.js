@@ -10,6 +10,8 @@ const MODELS_TABLE_DEFAULT = "Models";
 const APPLICATION_ID_RE = /^pma_[A-Za-z0-9_-]{8,120}$/;
 const ASSET_ID_RE = /^pmua_[A-Za-z0-9_-]{8,120}$/;
 const SAFE_ADMIN_ORIGINS = new Set(["https://mmdbkk.com", "https://www.mmdbkk.com"]);
+const DELETED_INTAKE_STATUS = "owner_deleted";
+const DELETION_METADATA_KEY = "owner_review_deletion";
 const REVIEWABLE_ASSET_UPLOAD_STATES = new Set(["attached", "uploaded"]);
 
 export const PUBLIC_MODEL_REVIEW_FIELDS = Object.freeze({
@@ -85,7 +87,7 @@ export async function handlePublicModelApplicationReviewRequest(request, env = {
 
   if (path === PAGE_PATH) {
     if (method !== "GET" && method !== "HEAD") return methodNotAllowed(["GET", "HEAD"]);
-    const response = html(renderReviewPage());
+    const response = html(renderReviewPage(actor));
     response.headers.set("x-mmd-admin-surface", "public-model-application-review");
     return method === "HEAD" ? new Response(null, { status: 200, headers: response.headers }) : response;
   }
@@ -112,7 +114,8 @@ function airtableErrorResponse(error) {
 async function handlePublicModelApplicationApi(request, env, actor, url, path, method) {
   if (path === API_PREFIX && method === "GET") {
     const limit = clampInt(url.searchParams.get("limit"), 1, 50, 30);
-    const records = await listPublicModelApplications(env, limit);
+    const deleted = url.searchParams.get("view") === "deleted";
+    const records = await listPublicModelApplications(env, limit, deleted);
     return json({ ok: true, applications: records.map((record) => normalizeApplication(record, [])) });
   }
 
@@ -133,11 +136,19 @@ async function handlePublicModelApplicationApi(request, env, actor, url, path, m
     return json({ ok: true, application: projection });
   }
 
+  const lifecycle = path.match(/^\/v1\/admin\/model-applications\/(pma_[A-Za-z0-9_-]{8,120})\/(delete|restore)$/);
+  if (lifecycle && method === "POST") {
+    const originError = enforceSameOrigin(request);
+    if (originError) return originError;
+    if (!isPerOwner(actor)) return json({ ok: false, error: "owner_required" }, 403);
+    return coordinateApplicationMutation(request, env, actor, lifecycle[1]);
+  }
+
   const decision = path.match(/^\/v1\/admin\/model-applications\/(pma_[A-Za-z0-9_-]{8,120})\/decision$/);
   if (decision && method === "POST") {
     const originError = enforceSameOrigin(request);
     if (originError) return originError;
-    return applyDecision(request, env, actor, decision[1]);
+    return coordinateApplicationMutation(request, env, actor, decision[1]);
   }
 
   const onboarding = path.match(/^\/v1\/admin\/model-applications\/(pma_[A-Za-z0-9_-]{8,120})\/onboarding$/);
@@ -145,14 +156,14 @@ async function handlePublicModelApplicationApi(request, env, actor, url, path, m
     const originError = enforceSameOrigin(request);
     if (originError) return originError;
     if (!isPerOwner(actor)) return json({ ok: false, error: "owner_required" }, 403);
-    return preparePublicModelOnboarding(request, env, actor, onboarding[1]);
+    return coordinateApplicationMutation(request, env, actor, onboarding[1]);
   }
 
   const rolePolicy = path.match(/^\/v1\/admin\/model-applications\/(pma_[A-Za-z0-9_-]{8,120})\/role-policy$/);
   if (rolePolicy && method === "POST") {
     const originError = enforceSameOrigin(request);
     if (originError) return originError;
-    return applyRolePolicy(request, env, actor, rolePolicy[1]);
+    return coordinateApplicationMutation(request, env, actor, rolePolicy[1]);
   }
 
   const asset = path.match(/^\/v1\/admin\/model-applications\/(pma_[A-Za-z0-9_-]{8,120})\/assets\/(pmua_[A-Za-z0-9_-]{8,120})$/);
@@ -161,6 +172,91 @@ async function handlePublicModelApplicationApi(request, env, actor, url, path, m
   }
 
   return json({ ok: false, error: "not_found" }, 404);
+}
+
+async function coordinateApplicationMutation(request, env, actor, applicationId) {
+  const namespace = env.MODEL_ACTIVATION_COORDINATOR;
+  if (typeof namespace?.idFromName !== "function" || typeof namespace?.get !== "function") {
+    return json({ ok: false, error: "application_coordinator_not_ready" }, 503);
+  }
+  // Every review mutation shares this application-specific Durable Object, including
+  // the read/check/write sequence and any downstream Model or asset effects.
+  const stub = namespace.get(namespace.idFromName(`public-model-review:${applicationId}`));
+  return stub.fetch("https://model-activation.internal/public-model-review", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ url: request.url, origin: request.headers.get("origin"), body: await request.text(), actor }),
+  });
+}
+
+// Called only by the internal Durable Object binding, never by an HTTP route.
+// The actor is supplied by the authenticated outer handler, not a client header/body.
+export async function handlePublicModelReviewDurableMutation(env, input) {
+  try {
+    const request = new Request(input.url, {
+      method: "POST", headers: { origin: input.origin || "", "content-type": "application/json" }, body: input.body,
+    });
+    const match = normalizePath(new URL(request.url).pathname).match(/^\/v1\/admin\/model-applications\/(pma_[A-Za-z0-9_-]{8,120})\/(delete|restore|decision|onboarding|role-policy)$/);
+    if (!match) return json({ ok: false, error: "not_found" }, 404);
+    const originError = enforceSameOrigin(request);
+    if (originError) return originError;
+    const [, applicationId, action] = match, actor = input.actor;
+    if (["delete", "restore", "onboarding"].includes(action) && !isPerOwner(actor)) return json({ ok: false, error: "owner_required" }, 403);
+    if (action === "decision") return await applyDecision(request, env, actor, applicationId);
+    if (action === "role-policy") return await applyRolePolicy(request, env, actor, applicationId);
+    if (action === "onboarding") return await preparePublicModelOnboarding(request, env, actor, applicationId);
+    return await changeApplicationDeletion(request, env, actor, applicationId, action);
+  } catch (error) { return airtableErrorResponse(error); }
+}
+
+function isDeletedApplication(application) {
+  return clean(application?.fields?.[PUBLIC_MODEL_REVIEW_FIELDS.intakeStatus]) === DELETED_INTAKE_STATUS;
+}
+
+async function changeApplicationDeletion(request, env, actor, applicationId, action) {
+  let body;
+  try { body = await request.json(); } catch { return json({ ok: false, error: "invalid_json" }, 400); }
+  // Bind confirmation to the exact application, never a list or a client-supplied record ID.
+  if (body?.confirm_application_id !== applicationId) return json({ ok: false, error: "application_confirmation_required" }, 400);
+  const application = await findApplicationById(env, applicationId);
+  if (!application) return json({ ok: false, error: "application_not_found" }, 404);
+  const fields = application.fields || {};
+  if (clean(fields[PUBLIC_MODEL_REVIEW_FIELDS.applicationType]) !== "public_model") return json({ ok: false, error: "not_public_model_application" }, 409);
+  const deleted = action === "delete";
+  if (isDeletedApplication(application) === deleted) {
+    return json({ ok: true, application_id: applicationId, deleted, unchanged: true });
+  }
+  // Reuse existing text fields: no schema changes, record deletion, asset writes or Model writes.
+  // Preserve summary fields exactly, and fail closed instead of discarding malformed metadata.
+  let summary;
+  try {
+    summary = fields[PUBLIC_MODEL_REVIEW_FIELDS.summaryJson] ? JSON.parse(fields[PUBLIC_MODEL_REVIEW_FIELDS.summaryJson]) : {};
+    if (!summary || typeof summary !== "object" || Array.isArray(summary)) throw new Error("invalid_summary");
+  } catch { return json({ ok: false, error: "application_summary_invalid" }, 409); }
+  const previous = summary[DELETION_METADATA_KEY];
+  let intakeStatus;
+  if (deleted) {
+    intakeStatus = DELETED_INTAKE_STATUS;
+    summary[DELETION_METADATA_KEY] = {
+      version: 1,
+      previous_intake_status: clean(fields[PUBLIC_MODEL_REVIEW_FIELDS.intakeStatus]),
+      deleted_at: new Date().toISOString(),
+      deleted_by: actor.id,
+    };
+  } else {
+    if (previous?.version !== 1 || typeof previous.previous_intake_status !== "string" || previous.previous_intake_status === DELETED_INTAKE_STATUS) {
+      return json({ ok: false, error: "application_restore_state_missing" }, 409);
+    }
+    intakeStatus = previous.previous_intake_status;
+    summary[DELETION_METADATA_KEY] = { ...previous, restored_at: new Date().toISOString(), restored_by: actor.id };
+  }
+  const updated = await patchApplication(env, application.id, {
+    [PUBLIC_MODEL_REVIEW_FIELDS.intakeStatus]: intakeStatus,
+    [PUBLIC_MODEL_REVIEW_FIELDS.summaryJson]: JSON.stringify(summary),
+  });
+  if (updated?.id !== application.id || clean(updated.fields?.[PUBLIC_MODEL_REVIEW_FIELDS.intakeStatus]) !== intakeStatus) {
+    return json({ ok: false, error: "application_change_unverified" }, 502);
+  }
+  return json({ ok: true, application_id: applicationId, deleted, recoverable: true });
 }
 
 async function applyDecision(request, env, actor, applicationId) {
@@ -177,6 +273,7 @@ async function applyDecision(request, env, actor, applicationId) {
 
   const application = await findApplicationById(env, applicationId);
   if (!application) return json({ ok: false, error: "application_not_found" }, 404);
+  if (isDeletedApplication(application)) return json({ ok: false, error: "application_deleted_restore_required" }, 409);
   if (clean(application.fields?.[PUBLIC_MODEL_REVIEW_FIELDS.applicationType]) !== "public_model") {
     return json({ ok: false, error: "not_public_model_application" }, 409);
   }
@@ -260,6 +357,7 @@ async function applyDecision(request, env, actor, applicationId) {
 async function preparePublicModelOnboarding(request, env, actor, applicationId) {
   const application = await findApplicationById(env, applicationId);
   if (!application) return json({ ok: false, error: "application_not_found" }, 404);
+  if (isDeletedApplication(application)) return json({ ok: false, error: "application_deleted_restore_required" }, 409);
   const fields = application.fields || {};
   if (clean(fields[PUBLIC_MODEL_REVIEW_FIELDS.applicationType]) !== "public_model") return json({ ok: false, error: "not_public_model_application" }, 409);
   if (selectName(fields[PUBLIC_MODEL_REVIEW_FIELDS.reviewStatus]) !== "accepted" || clean(fields[PUBLIC_MODEL_REVIEW_FIELDS.intakeStatus]) !== "approved") {
@@ -316,6 +414,7 @@ async function applyRolePolicy(request, env, actor, applicationId) {
   try { body = await request.json(); } catch { return json({ ok: false, error: "invalid_json" }, 400); }
   const application = await findApplicationById(env, applicationId);
   if (!application) return json({ ok: false, error: "application_not_found" }, 404);
+  if (isDeletedApplication(application)) return json({ ok: false, error: "application_deleted_restore_required" }, 409);
   if (clean(application.fields?.[PUBLIC_MODEL_REVIEW_FIELDS.applicationType]) !== "public_model") return json({ ok: false, error: "not_public_model_application" }, 409);
 
   const approvedRoles = [...new Set(Array.isArray(body?.approved_roles) ? body.approved_roles.map((v) => clean(v).toLowerCase()) : [])];
@@ -429,12 +528,12 @@ function normalizeWorkingName(value) {
   return clean(value).normalize("NFKC").replace(/\s+/g, " ").toLocaleLowerCase("en-US");
 }
 
-async function listPublicModelApplications(env, limit) {
+async function listPublicModelApplications(env, limit, deleted = false) {
   const url = airtableUrl(env, APPLICATIONS_TABLE_ID);
   url.searchParams.set("maxRecords", String(limit));
   url.searchParams.set("pageSize", String(limit));
   url.searchParams.set("returnFieldsByFieldId", "true");
-  url.searchParams.set("filterByFormula", "{application_type}='public_model'");
+  url.searchParams.set("filterByFormula", `AND({application_type}='public_model', {public_model_intake_status}${deleted ? "=" : "!="}'${DELETED_INTAKE_STATUS}')`);
   url.searchParams.set("sort[0][field]", "submitted_at");
   url.searchParams.set("sort[0][direction]", "desc");
   const data = await airtableRequest(env, url.toString(), { method: "GET" });
@@ -525,6 +624,8 @@ function normalizeApplication(record, assets) {
     id: record?.id || "",
     application_id: applicationId,
     application_type: get(PUBLIC_MODEL_REVIEW_FIELDS.applicationType),
+    deleted: isDeletedApplication(record),
+    deleted_at: isDeletedApplication(record) ? clean(summary[DELETION_METADATA_KEY]?.deleted_at) : "",
     nickname: get(PUBLIC_MODEL_REVIEW_FIELDS.nickname, payload.nickname),
     gender: selectName(fields[PUBLIC_MODEL_REVIEW_FIELDS.gender]) || clean(payload.gender || summary.gender),
     age: numberValue(fields[PUBLIC_MODEL_REVIEW_FIELDS.age] ?? payload.age ?? summary.age),
@@ -636,18 +737,21 @@ function enforceSameOrigin(request) {
   return null;
 }
 
-function renderReviewPage() {
+function renderReviewPage(actor) {
   // Preserve browser-script escapes when emitting the HTML template.
   return String.raw`<!doctype html>
 <html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>MMD · Public Model Applications</title>
 <style>
 :root{color-scheme:dark;--bg:#090a0c;--panel:#111318;--panel2:#171a20;--line:#272b33;--text:#f5f6f7;--muted:#9ca3af;--ok:#69d59b;--warn:#f6c65b;--bad:#ff7070;--accent:#e4c36a}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 20% 0,#1a1b16 0,#090a0c 34rem);color:var(--text);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:1120px;margin:auto;padding:22px 16px 110px}.top{display:flex;gap:12px;align-items:center;justify-content:space-between;margin-bottom:18px}.eyebrow{font-size:12px;letter-spacing:.14em;color:var(--accent);text-transform:uppercase}.title{font-size:clamp(25px,5vw,40px);font-weight:720;letter-spacing:-.035em;margin:2px 0}.muted{color:var(--muted)}.card{background:rgba(17,19,24,.92);border:1px solid var(--line);border-radius:22px;padding:18px;margin:12px 0;box-shadow:0 18px 60px #0005}.hero{display:grid;grid-template-columns:1.05fr .95fr;gap:14px}.name{font-size:30px;font-weight:720;letter-spacing:-.03em}.chips{display:flex;gap:7px;flex-wrap:wrap;margin:10px 0}.chip{padding:6px 10px;border:1px solid var(--line);border-radius:999px;background:#0c0e12;color:#cbd1d9;font-size:12px}.chip.ok{color:var(--ok);border-color:#29563d}.chip.bad{color:var(--bad);border-color:#5e2d2d}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.kv{padding:12px;border-radius:15px;background:var(--panel2);min-height:72px}.k{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}.v{font-size:16px;margin-top:3px;word-break:break-word;white-space:pre-wrap}.lead{font-size:19px;line-height:1.55;letter-spacing:-.015em}.photos{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}.photo{position:relative;overflow:hidden;border-radius:17px;background:#0b0c0f;aspect-ratio:4/5;border:1px solid var(--line)}.photo img{width:100%;height:100%;object-fit:cover;display:block}.photo span{position:absolute;left:9px;bottom:9px;padding:5px 8px;border-radius:999px;background:#000a;font-size:11px}.docs{display:grid;gap:8px;margin-top:10px}.doc{display:flex;justify-content:space-between;gap:10px;padding:11px 12px;border-radius:13px;background:#0c0e12;border:1px solid var(--line);color:#e3e6ea;text-decoration:none}.section-title{font-size:18px;font-weight:670;margin:2px 0 12px}details summary{cursor:pointer;color:#d7dbe2}.note{width:100%;min-height:92px;resize:vertical;border-radius:15px;border:1px solid var(--line);background:#0b0d11;color:#fff;padding:12px;font:inherit}.actions{position:fixed;z-index:10;left:0;right:0;bottom:0;padding:10px max(12px,env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));background:#090a0ce8;backdrop-filter:blur(18px);border-top:1px solid #242830}.action-inner{max-width:1120px;margin:auto;display:flex;gap:8px}.btn{appearance:none;border:0;border-radius:14px;padding:13px 15px;font:650 14px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;cursor:pointer;background:#242832;color:#fff;flex:1}.btn.approve{background:#e7c76f;color:#16130b}.btn.reject{background:#3b1f23;color:#ffb1b1}.btn:disabled{opacity:.45;cursor:not-allowed}.banner{padding:12px 14px;border-radius:14px;margin:10px 0;background:#17231d;border:1px solid #29563d;color:#a6e7c2}.queue{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.q{display:block;text-decoration:none;color:inherit}.q:hover{border-color:#5b5747}.error{color:#ff9d9d}.loading{padding:36px;text-align:center;color:var(--muted)}@media(max-width:760px){.hero{grid-template-columns:1fr}.photos{grid-template-columns:repeat(2,minmax(0,1fr))}.queue{grid-template-columns:1fr}.wrap{padding-top:16px}.action-inner{flex-wrap:wrap}.btn{min-width:30%}}@media(max-width:420px){.grid{grid-template-columns:1fr}.photos{grid-template-columns:1fr 1fr}.btn{padding:12px 8px;font-size:13px}}
-</style></head><body><main class="wrap"><div class="top"><div><div class="eyebrow">MMD PRIVÉ · INTERNAL</div><div class="title">Public Model Applications</div><div class="muted">เปิดจาก Telegram แล้วดูข้อมูลจริง รูปจริง และตัดสินใจได้ในหน้าเดียว</div></div><a href="/internal/admin/control-room" class="chip" style="text-decoration:none">Control Room</a></div><div id="app" class="loading">กำลังโหลดใบสมัคร…</div></main><div class="actions" id="actions" hidden><div class="action-inner"><button class="btn" data-decision="screening">ขอดูต่อ / กำลังพิจารณา</button><button class="btn reject" data-decision="reject">ไม่รับ</button><button class="btn approve" data-decision="approve">อนุมัติใบสมัคร</button></div></div>
+[hidden]{display:none!important}.queue-nav{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.queue-card .q{display:block;text-decoration:none;color:inherit}.queue-card .card{margin:0}.queue-controls{display:flex;gap:8px;margin-top:12px}.queue-controls .btn{flex:1}.deletion-banner{border-color:var(--bad)}
+</style></head><body><main class="wrap"><div class="top"><div><div class="eyebrow">MMD PRIVÉ · INTERNAL</div><div class="title">Public Model Applications</div><div class="muted">เปิดจาก Telegram แล้วดูข้อมูลจริง รูปจริง และตัดสินใจได้ในหน้าเดียว</div></div><a href="/internal/admin/control-room" class="chip" style="text-decoration:none">Control Room</a></div><nav class="queue-nav" aria-label="รายการใบสมัคร"><a class="chip" href="/internal/admin/model-applications">ใบสมัครทั้งหมด</a><a class="chip" href="/internal/admin/model-applications?view=deleted">ถังขยะ / กู้คืน</a></nav><div id="app" class="loading">กำลังโหลดใบสมัคร…</div></main><div class="actions" id="actions" hidden><div class="action-inner"><button class="btn" data-decision="screening">ขอดูต่อ / กำลังพิจารณา</button><button class="btn reject" data-decision="reject">ไม่รับ</button><button class="btn approve" data-decision="approve">อนุมัติใบสมัคร</button></div></div>
 <script>
 const $=s=>document.querySelector(s), app=$('#app'), actions=$('#actions');
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const id=new URL(location.href).searchParams.get('application_id')||'';
+const params=new URL(location.href).searchParams, id=params.get('application_id')||'', deletedView=params.get('view')==='deleted';
+const canManageApplications=${isPerOwner(actor)};
+let lifecycleBusy=false;
 const val=v=>(v===0||v)?esc(v):'—';
 const list=v=>Array.isArray(v)&&v.length?v.map(esc).join(' · '):'—';
 const chip=(text,cls='')=>text?'<span class="chip '+cls+'">'+esc(text)+'</span>':'';
@@ -658,7 +762,7 @@ function render(a){
  const assets=a.assets||[], photos=assets.filter(x=>String(x.content_type||'').startsWith('image/')), docs=assets.filter(x=>!String(x.content_type||'').startsWith('image/'));
  const contact=a.contact||{};
  app.className='';
- app.innerHTML='<section class="card hero"><div><div class="eyebrow">'+esc(a.application_id)+'</div><div class="name">'+val(a.nickname)+'</div><div class="chips">'+chip(a.public_model_category)+chip(a.status,statusClass(a))+chip(a.review_status)+chip(a.intake_status,statusClass(a))+'</div><div class="muted">ส่งเมื่อ '+val(a.submitted_at)+'</div></div><div class="grid"><div class="kv"><div class="k">Age</div><div class="v">'+val(a.age)+'</div></div><div class="kv"><div class="k">Height / Weight</div><div class="v">'+(a.height_cm?esc(a.height_cm)+' cm':'—')+' / '+(a.weight_kg?esc(a.weight_kg)+' kg':'—')+'</div></div><div class="kv"><div class="k">Location</div><div class="v">'+val(a.location)+'</div></div><div class="kv"><div class="k">Occupation / Background</div><div class="v">'+val(a.occupation)+'</div></div></div></section>'+
+ app.innerHTML=(a.deleted?'<section class="card deletion-banner" role="status"><div class="section-title">ใบสมัครนี้อยู่ในถังขยะ</div><div>ข้อมูลและรูปยังอยู่ครบ กู้คืนก่อนดำเนินการต่อ</div></section>':'')+'<section class="card hero"><div><div class="eyebrow">'+esc(a.application_id)+'</div><div class="name">'+val(a.nickname)+'</div><div class="chips">'+chip(a.public_model_category)+chip(a.status,statusClass(a))+chip(a.review_status)+chip(a.intake_status,statusClass(a))+'</div><div class="muted">ส่งเมื่อ '+val(a.submitted_at)+'</div></div><div class="grid"><div class="kv"><div class="k">Age</div><div class="v">'+val(a.age)+'</div></div><div class="kv"><div class="k">Height / Weight</div><div class="v">'+(a.height_cm?esc(a.height_cm)+' cm':'—')+' / '+(a.weight_kg?esc(a.weight_kg)+' kg':'—')+'</div></div><div class="kv"><div class="k">Location</div><div class="v">'+val(a.location)+'</div></div><div class="kv"><div class="k">Occupation / Background</div><div class="v">'+val(a.occupation)+'</div></div></div></section>'+
  (a.intake_status==='approved'?'<section class="card"><div class="section-title">ขั้นต่อไป · MY MODEL</div><div class="muted">'+(a.handoff_status==='linked'?'ยืนยัน LINE แล้ว · พร้อมเข้า MY MODEL':'เตรียมประวัติ Model และลิงก์ให้เจ้าของใบสมัครยืนยัน LINE')+'</div><button id="prepareOnboarding" class="btn approve" style="margin-top:12px">เตรียมเข้า MY MODEL / ออกลิงก์ LINE</button><div id="onboardingResult"></div></section>':'')+
  '<section class="card"><div class="section-title">แนะนำตัว / ภาพรวม</div><div class="lead">'+val(a.intro)+'</div></section>'+
  (a.display_name?'<section class="card"><div class="section-title">MY MODEL · ขอบเขตใบสมัคร</div><div class="grid"><div class="kv"><div class="k">ชื่อที่แสดง</div><div class="v">'+esc(a.display_name)+'</div></div><div class="kv"><div class="k">Public client gender</div><div class="v">'+val(a.public_client_gender)+'</div></div><div class="kv"><div class="k">Private opt in</div><div class="v">'+(a.private_opt_in?'เปิด · '+val(a.private_client_gender):'ปิด')+'</div></div><div class="kv"><div class="k">ภาษา</div><div class="v">'+list(a.languages)+'</div></div><div class="kv"><div class="k">วิดีโอคอล LINE</div><div class="v">'+val(a.video_call_preference)+'</div></div><div class="kv"><div class="k">เวลาที่สะดวก (กรุงเทพ)</div><div class="v">'+val(a.preferred_at_bangkok)+'</div></div></div></section>':'')+
@@ -671,10 +775,35 @@ function render(a){
  '<section class="card"><div class="section-title">หมายเหตุการพิจารณา</div><textarea id="reviewNote" class="note" placeholder="เขียนเหตุผล / สิ่งที่ต้องติดตาม (ไม่บังคับ)"></textarea><div class="muted" style="margin-top:8px">อนุมัติใบสมัคร = รับเข้าสู่ขั้น onboarding เท่านั้น ระบบจะไม่เปิด Public visibility หรือ publish profile เอง</div></section>';
  const roleLabels={everyday_companion:'เพื่อนคู่ใจ',driver_companion:'คนขับรถหล่อ',culinary_companion:'เชฟหล่อ',social_appearance:'คู่หูออกงาน',bangkok_companion:'เพื่อนเที่ยวกรุงเทพ',sport_activity:'หนุ่มสายกีฬา',wellness_companion:'หนุ่มสายสุขภาพ',business_companion:'หนุ่มออฟฟิศ',nightlife_companion:'เพื่อนสายปาร์ตี้',creative_companion:'เพื่อนสายศิลป์',medical_professional:'บุรุษทางการแพทย์'};
  const approved=new Set(a.approved_roles||[]), rolePolicy=$('#rolePolicy');
- if(rolePolicy){rolePolicy.innerHTML='<div class="chips">'+Object.keys(roleLabels).map(k=>'<label class="chip"><input type="checkbox" data-role-policy="'+esc(k)+'" '+(approved.has(k)?'checked':'')+'> '+esc(roleLabels[k])+'</label>').join('')+'</div><div class="grid" style="margin-top:10px"><label class="kv"><div class="k">Booking Mode</div><select id="bookingMode" class="note" style="min-height:46px"><option value="curated">curated</option><option value="direct">direct</option><option value="brief_only">brief_only</option></select></label><label class="kv"><div class="k">Credential Status</div><select id="credentialStatus" class="note" style="min-height:46px"><option value="not_required">not_required</option><option value="pending">pending</option><option value="verified">verified</option><option value="rejected">rejected</option></select></label></div><label class="chip" style="margin-top:10px"><input id="publicProfileApproved" type="checkbox" '+(a.public_profile_approved?'checked':'')+'> เปิด Public Profile</label><textarea id="credentialNotes" class="note" style="margin-top:10px" placeholder="Credential notes (internal only)">'+esc(a.credential_notes||'')+'</textarea><button id="saveRolePolicy" class="btn approve" style="margin-top:10px">บันทึก Role / Publication Policy</button>';$('#bookingMode').value=a.booking_mode||'curated';$('#credentialStatus').value=a.credential_status||'not_required';$('#saveRolePolicy').onclick=()=>saveRolePolicy(a);}
+ if(rolePolicy&&!a.deleted){rolePolicy.innerHTML='<div class="chips">'+Object.keys(roleLabels).map(k=>'<label class="chip"><input type="checkbox" data-role-policy="'+esc(k)+'" '+(approved.has(k)?'checked':'')+'> '+esc(roleLabels[k])+'</label>').join('')+'</div><div class="grid" style="margin-top:10px"><label class="kv"><div class="k">Booking Mode</div><select id="bookingMode" class="note" style="min-height:46px"><option value="curated">curated</option><option value="direct">direct</option><option value="brief_only">brief_only</option></select></label><label class="kv"><div class="k">Credential Status</div><select id="credentialStatus" class="note" style="min-height:46px"><option value="not_required">not_required</option><option value="pending">pending</option><option value="verified">verified</option><option value="rejected">rejected</option></select></label></div><label class="chip" style="margin-top:10px"><input id="publicProfileApproved" type="checkbox" '+(a.public_profile_approved?'checked':'')+'> เปิด Public Profile</label><textarea id="credentialNotes" class="note" style="margin-top:10px" placeholder="Credential notes (internal only)">'+esc(a.credential_notes||'')+'</textarea><button id="saveRolePolicy" class="btn approve" style="margin-top:10px">บันทึก Role / Publication Policy</button>';$('#bookingMode').value=a.booking_mode||'curated';$('#credentialStatus').value=a.credential_status||'not_required';$('#saveRolePolicy').onclick=()=>saveRolePolicy(a);}
  const onboardingButton=$('#prepareOnboarding'); if(onboardingButton)onboardingButton.onclick=()=>prepareOnboarding(a);
  actions.hidden=false;
- actions.querySelectorAll('button[data-decision]').forEach(b=>b.onclick=()=>decide(b.dataset.decision,a));
+ actions.querySelectorAll('button[data-decision]').forEach(b=>{b.hidden=!!a.deleted;b.onclick=()=>decide(b.dataset.decision,a)});
+ let lifecycleButton=$('#applicationLifecycle');
+ if(!lifecycleButton){lifecycleButton=document.createElement('button');lifecycleButton.id='applicationLifecycle';actions.querySelector('.action-inner').appendChild(lifecycleButton)}
+ lifecycleButton.className='btn '+(a.deleted?'':'reject');
+ lifecycleButton.hidden=!canManageApplications;
+ lifecycleButton.textContent=a.deleted?'กู้คืนใบสมัคร':'Delete · ลบใบสมัคร';
+ lifecycleButton.onclick=()=>changeDeletion(a);
+ actions.hidden=!!a.deleted&&!canManageApplications;
+ if(a.deleted&&$('#reviewNote'))$('#reviewNote').disabled=true;
+}
+
+async function changeDeletion(a){
+ if(lifecycleBusy||!canManageApplications)return;
+ const restoring=!!a.deleted;
+ const question=(restoring?'กู้คืนใบสมัคร':'ลบใบสมัคร')+' "'+(a.nickname||a.application_id)+'" ('+a.application_id+')?\n\n'+(restoring?'ใบสมัครจะกลับเข้าสู่รายการด้วยสถานะเดิม':'ย้ายไปถังขยะ กู้คืนได้จากเมนูถังขยะ / กู้คืน ข้อมูล รูป และ Model ที่เชื่อมไว้จะไม่ถูกลบ');
+ if(!confirm(question))return;
+ lifecycleBusy=true;
+ document.querySelectorAll('button').forEach(b=>b.disabled=true);
+ try{
+   await api('/v1/admin/model-applications/'+encodeURIComponent(a.application_id)+(restoring?'/restore':'/delete'),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({confirm_application_id:a.application_id})});
+   // Navigate only after the server confirms the change; failures leave the applicant visible.
+   location.assign('/internal/admin/model-applications'+(restoring?'':'?view=deleted'));
+ }catch(e){
+   const messages={owner_required:'ใช้บัญชีพี่เปอร์เพื่อลบหรือกู้คืนใบสมัคร',application_restore_state_missing:'กู้คืนไม่ได้: ไม่พบสถานะเดิม กรุณาตรวจข้อมูลก่อน',application_summary_invalid:'ข้อมูลใบสมัครไม่สมบูรณ์ ยังไม่ได้เปลี่ยนแปลง',application_change_unverified:'ยังยืนยันผลไม่ได้ กรุณาโหลดรายการใหม่ก่อนลองอีกครั้ง'};
+   alert(messages[e.message]||('ดำเนินการไม่สำเร็จ: '+e.message));
+ }finally{lifecycleBusy=false;document.querySelectorAll('button').forEach(b=>b.disabled=false)}
 }
 
 async function prepareOnboarding(a){
@@ -715,7 +844,13 @@ async function decide(decision,a,linkedModelId=''){
    } else alert('บันทึกไม่สำเร็จ: '+e.message);
  }finally{actions.querySelectorAll('button').forEach(b=>b.disabled=false)}
 }
-async function loadQueue(){const d=await api('/v1/admin/model-applications?limit=30');app.className='';const rows=d.applications||[];app.innerHTML='<div class="queue">'+(rows.length?rows.map(a=>'<a class="card q" href="?application_id='+encodeURIComponent(a.application_id)+'"><div class="eyebrow">'+esc(a.application_id)+'</div><div class="section-title" style="margin-top:6px">'+val(a.nickname)+'</div><div class="chips">'+chip(a.public_model_category)+chip(a.status,statusClass(a))+chip(a.intake_status,statusClass(a))+'</div><div class="muted">'+val(a.age)+' ปี · '+val(a.height_cm)+' cm · '+val(a.location)+'</div></a>').join(''):'<div class="card muted">ยังไม่มีใบสมัคร Public Model</div>')+'</div>'}
+async function loadQueue(){
+ actions.hidden=true;
+ const d=await api('/v1/admin/model-applications?limit=30'+(deletedView?'&view=deleted':''));
+ app.className='';const rows=d.applications||[];
+ app.innerHTML='<h2 class="section-title">'+(deletedView?'ถังขยะ · กู้คืนใบสมัคร':'ใบสมัครทั้งหมด')+'</h2><div class="queue">'+(rows.length?rows.map(a=>'<article class="card queue-card"><a class="q" href="?application_id='+encodeURIComponent(a.application_id)+'"><div class="eyebrow">'+esc(a.application_id)+'</div><div class="section-title" style="margin-top:6px">'+val(a.nickname)+'</div><div class="chips">'+chip(a.public_model_category)+chip(a.status,statusClass(a))+chip(a.deleted?'อยู่ในถังขยะ':a.intake_status,statusClass(a))+'</div><div class="muted">'+val(a.age)+' ปี · '+val(a.height_cm)+' cm · '+val(a.location)+'</div></a>'+(canManageApplications?'<div class="queue-controls"><button class="btn '+(a.deleted?'':'reject')+'" data-lifecycle="'+esc(a.application_id)+'">'+(a.deleted?'กู้คืนใบสมัคร':'Delete · ลบใบสมัคร')+'</button></div>':'')+'</article>').join(''):'<div class="card muted">'+(deletedView?'ไม่มีใบสมัครในถังขยะ':'ยังไม่มีใบสมัคร Public Model')+'</div>')+'</div>';
+ app.querySelectorAll('[data-lifecycle]').forEach(button=>{const a=rows.find(row=>row.application_id===button.dataset.lifecycle);button.onclick=()=>changeDeletion(a)});
+}
 (async()=>{try{if(id){if(!/^pma_[A-Za-z0-9_-]{8,120}$/.test(id))throw new Error('invalid application_id');const d=await api('/v1/admin/model-applications/'+encodeURIComponent(id));render(d.application)}else await loadQueue()}catch(e){app.className='card error';app.textContent='เปิดใบสมัครไม่ได้: '+e.message}})();
 </script></body></html>`;
 }

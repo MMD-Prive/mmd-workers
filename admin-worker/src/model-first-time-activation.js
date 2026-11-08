@@ -281,6 +281,20 @@ export class ModelActivationCoordinator {
 
   async fetch(request) {
     const url = new URL(request.url);
+    if (url.pathname === "/public-model-review" && request.method.toUpperCase() === "POST") {
+      // Promise queue spans awaits without the 30-second blockConcurrencyWhile
+      // timeout. These objects are keyed per application, separate from model creation.
+      const run = async () => {
+        const input = await request.json().catch(() => null);
+        if (!input) return internalJson({ ok: false, error: "invalid_json" }, 400);
+        // Lazy import avoids a static cycle with the review module's activation helpers.
+        const { handlePublicModelReviewDurableMutation } = await import("./public-model-application-review.js");
+        return handlePublicModelReviewDurableMutation(this.env, input);
+      };
+      const pending = (this.publicModelReviewQueue || Promise.resolve()).then(run);
+      this.publicModelReviewQueue = pending.catch(() => {});
+      return pending;
+    }
     if (url.pathname === "/phase-a") return handlePhaseADurableRequest(this.state, this.env, request);
     if (url.pathname === "/line-job-briefs") return handleLineJobBriefDurableRequest(this.state, this.env, request);
     if ((url.pathname === "/resolve-private-model" || url.pathname === "/resolve-public-model") && request.method.toUpperCase() === "POST") {

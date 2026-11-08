@@ -8,6 +8,10 @@ on:
       - "admin-worker/src/model-first-time-activation.js"
       - "admin-worker/src/public-model-application-review.js"
       - "admin-worker/model-onboarding-phase-a.test.mjs"
+      - "admin-worker/public-model-application-delete.test.mjs"
+      - "admin-worker/public-model-review-test-coordinator.mjs"
+      - "admin-worker/public-model-application-review.test.mjs"
+      - "admin-worker/public-model-onboarding.test.mjs"
       - "model-dashboard-presentation-worker/src/model-onboarding-phase-a-page.js"
       - "model-dashboard-presentation-worker/src/index.js"
       - "model-dashboard-presentation-worker/model-onboarding-phase-a.test.mjs"
@@ -36,6 +40,9 @@ jobs:
       - name: Verify identity, privacy, duplicate and presentation contracts
         run: |
           node --test \
+            admin-worker/public-model-application-delete.test.mjs \
+            admin-worker/public-model-application-review.test.mjs \
+            admin-worker/public-model-onboarding.test.mjs \
             admin-worker/model-onboarding-phase-a.test.mjs \
             admin-worker/model-line-link-review.test.mjs \
             admin-worker/model-liff-cross-origin-session.test.mjs \
