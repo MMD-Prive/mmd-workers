@@ -8,6 +8,7 @@ import { buildAudit, isDryRun, isEnabled } from "./audit.js";
 import { renderControlPage } from "./page.js";
 import { buildRoomsPreview } from "./rooms-preview.js";
 import { makePresenceCheck, makeTelegramLookup, readEntitlements } from "./sources.js";
+import { readStandardJoinQueue } from "./standard-join-intake.js";
 
 export const PREMIUM_GROUP_CLEANUP_OWNER_BASE = "/internal/admin/premium-group-cleanup";
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" };
@@ -15,7 +16,7 @@ const ITEM_CAP = 100;
 
 export function isPremiumGroupCleanupOwnerRequest(path) {
   const p = String(path || "").replace(/\/+$/g, "");
-  return ["status", "preview", "rooms"].some((a) => p === `${PREMIUM_GROUP_CLEANUP_OWNER_BASE}/${a}`);
+  return ["status", "preview", "rooms", "join-requests"].some((a) => p === `${PREMIUM_GROUP_CLEANUP_OWNER_BASE}/${a}`);
 }
 
 function json(body, status = 200, extra = {}) {
@@ -95,6 +96,7 @@ export async function handlePremiumGroupCleanupOwnerRequest(request, env = {}, d
   try {
     if (action === "status") return json(buildStatus(env));
     if (action === "rooms") return json(await buildRooms(env, now, deps));
+    if (action === "join-requests") return json(await (deps.readStandardJoinQueue || readStandardJoinQueue)(env, { fetch: deps.fetch || fetch }));
     return json(await buildPreview(env, now, deps));
   } catch (error) {
     return json({ ok: false, error: "premium_group_cleanup_failed", detail: clean(error?.message, 80) }, 500);
