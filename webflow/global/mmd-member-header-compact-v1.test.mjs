@@ -21,5 +21,5 @@ test('mobile keeps booking and MY MMD; membership remains in existing menu',()=>
  assert.match(source,/>a:nth-child\(3\)\{display:none!important\}/);
  assert.doesNotMatch(source,/>a:nth-child\([124]\)\{display:none/);
  assert.match(source,/min-height:44px/);assert.match(source,/min-height:54px/);
- assert.match(source,/flex-wrap:nowrap!important/);
+ assert.match(source,/flex-flow:row nowrap!important/);
 });
