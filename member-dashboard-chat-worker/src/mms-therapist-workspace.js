@@ -1,4 +1,5 @@
 import { MMS_GRAPHICS_CSS, MMS_GRAPHICS_LOGO, mmsGraphicIcon } from "./mms-graphics-v2.mjs";
+import { DESKTOP_PORTRAIT_PATH, MOBILE_PORTRAIT_PATH, therapistLoginPortraits } from "./mms-therapist-login-assets.mjs";
 import { mmsGraphicRuntime } from "./mms-graphic-progress.mjs";
 import { MMS_LOGO_SHA256, mmsLogoResponse } from "../../admin-worker/src/mms-internal-logo-asset.mjs";
 
@@ -6,14 +7,23 @@ const PREFIX = "/male-massage/therapists";
 const PAGES = new Set([`${PREFIX}/login`, `${PREFIX}/me`, `${PREFIX}/app`]);
 export const THERAPIST_AI_LOGO_PATH = `${PREFIX}/assets/male-massage-ai.${MMS_LOGO_SHA256.slice(0, 12)}.png`;
 
+export function isTherapistPresentationAsset(path) {
+  return path === THERAPIST_AI_LOGO_PATH || therapistLoginPortraits.has(path);
+}
+
 export async function maybeHandleTherapistWorkspace(request, env = {}) {
   // A single behavior contract remains in mms-worker when presentation changes.
   if (env.MMS_THERAPIST_UI_SOURCE !== "native") return null;
   const url = new URL(request.url);
   const path = url.pathname.replace(/\/$/, "");
-  if (path === THERAPIST_AI_LOGO_PATH) {
+  if (isTherapistPresentationAsset(path)) {
     if (!["GET", "HEAD"].includes(request.method)) return new Response(null, { status: 405, headers: { allow: "GET, HEAD" } });
-    const asset = mmsLogoResponse(request.method);
+    const portrait = therapistLoginPortraits.get(path);
+    const asset = portrait
+      ? new Response(request.method === "HEAD" ? null : Uint8Array.from(atob(portrait), byte => byte.charCodeAt(0)), {
+        headers: { "content-type": "image/webp", "x-content-type-options": "nosniff" },
+      })
+      : mmsLogoResponse(request.method);
     const headers = new Headers(asset.headers);
     headers.set("cache-control", "public, max-age=31536000, immutable");
     headers.set("x-mmd-route-owner", "member-dashboard-chat-worker");
@@ -80,13 +90,135 @@ export function renderTherapistWorkspace(login = false) {
   @media(max-width:819px){.auth-card{width:min(100%,390px);margin-inline:auto}}
   @media(prefers-reduced-motion:reduce){.auth-primary{transition:none}.auth-primary:hover{transform:none}}
   ` : "";
+  const loginPhotoStyles = login ? `
+  body.auth-page .auth-content {
+   display: grid;
+   grid-template-columns: minmax(290px, 390px) minmax(0, 1fr);
+   grid-template-areas: "hero photo" "login photo";
+   align-items: start;
+   gap: 22px 38px;
+  }
+  .auth-content .auth-hero { grid-area: hero; }
+  .auth-content .auth-card { grid-area: login; width: 100%; margin: 0; }
+  .auth-content .auth-photo { grid-area: photo; align-self: stretch; min-height: 0; position: relative; overflow: hidden; border-radius: 32px; border: 1px solid #577457; background: #12251a; }
+  .auth-content .auth-photo img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: right center; border-radius: 0; }
+  @media (min-width: 820px) {
+   .auth-content .auth-photo {
+    isolation: isolate;
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+    background: radial-gradient(ellipse at 51% 40%, rgba(125, 170, 91, .24), transparent 69%);
+   }
+   .auth-content .auth-photo::before {
+    content: "";
+    position: absolute;
+    inset: auto -10% -2% -10%;
+    height: 17%;
+    background: radial-gradient(ellipse at 54% 50%, rgba(140, 179, 105, .33), transparent 67%);
+    pointer-events: none;
+   }
+   .auth-content .auth-photo::after {
+    content: "";
+    position: absolute;
+    left: 31%;
+    right: 15%;
+    bottom: .4%;
+    height: 4%;
+    background:
+     radial-gradient(ellipse at 31% 48%, rgba(1, 11, 7, .9), transparent 35%),
+     radial-gradient(ellipse at 62% 45%, rgba(1, 11, 7, .85), transparent 35%),
+     radial-gradient(ellipse at 50% 45%, rgba(1, 11, 7, .55), transparent 69%);
+    filter: blur(3px);
+    pointer-events: none;
+   }
+   .auth-content .auth-photo img {
+    z-index: 1;
+    object-fit: contain;
+    object-position: center bottom;
+    filter: drop-shadow(5px 9px 9px rgba(2, 17, 12, .52)) drop-shadow(-1px 0 2px rgba(172, 203, 139, .18));
+   }
+   body.auth-page .auth-shell:after { opacity: .55; }
+  }
+  .auth-page #graphic-progress { display: none; }
+  @media (min-width: 980px) {
+   body.auth-page .auth-content {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(280px, 350px);
+    grid-template-areas: "hero photo login";
+    align-items: center;
+    gap: clamp(16px, 2.2vw, 32px);
+   }
+   body.auth-page .auth-content .auth-hero h1 { font-size: clamp(38px, 4vw, 57px); }
+   .auth-content .auth-photo { min-height: clamp(490px, 50vw, 660px); }
+   .auth-content .auth-card { padding: clamp(20px, 2.2vw, 30px); }
+  }
+  @media (max-width: 819px) {
+   .auth-shell .auth-header .auth-ai-logo {
+    position: relative;
+    isolation: isolate;
+    justify-content: center;
+   }
+   .auth-shell .auth-header .auth-ai-logo::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    width: 92px;
+    aspect-ratio: 1;
+    border: 1px solid rgba(199, 231, 101, .72);
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(199, 231, 101, .14), transparent 72%);
+    box-shadow: 0 0 16px rgba(199, 231, 101, .18);
+    pointer-events: none;
+   }
+   body.auth-page .auth-content {
+    width: min(100%, 430px);
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "photo" "login";
+    align-content: start;
+    gap: 0;
+    padding-block: 14px;
+   }
+   .auth-content .auth-photo { height: 245px; border-radius: 24px; }
+   .auth-content .auth-photo img { object-position: 72% 38%; }
+   .auth-content .auth-photo::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, rgba(6, 25, 18, .95), rgba(6, 25, 18, .7) 45%, transparent 78%);
+   }
+   .auth-content .auth-hero {
+    grid-area: photo;
+    align-self: center;
+    z-index: 1;
+    width: 57%;
+    padding: 14px;
+   }
+   .auth-content .auth-eyebrow { font-size: 10px; letter-spacing: .08em; }
+   body.auth-page .auth-content .auth-hero h1 { font-size: clamp(26px, 7vw, 34px); }
+   .auth-content .auth-lead { font-size: 12px; line-height: 1.45; }
+   .auth-content .auth-features { display: none; }
+   .auth-content .auth-card {
+    z-index: 2;
+    width: calc(100% - 16px);
+    margin: -18px auto 0;
+    padding: 16px;
+    border-radius: 24px;
+   }
+   .auth-content .auth-card-copy { margin-block: 6px 10px; }
+   .auth-content .auth-help { margin-top: 10px; padding-top: 8px; }
+   .auth-page .auth-footer { padding-top: 10px; }
+  }
+  ` : "";
   const loginHeader = login ? `<header class="auth-header"><a class="auth-brand" href="/male-massage/home" aria-label="MMS Male Massage"><img src="${MMS_GRAPHICS_LOGO}" width="132" height="42" alt="MMS Male Massage"></a><span class="auth-ai-logo"><img src="${THERAPIST_AI_LOGO_PATH}" width="128" height="52" alt="Male Massage AI"></span></header><div class="auth-content"><section class="auth-hero" aria-labelledby="auth-title"><p class="auth-eyebrow">MY THERAPIST · MMS</p><h1 id="auth-title">งานใกล้คุณ<br><em>เริ่มเมื่อคุณพร้อม</em></h1><p class="auth-lead">Online เมื่อพร้อม Offline เมื่ออยากพัก ดูงานที่ตรงกับเขตของคุณได้ในที่เดียวครับ</p><div class="auth-features" aria-label="สิ่งที่ทำได้"><span>Online / Offline</span><span>เลือกเขตบริการ</span><span>ดูงานใกล้คุณ</span></div></section>` : `<header class="mms-work-header"><div><img class="mms-brand" src="${MMS_GRAPHICS_LOGO}" alt="MMS Male Massage" width="108" height="32"><h1>MY THERAPIST</h1><p class="muted">พร้อมเมื่อคุณเปิดรับงาน · เขตบริการที่คุณเลือก</p></div>${mmsGraphicIcon('area-outline')}</header><p id="notice" role="status" aria-live="polite">กำลังตรวจสอบบัญชีครับ</p><button id="retry" class="alt" type="button">ลองตรวจอีกครั้ง</button>`;
-  const loginEntry = login ? `<section id="entry" class="auth-card" aria-labelledby="auth-card-title"><div class="auth-card-top"><span class="auth-step">01 / เข้า MY THERAPIST</span><span class="auth-lock">เฉพาะบัญชีที่เชื่อมแล้ว</span></div><h2 id="auth-card-title">ยืนยันผ่าน LINE</h2><p class="auth-card-copy">ใช้ LINE ที่เชื่อมกับโปรไฟล์ MMS ของคุณ เพื่อเข้าพื้นที่ทำงานครับ</p><button id="line-login" class="auth-primary" type="button"><span>ยืนยันผ่าน LINE</span><span aria-hidden="true">↗</span></button><p id="notice" role="status" aria-live="polite">กำลังเชื่อมต่อ LINE ครับ</p><div class="auth-actions"><button id="retry" class="alt" type="button" hidden>ลองอีกครั้ง</button><a href="https://liff.line.me/2011425652-YqK1F6y8">เปิดใน LINE Mini App ↗</a></div><p class="auth-help">ยังไม่ได้เชื่อมบัญชี? ใช้ลิงก์เปิดสิทธิ์ที่ได้รับก่อนครับ</p></section></div><footer class="auth-footer"><span>MMS · MALE MASSAGE</span> / พื้นที่สำหรับ Therapist ที่ได้รับสิทธิ์</footer>` : `<section id="entry" class="card" hidden><h2>เข้าพื้นที่ Therapist</h2><p>ใช้ LINE ที่เชื่อมกับโปรไฟล์ MMS ของคุณครับ</p><button id="line-login" type="button">ยืนยันผ่าน LINE</button><p><a href="https://liff.line.me/2011425652-YqK1F6y8">เปิดใน LINE Mini App ↗</a></p><p class="muted">หากยังไม่ได้เชื่อมบัญชี ให้ใช้ลิงก์เปิดสิทธิ์จากพี่เปอร์</p></section>`;
+  const loginEntry = login ? `<picture class="auth-photo">
+    <source media="(max-width: 819px)" srcset="${MOBILE_PORTRAIT_PATH}">
+    <img src="${DESKTOP_PORTRAIT_PATH}" alt="" width="660" height="1320">
+  </picture><section id="entry" class="auth-card" aria-labelledby="auth-card-title"><div class="auth-card-top"><span class="auth-step">01 / เข้า MY THERAPIST</span><span class="auth-lock">เฉพาะบัญชีที่เชื่อมแล้ว</span></div><h2 id="auth-card-title">ยืนยันผ่าน LINE</h2><p class="auth-card-copy">ใช้ LINE ที่เชื่อมกับโปรไฟล์ MMS ของคุณ เพื่อเข้าพื้นที่ทำงานครับ</p><button id="line-login" class="auth-primary" type="button"><span>ยืนยันผ่าน LINE</span><span aria-hidden="true">↗</span></button><p id="notice" role="status" aria-live="polite">กำลังเชื่อมต่อ LINE ครับ</p><div class="auth-actions"><button id="retry" class="alt" type="button" hidden>ลองอีกครั้ง</button><a href="https://liff.line.me/2011425652-YqK1F6y8">เปิดใน LINE Mini App ↗</a></div><p class="auth-help">ยังไม่ได้เชื่อมบัญชี? ใช้ลิงก์เปิดสิทธิ์ที่ได้รับก่อนครับ</p></section></div><footer class="auth-footer"><span>MMS · MALE MASSAGE</span> / พื้นที่สำหรับ Therapist ที่ได้รับสิทธิ์</footer>` : `<section id="entry" class="card" hidden><h2>เข้าพื้นที่ Therapist</h2><p>ใช้ LINE ที่เชื่อมกับโปรไฟล์ MMS ของคุณครับ</p><button id="line-login" type="button">ยืนยันผ่าน LINE</button><p><a href="https://liff.line.me/2011425652-YqK1F6y8">เปิดใน LINE Mini App ↗</a></p><p class="muted">หากยังไม่ได้เชื่อมบัญชี ให้ใช้ลิงก์เปิดสิทธิ์จากพี่เปอร์</p></section>`;
   return `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>MY THERAPIST · MMS</title><style>
   *{box-sizing:border-box}body{margin:0;background:#f4f5ef;color:#20392b;font:16px/1.6 system-ui,-apple-system,sans-serif}main{max-width:760px;margin:auto;padding:20px 18px calc(28px + env(safe-area-inset-bottom))}header{display:flex;align-items:center;justify-content:space-between;gap:16px}h1{font-size:25px;margin:6px 0}h2{font-size:20px;margin:0 0 12px}h3{font-size:17px;margin:0}p{margin:8px 0}.muted{color:#5c6d60;font-size:14px}.card{background:#fff;border:1px solid #dce2d6;border-radius:18px;padding:18px;margin:14px 0}.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}button,.button{border:0;border-radius:12px;min-height:48px;padding:10px 16px;font:inherit;cursor:pointer;background:#24563c;color:#fff;text-decoration:none;display:inline-flex;align-items:center;justify-content:center}button.alt,.button.alt{background:#e9eee4;color:#24563c}button:disabled{opacity:.5;cursor:wait}input,textarea,select{width:100%;font:inherit;border:1px solid #c8d3c4;border-radius:10px;padding:10px;margin:4px 0 12px;background:white;color:#20392b}label{display:block;font-size:14px}nav{display:flex;gap:8px;margin:20px 0;overflow:auto}nav button{white-space:nowrap;background:#e9eee4;color:#24563c}nav button[aria-selected=true]{background:#24563c;color:white}#notice{min-height:26px}#notice.error{color:#8f2f20}.badge{font-size:13px;padding:4px 10px;border-radius:30px;background:#e9eee4}a{color:#24563c}img{width:100px;height:120px;object-fit:cover;border-radius:10px}section[hidden],[hidden]{display:none!important}.course{border-top:1px solid #ddd;padding-top:12px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}#detail{white-space:normal}.address{white-space:pre-line}#coverage-zones{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0 14px}.zone-choice{display:flex;align-items:center;gap:8px;padding:10px;border:1px solid #dce2d6;border-radius:10px;background:#fbfcf9}.zone-choice input{width:20px;height:20px;margin:0;flex:none}.area-note{padding:12px;border-radius:12px;background:#f1f5eb}@media(max-width:480px){#coverage-zones{grid-template-columns:1fr}}button:focus-visible,a:focus-visible{outline:3px solid #ad8544;outline-offset:3px}@media(max-width:480px){main{padding:16px 14px 28px}.grid{grid-template-columns:1fr}}
   ${loginStyles}
   .profile-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.profile-eyebrow{color:#3c6048;font-size:12px;letter-spacing:.12em;margin:0;font-weight:700}.profile-heading h2{margin:3px 0}.profile-nav{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;overflow:visible;margin:16px 0}.profile-nav button{min-width:0;white-space:normal;padding:10px 5px;font-size:15px;line-height:1.4;min-height:54px}.course-shortcut{display:flex;width:100%;justify-content:space-between;margin-top:16px;background:linear-gradient(110deg,#173f2b,#2c6849);font-weight:700}fieldset{border:0;min-width:0;margin:0;padding:0}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.profile-save{margin-top:24px;padding-top:18px;border-top:1px solid #dce2d6}.profile-save>button{width:100%;font-weight:700}.photo-section{border-top:1px solid #dce2d6;margin-top:24px;padding-top:18px}.course{padding:16px 0;margin-top:12px}.course-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}.course-fields{display:grid;grid-template-columns:1fr 1fr;gap:12px}.zone-conflict{margin-top:14px;padding:14px;border:1px solid #a15132;border-radius:12px;background:#fff7ed;color:#763d27}#zone-editor{margin-top:16px}#zone-summary{font-size:17px;font-weight:700;margin:0 0 12px}#profile-state[data-state="error"]{padding:12px;border-radius:12px;background:#fff0eb;color:#87381e}#courses-state{color:#354d3d}.zone-choice{min-height:48px;font-size:15px}.zone-choice span{min-width:0;overflow-wrap:anywhere}.zone-choice input{accent-color:#24563c}#photos label{display:flex;flex-direction:column;align-items:flex-start;gap:6px;max-width:150px}#photos input{width:24px;height:24px;margin:0}.course-head button{min-height:44px;font-size:14px}#profile-form{scroll-margin-top:16px}#profile-fields:disabled{opacity:.7}button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid #9c7636;outline-offset:3px}@media(max-width:380px){.profile-nav button{font-size:14px}.course-fields{grid-template-columns:1fr}.profile-heading button{font-size:14px}}@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{animation:none!important;transition:none!important}}
-${MMS_GRAPHICS_CSS}</style></head><body data-mms-graphics="therapist-v2" class="${login ? "auth-page" : ""}"><main class="${login ? "auth-shell" : ""}" data-mms-shell="native-workspace-v1" data-login="${login}">${loginHeader}${loginEntry}<div id="graphic-progress" hidden></div>
+${MMS_GRAPHICS_CSS}${loginPhotoStyles}</style></head><body data-mms-graphics="therapist-v2" class="${login ? "auth-page" : ""}"><main class="${login ? "auth-shell" : ""}" data-mms-shell="native-workspace-v1" data-login="${login}">${loginHeader}${loginEntry}<div id="graphic-progress" hidden></div>
   <div id="workspace" hidden><section class="card">${mmsGraphicIcon("online")}<h2 id="greeting"></h2><p id="readiness"></p><label>สถานะรับงาน<select id="availability"><option value="Available">Online · รับงานที่ตรงพื้นที่</option><option value="Unavailable">Offline · งดรับงาน</option><option value="Paused">พักรับงานชั่วคราว</option></select></label><p class="muted">เมื่อ Online คุณจะเห็นงานที่ตรงกับเขตบริการและคอร์สที่ยืนยันแล้ว เลือกดูรายละเอียดก่อนตอบรับได้ครับ</p><button id="save-availability">บันทึกสถานะ</button><button class="alt" id="refresh">รีเฟรช</button><button id="open-courses" class="course-shortcut" type="button">คอร์สและราคา <span aria-hidden="true">↗</span></button></section>
   <nav aria-label="พื้นที่ทำงาน"><button data-tab="offers" aria-selected="true">${mmsGraphicIcon("offers")}งานเสนอให้คุณ</button><button data-tab="jobs" aria-selected="false">${mmsGraphicIcon("booking")}งานของฉัน</button><button data-tab="profile" aria-selected="false">${mmsGraphicIcon("profile")}โปรไฟล์และคอร์ส</button><a class="button alt" href="/male-massage/therapists/app/chat">แชตกับลูกค้า</a></nav>
   <section id="offers"><div id="offer-list"></div></section><section id="jobs" hidden><div id="job-list"></div></section>

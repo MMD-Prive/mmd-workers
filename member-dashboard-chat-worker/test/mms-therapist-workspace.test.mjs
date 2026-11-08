@@ -123,6 +123,28 @@ test('mobile login keeps MMS branding, access guidance, and functional LINE cont
   assert.equal((html.match(/id="line-login"/g)||[]).length,1);
   assert.equal((html.match(/id="notice"/g)||[]).length,1);
 });
+test('responsive login portraits are available through the production front gate', async () => {
+  const env = {MMS_THERAPIST_UI_SOURCE:'native'};
+  const login = await productionWorker.fetch(new Request(origin+path+'/login'), env);
+  const html = await login.text();
+  const mobile = html.match(/<source media="\(max-width: 819px\)" srcset="([^"]+)"/)?.[1];
+  const desktop = html.match(/<img src="([^"]+\/login-desktop\.[^"]+)"/)?.[1];
+  for (const asset of [mobile, desktop]) {
+    assert.match(asset, /^\/male-massage\/therapists\/assets\/login-(mobile|desktop)\.[0-9a-f]{12}\.webp$/);
+    const url = origin + asset;
+    const response = await productionWorker.fetch(new Request(url), env);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('content-type'), 'image/webp');
+    assert.match(response.headers.get('cache-control'), /public.*immutable/);
+    const bytes = Buffer.from(await response.arrayBuffer());
+    assert.equal(bytes.toString('ascii', 8, 12), 'WEBP');
+    assert.ok(asset.endsWith(createHash('sha256').update(bytes).digest('hex').slice(0, 12) + '.webp'));
+    const head = await productionWorker.fetch(new Request(url, {method:'HEAD'}), env);
+    assert.equal(head.status, 200);
+    assert.equal(await head.text(), '');
+    assert.equal((await productionWorker.fetch(new Request(url, {method:'POST'}), env)).status, 405);
+  }
+});
 test('public login logo reuses the approved image bytes without exposing the admin asset route',async()=>{
   const url=origin+THERAPIST_AI_LOGO_PATH;
   assert.equal(isTherapistOriginPassthroughRequest(new Request(url)),false);
