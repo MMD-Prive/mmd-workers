@@ -24,7 +24,7 @@ render must be added for each page before claiming full visual parity.
 
 ## Safety contract
 
-- No Cloudflare routes on mmdbkk.com, no service bindings, no database,
+- No Cloudflare routes on mmdbkk.com, no service/database bindings, no database,
   storage, identity connector, scheduled job or live API.
 - No way to set production authentication or entitlement with review code.
 - Only GET/HEAD plus form POST for unlock/logout. All other writes return 405.
@@ -61,12 +61,13 @@ existing gallery sessions. No production service secrets should be copied.
 
 ## Tests
 
-Run from the repository root on Node 22+:
+An isolated Cloudflare Rate Limiting API binding protects /unlock (8 requests per 60 seconds, approximate per POP). The deploy entry fails closed if the limiter is not configured. This binding cannot access databases or other production services.\n\nRun from the repository root on Node 22+:
 
     node --check owner-review-gallery-worker/src/index.mjs
+    node --check owner-review-gallery-worker/src/deploy-entry.mjs
     node --check owner-review-gallery-worker/src/ui.mjs
     node --check owner-review-gallery-worker/src/catalog.mjs
-    node --test owner-review-gallery-worker/test/gallery.test.mjs
+    node --test owner-review-gallery-worker/test/*.test.mjs
 
 The tests cover route isolation, code failures, signed cookie tampering,
 expiry, CSRF checks, read-only methods, no live APIs, and visual preview states.

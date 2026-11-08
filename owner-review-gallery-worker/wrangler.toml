@@ -1,13 +1,21 @@
 name = "mmd-owner-review-gallery"
-main = "src/index.mjs"
+main = "src/deploy-entry.mjs"
 compatibility_date = "2026-10-01"
 workers_dev = true
 
 # This Worker is explicitly an isolated synthetic UI preview.
-# NO production mmdbkk.com route, NO service bindings, NO Airtable, R2,
+# NO production mmdbkk.com route, NO service/database bindings, NO Airtable, R2,
 # D1, KV, payment services, identity providers, or cron triggers.
 # Keep its actual hostname at:
 # mmd-owner-review-gallery.malemodel-bkk.workers.dev
+# One approximate per-POP Cloudflare rate-limiting binding protects the
+# /unlock form. It does not provide read/write access to any data store.
+[[ratelimits]]
+name = "OWNER_REVIEW_RATE_LIMIT"
+namespace_id = "83012601"
+  [ratelimits.simple]
+  limit = 8
+  period = 60
 #
 # Required secrets (configure out-of-band, NEVER commit values):
 # OWNER_REVIEW_CODE_SHA256       = hex SHA-256 of random 24+ char review code
