@@ -91,10 +91,22 @@ test("NEXT LV remains member-only, mobile-first and CSP-nonced", async () => {
   assert.match(html, /id="kenji-input"[^>]*maxlength="800"/);
   assert.ok(html.includes('<picture class="hero-picture">'));
   assert.ok(html.includes('media="(max-width: 920px)"'));
-  assert.ok(html.includes("Kenji%20Alove.webp"));
-  assert.ok(html.includes("Kenji%20CC%2002.webp"));
-  assert.ok(html.includes("Kenji%20CC%2001.webp"));
+  // Approved Kenji-04 Public art: the owner ZIP was uploaded to Webflow and not replaced by older CC portraits.
+  assert.ok(html.includes("Kenji04%20Member%20NEXT%20LV%20Desktop%2016x9.webp"));
+  assert.ok(html.includes("Kenji04%20Member%20NEXT%20LV%20Mobile%209x16.webp"));
+  assert.ok(html.includes("Kenji04%20Member%20NEXT%20LV%20Chat%20Avatar.webp"));
+  assert.ok(!html.includes("Kenji%20CC%2002.webp"));
+  assert.ok(!html.includes("Kenji%20Alove.webp"));
+  // Official two-brand mapping: MMD = Curated, SIGIL = Private; no local access grant is possible.
   assert.ok(html.includes("transparent-gold-white-240px.webp"));
+  assert.ok(html.includes("SIGIL%20Logo%202027.webp"));
+  assert.ok(html.includes('class="world-link world-link--curated"'));
+  assert.ok(html.includes('class="world-link world-link--private"'));
+  assert.ok(html.includes('href="/member/private"'));
+  assert.ok(html.includes("PRIVATE<br>ตรวจสิทธิ์"));
+  assert.ok(!html.includes("grantPrivateAccess"));
+  assert.match(html, /@media\(min-width:921px\)/);
+  assert.match(html, /grid-template-rows:clamp\(146px,22dvh,190px\)/);
   assert.ok(html.includes('alt="MMD Privé"'));
   assert.ok(html.includes('href="/my-mmd/"'));
   assert.ok(!html.includes('href="/member/my-mmd"'));
