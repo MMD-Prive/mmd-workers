@@ -17,9 +17,12 @@ test('does not introduce widgets, identity requests or route mutations',()=>{
  assert.doesNotMatch(source,/fetch\s*\(|localStorage|sessionStorage|document\.cookie|location\.|innerHTML|createElement\(['"]a['"]\)/);
  assert.doesNotMatch(source,/payment-intent|package_code|membership\.tier/);
 });
-test('mobile keeps booking and MY MMD; membership remains in existing menu',()=>{
+test('mobile keeps booking and MY MMD with the same column selector specificity',()=>{
  assert.match(source,/>a:nth-child\(3\)\{display:none!important\}/);
  assert.doesNotMatch(source,/>a:nth-child\([124]\)\{display:none/);
  assert.match(source,/min-height:44px/);assert.match(source,/min-height:54px/);
- assert.match(source,/flex-flow:row nowrap!important/);
+ const nav=':is(#mmd-global-public-header,[data-mmdh-header]) :is(.mmdg-inner,.mmdh-header-inner) :is(.mmdg-nav,.mmdh-primary-nav)';
+ assert.ok(source.includes(nav+'{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important'));
+ assert.ok(source.includes(nav+'{grid-template-columns:repeat(3,minmax(0,1fr))!important'));
+ assert.doesNotMatch(source,/grid-template-columns:none/);
 });
