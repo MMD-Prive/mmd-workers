@@ -4517,6 +4517,8 @@ const WEBFLOW_SIGIL_PARTNER_FORM_JS = `
 })();
 `;
 
+const PARTNER_LINE_DASHBOARD_ORIGIN = "https://sigil-partner-dashboard.pages.dev";
+
 async function handlePartnerLineExchange(request: Request, env: RuntimeEnv): Promise<Response> {
   if (!["https://www.mmdbkk.com", "https://mmdbkk.com"].includes(request.headers.get("Origin") || "")) return errorResponse(request, env, "origin_not_allowed", "Open Partner LINE login.", 403, false);
   const body = await readJsonObject(request);
@@ -4541,7 +4543,7 @@ async function handlePartnerLineExchange(request: Request, env: RuntimeEnv): Pro
   if (normalizeStatus(fieldText(partner, MODEL_PARTNERS.approvalStatus)) !== "recognized") return partnerLineReviewResponse(request, env, "partner_not_recognized", "partner_approval");
   const access = await generatePartnerToken(env, partner.id);
   await updateAirtableRecord(env, env.AIRTABLE_TABLE_MODEL_PARTNERS, partner.id, { [MODEL_PARTNERS.accessTokenHash]: await sha256Hex(access) }, false);
-  const result = json(request, env, { ok: true, dashboard_url: `https://sigil-partner.lovable.app/?t=${encodeURIComponent(access)}` });
+  const result = json(request, env, { ok: true, dashboard_url: `${PARTNER_LINE_DASHBOARD_ORIGIN}/?t=${encodeURIComponent(access)}` });
   result.headers.set("Cache-Control", "no-store");
   return result;
 }
@@ -4724,7 +4726,7 @@ async function enter(allowLogin){
    state.textContent=code==='partner_line_review_required'||code==='partner_not_recognized'?(Object.prototype.hasOwnProperty.call(hints,reason)?hints[reason]:'ยืนยัน LINE แล้ว แต่ยังไม่ผ่านการตรวจสิทธิ์ Partner กรุณาให้ทีมตรวจสอบ'):'พร้อมยืนยัน LINE อีกครั้ง';return;
   }
   const target=new URL(d.dashboard_url);
-  if(target.origin!=='https://sigil-partner.lovable.app'||target.pathname!=='/'||!target.searchParams.get('t')||target.username||target.password||target.hash||[...target.searchParams.keys()].some(key=>key!=='t')||target.searchParams.getAll('t').length!==1)throw Error();
+  if(target.origin!==${JSON.stringify(PARTNER_LINE_DASHBOARD_ORIGIN)}||target.pathname!=='/'||!target.searchParams.get('t')?.trim()||target.username||target.password||target.hash||[...target.searchParams.keys()].some(key=>key!=='t')||target.searchParams.getAll('t').length!==1)throw Error();
   state.textContent='เชื่อมต่อแล้ว · กำลังเปิด Partner Control Room';leaving=true;location.replace(target.href);
  }catch{leaving=false;state.textContent='พร้อมเชื่อมต่ออีกครั้งผ่าน LINE';}
  finally{if(!leaving){busy=false;go.disabled=false;}}

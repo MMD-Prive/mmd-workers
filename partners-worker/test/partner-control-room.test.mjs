@@ -106,9 +106,10 @@ test("production routing binds the Partner Control Room page and follows the ape
   assert.match(deployWorkflowSource, /\.error\.code \/\/ \.error/);
 });
 
-test("Lovable uses the canonical Worker contract without widening authority", () => {
-  assert.match(wranglerSource, /https:\/\/sigil-partner\.lovable\.app/);
-  assert.match(wranglerSource, /https:\/\/id-preview--bc1401f7-c385-48ab-bf5f-41aafc03fa19\.lovable\.app/);
+test("Cloudflare Pages uses the canonical Worker contract without widening authority", () => {
+  const origins = wranglerSource.match(/^ALLOWED_ORIGINS = "([^"]+)"$/m)?.[1].split(",");
+  assert.ok(origins?.includes("https://sigil-partner-dashboard.pages.dev"));
+  assert.ok(origins.every((origin) => !new URL(origin).hostname.endsWith(".lovable.app")));
   assert.match(indexSource, /Access-Control-Allow-Headers[^\n]+Idempotency-Key/);
   assert.match(indexSource, /payment_status: paymentStatus/);
   assert.match(indexSource, /confirmation_allowed: isOfficiallyVerifiedPaymentStatus\(paymentStatus\)/);

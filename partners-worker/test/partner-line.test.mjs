@@ -43,7 +43,7 @@ test('www login canonicalizes to the LIFF apex before SDK initialization, preser
  assert.equal(r.status,302);assert.equal(r.headers.get('Location'),'https://mmdbkk.com/sigil/model/dashboard/partner-login?code=fixture&state=fixture');assert.equal(r.headers.get('Cache-Control'),'no-store');
 });
 
-async function browser({loggedIn=false,token='fixture-line-token',target='https://sigil-partner.lovable.app/?t=fixture-partner-token',exchangeOk=true,initError=false,waitForInit=false,loginThrows=false,navigationThrows=false,errorCode='partner_line_review_required',reviewReason}={}){
+async function browser({loggedIn=false,token='fixture-line-token',target='https://sigil-partner-dashboard.pages.dev/?t=fixture-partner-token',exchangeOk=true,initError=false,waitForInit=false,loginThrows=false,navigationThrows=false,errorCode='partner_line_review_required',reviewReason}={}){
  const response=await worker.fetch(new Request('https://mmdbkk.com/sigil/model/dashboard/partner-login'),env,{});const html=await response.text();
  const script=[...html.matchAll(/<script>([\s\S]*?)<\/script>/g)][0][1];const go={},state={};const calls=[],logins=[],destinations=[];const events={};let finish;
  const init=waitForInit?new Promise(resolve=>{finish=resolve}):Promise.resolve();
@@ -57,7 +57,7 @@ test('fresh visitor never starts LINE login automatically; explicit click starts
 });
 test('resumes an existing LINE session automatically and exchanges once before navigating to LV10',async()=>{
  const b=await browser({loggedIn:true,waitForInit:true});assert.equal(b.go.disabled,true);await b.go.onclick();await b.go.onclick();assert.equal(b.calls.length,0);
- b.finish();await new Promise(setImmediate);assert.equal(b.calls.length,1);assert.equal(b.calls[0].path,'/v1/partner/line/exchange');assert.deepEqual(JSON.parse(b.calls[0].options.body),{id_token:'fixture-line-token'});assert.equal(b.calls[0].options.credentials,'omit');assert.equal(b.calls[0].options.referrerPolicy,'no-referrer');assert.equal(b.calls[0].options.cache,'no-store');assert.deepEqual(b.logins,[]);assert.deepEqual(b.destinations,['https://sigil-partner.lovable.app/?t=fixture-partner-token']);
+ b.finish();await new Promise(setImmediate);assert.equal(b.calls.length,1);assert.equal(b.calls[0].path,'/v1/partner/line/exchange');assert.deepEqual(JSON.parse(b.calls[0].options.body),{id_token:'fixture-line-token'});assert.equal(b.calls[0].options.credentials,'omit');assert.equal(b.calls[0].options.referrerPolicy,'no-referrer');assert.equal(b.calls[0].options.cache,'no-store');assert.deepEqual(b.logins,[]);assert.deepEqual(b.destinations,['https://sigil-partner-dashboard.pages.dev/?t=fixture-partner-token']);
 });
 test('missing token, failed initialization and rejected identity never navigate or restart LINE login',async()=>{
  for(const options of [{loggedIn:true,token:null},{loggedIn:true,initError:true},{loggedIn:true,exchangeOk:false}]){
@@ -65,7 +65,7 @@ test('missing token, failed initialization and rejected identity never navigate 
  }
 });
 test('client fails closed on unapproved dashboard destinations and ambiguous token URLs',async()=>{
- for(const target of ['https://evil.example/?t=x','https://sigil-partner.lovable.app.evil.example/?t=x','https://www.mmdbkk.com/partner/dashboard?t=x','http://sigil-partner.lovable.app/?t=x','https://sigil-partner.lovable.app/other?t=x','https://user@sigil-partner.lovable.app/?t=x','https://sigil-partner.lovable.app/','https://sigil-partner.lovable.app/?t=','https://sigil-partner.lovable.app/?t=x&t=y','https://sigil-partner.lovable.app/?t=x&redirect=https://evil.example','https://sigil-partner.lovable.app/?t=x#secret']){
+ for(const target of ['https://sigil-partner.lovable.app/?t=x','https://evil.example/?t=x','https://sigil-partner-dashboard.pages.dev.evil.example/?t=x','https://www.mmdbkk.com/partner/dashboard?t=x','http://sigil-partner-dashboard.pages.dev/?t=x','https://sigil-partner-dashboard.pages.dev/other?t=x','https://user@sigil-partner-dashboard.pages.dev/?t=x','https://sigil-partner-dashboard.pages.dev/','https://sigil-partner-dashboard.pages.dev/?t=','https://sigil-partner-dashboard.pages.dev/?t=%20','https://sigil-partner-dashboard.pages.dev/?t=x&t=y','https://sigil-partner-dashboard.pages.dev/?t=x&redirect=https://evil.example','https://sigil-partner-dashboard.pages.dev/?t=x#secret']){
   const b=await browser({loggedIn:true,target});assert.deepEqual(b.destinations,[]);
  }
 });
@@ -92,7 +92,7 @@ async function identityExchange(options={}){
 }
 test('verified reciprocal active/recognized identity issues a signed Partner token for the fixed LV10 URL',async()=>{
  const r=await identityExchange();assert.equal(r.status,200);assert.equal(r.writes,1);assert.match(r.issuedHash,/^[a-f0-9]{64}$/);assert.equal(r.cacheControl,'no-store');
- const url=new URL(r.body.dashboard_url);assert.equal(url.origin,'https://sigil-partner.lovable.app');assert.equal(url.pathname,'/');const token=url.searchParams.get('t');assert.ok(token);assert.equal(token.split('.').length,2);
+ const url=new URL(r.body.dashboard_url);assert.equal(url.origin,'https://sigil-partner-dashboard.pages.dev');assert.equal(url.pathname,'/');const token=url.searchParams.get('t');assert.ok(token);assert.equal(token.split('.').length,2);
  const payload=JSON.parse(Buffer.from(token.split('.')[0].slice('sigil_'.length),'base64url').toString());assert.equal(payload.pid,'recKendoFixture001');assert.ok(payload.exp>Date.now());
 });
 test('invalid claims, LINE identity or Partner eligibility cannot rotate or mint Partner access',async()=>{
@@ -118,7 +118,7 @@ test('navigation failures restore retry, and back-cache restoration allows an ex
 });
 test('caller supplied Partner identifiers cannot replace the verified reciprocal claim owner',async()=>{
  const r=await identityExchange({bodyExtra:{partner_id:'attacker',partner_record_id:'recOther',pid:'recOther',dashboard_url:'https://evil.example/'}});
- assert.equal(r.status,200);const url=new URL(r.body.dashboard_url);assert.equal(url.origin,'https://sigil-partner.lovable.app');
+ assert.equal(r.status,200);const url=new URL(r.body.dashboard_url);assert.equal(url.origin,'https://sigil-partner-dashboard.pages.dev');
  const payload=JSON.parse(Buffer.from(url.searchParams.get('t').split('.')[0].slice('sigil_'.length),'base64url').toString());assert.equal(payload.pid,'recKendoFixture001');
 });
 
@@ -162,4 +162,39 @@ test('unknown, inherited or hostile reasons cannot render response text or trigg
 test('caller cannot supply a denial reason or substitute a Partner to bypass review',async()=>{
  const r=await identityExchange({noClaims:true,bodyExtra:{reason:'partner_approval',partner_id:'partner_kendo',partner_record_id:'recKendoFixture001'}});
  assert.equal(r.status,403);assert.equal(r.body.error.reason,'claim_not_found');assert.equal(r.writes,0);
+});
+
+test('Pages can call Partner APIs without bypassing Partner token checks', async () => {
+ const config = await readFile(new URL('../wrangler.toml', import.meta.url), 'utf8');
+ const ALLOWED_ORIGINS = config.match(/^ALLOWED_ORIGINS = "([^"]+)"$/m)?.[1];
+ assert.ok(ALLOWED_ORIGINS);
+ const origin = 'https://sigil-partner-dashboard.pages.dev';
+ const api = 'https://www.mmdbkk.com/v1/partner';
+ for (const path of ['/dashboard', '/jobs/action', '/private-vault']) {
+  const response = await worker.fetch(new Request(api + path, {
+   method: 'OPTIONS',
+   headers: {
+    Origin: origin,
+    'Access-Control-Request-Method': path === '/dashboard' ? 'GET' : 'POST',
+    'Access-Control-Request-Headers': 'content-type,idempotency-key',
+   },
+  }), { ALLOWED_ORIGINS }, {});
+  assert.equal(response.status, 204);
+  assert.equal(response.headers.get('Access-Control-Allow-Origin'), origin);
+  assert.match(response.headers.get('Access-Control-Allow-Headers'), /Idempotency-Key/i);
+ }
+ const response = await worker.fetch(new Request(api + '/dashboard', {
+  headers: { Origin: origin },
+ }), { ALLOWED_ORIGINS }, {});
+ assert.equal(response.status, 401);
+ assert.equal(response.headers.get('Access-Control-Allow-Origin'), origin);
+ const exchange = await worker.fetch(req({id_token:'fixture'}, origin), { ALLOWED_ORIGINS }, {});
+ assert.equal(exchange.status, 403);
+ for (const foreign of [origin + '.evil.example', 'https://sigil-partner.lovable.app']) {
+  const denied = await worker.fetch(new Request(api + '/dashboard', {
+   method: 'OPTIONS',
+   headers: { Origin: foreign, 'Access-Control-Request-Method': 'GET' },
+  }), { ALLOWED_ORIGINS }, {});
+  assert.equal(denied.headers.get('Access-Control-Allow-Origin'), null);
+ }
 });
