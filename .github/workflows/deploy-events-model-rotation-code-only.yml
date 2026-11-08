@@ -1,0 +1,88 @@
+name: Release events model rotation only
+on:
+  pull_request:
+    paths:
+      - 'scripts/events-*rotation*'
+      - 'release/events-model-rotation/**'
+      - '.github/workflows/deploy-events-model-rotation-code-only.yml'
+      - 'events-worker/src/compcard-*.js'
+      - 'events-worker/compcard-*.test.mjs'
+  workflow_dispatch:
+    inputs:
+      production_approved:
+        description: 'Owner authorization for Tinn exclusion and independent room selection only'
+        type: boolean
+        required: true
+        default: false
+      approval_ref:
+        description: 'Truthful owner request reference for this exact SHA; not an environment approval receipt'
+        type: string
+        required: true
+      approved_sha:
+        description: 'Exact full main SHA of reviewed release tooling and pinned overlay'
+        type: string
+        required: true
+      expected_version:
+        description: 'Exact active events-worker version pinned in overlay manifest'
+        type: string
+        required: true
+      expected_deployment:
+        description: 'Exact active deployment pinned in overlay manifest'
+        type: string
+        required: true
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: ${{ github.event_name == 'workflow_dispatch' && 'deploy-events-worker-production' || format('events-rotation-contracts-{0}', github.ref) }}
+  cancel-in-progress: false
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - run: node --test scripts/events-rotation-release-transport.test.mjs scripts/events-model-rotation-release.test.mjs scripts/admin-production-approval.test.mjs events-worker/compcard-*.test.mjs
+  production-approval:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha
+    uses: ./.github/workflows/admin-production-approval.yml
+    with:
+      approval_ref: ${{ inputs.approval_ref }}
+      approved_sha: ${{ inputs.approved_sha }}
+      environment_name: mmd-production-mutation
+  release:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha
+    needs: [production-approval, contracts]
+    environment: mmd-production-mutation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Apply exact-live overlay with strict inherited configuration and readback
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRODUCTION_APPROVED: ${{ inputs.production_approved }}
+          APPROVAL_REF: ${{ inputs.approval_ref }}
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+          EXPECTED_VERSION: ${{ inputs.expected_version }}
+          EXPECTED_DEPLOYMENT: ${{ inputs.expected_deployment }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node scripts/events-model-rotation-release.mjs --execute-approved
+      - name: Save sanitized release receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: events-model-rotation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/events-model-rotation-release.json
+          if-no-files-found: ignore
+          retention-days: 90

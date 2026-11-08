@@ -47,6 +47,17 @@ export function destinationsForCategory(category) {
   return [...DESTINATIONS[category]];
 }
 
+// Owner excluded this identity from automatic promotion, not from the registry.
+// Keep the approved asset and historical plans/receipts intact.
+export function automaticModelAllowed(modelId) {
+  return modelId !== 'recW0Whpu9maVjYF6';
+}
+
+export function destinationsForModelSlot(category, slot) {
+  if (slot === 'standard') return category === 'standard' ? ['standard'] : [];
+  return destinationsForCategory(category).filter(destination => destination !== 'standard');
+}
+
 export function evaluateCard(card, record) {
   if (!card || !CATEGORIES.includes(card.category) || !card.model_id || !card.canonical_name) {
     return { ok: false, reason: 'manifest_invalid' };
@@ -171,7 +182,7 @@ export function chooseDailyCard(cards, history, date) {
     lastExposure.set(row.model_id, Math.max(lastExposure.get(row.model_id) ?? -Infinity, previous));
   }
   const eligible = (Array.isArray(cards) ? cards : []).filter(card => {
-    if (!card || !card.model_id || !CATEGORIES.includes(card.category) || card.selectable === false) return false;
+    if (!card || !card.model_id || !automaticModelAllowed(card.model_id) || !CATEGORIES.includes(card.category) || card.selectable === false) return false;
     const previous = lastExposure.get(card.model_id);
     return previous === undefined || today - previous >= COOLDOWN_DAYS;
   });

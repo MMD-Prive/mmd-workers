@@ -72,8 +72,10 @@ export async function reserveCompcardExposure(bucket, card, date, now) {
   throw new Error("compcard_history_conflict");
 }
 
-export async function settleCompcardExposure(bucket, card, date, now, outcomes) {
-  const expected = destinationsForCategory(card.category);
+export async function settleCompcardExposure(bucket, card, date, now, outcomes, destinations = destinationsForCategory(card.category)) {
+  const allowed = destinationsForCategory(card.category);
+  const expected = Array.isArray(destinations) && new Set(destinations).size === destinations.length
+    && destinations.every(destination => allowed.includes(destination)) ? destinations : [];
   const rows = Array.isArray(outcomes) ? outcomes : [];
   const complete = expected.length > 0 && rows.length === expected.length
     && expected.every(destination => rows.filter(row => row.destination === destination).length === 1);

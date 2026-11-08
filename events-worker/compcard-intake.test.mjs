@@ -74,7 +74,7 @@ test('a private reviewed card merges without mutating static approval and pins i
   assert.deepEqual(read.bytes, f.bytes);
   const result = await run(f);
   assert.equal(result.results[0].status, 'sent');
-  assert.deepEqual(f.sends.map(row => row.destination), ['premium', 'standard']);
+  assert.deepEqual(f.sends.map(row => row.destination), ['standard']);
   assert.ok(f.sends.every(row => row.card.id === f.card.id));
   assert.equal(f.bucket.json(COMPCARD_JOURNAL_ROOT + 'plans/2026-10-24/standard.json').asset_key, f.card.asset_key);
 });
@@ -84,18 +84,18 @@ test('a new intake version preserves an unfinished static plan and takes the nex
   f.bucket.records.delete(INTAKE_REGISTRY_KEY);
   let failed = false;
   const deliver = f.deps.send;
-  f.deps.send = async (...args) => { if (args[1] === 'standard' && !failed) { failed = true; return { delivery_state: 'not_sent', error: 'compcard_mock_rejected' }; } return deliver(...args); };
+  f.deps.send = async (...args) => { if (args[1] === 'premium' && !failed) { failed = true; return { delivery_state: 'not_sent', error: 'compcard_mock_rejected' }; } return deliver(...args); };
   await run(f, '2026-10-24', '16:30');
   const key = COMPCARD_JOURNAL_ROOT + 'plans/2026-10-24/model.json';
   const original = f.bucket.records.get(key).value;
   await f.bucket.put(INTAKE_REGISTRY_KEY, JSON.stringify(registry([f.card])));
   await run(f, '2026-10-24', '16:45');
   assert.equal(f.bucket.records.get(key).value, original);
-  assert.equal(f.sends.length, 2);
+  assert.equal(f.sends.length, 1);
   assert.ok(f.sends.every(row => row.card.id === f.original.id));
   await run(f, '2026-10-31');
-  assert.equal(f.sends.length, 4);
-  assert.ok(f.sends.slice(2).every(row => row.card.id === f.card.id));
+  assert.equal(f.sends.length, 2);
+  assert.ok(f.sends.slice(1).every(row => row.card.id === f.card.id));
 });
 
 test('reviewed identity, folder, category, asset path and numerical facts are mandatory', async () => {
@@ -148,10 +148,10 @@ test('missing or malformed intake cannot stop static cards, their receipts or pr
     if (invalid === null) f.bucket.records.delete(INTAKE_REGISTRY_KEY); else await f.bucket.put(INTAKE_REGISTRY_KEY, invalid);
     assert.equal((await run(f, '2026-10-24', '16:30')).results[0].status, 'sent');
     await run(f, '2026-10-24', '16:45');
-    assert.equal(f.sends.length, 2);
+    assert.equal(f.sends.length, 1);
     assert.ok(f.sends.every(row => row.card.id === f.original.id));
     assert.equal((await run(f, '2026-10-27')).results[0].slot, 'promotion');
-    assert.equal(f.sends.length, 3);
+    assert.equal(f.sends.length, 2);
   }
 });
 
@@ -177,7 +177,7 @@ test('an old version remains usable by its frozen plan after a newer version is 
   await f.bucket.put(INTAKE_REGISTRY_KEY, JSON.stringify(registry([{ ...f.card, selectable: false }, newer])));
   await run(f, '2026-10-24', '20:30');
   assert.equal(f.bucket.records.get(key).value, originalPlan);
-  assert.equal(f.sends.length, 2);
+  assert.equal(f.sends.length, 1);
   assert.ok(f.sends.every(row => row.card.id === f.card.id));
 });
 

@@ -1,5 +1,5 @@
 import { APPROVED_COMPCARD_MANIFEST } from "./compcard-approved-manifest.js";
-import { buildCompcardCaption, chooseDailyCard, destinationsForCategory, evaluateCard, publicationCadence } from "./compcard-policy.js";
+import { automaticModelAllowed, destinationsForModelSlot, buildCompcardCaption, chooseDailyCard, destinationsForCategory, evaluateCard, publicationCadence } from "./compcard-policy.js";
 import { assertIntakeCardCurrent, mergeApprovedIntake, readApprovedIntakeAsset } from "./compcard-intake.js";
 import {
   compcardStorage, deliverCompcardOnce, freezeCompcardPlan, readCompcardHistory,
@@ -212,7 +212,7 @@ function eligibleCards(manifest, models) {
   const eligible = [];
   const excluded = [];
   for (const card of manifest.cards) {
-    const check = evaluateCard(card, byId.get(card.model_id));
+    const check = automaticModelAllowed(card.model_id) ? evaluateCard(card, byId.get(card.model_id)) : { ok: false, reason: 'automatic_selection_excluded' };
     if (check.ok) eligible.push(card);
     else excluded.push({ model_id: card.model_id, file_id: card.file_id, reason: check.reason });
   }
@@ -576,11 +576,17 @@ async function executeSlot(env, manifest, bucket, slot, now, deps, wallClock) {
       const models = await (deps.models || (() => readCompcardModels(env)))();
       const { eligible, byId } = eligibleCards(manifest, models);
       const history = await readCompcardHistory(bucket, manifest.cards);
-      const card = chooseDailyCard(slot === "standard" ? eligible.filter(card => card.category === "standard") : eligible, history, date);
+      // Frozen sibling choices reserve the identity even if its transport was not_sent.
+      // This also handles a changed schedule where the Standard slot runs first.
+      const sibling = (await readCompcardJson(bucket, `plans/${date}/${slot === "standard" ? "model" : "standard"}.json`))?.record;
+      const candidates = eligible.filter(card => card.model_id !== sibling?.model_id
+        && (slot !== "standard" || card.category === "standard"));
+      const card = chooseDailyCard(candidates, history, date);
       if (!card) return { date, slot, status: "no_eligible_card", sent: 0 };
-      const destinations = destinationsForCategory(card.category);
+      const destinations = destinationsForModelSlot(card.category, slot);
       plan = { schema: "hype_compcard_plan_v1", date, slot, manifest_revision: manifest.revision, created_at: now,
         card_id: card.id, model_id: card.model_id, category: card.category, file_id: card.file_id, sha256: card.sha256,
+        room_selection_policy: 1,
         destinations, chat_ids: Object.fromEntries(destinations.map((destination) => [destination, manifest.destinations[destination]])),
         captions: Object.fromEntries(destinations.map((destination) => [destination, captionForLiveCard(card, destination, byId.get(card.model_id))])),
         ...(card.source === "owner_drive_intake" ? { asset_key: card.asset_key } : {}) };
@@ -615,7 +621,11 @@ async function executeSlot(env, manifest, bucket, slot, now, deps, wallClock) {
     && plan.category === (modelSlot ? card.category : "promotion") && (slot !== "standard" || card.category === "standard")
     && (card.source !== "owner_drive_intake" || plan.asset_key === card.asset_key);
   if (!approvedCardStillMatches || plan.date !== date || plan.slot !== slot) return { date, slot, status: "blocked", error: "compcard_plan_approval_changed", sent: 0 };
-  const expected = modelSlot ? destinationsForCategory(card.category) : [frozenPromotionDestination(plan, date)];
+  if (modelSlot && plan.room_selection_policy !== undefined && plan.room_selection_policy !== 1) {
+    return { date, slot, status: "blocked", error: "compcard_plan_room_policy_invalid", sent: 0 };
+  }
+  const expected = modelSlot ? (plan.room_selection_policy === 1
+    ? destinationsForModelSlot(card.category, slot) : destinationsForCategory(card.category)) : [frozenPromotionDestination(plan, date)];
   if (JSON.stringify(expected) !== JSON.stringify(plan.destinations)) return { date, slot, status: "blocked", error: "compcard_plan_destinations_changed", sent: 0 };
   const outcomes = [];
   let sharedAsset;
@@ -629,12 +639,23 @@ async function executeSlot(env, manifest, bucket, slot, now, deps, wallClock) {
         const current = compcardClock(wallClock());
         if (current.date !== date || !due(current, compcardSchedule(env)[slot])) throw problem("compcard_window_closed", false);
         if (plan.chat_ids[destination] !== manifest.destinations[destination]) throw problem("compcard_destination_approval_changed", false);
+        // Keep historical plans and terminal receipts intact, but do not complete
+        // a legacy mirror after the owner changed future room routing.
+        if (modelSlot && !destinationsForModelSlot(card.category, slot).includes(destination)) {
+          throw problem("compcard_legacy_room_selection_conflict", false);
+        }
+        if (modelSlot) {
+          const sibling = (await readCompcardJson(bucket, `plans/${date}/${slot === "standard" ? "model" : "standard"}.json`))?.record;
+          if (sibling?.model_id === card.model_id) throw problem("compcard_same_day_model_conflict", false);
+        }
         if (!sharedAsset) sharedAsset = modelSlot ? await readAsset(card)
           : await preparePromotion(card, destination, deps.asset || readApprovedCompcardAsset);
         const afterRead = compcardClock(wallClock());
         if (afterRead.date !== date || !due(afterRead, compcardSchedule(env)[slot])) throw problem("compcard_window_closed", false);
         // Revalidate model identity and facts after the possibly slow image read.
         if (modelSlot) {
+          // Apply the exclusion to pending legacy sends, without touching terminal receipts.
+          if (!automaticModelAllowed(card.model_id)) throw problem("compcard_automatic_selection_excluded", false);
           const model = await (deps.model || ((id) => readCompcardModel(env, id)))(card.model_id);
           const check = evaluateCard(card, model);
           if (!check.ok) throw problem(`compcard_fresh_${check.reason}`, false);
@@ -652,7 +673,7 @@ async function executeSlot(env, manifest, bucket, slot, now, deps, wallClock) {
     outcomes.push({ destination, ...outcome });
   }
   if (modelSlot) {
-    try { await settleCompcardExposure(bucket, card, date, now, outcomes); } catch { /* keep the conservative durable reservation */ }
+    try { await settleCompcardExposure(bucket, card, date, now, outcomes, plan.destinations); } catch { /* keep the conservative durable reservation */ }
   }
   const sent = outcomes.filter((row) => row.status === "sent").length;
   const uncertain = outcomes.filter((row) => row.status === "delivery_uncertain" || row.status === "sending").length;
