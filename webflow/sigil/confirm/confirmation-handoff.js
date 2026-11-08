@@ -1,7 +1,10 @@
-/* MMD SIGIL confirmation handoff
- * Customer: /sigil/confirm/job-confirmation -> My MMD LINE Mini App > Jobs
- * Model: /sigil/confirm/job-model -> MY MODEL LINE Mini App
- * This layer only fixes onward navigation after the signed confirmation flow.
+/* MMD SIGIL website-first confirmation handoff
+ * Customer: /sigil/confirm/job-confirmation -> /my-mmd/ (verified current-job view)
+ * Model: /sigil/confirm/job-model -> /sigil/model/dashboard (MY MODEL)
+ * Payment: signed /sigil/pay?t=...; payment status: /my-mmd/payments.
+ * Navigation only: no payment, session, job or entitlement authority here.
+ * Never auto-redirect: if destination is unavailable, the signed source page
+ * stays in browser history for a safe Back / retry (no redirect loop).
  */
 (() => {
   "use strict";
@@ -9,9 +12,9 @@
   const path = (window.location.pathname.replace(/\/+$/, "") || "/");
   const MODEL_CONFIRM_PATH = "/sigil/confirm/job-model";
   const CUSTOMER_CONFIRM_PATH = "/sigil/confirm/job-confirmation";
-  const MODEL_LIFF_URL = "https://miniapp.line.me/2010864854-N34SgCqq";
-  const MEMBER_LIFF_URL = "https://miniapp.line.me/2010862595-yT4DCEMc/?view=jobs";
-  const PAYMENT_LIFF_URL = "https://miniapp.line.me/2010830159-0n1O3ANK";
+  const MODEL_WEB_PATH = "/sigil/model/dashboard";
+  const MEMBER_WEB_PATH = "/my-mmd/";
+  const PAYMENT_WEB_PATH = "/sigil/pay";
 
   function currentModelLang() {
     const queryLang = new URL(window.location.href).searchParams.get("lang");
@@ -28,17 +31,21 @@
     if (!link) return;
 
     const lang = currentModelLang();
-    const target = new URL(`${MODEL_LIFF_URL}/`);
+    const target = new URL(MODEL_WEB_PATH, window.location.href);
+    target.searchParams.set("handoff", "job-confirmed");
     target.searchParams.set("lang", lang);
-    if (link.href !== target.toString()) link.href = target.toString();
+    const liffEnv = new URL(window.location.href).searchParams.get("liff_env");
+    if (liffEnv && /^[A-Za-z0-9_-]{1,32}$/.test(liffEnv)) target.searchParams.set("liff_env", liffEnv);
+    const href = target.pathname + target.search;
+    if (link.getAttribute("href") !== href) link.href = href;
     const label = lang === "en"
-      ? "Open MY MODEL in LINE"
+      ? "Open MY MODEL on website"
       : lang === "zh"
-        ? "在 LINE 中打开 MY MODEL"
-        : "ไปที่ MY MODEL ใน LINE";
+        ? "在网站打开 MY MODEL"
+        : "ไปที่ MY MODEL บนเว็บไซต์";
     if (link.textContent !== label) link.textContent = label;
-    if (link.getAttribute("data-mmd-canonical-target") !== "model-line-miniapp") {
-      link.setAttribute("data-mmd-canonical-target", "model-line-miniapp");
+    if (link.getAttribute("data-mmd-canonical-target") !== "model-website") {
+      link.setAttribute("data-mmd-canonical-target", "model-website");
     }
   }
 
@@ -46,37 +53,44 @@
     if (path !== CUSTOMER_CONFIRM_PATH) return;
     const root = document.getElementById("mmd-job-confirm-v16");
     const success = root?.querySelector("[data-c-success]");
-    if (!success || success.querySelector("[data-mmd-my-mmd]")) return;
-
-    const link = document.createElement("a");
+    if (!success) return;
+    const existing = success.querySelector("[data-mmd-my-mmd]");
+    const link = existing || document.createElement("a");
     const seed = root.querySelector("[data-c-confirm]");
-    link.href = MEMBER_LIFF_URL;
-    link.textContent = "ดู Upcoming Job ใน My MMD";
+    if (link.getAttribute?.("href") !== MEMBER_WEB_PATH) link.href = MEMBER_WEB_PATH;
+    if (link.textContent !== "ดูสถานะงานปัจจุบันใน MY MMD") link.textContent = "ดูสถานะงานปัจจุบันใน MY MMD";
     link.setAttribute("data-mmd-my-mmd", "1");
-    link.setAttribute("data-mmd-canonical-target", "member-line-miniapp-jobs");
-    if (seed?.className) link.className = seed.className;
-    success.appendChild(link);
+    link.setAttribute("data-mmd-canonical-target", "member-website-current-job");
+    if (!existing) {
+      if (seed?.className) link.className = seed.className;
+      success.appendChild(link);
+    }
   }
 
   function wireCustomerPayment() {
     if (path !== CUSTOMER_CONFIRM_PATH) return;
     const root = document.getElementById("mmd-job-confirm-v16");
-    if (!root || root.querySelector("[data-mmd-payment-liff]")) return;
+    if (!root) return;
     const success = root.querySelector("[data-c-success]");
     if (!success) return;
     const token = new URL(window.location.href).searchParams.get("t");
     if (!token || !/^[A-Za-z0-9_-]+\.[A-Fa-f0-9]{64}$/.test(token)) return;
-    const target = new URL(PAYMENT_LIFF_URL);
+    const target = new URL(PAYMENT_WEB_PATH, window.location.href);
     target.searchParams.set("t", token);
-    const link = document.createElement("a");
+    const existing = success.querySelector("[data-mmd-payment-liff], [data-mmd-payment-web]");
+    const link = existing || document.createElement("a");
     const seed = root.querySelector("[data-c-confirm]");
-    link.href = target.toString();
+    const href = target.pathname + target.search;
+    if (link.getAttribute?.("href") !== href) link.href = href;
+    if (link.textContent !== "ชำระเงิน / Payment") link.textContent = "ชำระเงิน / Payment";
     link.referrerPolicy = "no-referrer";
-    link.textContent = "ชำระเงิน / Payment";
-    link.setAttribute("data-mmd-payment-liff", "1");
-    link.setAttribute("data-mmd-canonical-target", "sigil-payment-line-miniapp");
-    if (seed?.className) link.className = seed.className;
-    success.appendChild(link);
+    link.setAttribute("data-mmd-payment-liff", "1"); // legacy duplicate guard
+    link.setAttribute("data-mmd-payment-web", "1");
+    link.setAttribute("data-mmd-canonical-target", "sigil-payment-website");
+    if (!existing) {
+      if (seed?.className) link.className = seed.className;
+      success.appendChild(link);
+    }
   }
 
   function wire() {
