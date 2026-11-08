@@ -36,3 +36,18 @@ A private Airtable **staging** table now holds owner-review-only identity *candi
 2. Import into the private Airtable staging table with deterministic idempotency keys and `pending_owner_review`; keep original CSV in restricted storage, never in this repository.
 3. Show candidate matches only in the authenticated owner console. Each suggested match needs manual confirmation, with provenance and duplicate flags visible to the owner.
 4. Treat current dry-run preview as independent of the staging import until a separately reviewed, authorization-gated resolution path is connected; importing rows alone does **not** make the preview aware of them.
+
+## Standard room review (same candidate source, no duplicate import)
+
+The same private Telegram/customer candidate staging source is used for Standard and Premium **identity review**, because a Telegram account identity is independent of the room. The staging table has distinct manual presence-review columns:
+
+- `standard_room_presence_review`
+- `premium_room_presence_review`
+
+Both start as `not_checked` for every candidate. Never assume that a LINE OA customer is already present in either Telegram room, and never copy a Premium membership result into a Standard presence decision or vice versa.
+
+**Standard is not an expired-member cleanup queue.** The existing `admin-worker/src/premium-group-cleanup/rooms.js` policy explicitly permits all known membership tiers, including expired Standard/Premium members, to remain in Standard for announcements (reason: `expired_standard_may_stay`). Non-members, unclear identity, pending payments, and protected cases require owner review. A missing or expired membership is **not** permission to remove anyone automatically.
+
+The multi-room owner-only audit endpoint (`GET /internal/admin/premium-group-cleanup/rooms`) and read-only Telegram member presence helper already support `standard`. This does not imply that source candidates have been matched to the canonical membership resolver or that Standard group membership has been enumerated. A bot cannot infer a complete membership roster from candidate chat exports. Owner-confirmed identity and actual room presence remain prerequisites to any later action.
+
+No data is duplicated into a second Standard-only table, no automatic room assignment is performed, and all Standard/Premium checks remain `not_checked` until separately verified.
