@@ -53,3 +53,17 @@ Local layout checks using the owner images (embedded preview only) and controlle
 ## Release gate
 
 PR review is not a deployment. Before production, confirm GH tests, mobile screenshot comparison and authenticated member/no-session/401 paths; deploy the Worker through the established release path only after owner sign-off. **No need to overwrite the shadowed Webflow page or publish unrelated Webflow site changes.**
+
+
+## Visual correction — Logo visibility and MMD fonts (2026-11-08)
+
+Follow-up owner QA found empty logo placeholders in the offline preview and typography falling back to generic fonts even though the font family names were referenced. The former Preview depended on externally hosted Webflow image URLs; the Worker HTML is standalone and has no Webflow site font registry attached.
+
+Remediation:
+- Added `member-dashboard-chat-worker/src/kenji-member-brand-assets.js` with small **official Webflow-preview raster variants** of exactly the owner-supplied Curated MMD gold/white and Private SĪGIL 2027 logos. The Worker substitutes data-URI images server-side so the header and two selection cards render independently of CDN availability. Logos are not rebuilt as plain text or fabricated marks.
+- Increased their visible art area and changed Curated / Private brand cards to image-first vertical composition at normal mobile/desktop widths; compact horizontal composition is retained for short mobile displays. These cards remain navigation only, never a Private entitlement control.
+- Bound actual registered Webflow font files using explicit `@font-face`: `LINE Seed Sans TH` regular/bold/extra-bold for Thai app UI, `Canela` regular/italic for the editorial Kenji headline, `Inter` regular/semibold for EN labels. This corrects previous CSS stacks that referenced fonts without loading them.
+- CSP still has a fresh nonce for inline CSS/scripts and same-origin-only `connect-src`; explicit `font-src 'self' https://cdn.prod.website-files.com` allows the registered Webflow font resources.
+- Regression tests decode embedded logo data and validate RIFF/PNG signatures, assert font declarations and CSP. The offline layout smoke (with image-size placeholders rather than downloaded logos) checked 320×568, 375×812, 390×844, 768×1024 and 1440×900, with no horizontal overflow, usable chat history and composer visible.
+
+**Font loading depends on the Webflow font CDN remaining available in the production browser.** The local offline screenshot cannot validate the final font rasterization; do a connected-browser typography check and iPhone review after code review. No production publication as part of this fix.
