@@ -16,3 +16,10 @@ apps/**/.next/
 
 # Isolated, checksum-verified MY MMS presentation build.
 /.release/my-mms-customer/
+
+# #2141 - private LINE OA / Telegram customer-identity evidence (never commit)
+telegram-member-link-source.csv
+**/telegram-member-link-source.csv
+**/telegram-member-link-source-*.csv
+**/line_oa_chat_csv_*.zip
+**/line_oa_chat_csv_*.csv
