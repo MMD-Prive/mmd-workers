@@ -1,0 +1,28 @@
+name: Confirmation website return safety
+on:
+  pull_request:
+    paths:
+      - 'webflow/sigil/confirm/**'
+      - '.github/workflows/confirmation-web-back-safety-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'webflow/sigil/confirm/**'
+      - '.github/workflows/confirmation-web-back-safety-ci.yml'
+permissions:
+  contents: read
+jobs:
+  website-back-safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax and isolated non-mutating navigation regressions
+        run: |
+          node --check webflow/sigil/confirm/model-confirm-flow-web-v3.js
+          node --test webflow/sigil/confirm/model-confirm-flow-web-v3.test.mjs webflow/sigil/confirm/confirmation-handoff.test.mjs webflow/sigil/confirm/model-payment-confirmation-v1.test.mjs
