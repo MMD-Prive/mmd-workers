@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
+import { verifyImmigrateMutation } from './immigrate-production-gate.mjs';
 
 const ACCOUNT = 'b176eda1172b741fd2e58904cc9d77c5';
 const WORKER = 'immigrate-worker';
@@ -85,7 +86,7 @@ export async function verifyImmigrateWorkerBaseline({ expectedVersion, expectedD
   return { worker: WORKER, baselineVersion: expectedVersion, baselineDeployment: expectedDeployment, configuration: 'matched', routesChanged: false };
 }
 
-export async function promoteImmigrateWorkerVersion({ uploadedVersion, expectedVersion, expectedDeployment, token, configText, commitSha, fetcher = fetch }) {
+export async function promoteImmigrateWorkerVersion({ uploadedVersion, expectedVersion, expectedDeployment, token, configText, commitSha, authorize, fetcher = fetch }) {
   if (!uuid(uploadedVersion) || !/^[0-9a-f]{40}$/i.test(commitSha || '')) fail('Uploaded version or approved source SHA is invalid');
   await verifyImmigrateWorkerBaseline({ expectedVersion, expectedDeployment, token, configText, fetcher });
   const root = `https://api.cloudflare.com/client/v4/accounts/${ACCOUNT}/workers/scripts/${WORKER}`;
@@ -99,6 +100,7 @@ export async function promoteImmigrateWorkerVersion({ uploadedVersion, expectedV
   const message = uploaded?.annotations?.['workers/message'] || '';
   const annotatedSha = uploaded?.annotations?.['workers/commit_sha'] || '';
   if (uploaded?.id !== uploadedVersion || (!message.includes(commitSha) && annotatedSha !== commitSha)) fail('Uploaded Worker version does not match the approved commit');
+  await authorize();
   const deployment = await call('/deployments', { method: 'POST', body: JSON.stringify({ strategy: 'percentage', versions: [{ version_id: uploadedVersion, percentage: 100 }] }) });
   if (!uuid(deployment?.id)) fail('Cloudflare deployment ID missing');
   const readback = await call(`/deployments/${deployment.id}`);
@@ -117,10 +119,16 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     fetcher: globalThis.fetch,
   };
   try {
+    await verifyImmigrateMutation(process.env);
     const result = mode === '--preflight'
       ? await verifyImmigrateWorkerBaseline(options)
       : mode === '--promote' && process.argv[3]
-        ? await promoteImmigrateWorkerVersion({ ...options, uploadedVersion: process.argv[3], commitSha: process.env.APPROVED_SHA })
+        ? await promoteImmigrateWorkerVersion({
+          ...options,
+          uploadedVersion: process.argv[3],
+          commitSha: process.env.APPROVED_SHA,
+          authorize: () => verifyImmigrateMutation(process.env),
+        })
         : fail('Use --preflight or --promote <uploaded-version>');
     console.log(JSON.stringify({ ok: true, ...result }));
   } catch (error) {

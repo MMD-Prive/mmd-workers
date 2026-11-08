@@ -1,0 +1,33 @@
+name: Immigrate production approval contracts
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/*immigrate*.yml'
+      - '.github/workflows/member-intelligence-runtime.yml'
+      - '.github/workflows/sync-ceo-route-worker.yml'
+      - '.github/workflows/admin-production-approval.yml'
+      - 'scripts/immigrate-*.mjs'
+      - 'scripts/admin-production-approval*.mjs'
+      - 'scripts/admin-production-validation*.mjs'
+      - 'immigrate-worker/test/client-intelligence-ingress.test.mjs'
+
+permissions:
+  contents: read
+
+jobs:
+  guard-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Run authorization and fixture-only production contracts
+        run: |
+          node --test scripts/immigrate-production-gate.test.mjs scripts/immigrate-worker-route-plan.test.mjs scripts/immigrate-worker-code-only-release.test.mjs
+          node --test scripts/admin-production-approval.test.mjs scripts/admin-production-validation.test.mjs
+          node --test immigrate-worker/test/client-intelligence-ingress.test.mjs immigrate-worker/test/member-intelligence-runtime.test.mjs

@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
+import { buildRoutePlan } from "../../scripts/immigrate-worker-route-plan.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -19,6 +20,7 @@ test("client intelligence stays on narrow same-origin ingress routes", async () 
     assert.match(wrangler, new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
 
+  const plan = buildRoutePlan({ sha: "a".repeat(40), scope: "ingress", routes: [] });
   for (const pattern of [
     'mmdbkk.com/v1/admin/clients/lineage-lookup*',
     'www.mmdbkk.com/v1/admin/clients/lineage-lookup*',
@@ -26,7 +28,7 @@ test("client intelligence stays on narrow same-origin ingress routes", async () 
     'www.mmdbkk.com/v1/admin/clients/recent*',
     ...intelligencePatterns,
   ]) {
-    assert.match(deployWorkflow, new RegExp(`"${pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`));
+    assert.ok(plan.add.includes(pattern), `approved ingress policy must retain ${pattern}`);
   }
   assert.match(deployWorkflow, /Verify Client Intelligence ingress fails closed in production/);
   assert.match(deployWorkflow, /immigrate-to-admin-client-intelligence-v1/);
