@@ -2949,6 +2949,9 @@ async function handlePartnerModelLink(request: Request, env: RuntimeEnv): Promis
     body: JSON.stringify({ session_id: sessionId, partner_id: partnerId, pay_model_thb: payModel, existing_model_token: existingModelToken })
   }));
   const payload = await response.json().catch(() => null) as { ok?: boolean; error?: string; model_confirmation_url?: string; pay_model_thb?: number; expires_at?: number } | null;
+  if (response.status === 503 && payload?.error === "model_link_issuance_paused") {
+    return errorResponse(request, env, "model_link_issuance_paused", "Model link issuance is paused.", 503, false);
+  }
   if (!response.ok || !payload?.ok || !payload.model_confirmation_url) {
     const known = new Set(["pay_model_already_set", "pay_model_exceeds_job_amount", "payment_not_official_verified", "partner_system_not_allowed", "partner_confirmation_required", "model_link_legacy_invalid", "model_link_legacy_review_required", "model_link_issuance_conflict", "model_link_result_unknown", "model_link_coordinator_not_ready", "payment_type_not_reissuable"]);
     const code = known.has(String(payload?.error)) ? String(payload?.error) : "model_link_failed";
