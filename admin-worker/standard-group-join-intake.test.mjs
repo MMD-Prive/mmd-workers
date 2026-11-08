@@ -19,6 +19,9 @@ const payload = (over = {}) => ({
   telegram_username: "example_member",
   telegram_display_name: "Example Member",
   requested_at_unix: 1794120000,
+  hype_check_state: "canonical_verified",
+  hype_membership_level: "private_standard",
+  hype_membership_lifecycle: "active",
   ...over,
 });
 const request = (body = payload(), overrides = {}) => new Request(
@@ -63,7 +66,16 @@ test("join request creates minimal private Airtable record; replay preserves own
     const method = options.method || "GET";
     calls.push({ method, pathname: q.pathname });
     assert.equal(options.headers.authorization, "Bearer fixture-only-token");
-    assert.ok(q.pathname.endsWith("/tblGFkPcMFsxsW5Ul"));
+    assert.ok(q.pathname.includes("/tblGFkPcMFsxsW5Ul"));
+    if (method === "PATCH") {
+      assert.ok(q.pathname.endsWith("/tblGFkPcMFsxsW5Ul/recEXAMPLE1234567"));
+      const patch = JSON.parse(options.body);
+      assert.equal(patch.fields.hype_check_state, "canonical_verified");
+      assert.ok(patch.fields.hype_checked_at);
+      assert.equal(Object.hasOwn(patch.fields, "review_status"), false);
+      assert.equal(Object.hasOwn(patch.fields, "telegram_user_id_numeric"), false);
+      return Response.json({ id: "recEXAMPLE1234567", fields: { ...stored, ...patch.fields, review_status: "owner_verified" } });
+    }
     if (method === "GET") {
       assert.match(q.searchParams.get("filterByFormula"), /join_key/);
       return Response.json({ records: stored ? [{ id: "recEXAMPLE1234567", fields: { ...stored, review_status: "owner_verified" } }] : [] });
@@ -76,6 +88,10 @@ test("join request creates minimal private Airtable record; replay preserves own
     assert.equal(stored.telegram_user_id_numeric, "1234567890");
     assert.equal(stored.room, "standard");
     assert.equal(stored.telegram_username, "example_member");
+    assert.equal(stored.hype_check_state, "canonical_verified");
+    assert.equal(stored.hype_membership_level, "private_standard");
+    assert.equal(stored.hype_membership_lifecycle, "active");
+    assert.match(stored.hype_checked_at, /^\d{4}-\d\d-\d\dT/);
     for (const privateKey of ["phone", "email", "line_user_id", "user_chat_id", "review_status", "owner_review_note", "membership_tier"]) {
       assert.equal(Object.hasOwn(stored, privateKey), false);
     }
@@ -87,6 +103,7 @@ test("join request creates minimal private Airtable record; replay preserves own
   const second = await handleStandardJoinIntakeRpc(request(), env, { fetch: fakeFetch });
   assert.equal((await second.json()).state, "already_recorded");
   assert.equal(calls.filter(x => x.method === "POST").length, 1);
+  assert.equal(calls.filter(x => x.method === "PATCH").length, 1);
 });
 
 test("owner queue uses only Telegram identity candidates; never publishes phone/email", async () => {
@@ -98,6 +115,10 @@ test("owner queue uses only Telegram identity candidates; never publishes phone/
           room: "standard", telegram_user_id_numeric: "1234567890",
           telegram_username: "example_member", telegram_display_name: "Example Member",
           requested_at: "2026-11-08T05:00:00.000Z",
+          hype_check_state: "canonical_verified",
+          hype_membership_level: "private_standard",
+          hype_membership_lifecycle: "active",
+          hype_checked_at: "2026-11-08T05:00:01.000Z",
         } },
       ] });
     }
@@ -119,6 +140,9 @@ test("owner queue uses only Telegram identity candidates; never publishes phone/
   assert.equal(out.items[0].possible_match_count, 1);
   assert.equal(out.items[0].possible_matches[0].evidence, "numeric_id_exact");
   assert.equal(out.items[0].review_status, "pending_owner_review");
+  assert.equal(out.items[0].hype_check_state, "canonical_verified");
+  assert.equal(out.items[0].hype_membership_level, "private_standard");
+  assert.equal(out.items[0].hype_membership_lifecycle, "active");
   assert.equal(out.sends_nothing, true);
   assert.equal(out.approves_nothing, true);
   assert.equal(out.removes_nothing, true);
