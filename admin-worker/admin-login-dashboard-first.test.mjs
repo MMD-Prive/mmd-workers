@@ -1,10 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import {
-  ADMIN_OWNER_DASHBOARD_PATH,
-  enforceOwnerDashboardFirst,
-} from "./src/admin-login-hero-worker.js";
+import { enforceOwnerDashboardFirst } from "./src/admin-login-hero-worker.js";
+import { ADMIN_OWNER_DASHBOARD_PATH } from "./src/admin-login-hero-worker-core.js";
 
 const loginRequest = (headers = {}) => new Request(
   "https://mmdbkk.com/internal/admin/login/session",

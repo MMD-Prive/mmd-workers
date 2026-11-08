@@ -13,6 +13,16 @@ triggers = { crons = ["*/5 * * * *"] }
 compatibility_date = "2026-01-01"
 workers_dev = true
 
+# Rebuilt owner Console. The handler matches only the exact normalized pathname;
+# the wildcard keeps query filters and the slash alias on the same Worker.
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/console*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/console*"
+zone_name = "mmdbkk.com"
+
 # Owner Social Media composer. Keep the route narrow; no publishing endpoints.
 [[routes]]
 pattern = "mmdbkk.com/internal/admin/social-media*"

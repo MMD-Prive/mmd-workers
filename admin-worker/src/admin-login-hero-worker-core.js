@@ -126,6 +126,7 @@ const MMS_PARTNER_API_PREFIX = "/v1/admin/mms";
 const ALLOWED_NEXT_PATHS = [
   "/internal/admin",
   "/internal/admin/control-room",
+  "/internal/admin/console",
   "/internal/admin/customer-data",
   "/internal/admin/my-mmd/your-request",
   "/internal/admin/dashboard",

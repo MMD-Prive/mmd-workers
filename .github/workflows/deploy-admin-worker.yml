@@ -84,6 +84,7 @@ jobs:
         run: |
           set -euo pipefail
           node --test test/session-creator-page-proxy.test.mjs admin-login-active-entrypoint.test.mjs
+          node --test admin-console-route.test.mjs admin-dashboard-jobs.test.mjs admin-login-dashboard-first.test.mjs
           npm --prefix .. run test:payment-delivery
           node --check src/admin-payment-review-entry.js
           node --check src/payment-review-runtime.js
@@ -386,6 +387,7 @@ jobs:
             "/internal/admin/payments*",
             "/internal/admin/jobs/all",
             "/internal/admin/jobs/all*",
+            "/internal/admin/console*",
             "/internal/admin/work/assets/*",
             "/internal/admin/mmd-review*",
             "/internal/admin/booking-models*",

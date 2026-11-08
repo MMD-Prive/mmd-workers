@@ -70,6 +70,112 @@ test("all-jobs view paginates the full projected set instead of six dashboard ro
   assert.equal(page.counts.all, 47);
 });
 
+test("job search matches the full projected set before pagination", () => {
+  const records = Array.from({ length: 65 }, (_, index) => session(`SESSION-${index}`, "2026-11-08"));
+  records[2].fields.client_name = "Needle customer";
+  records[34].fields.model_name = "ＮＥＥＤＬＥ model";
+  records[60].fields.job_id = "JOB-NEEDLE";
+  const options = { now: new Date("2026-11-08T08:00:00Z"), query: "  ＮＥＥＤＬＥ  ", pageSize: 2 };
+
+  const first = buildJobsPage(records, options);
+  const second = buildJobsPage(records, { ...options, page: 2 });
+  assert.deepEqual(first.items.map((job) => job.id), ["SESSION-2", "SESSION-34"]);
+  assert.deepEqual(second.items.map((job) => job.id), ["SESSION-60"]);
+  assert.equal(second.pagination.total, 3);
+  assert.equal(second.pagination.total_pages, 2);
+  assert.equal(second.pagination.has_prev, true);
+  assert.equal(second.pagination.has_next, false);
+  assert.equal(second.counts.all, 65);
+  assert.equal(second.counts.today, 65);
+  assert.equal(second.counts.filtered, 3);
+  assert.equal(buildJobsPage(records, { ...options, query: "" }).pagination.total, 65);
+});
+
+test("job search covers Thai snapshot names and case-normalized job/session IDs only", () => {
+  const target = session("SESSION-KONG", "2026-11-08", "19:00", "confirmed", "JOB-KONG");
+  target.fields.client_name = "คุณก้อง (ต่ออายุ 01/11/69)";
+  target.fields.model_name = "Brew";
+  target.fields.notes = "PRIVATE-NOTE-NOT-SEARCHABLE";
+  const records = [target, session("UNRELATED", "2026-11-08")];
+  for (const query of ["ก้อง", "  ｂｒｅｗ  ", "session-kong", "job-kong"]) {
+    assert.deepEqual(buildJobsPage(records, { query }).items.map((job) => job.id), ["SESSION-KONG"], query);
+  }
+  assert.equal(buildJobsPage(records, { query: "PRIVATE-NOTE-NOT-SEARCHABLE" }).pagination.total, 0);
+  assert.equal(buildJobsPage(records, { query: "ไม่พบชื่อนี้" }).pagination.total, 0);
+});
+
+test("job search normalizes composed, compatibility and folded name spellings", () => {
+  const target = session("UNICODE", "2026-11-08");
+  target.fields.client_name = "Café คุณกำ Straße";
+  target.fields.model_name = "ΟΣ";
+  for (const query of ["CAFE\u0301", "คุณก\u0e4d\u0e32", "STRASSE", "οσ"]) {
+    assert.equal(buildJobsPage([target], { query }).pagination.total, 1, query);
+  }
+});
+
+test("job search intersects canonical customer, session, job and date scopes", () => {
+  const target = session("SELECTED", "2026-11-08", "19:00", "confirmed", "JOB-SELECTED");
+  const otherClient = session("OTHER-CLIENT", "2026-11-08");
+  const otherDate = session("OTHER-DATE", "2026-11-09");
+  for (const row of [target, otherClient, otherDate]) row.fields.client_name = "คุณก้อง";
+  target.fields.Client = [CLIENT_A];
+  otherClient.fields.Client = [CLIENT_B];
+  otherDate.fields.Client = [CLIENT_A];
+  const records = [target, otherClient, otherDate];
+  const options = { query: "ก้อง", jobDate: "2026-11-08", clientId: CLIENT_A, sessionId: "SELECTED", jobId: "JOB-SELECTED" };
+  assert.deepEqual(buildJobsPage(records, options).items.map((job) => job.id), ["SELECTED"]);
+  for (const change of [{ query: "missing" }, { clientId: CLIENT_B }, { sessionId: "OTHER-CLIENT" }, { jobId: "OTHER" }, { jobDate: "2026-11-09" }]) {
+    assert.equal(buildJobsPage(records, { ...options, ...change }).pagination.total, 0, JSON.stringify(change));
+  }
+});
+
+test("invalid repeated, oversized and control-character queries fail before reading records", async (t) => {
+  let reads = 0;
+  t.mock.method(globalThis, "fetch", async () => { reads += 1; throw new Error("must not read"); });
+  const queries = [
+    "q=a&q=b", "q=&q=", "q=" + "a".repeat(161),
+    ...["\u0000", "\n", "\t", "\u007f", "\u0085", "\u202e"].map((control) => "q=" + encodeURIComponent("name" + control)),
+    "q=" + encodeURIComponent("\ufb03".repeat(54)),
+  ];
+  for (const query of queries) {
+    const response = await handleAdminDashboardJobsRequest(new Request("https://mmdbkk.com/v1/admin/dashboard?view=jobs&" + query), {}, { role: "admin" });
+    assert.equal(response.status, 400, query);
+    assert.equal((await response.json()).error, "invalid_query");
+  }
+  assert.equal(reads, 0);
+});
+
+test("jobs API reports normalized search and keeps query text out of Airtable requests", async (t) => {
+  const target = session("API-SEARCH", "2026-11-08");
+  target.fields.model_name = "Brew";
+  target.fields.client_name = "OR({status},TRUE())";
+  const calls = [];
+  t.mock.method(globalThis, "fetch", async (request) => {
+    const url = new URL(typeof request === "string" ? request : request.url);
+    calls.push(url);
+    assert.equal(url.hostname, "api.airtable.com");
+    assert.equal(url.searchParams.has("filterByFormula"), false);
+    assert.equal(url.searchParams.has("q"), false);
+    return Response.json({ records: url.searchParams.has("returnFieldsByFieldId") ? [] : [target] });
+  });
+  const env = { AIRTABLE_API_KEY: "test-only", AIRTABLE_BASE_ID: "appTest", AIRTABLE_TABLE_SESSIONS: "tblTest" };
+  for (const [query, expectedQuery, count] of [
+    ["  ＢＲＥＷ  ", "brew", 1],
+    ["OR({status},TRUE())", "or({status},true())", 1],
+    ["", null, 1],
+    ["   ", null, 1],
+    ["a".repeat(160), "a".repeat(160), 0],
+  ]) {
+    const response = await handleAdminDashboardJobsRequest(new Request("https://mmdbkk.com/v1/admin/dashboard?view=jobs&q=" + encodeURIComponent(query)), env, { role: "admin" });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.filters.q, expectedQuery);
+    assert.equal(body.counts.filtered, count);
+    assert.equal(body.jobs.length, count);
+  }
+  assert.equal(calls.length, 10);
+});
+
 test("all-jobs view filters one canonical job date and resets pagination to valid bounds", () => {
   const records = [
     session("today_a", "2026-09-10", "18:00"),
@@ -184,6 +290,38 @@ test("job finance is null-safe without extras, malformed notes or a discount", (
   const page = buildJobsPage([{ id: "recS1", fields: { session_id: "S1", job_date: "2026-10-10" } }], { extrasById: { recS1: { [FIN.noteA]: NOTE } } });
   assert.equal(page.items[0].finance.pricing.discount.type, "percent");
   assert.equal(buildJobsPage([{ id: "recS2", fields: { session_id: "S2" } }]).items[0].finance, null);
+});
+
+test("missing or invalid money stays unknown while explicit zero is retained", () => {
+  const unknown = projectFinance({});
+  for (const key of ["amount_thb", "model_payout_thb", "deposit_due_thb", "deposit_received_thb", "balance_thb"]) {
+    assert.equal(unknown[key], null, key);
+  }
+  for (const value of [undefined, null, "", "   ", false, true, {}, [], [0], { valueOf: () => 100 }, "not money", NaN, Infinity, -1, 1e308]) {
+    const finance = projectFinance({ [FIN.amount]: value, [FIN.modelPayout]: value });
+    assert.equal(finance.amount_thb, null, String(value));
+    assert.equal(finance.model_payout_thb, null, String(value));
+  }
+  for (const value of [0, "0", " 0.00 "]) {
+    const finance = projectFinance({ [FIN.amount]: value, [FIN.modelPayout]: value });
+    assert.equal(finance.amount_thb, 0);
+    assert.equal(finance.model_payout_thb, 0);
+  }
+  assert.equal(projectFinance({ [FIN.amount]: "2500.125" }).amount_thb, 2500.13);
+});
+
+test("missing amount uses recorded pricing without replacing an explicit zero", () => {
+  for (const value of [undefined, null, "", " "]) {
+    const finance = projectFinance({ [FIN.amount]: value, [FIN.noteA]: NOTE });
+    assert.equal(finance.amount_thb, 18900);
+    assert.equal(finance.model_payout_thb, null);
+    assert.equal(finance.deposit_received_thb, 0);
+  }
+  assert.equal(projectFinance({ [FIN.amount]: 0, [FIN.noteA]: NOTE }).amount_thb, 0);
+  const incomplete = parsePricingHistory('[MMD SERVICE PRICING v1] {"version":1,"client_total_amount_thb":4500}');
+  assert.equal(incomplete.client_base_thb, null);
+  assert.equal(incomplete.model_base_thb, null);
+  assert.equal(incomplete.client_net_thb, 4500);
 });
 
 test("projectFinance exposes customer/model acknowledgement times only", async () => {
