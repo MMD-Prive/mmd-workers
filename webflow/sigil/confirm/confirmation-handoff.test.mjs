@@ -168,8 +168,8 @@ test("payment confirmation returns to website payment center without asserting v
   assert.equal(p.link.getAttribute("href"), "/my-mmd/payments");
   p.hide();
   assert.equal(p.isDisconnected(), true);
-  assert.doesNotMatch(paymentWebReturn, /location\\.(?:assign|replace)\\(/);
-  assert.doesNotMatch(paymentWebReturn, /fetch\\(|XMLHttpRequest|sendBeacon/);
+  assert.doesNotMatch(paymentWebReturn, /location\.(?:assign|replace)\(/);
+  assert.doesNotMatch(paymentWebReturn, /fetch\(|XMLHttpRequest|sendBeacon/);
   assert.doesNotMatch(paymentWebReturn, /status.*(?:verified|paid)/i);
 });
 
