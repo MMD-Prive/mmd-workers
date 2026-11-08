@@ -27,7 +27,7 @@ function config(env) {
   };
 }
 function apiUrl(c, table, qs = "") {
-  return AT + encodeURIComponent(c.base) + "/" + encodeURIComponent(table) + (qs ? "?" + qs : "");
+  return AT + encodeURIComponent(c.base) + "/" + table.split("/").map(encodeURIComponent).join("/") + (qs ? "?" + qs : "");
 }
 async function airtableRequest(c, table, fetchImpl, options = {}, qs = "") {
   const response = await fetchImpl(apiUrl(c, table, qs), {
@@ -102,6 +102,7 @@ export async function handleStandardJoinIntakeRpc(request, env = {}, deps = {}) 
     if (existing.truncated || existing.rows.length > 1) return failure("join_key_conflict", 409);
     if (existing.rows.length === 1) {
       // Refresh only HYPE's read-only assessment. Never overwrite owner review or original Telegram evidence.
+      if (!/^rec[A-Za-z0-9]{14}$/.test(str(existing.rows[0].id, 40))) return failure("join_record_invalid", 503);
       await airtableRequest(c, c.join + "/" + existing.rows[0].id, f, {
         method: "PATCH", body: JSON.stringify({ fields: hypeFields, typecast: false }),
       });
