@@ -223,7 +223,7 @@ jobs:
         run: |
           set -euo pipefail
           for origin in https://mmdbkk.com https://www.mmdbkk.com; do
-            page="$(curl --retry 3 --retry-delay 2 --fail --silent --show-error "$origin/sigil/model/dashboard/partner-login")"
+            page="$(curl --location --retry 3 --retry-delay 2 --fail --silent --show-error "$origin/sigil/model/dashboard/partner-login")"
             grep -Fq '2010864854-N34SgCqq' <<<"$page"
             grep -Fq 'เข้าสู่ระบบด้วย LINE' <<<"$page"
             if grep -Fq 'lovable.app' <<<"$page"; then exit 1; fi
