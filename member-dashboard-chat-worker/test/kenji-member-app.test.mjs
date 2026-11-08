@@ -80,3 +80,32 @@ test('Personal Main comes only from server truth, never a browser persona hint',
   const data=await response.json();assert.equal(data.personal_main.id,id);assert.match(data.reply,/ข้อมูลที่ยืนยันแล้ว/);assert.doesNotMatch(data.reply,/forged/);
  }
 });
+
+
+test("NEXT LV remains member-only, mobile-first and CSP-nonced", async () => {
+  const response = renderKenjiMemberPage();
+  const html = await response.text();
+  assert.match(html, /<meta name="viewport"[^>]*viewport-fit=cover/);
+  assert.match(html, /data-mode="qa"/);
+  assert.match(html, /data-mode="promo"/);
+  assert.match(html, /id="kenji-input"[^>]*maxlength="800"/);
+  assert.match(html, /src="https:\/\/cdn\.prod\.website-files\.com\/[^"]+Kenji%20CC%2002\.webp"/);
+  assert.match(html, /ดูโปรโมชั่นจากประกาศของ MMD/);
+  assert.doesNotMatch(html, /localStorage\.|sessionStorage\.|javascript:/);
+  assert.match(response.headers.get("content-security-policy") || "", /connect-src 'self'/);
+  assert.doesNotMatch(response.headers.get("content-security-policy") || "", /unsafe-inline/);
+  assert.equal(response.headers.get("x-mmd-kenji"), "member-app-next-lv");
+});
+
+test("NEXT LV uses fresh CSP nonces per request without changing its chat BFF", async () => {
+  const [a, b] = [renderKenjiMemberPage(), renderKenjiMemberPage()];
+  const [htmlA, htmlB] = await Promise.all([a.text(), b.text()]);
+  const nonceA = htmlA.match(/<script nonce="([a-f0-9]{32})">/)?.[1];
+  const nonceB = htmlB.match(/<script nonce="([a-f0-9]{32})">/)?.[1];
+  assert.ok(nonceA);
+  assert.ok(nonceB);
+  assert.notEqual(nonceA, nonceB);
+  assert.match(a.headers.get("content-security-policy"), new RegExp("nonce-" + nonceA));
+  assert.match(htmlA, /fetch\("\/api\/member\/kenji\/chat",/);
+  assert.match(htmlA, /credentials: "same-origin"/);
+});
