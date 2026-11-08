@@ -77,7 +77,7 @@
     if (!token || !/^[A-Za-z0-9_-]+\.[A-Fa-f0-9]{64}$/.test(token)) return;
     const target = new URL(PAYMENT_WEB_PATH, window.location.href);
     target.searchParams.set("t", token);
-    const existing = success.querySelector("[data-mmd-payment-liff], [data-mmd-payment-web]");
+    const existing = success.querySelector("[data-mmd-payment-liff]") || success.querySelector("[data-mmd-payment-web]");
     const link = existing || document.createElement("a");
     const seed = root.querySelector("[data-c-confirm]");
     const href = target.pathname + target.search;
