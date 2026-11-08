@@ -31,15 +31,29 @@ test("Standard join-request is forwarded over private service binding; never aut
     async fetch(request) {
       count++;
       assert.equal(new URL(request.url).hostname, "admin-worker.internal");
-      assert.equal(new URL(request.url).pathname, "/__internal/telegram-standard-join-intake");
+      const path = new URL(request.url).pathname;
       assert.equal(request.headers.get("x-mmd-service-binding"), "telegram-worker");
       const body = await request.json();
+      if (path === "/__internal/hype/operational-status") {
+        assert.deepEqual(body, {
+          telegram_user_id: "1234567890",
+          intent: { type: "membership", trigger: "telegram_standard_join_request" },
+        });
+        return Response.json({
+          ok: true, state: "ready",
+          membership: { level: "private_standard", lifecycle: "active", blocked: false },
+        });
+      }
+      assert.equal(path, "/__internal/telegram-standard-join-intake");
       assert.deepEqual(body, {
         room: "standard",
         telegram_user_id_numeric: "1234567890",
         telegram_username: "example_member",
         telegram_display_name: "Example Member",
         requested_at_unix: 1794120000,
+        hype_check_state: "canonical_verified",
+        hype_membership_level: "private_standard",
+        hype_membership_lifecycle: "active",
       });
       assert.equal(Object.hasOwn(body, "user_chat_id"), false);
       assert.equal(Object.hasOwn(body, "bio"), false);
@@ -55,7 +69,7 @@ test("Standard join-request is forwarded over private service binding; never aut
   assert.equal(json.approves_nothing, true);
   assert.equal(json.sends_nothing, true);
   assert.equal(json.removes_nothing, true);
-  assert.equal(count, 1);
+  assert.equal(count, 2);
   assert.ok(!JSON.stringify(json).includes("1234567890"));
   assert.ok(!JSON.stringify(json).includes("Example"));
 });
@@ -87,4 +101,34 @@ test("Standard join observer ignores other chats and bot actors, never touches p
     TELEGRAM_WEBHOOK_SECRET_TOKEN: "another-secret",
   }));
   assert.equal(notTelegram.status, 401);
+});
+
+
+test("HYPE fails closed on missing Telegram link, blocked member, or incomplete authority, with no Telegram group actions", async () => {
+  const cases = [
+    { status: 404, reply: { ok: false, state: "connect_required", code: "telegram_identity_not_linked" }, expected: "needs_telegram_link" },
+    { status: 200, reply: { ok: true, state: "ready", membership: { level: "private_standard", lifecycle: "active", blocked: true } }, expected: "blocked_review" },
+    { status: 200, reply: { ok: true, state: "partial", membership: { level: "private_standard", lifecycle: "active", blocked: false } }, expected: "review_required" },
+    { status: 503, reply: { ok: false, state: "source_unavailable" }, expected: "authority_unavailable" },
+  ];
+  for (const c of cases) {
+    const observer = [];
+    const binding = { async fetch(req) {
+      const path = new URL(req.url).pathname;
+      if (path === "/__internal/hype/operational-status") {
+        return Response.json(c.reply, { status: c.status });
+      }
+      const body = await req.json();
+      observer.push(body);
+      return Response.json({ ok: true, captured: true, state: "pending_owner_review" });
+    }};
+    const result = await observeStandardJoinRequest(standardJoin().chat_join_request, env({ HYPE_OPERATIONS: binding }));
+    assert.equal(result.join_request_state, "pending_owner_review");
+    assert.equal(result.captured, true);
+    assert.equal(observer.length, 1);
+    assert.equal(observer[0].hype_check_state, c.expected);
+    assert.equal(Object.hasOwn(observer[0], "phone"), false);
+    assert.equal(Object.hasOwn(observer[0], "email"), false);
+    assert.equal(Object.hasOwn(result, "telegram_user_id_numeric"), false);
+  }
 });
