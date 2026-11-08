@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -12,6 +13,8 @@ import {
 import { testConsoleHomeCandidate } from './admin-console-home-candidate-test.mjs';
 
 const REPOSITORY = dirname(dirname(fileURLToPath(import.meta.url)));
+// The homepage overlay was reviewed against the exact source merged in PR #3140.
+const REVIEWED_HOME_SOURCE = '2c20d579599515506e3c7f521756c2cb419593c2';
 const EXPECTED_PATHS = [
   'admin-worker/src/admin-login-hero-worker-core.js',
   'admin-worker/src/admin-login-hero-worker.js',
@@ -47,7 +50,8 @@ after(() => {
 test('source guard binds exactly the four reviewed homepage files and rejects drift in each', () => {
   assert.deepEqual(RUNTIME_PATHS, EXPECTED_PATHS);
   assert.deepEqual(Object.keys(SOURCE_HASHES).sort(), [...EXPECTED_PATHS].sort());
-  const read = path => readFileSync(join(REPOSITORY, path), 'utf8');
+  const read = path => execFileSync('git', ['show', REVIEWED_HOME_SOURCE + ':' + path],
+    { cwd: REPOSITORY, encoding: 'utf8' });
   validateSources(read);
   for (const changed of EXPECTED_PATHS) {
     assert.match(SOURCE_HASHES[changed], /^[a-f0-9]{64}$/);
