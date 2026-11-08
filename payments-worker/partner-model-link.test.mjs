@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
-import { createConfirmTokenRecord, signConfirmToken } from "./index.js";
+import { createConfirmTokenRecord, signConfirmToken, verifyConfirmToken } from "./index.js";
 import { PartnerModelLinkIssuer, handlePartnerModelLink } from "./partner-model-link.js";
 
 function setup({ system = "co_partner", partner = "P-001", pay = undefined, verified = "verified", payment = {}, session = {}, legacy = false } = {}) {
@@ -205,4 +205,36 @@ test("a legacy token cannot set a missing model price", async () => {
   await createConfirmTokenRecord(ctx.env, token, claims);
   assert.equal((await (await call(ctx, { ...job, existing_model_token: token })).json()).error, "model_link_legacy_review_required");
   assert.equal(ctx.patches.length, 0);
+});
+
+test("issuance pause preserves authentication and existing links, without touching issuance state", async () => {
+  const ctx = setup();
+  const issued = await (await call(ctx, job)).json();
+  const token = new URL(issued.model_confirmation_url).searchParams.get("t");
+  ctx.env.PARTNER_MODEL_LINK_ISSUANCE_PAUSED = "true";
+  assert.equal((await call(ctx, job, "invalid")).status, 401);
+  const before = structuredClone(ctx.records.get("issuance"));
+  const paused = await call(ctx, { ...job, existing_model_token: token });
+  assert.equal(paused.status, 503);
+  assert.equal((await paused.json()).error, "model_link_issuance_paused");
+  assert.equal((await verifyConfirmToken(ctx.env, token, { expectedRole: "model" })).session_id, job.session_id);
+  assert.deepEqual(ctx.records.get("issuance"), before);
+  assert.equal(ctx.kvWrites, 1);
+  assert.equal(ctx.patches.length, 1);
+  ctx.env.PARTNER_MODEL_LINK_ISSUANCE_PAUSED = "false";
+  assert.deepEqual(await (await call(ctx, job)).json(), issued);
+  assert.equal(ctx.kvWrites, 1);
+});
+
+test("paused and invalid switch settings block a first issuance before storage or network access", async () => {
+  for (const setting of ["true", "unexpected"]) {
+    const ctx = setup();
+    ctx.env.PARTNER_MODEL_LINK_ISSUANCE_PAUSED = setting;
+    ctx.fetchStub = () => assert.fail("a paused request must not access Airtable");
+    const response = await call(ctx, job);
+    assert.equal(response.status, 503);
+    assert.equal(ctx.records.size, 0);
+    assert.equal(ctx.kvWrites, 0);
+    assert.equal(ctx.patches.length, 0);
+  }
 });

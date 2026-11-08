@@ -97,6 +97,10 @@ export function isPartnerModelLinkRequest(path, method) {
 export async function handlePartnerModelLink(request, env = {}, storage) {
   if (!authed(request, env)) return json({ ok: false, error: "service_auth_required" }, 401);
 
+  // Keep verification of already-issued links available while the issuer is stopped.
+  const pause = String(env.PARTNER_MODEL_LINK_ISSUANCE_PAUSED ?? "").trim().toLowerCase();
+  if (pause && pause !== "false") return json({ ok: false, error: "model_link_issuance_paused" }, 503);
+
   const body = await request.json().catch(() => null);
   const sessionId = clean(body?.session_id, 220);
   const partnerId = clean(body?.partner_id, 120);
