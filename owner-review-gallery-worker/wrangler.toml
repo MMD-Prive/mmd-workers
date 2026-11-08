@@ -1,0 +1,14 @@
+name = "mmd-owner-review-gallery"
+main = "src/index.mjs"
+compatibility_date = "2026-10-01"
+workers_dev = true
+
+# This Worker is explicitly an isolated synthetic UI preview.
+# NO production mmdbkk.com route, NO service bindings, NO Airtable, R2,
+# D1, KV, payment services, identity providers, or cron triggers.
+# Keep its actual hostname at:
+# mmd-owner-review-gallery.malemodel-bkk.workers.dev
+#
+# Required secrets (configure out-of-band, NEVER commit values):
+# OWNER_REVIEW_CODE_SHA256       = hex SHA-256 of random 24+ char review code
+# OWNER_REVIEW_SESSION_HMAC_KEY  = random 32+ char signing secret
