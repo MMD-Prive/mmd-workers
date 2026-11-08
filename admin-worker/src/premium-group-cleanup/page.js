@@ -82,6 +82,17 @@ fetch(BASE+"/join-requests",{credentials:"same-origin",headers:{accept:"applicat
   for(const item of d.items){
     const card=el("div","join-card");const who=el("span","ref",(item.telegram_display_name||"ไม่ระบุชื่อ")+" · "+(item.telegram_username?"@"+item.telegram_username:"ไม่มี username"));
     card.append(who,el("span","why","Telegram ID "+item.telegram_user_id_masked+" · "+(item.requested_at||"ไม่พบวันที่คำขอ")+" · "+item.review_status));
+    const hypeText={
+      canonical_verified:"HYPE · พบตัวตน Telegram ที่ยืนยันใน MY MMD",
+      needs_telegram_link:"HYPE · ยังไม่ได้เชื่อม Telegram กับบัญชีลูกค้า",
+      review_required:"HYPE · ข้อมูลสมาชิกยังไม่ครบ ต้องตรวจเพิ่ม",
+      blocked_review:"HYPE · พบสถานะระงับสิทธิ์ ต้องให้เปอร์ตรวจ",
+      authority_unavailable:"HYPE · ระบบตรวจสิทธิ์ไม่พร้อม",
+      not_checked:"HYPE · ยังไม่ได้ตรวจ",
+    };
+    const h=hypeText[item.hype_check_state]||hypeText.not_checked;
+    card.append(el("span","why",h+(item.hype_membership_level?" · "+item.hype_membership_level:"")+(item.hype_membership_lifecycle?" · "+item.hype_membership_lifecycle:"")));
+    card.append(el("span","why","ผล HYPE เป็นหลักฐานประกอบ ไม่ใช่สิทธิ์อนุมัติเข้ากลุ่ม หรือยืนยันว่าอยู่ห้อง Standard แล้ว"));
     const matches=el("ul","join-matches");
     if(!item.possible_matches.length){matches.append(el("li","","ยังจับคู่กับ LINE OA ไม่ได้ ต้องให้เปอร์ตรวจเอง"))}
     else{for(const c of item.possible_matches){
