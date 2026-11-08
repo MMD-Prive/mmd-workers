@@ -391,18 +391,42 @@ html[data-mmd-global-surface="v1"] :is(button,a,input,select,textarea){font:inhe
   const style=document.createElement("style");
   style.id="mmd-global-member-control-v1-style";
   style.textContent=`
-  #mmd-global-member-control-v1{position:fixed;z-index:2147479000;top:max(10px,env(safe-area-inset-top));right:10px;max-width:min(46vw,210px);height:38px;padding:0 11px;display:inline-flex;align-items:center;gap:8px;border:1px solid rgba(216,184,111,.22);border-radius:999px;background:rgba(12,11,10,.88);color:#fff8ed;text-decoration:none;box-shadow:0 10px 28px rgba(0,0,0,.22);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);font:800 9px/1.15 Inter,"Noto Sans Thai",system-ui,sans-serif;letter-spacing:.05em}
-  #mmd-global-member-control-v1 .mmd-gm-dot{width:7px;height:7px;flex:0 0 7px;border-radius:50%;background:#8d8479;box-shadow:0 0 0 3px rgba(255,255,255,.04)}
-  #mmd-global-member-control-v1 .mmd-gm-copy{min-width:0;display:grid;gap:2px}
-  #mmd-global-member-control-v1 .mmd-gm-copy strong,#mmd-global-member-control-v1 .mmd-gm-copy span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  #mmd-global-member-control-v1 .mmd-gm-copy strong{font-size:9px;color:#fff8ed}
-  #mmd-global-member-control-v1 .mmd-gm-copy span{font-size:7px;color:#bfb4a2;letter-spacing:.09em}
-  #mmd-global-member-control-v1[data-state="online"] .mmd-gm-dot{background:#73d39b;box-shadow:0 0 0 3px rgba(115,211,155,.09),0 0 12px rgba(115,211,155,.34)}
+  /* Member identity is a single-line, bounded status chip, never a second header row. */
+  #mmd-global-member-control-v1{box-sizing:border-box;position:fixed;z-index:970;top:max(12px,env(safe-area-inset-top));right:10px;max-width:min(190px,45vw);height:34px;min-width:0;padding:0 10px;display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(216,184,111,.22);border-radius:999px;background:rgba(12,11,10,.9);color:#fff8ed;text-decoration:none;box-shadow:0 6px 18px rgba(0,0,0,.15);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);font:700 10px/1.25 Inter,"Noto Sans Thai",system-ui,sans-serif;white-space:nowrap}
+  #mmd-global-member-control-v1 .mmd-gm-dot{display:block;width:7px;height:7px;flex:0 0 7px;border-radius:50%;background:#8d8479;box-shadow:0 0 0 3px rgba(255,255,255,.04)}
+  #mmd-global-member-control-v1 .mmd-gm-copy{display:flex;align-items:center;gap:6px;min-width:0;max-width:100%;white-space:nowrap}
+  #mmd-global-member-control-v1 .mmd-gm-copy strong,#mmd-global-member-control-v1 .mmd-gm-copy span{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #mmd-global-member-control-v1 .mmd-gm-copy strong{font-size:10px;color:#fff8ed}
+  #mmd-global-member-control-v1 .mmd-gm-copy span{font-size:8px;color:#bfb4a2;letter-spacing:.03em}
+  #mmd-global-member-control-v1[data-state="online"] .mmd-gm-dot{background:#73d39b;box-shadow:0 0 0 3px rgba(115,211,155,.09)}
   #mmd-global-member-control-v1[data-private="1"]{border-color:rgba(216,184,111,.42);background:rgba(10,9,8,.92)}
-  html[data-mmd-world="public"] #mmd-global-member-control-v1{border-color:rgba(143,38,54,.22);background:rgba(255,250,243,.94);color:#25181b}
+  html[data-mmd-world="public"] #mmd-global-member-control-v1{border-color:rgba(143,38,54,.22);background:rgba(255,250,243,.96);color:#25181b}
   html[data-mmd-world="public"] #mmd-global-member-control-v1 .mmd-gm-copy strong{color:#25181b}
   html[data-mmd-world="public"] #mmd-global-member-control-v1 .mmd-gm-copy span{color:#7c6f72}
-  @media(max-width:767px){#mmd-global-member-control-v1{top:max(8px,env(safe-area-inset-top));right:8px;height:36px;max-width:44vw;padding:0 10px}}
+  #mmd-global-member-control-v1:focus-visible{outline:2px solid #c6a16a;outline-offset:3px}
+
+  /* Global public header: keep all top-level links to one row on desktop. */
+  #mmd-global-public-header .mmdg-inner{min-height:58px;padding-block:4px;gap:10px}
+  #mmd-global-public-header .mmdg-inner #mmd-global-member-control-v1{position:static;top:auto;right:auto;flex:0 1 auto;max-width:min(190px,22vw);height:34px;margin-left:auto}
+  @media(min-width:1001px){
+    #mmd-global-public-header .mmdg-inner .mmdg-nav{display:flex!important;grid-template-columns:none;align-items:center;justify-content:flex-end;gap:clamp(12px,2vw,26px)}
+    #mmd-global-public-header .mmdg-menu-button{display:none!important}
+  }
+  /* The extracted global Head previously forced display:grid!important and two columns at 767px. */
+  @media(max-width:1000px){
+    #mmd-global-public-header .mmdg-inner{min-height:54px;padding-block:4px}
+    #mmd-global-public-header .mmdg-inner .mmdg-nav{display:none!important}
+    #mmd-global-public-header .mmdg-menu-button{display:flex!important}
+    #mmd-global-public-header .mmdg-inner #mmd-global-member-control-v1{max-width:min(160px,40vw)}
+  }
+  @media(max-width:767px){
+    #mmd-global-member-control-v1{right:8px;top:max(11px,env(safe-area-inset-top));height:32px;max-width:min(130px,40vw);padding:0 9px;gap:5px}
+    #mmd-global-member-control-v1 .mmd-gm-copy span{display:none}
+    #mmd-global-member-control-v1 .mmd-gm-copy strong{font-size:10px}
+    #mmd-global-public-header .mmdg-inner #mmd-global-member-control-v1{height:32px;max-width:min(130px,40vw)}
+    #mmd-global-public-header .mmdg-mobile-menu nav{grid-template-columns:minmax(0,1fr)}
+  }
+  @media(prefers-reduced-motion:reduce){#mmd-global-member-control-v1{transition:none}}
   `;
   document.head.appendChild(style);
 
@@ -413,6 +437,22 @@ html[data-mmd-global-surface="v1"] :is(button,a,input,select,textarea){font:inhe
   chip.setAttribute("aria-label","Member profile");
   chip.innerHTML='<i class="mmd-gm-dot" aria-hidden="true"></i><span class="mmd-gm-copy"><strong>MEMBER</strong><span>ACCOUNT</span></span>';
   document.body.appendChild(chip);
+
+  // Join the public header's flex row so the status never overlays navigation.
+  // The header may be created at DOMContentLoaded by the separate site Head script.
+  function dockMemberChip() {
+    const inner=document.querySelector("#mmd-global-public-header .mmdg-inner");
+    if(!inner)return false;
+    if(chip.parentElement!==inner)inner.insertBefore(chip,inner.querySelector(".mmdg-menu-button"));
+    return true;
+  }
+  if(!dockMemberChip()){
+    const observer=new MutationObserver(()=>{
+      if(dockMemberChip())observer.disconnect();
+    });
+    observer.observe(document.body,{childList:true,subtree:true});
+    setTimeout(()=>observer.disconnect(),3000);
+  }
 
   function clean(value){return String(value==null?"":value).trim()}
   function pick(obj,keys){for(const key of keys){let value=obj;for(const part of key.split(".")){value=value==null?undefined:value[part]}if(value!==undefined&&value!==null&&clean(value)!=="")return value}return""}
@@ -436,6 +476,7 @@ html[data-mmd-global-surface="v1"] :is(button,a,input,select,textarea){font:inhe
       chip.querySelector("strong").textContent=name;
       chip.querySelector(".mmd-gm-copy span").textContent=hasPrivate?"PRIVATE · "+String(tier).toUpperCase():String(tier).toUpperCase();
       chip.setAttribute("aria-label","เปิด Member Profile ของ "+name);
+      chip.title="เปิด Member Profile ของ "+name;
     })
     .catch(()=>{});
 })();

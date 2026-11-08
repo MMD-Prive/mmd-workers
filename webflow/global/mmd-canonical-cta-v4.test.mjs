@@ -95,3 +95,29 @@ test("global member control uses verified profile and routes to canonical member
 test("coupon login continuation uses canonical MY MMD coupons route", () => {
   assert.match(source, /const COUPON_ENTRY = "\/my-mmd\/coupons"/);
 });
+
+
+test("mobile global member header stays one row and does not force a two-column navbar", () => {
+  const start = source.indexOf('style.id="mmd-global-member-control-v1-style"');
+  const end = source.indexOf('document.head.appendChild(style);', start);
+  assert.ok(start >= 0 && end > start, "scoped member header style exists");
+  const css = source.slice(start, end);
+  assert.match(css, /#mmd-global-public-header \.mmdg-inner \.mmdg-nav\{display:none!important\}/);
+  assert.match(css, /@media\(max-width:1000px\)/);
+  assert.match(css, /@media\(min-width:1001px\)/);
+  assert.match(css, /#mmd-global-public-header \.mmdg-menu-button\{display:none!important\}/);
+  assert.match(css, /\.mmd-gm-copy\{display:flex;align-items:center/);
+  assert.match(css, /\.mmd-gm-copy span\{display:none\}/);
+  assert.match(css, /\.mmdg-mobile-menu nav\{grid-template-columns:minmax\(0,1fr\)\}/);
+  assert.doesNotMatch(css, /grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+  assert.doesNotMatch(css, /max-width:min\(46vw,210px\)/);
+});
+
+test("member identity joins the header without obscuring its mobile menu or changing auth", () => {
+  assert.match(source, /function dockMemberChip\(\)/);
+  assert.match(source, /inner\.insertBefore\(chip,inner\.querySelector\("\.mmdg-menu-button"\)\)/);
+  assert.match(source, /observer\.observe\(document\.body,\{childList:true,subtree:true\}\)/);
+  assert.match(source, /fetch\("\/member\/api\/liff\/profile",\{credentials:"same-origin",cache:"no-store"/);
+  assert.match(source, /chip\.href=PROFILE_PATH/);
+  assert.match(source, /chip\.title="เปิด Member Profile ของ "\+name/);
+});
