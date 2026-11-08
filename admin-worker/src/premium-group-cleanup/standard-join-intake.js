@@ -79,6 +79,18 @@ export async function handleStandardJoinIntakeRpc(request, env = {}, deps = {}) 
   if (username && !/^[a-z0-9_]{5,32}$/.test(username)) return failure("invalid_username", 400);
   const displayName = maybeName(data.telegram_display_name);
   const at = new Date(date * 1000).toISOString();
+  const states = new Set(["canonical_verified", "needs_telegram_link", "review_required", "blocked_review", "authority_unavailable"]);
+  const hypeState = str(data.hype_check_state, 50);
+  const safeHypeState = states.has(hypeState) ? hypeState : "authority_unavailable";
+  const level = str(data.hype_membership_level, 60).toLowerCase();
+  const lifecycle = str(data.hype_membership_lifecycle, 60).toLowerCase();
+  // Values are hints from the private HYPE read-only status service; never an approval authority.
+  const hypeFields = {
+    hype_check_state: safeHypeState,
+    hype_membership_level: /^[a-z0-9_]{2,60}$/.test(level) ? level : "",
+    hype_membership_lifecycle: /^[a-z0-9_]{2,60}$/.test(lifecycle) ? lifecycle : "",
+    hype_checked_at: new Date().toISOString(),
+  };
   const c = config(env);
   if (!c.token) return failure("airtable_not_configured", 503);
 
@@ -88,7 +100,13 @@ export async function handleStandardJoinIntakeRpc(request, env = {}, deps = {}) 
   try {
     const existing = await airtableList(c, c.join, f, { filter, maxPages: 1 });
     if (existing.truncated || existing.rows.length > 1) return failure("join_key_conflict", 409);
-    if (existing.rows.length === 1) return json({ ok: true, captured: true, state: "already_recorded", room: "standard" });
+    if (existing.rows.length === 1) {
+      // Refresh only HYPE's read-only assessment. Never overwrite owner review or original Telegram evidence.
+      await airtableRequest(c, c.join + "/" + existing.rows[0].id, f, {
+        method: "PATCH", body: JSON.stringify({ fields: hypeFields, typecast: false }),
+      });
+      return json({ ok: true, captured: true, state: "already_recorded", room: "standard" });
+    }
 
     // Race-safe upsert keyed by (room + numeric id); no phone/email/note is captured.
     // Do not set review_status in a replay update: the UI treats empty as pending.
@@ -104,6 +122,7 @@ export async function handleStandardJoinIntakeRpc(request, env = {}, deps = {}) 
           telegram_display_name: displayName,
           requested_at: at,
           evidence_source: "telegram_chat_join_request",
+          ...hypeFields,
         } }],
         typecast: false,
       }),
@@ -167,6 +186,10 @@ export async function readStandardJoinQueue(env = {}, deps = {}) {
       telegram_display_name: str(j.telegram_display_name, 180),
       requested_at: str(j.requested_at, 60),
       review_status: statusName(j.review_status) || "pending_owner_review",
+      hype_check_state: statusName(j.hype_check_state) || "not_checked",
+      hype_membership_level: str(j.hype_membership_level, 60),
+      hype_membership_lifecycle: str(j.hype_membership_lifecycle, 60),
+      hype_checked_at: str(j.hype_checked_at, 60),
       possible_matches: found.slice(0, 3),
       possible_match_count: found.length,
       matches_require_owner_confirmation: true,
