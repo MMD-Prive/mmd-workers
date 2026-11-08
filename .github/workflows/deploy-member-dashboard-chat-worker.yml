@@ -356,8 +356,11 @@ jobs:
             -D "$kenji_headers" -o "$kenji_body" -w "%{http_code}" \
             https://www.mmdbkk.com/member/kenji || true)"
           test "$kenji_code" = "200"
-          grep -qi '^x-mmd-kenji: member-app-v1' "$kenji_headers"
-          grep -q 'MY MMD CONCIERGE' "$kenji_body"
+          grep -qi '^x-mmd-kenji: member-app-next-lv' "$kenji_headers"
+          grep -q 'id="kenji-input"' "$kenji_body"
+          grep -q 'data-mode="promo"' "$kenji_body"
+          grep -q 'Kenji04%20Member%20NEXT%20LV%20Mobile%209x16.webp' "$kenji_body"
+          grep -q 'data:image/png;base64' "$kenji_body"
           if grep -Eq 'KENJI AI 2[.]0|YOUR NEXT STEP, QUIETLY HANDLED' "$kenji_body"; then
             echo "legacy Kenji AI 2.0 dialogue leaked into canonical /member/kenji" >&2
             exit 1
