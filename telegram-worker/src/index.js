@@ -33,6 +33,7 @@ const TOPIC_SMOKE_CONFIRMATION = "SEND_REDACTED_TOPIC_SMOKE";
 const HYPE_PREVIEW_INTRO_CONFIRMATION = "INTRODUCE_HYPE_PREVIEW_V1";
 import { isPrivateCareBackAnnouncementVisible } from "../../shared/membership-promotion-policy.mjs";
 import { MEMBER_PRESENCE_PATHS, handleMemberPresence } from "./member-presence.js";
+import { observeStandardJoinRequest } from "./standard-join-observer.js";
 const HYPE_PREMIUM_ROOM_SYNC_CONFIRMATION = "SYNC_HYPE_PREMIUM_ROOM_V1";
 const TELEGRAM_CANONICAL_WEBHOOK_URL = "https://mmdbkk.com/telegram/webhook";
 const TELEGRAM_WEBHOOK_LOCK_CONFIRMATION = "ENSURE_CANONICAL_TELEGRAM_WEBHOOK_V1";
@@ -687,9 +688,15 @@ async function handleTelegramWebhook(update, env) {
     return handleHypeRecoveryCandidateCallback(callback, env);
   }
 
-  const premiumJoinRequest = update.chat_join_request || null;
-  if (premiumJoinRequest) {
-    return handleHypePremiumJoinRequest(premiumJoinRequest, env);
+  const joinRequest = update.chat_join_request || null;
+  if (joinRequest) {
+    // Standard is an owner-review intake only. Do not approve, decline or message anyone.
+    const standardId = clean(env.TELEGRAM_STANDARD_GROUP_ID);
+    if (standardId && clean(joinRequest.chat?.id) === standardId) {
+      return observeStandardJoinRequest(joinRequest, env);
+    }
+    // Preserve the existing Premium handling contract.
+    return handleHypePremiumJoinRequest(joinRequest, env);
   }
 
   const message = update.message || update.edited_message || null;
