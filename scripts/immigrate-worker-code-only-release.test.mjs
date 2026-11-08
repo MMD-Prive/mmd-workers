@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { verifyImmigrateMutation } from './immigrate-production-gate.mjs';
 import { parseImmigrateWorkerConfig, verifyImmigrateWorkerBaseline, promoteImmigrateWorkerVersion } from './immigrate-worker-code-only-release.mjs';
 
 const version='11111111-1111-4111-8111-111111111111';
@@ -78,7 +79,7 @@ test('baseline drift fails closed before a Worker deployment or route write',asy
 
 test('promotion deploys only the uploaded SHA-matched version and never writes routes',async()=>{
   const f=fixture();
-  const result=await promoteImmigrateWorkerVersion({uploadedVersion:uploaded,expectedVersion:version,expectedDeployment:deployment,token:'test',configText:config,commitSha:commit,fetcher:f.fetcher});
+  const result=await promoteImmigrateWorkerVersion({uploadedVersion:uploaded,expectedVersion:version,expectedDeployment:deployment,token:'test',configText:config,commitSha:commit,authorize:async()=>{},fetcher:f.fetcher});
   assert.equal(result.version,uploaded);
   assert.equal(result.routesChanged,false);
   assert.equal(f.calls.filter(call=>call.path==='/deployments'&&call.method==='POST').length,1);
@@ -93,7 +94,24 @@ test('promotion refuses a version without the approved source SHA and leaves tra
     if(parsed.pathname.endsWith(`/versions/${uploaded}`))return Response.json({success:true,result:{id:uploaded,annotations:{'workers/message':'wrong source'}}});
     return response;
   };
-  await assert.rejects(()=>promoteImmigrateWorkerVersion({uploadedVersion:uploaded,expectedVersion:version,expectedDeployment:deployment,token:'test',configText:config,commitSha:commit,fetcher:f.fetcher}),/does not match the approved commit/);
+  await assert.rejects(()=>promoteImmigrateWorkerVersion({uploadedVersion:uploaded,expectedVersion:version,expectedDeployment:deployment,token:'test',configText:config,commitSha:commit,authorize:async()=>{},fetcher:f.fetcher}),/does not match the approved commit/);
+});
+
+test('a push or rerun cannot promote the candidate even if all Worker reads match', async () => {
+  for (const [event, attempt, reason] of [
+    ['push', '1', /manual dispatch required/],
+    ['workflow_dispatch', '2', /production reruns/],
+  ]) {
+    const f = fixture();
+    await assert.rejects(promoteImmigrateWorkerVersion({
+      uploadedVersion: uploaded, expectedVersion: version, expectedDeployment: deployment,
+      token: 'test', configText: config, commitSha: commit, fetcher: f.fetcher,
+      authorize: () => verifyImmigrateMutation({
+        GITHUB_REPOSITORY: 'MMD-Prive/mmd-workers', GITHUB_EVENT_NAME: event, GITHUB_RUN_ATTEMPT: attempt,
+      }),
+    }), reason);
+    assert.ok(f.calls.every(call => call.method === 'GET'));
+  }
 });
 
 test('release workflow only supports manual approved code releases and contains no route mutation',()=>{
