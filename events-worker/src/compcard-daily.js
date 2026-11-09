@@ -1,3 +1,4 @@
+import { checkPublicationHistory } from './compcard-history-review.js';
 import { APPROVED_COMPCARD_MANIFEST } from "./compcard-approved-manifest.js";
 import { automaticModelAllowed, destinationsForModelSlot, buildCompcardCaption, chooseDailyCard, destinationsForCategory, evaluateCard, publicationCadence } from "./compcard-policy.js";
 import { assertIntakeCardCurrent, mergeApprovedIntake, readApprovedIntakeAsset } from "./compcard-intake.js";
@@ -249,6 +250,7 @@ export async function preflightCompcardDaily(env, options = {}) {
        && previous.updated_at <= now && now - previous.updated_at < READINESS_TTL_MS) return previous;
   const report = { schema: "hype_compcard_readiness_v1", date, build_sha: build, manifest_revision: manifest.revision, updated_at: now,
     schedule, cadence, standard_enabled: standardEnabled, source_folder_id: manifest.source_folder_id, intake: manifest.intake, ready: false, sends: 0, business_writes: 0,
+    publication_review: { status: "required_at_plan_and_presend", clearance_cached: false },
     model_ready: false, standard_ready: false, promotion_ready: false, destinations: [], eligible_counts: {}, excluded: [], asset_probe: null, standard_asset_probe: null,
     promotion_assets: manifest.promotions.length, promotion: null, errors: manifest.intake?.error ? [manifest.intake.error] : [] };
   try { report.destinations = await (deps.destinations || (() => readCompcardDestinations(env)))(); }
@@ -584,6 +586,8 @@ async function executeSlot(env, manifest, bucket, slot, now, deps, wallClock) {
       const card = chooseDailyCard(candidates, history, date);
       if (!card) return { date, slot, status: "no_eligible_card", sent: 0 };
       const destinations = destinationsForModelSlot(card.category, slot);
+      const review = await checkPublicationHistory(bucket, card, manifest.destinations, slot, wallClock(), destinations);
+      if (!review.allowed) return { date, slot, status: "publication_review_hold", sent: 0, review };
       plan = { schema: "hype_compcard_plan_v1", date, slot, manifest_revision: manifest.revision, created_at: now,
         card_id: card.id, model_id: card.model_id, category: card.category, file_id: card.file_id, sha256: card.sha256,
         room_selection_policy: 1,
@@ -664,7 +668,11 @@ async function executeSlot(env, manifest, bucket, slot, now, deps, wallClock) {
         } else if (!promotionAvailable(card, wallClock()) || card.captions?.[destination] !== plan.captions[destination]) throw problem("compcard_promotion_expired", false);
         const beforeSend = compcardClock(wallClock());
         if (beforeSend.date !== date || !due(beforeSend, compcardSchedule(env)[slot])) throw problem("compcard_window_closed", false);
-        if (modelSlot) await reserveCompcardExposure(bucket, card, date, now);
+        if (modelSlot) {
+          const review = await checkPublicationHistory(bucket, card, manifest.destinations, slot, wallClock(), plan.destinations);
+          if (!review.allowed) throw problem("compcard_publication_review_hold", false);
+          await reserveCompcardExposure(bucket, card, date, now);
+        }
         return sharedAsset;
       },
       deliver: (asset) => (deps.send || ((chosen, room, caption, bytes, expectedChat) => sendApprovedCompcard(env, chosen, room, caption, bytes, undefined, expectedChat)))
@@ -728,7 +736,7 @@ export async function runCompcardDaily(env = {}, options = {}) {
         : { date: clock.date, slot: "standard", status: "not_ready", sent: 0 });
     }
     for (const result of results) {
-      if (["no_approved_promotion", "no_eligible_card", "not_ready"].includes(result.status)) await writeCompcardSnapshot(bucket, `summaries/${clock.date}/${result.slot}.json`, result);
+      if (["no_approved_promotion", "no_eligible_card", "not_ready", "publication_review_hold"].includes(result.status)) await writeCompcardSnapshot(bucket, `summaries/${clock.date}/${result.slot}.json`, result);
       log(result);
     }
     return { date: clock.date, status: results.length ? "processed" : "not_due", readiness: "ready", results };

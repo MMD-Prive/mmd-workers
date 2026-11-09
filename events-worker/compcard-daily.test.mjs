@@ -1,3 +1,4 @@
+import { seedSyntheticReview } from './history-review-fixture.mjs';
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -11,7 +12,7 @@ const at = (date, time) => Date.parse(`${date}T${time}:00+07:00`);
 const ROOM_IDS = { premium: "-1001668261779", standard: "-1002073919780", preview: "-1002393788585" };
 const BYTES = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 0]);
 const HASH = await compcardSha256(BYTES);
-const CARD = { id: "approved-file-0001", file_id: "approved-file-0001", model_id: "recExample0001", canonical_name: "Example", display_name: "Example", category: "exclusive",
+const CARD = { id: "approved-file-0001", file_id: "approved-file-0001", model_id: "recExample0001", canonical_name: "Example", display_name: "Example", category: "premium",
   content_type: "image/png", bytes: BYTES.length, sha256: HASH, height_cm: 180, weight_kg: 72, caption_stats_allowed: true };
 function recordFor(card) {
   return { id: card.model_id, fields: { working_name: card.canonical_name, status: "Active", sales_layer: ["travel", "extreme"].includes(card.category) ? "public" : "private",
@@ -58,7 +59,7 @@ function fixture({ cards = [CARD], promotions = [], send } = {}) {
   };
   return { bucket, sends, models, manifest, env, deps };
 }
-const run = (f, date = "2026-10-18", time = "16:30", options = {}) => runCompcardDaily(f.env, { now: at(date, time), deps: f.deps, ...options });
+const run = async (f, date = "2026-10-18", time = "16:30", options = {}) => { const now = at(date, time); if (f.env.HYPE_COMPCARD_ENABLED === "true") await seedSyntheticReview(f.deps, now, f.models); return runCompcardDaily(f.env, { now: at(date, time), deps: f.deps, ...options }); };
 
 test("default network readers preserve the native fetch receiver and never auto-follow credentials", async () => {
   const original = globalThis.fetch;
@@ -154,6 +155,11 @@ for (const [category, expected] of [["exclusive", ["premium", "preview"]], ["pre
   test(`${category} sends only the user-approved room combination`, async () => {
     const f = fixture({ cards: [{ ...CARD, category }] });
     const result = await run(f);
+    if (category === "exclusive") {
+      assert.equal(result.results[0].status, "publication_review_hold");
+      assert.equal(f.sends.length, 0);
+      return;
+    }
     assert.equal(result.results[0].status, "sent");
     assert.deepEqual(f.sends.map((row) => row.destination), expected);
     for (const row of f.sends) assert.equal(row.expectedChatId, ROOM_IDS[row.destination]);
@@ -168,17 +174,17 @@ test("duplicate and concurrent cron ticks send one card once per destination", a
   const f = fixture();
   await Promise.all([run(f), run(f)]);
   await run(f, "2026-10-18", "16:45");
-  assert.deepEqual(f.sends.map((row) => row.destination).sort(), ["premium", "preview"]);
+  assert.deepEqual(f.sends.map((row) => row.destination).sort(), ["premium"]);
   assert.equal(f.bucket.read("deliveries/2026-10-18/model/premium.json").status, "sent");
 });
 
 test("a repeated tick rebuilds a readable summary from durable receipts without sending again", async () => {
   const f = fixture();
   const first = await run(f);
-  assert.equal(f.sends.length, 2);
+  assert.equal(f.sends.length, 1);
   const protectedKeys = [
     "plans/2026-10-18/model.json", `history/${CARD.model_id}.json`,
-    "deliveries/2026-10-18/model/premium.json", "deliveries/2026-10-18/model/preview.json",
+    "deliveries/2026-10-18/model/premium.json",
   ];
   const durable = new Map(protectedKeys.map(key => [key, f.bucket.records.get(`${COMPCARD_JOURNAL_ROOT}${key}`)]));
   // Model an existing unwrapped report written before the snapshot envelope.
@@ -187,8 +193,8 @@ test("a repeated tick rebuilds a readable summary from durable receipts without 
   const snapshot = f.bucket.read("summaries/2026-10-18/model.json");
   assert.deepEqual(snapshot, { schema: "hype_compcard_snapshot_v1", success: true, result: repeated.results[0] });
   assert.equal(snapshot.result.status, "sent");
-  assert.equal(snapshot.result.sent, 2);
-  assert.equal(f.sends.length, 2);
+  assert.equal(snapshot.result.sent, 1);
+  assert.equal(f.sends.length, 1);
   for (const outcome of snapshot.result.outcomes) {
     const record = f.bucket.read(`deliveries/2026-10-18/model/${outcome.destination}.json`);
     assert.equal(outcome.duplicate, true);
@@ -203,22 +209,22 @@ test("a repeated tick rebuilds a readable summary from durable receipts without 
 test("known failure retries the unfinished room; refreshed readiness reuses the frozen plan", async () => {
   let previewTries = 0;
   const f = fixture({ send: (card, destination, caption, asset, chat, n) => {
-    if (destination === "preview" && ++previewTries === 1) return { delivery_state: "not_sent", error: "compcard_mock_rejected" };
+    if (destination === "premium" && ++previewTries === 1) return { delivery_state: "not_sent", error: "compcard_mock_rejected" };
     return { ok: true, delivery_state: "sent", destination, chat_id: chat, message_id: n, approved_sha256: card.sha256 };
   } });
   await run(f);
   await run(f, "2026-10-18", "17:00");
-  assert.deepEqual(f.sends.map((row) => row.destination), ["premium", "preview", "preview"]);
+  assert.deepEqual(f.sends.map((row) => row.destination), ["premium", "premium"]);
   assert.equal(f.bucket.read("summaries/2026-10-18/model.json").result.status, "sent");
 });
 
-test("uncertain delivery never automatically retries that room while its sibling completes", async () => {
+test("uncertain delivery never automatically retries the held room", async () => {
   const f = fixture({ send: (card, destination, caption, asset, chat, n) => destination === "premium"
     ? { delivery_state: "delivery_uncertain", error: "compcard_timeout" }
     : { ok: true, delivery_state: "sent", destination, chat_id: chat, message_id: n, approved_sha256: card.sha256 } });
   await run(f);
   await run(f, "2026-10-18", "17:00");
-  assert.deepEqual(f.sends.map((row) => row.destination), ["premium", "preview"]);
+  assert.deepEqual(f.sends.map((row) => row.destination), ["premium"]);
   assert.equal(f.bucket.read("summaries/2026-10-18/model.json").result.status, "delivery_uncertain");
 });
 
@@ -267,7 +273,7 @@ test("a changed frozen plan is held before retrying any destination", async () =
   f.bucket.records.set(key, { ...original, value: JSON.stringify(altered) });
   const result = await run(f, "2026-10-18", "16:45");
   assert.equal(result.results[0].error, "compcard_plan_integrity_failed");
-  assert.equal(f.sends.length, 2);
+  assert.equal(f.sends.length, 1);
 });
 
 test("a model made inactive during the source read is held before sending", async () => {
@@ -342,7 +348,7 @@ test("CARE BACK text expires after October while Double Moment waits for its mon
   assert.equal(continued.results[0].status, "no_approved_promotion");
   assert.equal(f.sends.length, 1);
   await run(f, "2026-11-02", "16:30");
-  assert.equal(f.sends.length, 3);
+  assert.equal(f.sends.length, 2);
 });
 
 test("a known-down promotion room preserves its attempts until readiness recovers", async () => {
