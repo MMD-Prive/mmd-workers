@@ -69,6 +69,7 @@ test("SUPPORT keeps bounded LINE help while Private Kenji opens the web", async 
     });
     assert.equal(reply.cta_route, "");
     assert.doesNotMatch(reply.text, /https:/);
-    assert.match(reply.text, menu === "private" ? /Kenji ดูแลสมาชิก Privé บนเว็บ/ : /Checkpts/);
+    assert.match(reply.text, menu === "private" ? /Kenji ดูแลสมาชิก Privé บนเว็บ/ : /My Status/);
+    assert.doesNotMatch(reply.text, /Checkpts|Points|คะแนน/);
   }
 });

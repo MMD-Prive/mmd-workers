@@ -159,7 +159,7 @@ export function resolveRichMenuConversation(event = {}, continuity = {}, now = D
     answer = pointsAnswer();
     intent = "points_status";
   } else if (/(สถานะ|หมดอายุ|สิทธิ์|status)/i.test(raw)) {
-    answer = `ตรวจสถานะของบัญชีนี้ผ่าน MY MMD ได้ที่ ${route("status", "overview")} ครับ การกดเมนูหรือส่งข้อความไม่ได้เปิดสิทธิ์สมาชิกครับ`;
+    answer = "กำลังตรวจสถานะสมาชิกและวันหมดอายุจากบัญชี LINE นี้ครับ";
     intent = "membership_status";
   } else if (/(สมัคร|สมาชิก|แพ็กเกจ|membership)/i.test(raw) ||
       (state.topic === "membership" && /(ราคา|เรท|เท่าไหร่|เท่าไร)/i.test(raw)) ||

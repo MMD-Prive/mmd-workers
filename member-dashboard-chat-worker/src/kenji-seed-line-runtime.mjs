@@ -39,6 +39,7 @@ import { recordDeliveredKenjiLineReply } from "./kenji-line-conversation-history
 import { decideKenjiFirstContactMembership } from "./kenji-line-first-contact-membership.mjs";
 import { resolveKenjiContextFollowup } from "./kenji-context-followup.mjs";
 import { ownerContextTestAllowed } from "./kenji-owner-context-test.mjs";
+import { resolveMembershipStatusReply } from "./kenji-membership-status-reply.mjs";
 
 const LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply";
 const KENJI_KNOWLEDGE_TABLE_FALLBACK = "tblsLd1uVOtG2kHoU";
@@ -770,6 +771,7 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
     }
     const menuConversationEnabled = Boolean(menuConversation && menuOwnerClear);
     const pointsConversationEnabled = Boolean(menuConversationEnabled && menuConversation.intent === "points_status");
+    const membershipStatusConversationEnabled = Boolean(menuConversationEnabled && menuConversation.intent === "membership_status");
     const pointsReplyEnabled = pointsConversationEnabled || checkptsShortcutEnabled;
     let pointsTruth = pointsReplyEnabled
       ? checkptsShortcut
@@ -796,6 +798,9 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
       }
     }
     const pointsDecision = pointsReplyEnabled ? resolveCheckptsShortcut(pointsTruth, Date.now(), !checkptsShortcut && !pointsConversationEnabled) : null;
+    const membershipStatusDecision = membershipStatusConversationEnabled
+      ? resolveMembershipStatusReply(await resolveKenjiLineLiveTruth({ env, event, intent: "membership_status" }))
+      : null;
     if (checkptsShortcutEnabled) {
       // Recheck at the delivery boundary, not in the duplicate legacy intake.
       // Per may take over (including Matrix-only takeover) during a slow read.
@@ -826,6 +831,8 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
           getContext: () => resolveKenjiLiveMemberContext(env, event.source.userId, "support"),
         }), ...(continuity.matrix?.handoff_required !== true && enabled(env.LINE_KENJI_DETERMINISTIC_CONVERSATION_ENABLED)
           ? { rich_menu_state: supportButtonTap && menuState ? { ...menuState, entry: "per_support_button" } : menuState } : {}) })
+      : membershipStatusConversationEnabled
+        ? withDecisionMetadata({}, { ...menuConversation, ...membershipStatusDecision, reply_source: "rich_menu_conversation_v1" })
       : pointsConversationEnabled
         ? withDecisionMetadata({}, { ...menuConversation, ...pointsDecision, reply_source: "rich_menu_conversation_v1" })
       : menuConversation

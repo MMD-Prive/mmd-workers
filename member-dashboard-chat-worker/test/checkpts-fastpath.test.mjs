@@ -24,11 +24,10 @@ for (const command of ['checkpts','package','regis','apply','โปร']) test(`
   assert.ok(calls.writes.some(w=>w.table==='MMD — Console Inbox'),'inbound intake preserved');
   if(command==='checkpts') {
     const reply = calls.replies[0].messages[0].text;
-    assert.match(reply,/ประเภทสมาชิก: Premium/);
-    assert.match(reply,/สถานะสมาชิก: ใช้งานอยู่/);
-    assert.match(reply,/intent=status&view=overview/);
-    assert.doesNotMatch(reply,/Points|รับ Hiro/);
-    assert.deepEqual(calls.replies[0].messages[0].quickReply,{items:[{type:'action',action:{type:'uri',label:'เปิด My MMD',uri:'https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=overview'}}]});
+    assert.match(reply,/สถานะสมาชิก: Premium · ใช้งานอยู่/);
+    assert.match(reply,/วันหมดอายุ: 2027-01-01/);
+    assert.doesNotMatch(reply,/Points|รับ Hiro|https?:\/\//);
+    assert.equal(calls.replies[0].messages[0].quickReply,undefined);
     assert.deepEqual(calls.truth,[{path:'/__internal/kenji/member-truth',intent:'membership_status'}]);
   } else assert.equal(calls.replies[0].messages[0].quickReply,undefined,'other categories must not gain a membership button');
 });

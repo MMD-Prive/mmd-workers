@@ -128,20 +128,15 @@ test("fixed menu replies stay available while general auto reply is paused; othe
   });
 });
 
-test("SUPPORT continues renewal, Points and status without confirming truth or changing the payment contract", async () => {
+test("SUPPORT keeps renewal on LIFF and returns status without Points or a status link", async () => {
   await conversation(async ({ tap, send, replies }) => {
     await tap("mmd_action=rich_menu&menu=public&button=5");
-    for (const [text, route] of [["ต่ออายุ", "intent=renew&view=package"], ["สถานะสมาชิก", "intent=status&view=overview"]]) {
-      await send(textEvent(text));
-      assert.match(replies.at(-1).messages[0].text, new RegExp(route));
-    }
-    await send(textEvent("ดูคะแนน"));
-    assert.match(replies.at(-1).messages[0].text, /สถานะสมาชิก:.*\nPoints:.*\nวันหมดอายุสมาชิก:/);
-    assert.doesNotMatch(replies.at(-1).messages[0].text, /https?:\/\//);
-    const result = await send(textEvent("ส่งสลิปสมัคร Premium แล้ว"));
-    assert.equal(result.body.saved[0].handoff_required, true);
-    assert.match(replies.at(-1).messages[0].text, /ยังไม่ยืนยันการชำระเงิน/);
-    assert.doesNotMatch(replies.map(r => r.messages[0].text).join("\n"), /ชำระเงินสำเร็จ|อนุมัติแล้ว|Kenji|เคนจิ|api\.openai/);
+    await send(textEvent("ต่ออายุ"));
+    assert.match(replies.at(-1).messages[0].text, /intent=renew&view=package/);
+    const status = await send(textEvent("My Status"));
+    assert.equal(status.body.saved[0].reply_source, "rich_menu_conversation_v1");
+    assert.match(replies.at(-1).messages[0].text, /สถานะสมาชิก:.*\nวันหมดอายุ:/);
+    assert.doesNotMatch(replies.at(-1).messages[0].text, /Points|Checkpts|https?:\/\//);
   });
 });
 
@@ -191,16 +186,15 @@ test("checkpts stops advertising the October pre-renewal CTA after the campaign 
   assert.match(afterCutoff.text, /promotion\/6-years-care-back/);
 });
 
-test("Guest/Public SUPPORT offers checkpts and answers with three in-chat fields", async () => {
+test("Guest/Public SUPPORT directs customers to My Status without Points or LIFF links", async () => {
   for (const menu of ["guest", "public"]) await conversation(async ({ tap, send, replies, env }) => {
     env.LINE_AUTO_REPLY_ENABLED = "false";
     await tap(`mmd_action=rich_menu&menu=${menu}&button=5`);
-    assert.match(replies.at(-1).messages[0].text, /Checkpts/);
-    const result = await send(textEvent("checkpts"));
-    assert.equal(result.body.saved[0].reply_source, "my_mmd_points_shortcut_v2");
-    assert.match(replies.at(-1).messages[0].text, /สถานะสมาชิก:.*\nPoints:.*\nวันหมดอายุสมาชิก:/);
-    assert.doesNotMatch(replies.at(-1).messages[0].text, /CARE BACK|promotion\/6-years-care-back|CTA:/);
-    assert.doesNotMatch(replies.at(-1).messages[0].text, /\d[\d,]*\s*(?:Points|แต้ม)/);
+    assert.match(replies.at(-1).messages[0].text, /My Status/);
+    const result = await send(textEvent("My Status"));
+    assert.equal(result.body.saved[0].reply_source, "rich_menu_conversation_v1");
+    assert.match(replies.at(-1).messages[0].text, /สถานะสมาชิก:.*\nวันหมดอายุ:/);
+    assert.doesNotMatch(replies.at(-1).messages[0].text, /Points|Checkpts|CARE BACK|promotion\/6-years-care-back|CTA:|https?:\/\//);
   });
 });
 
