@@ -1137,13 +1137,14 @@ test("serialized browser startup supplies keepNames helper before progress initi
   assert.ok(prefix.indexOf('const __name =') < prefix.indexOf('const customerLoading ='));
   // Reproduce keepNames instrumentation without providing the Worker's helper
   // as a VM global. Production bundling also inserts calls in nested callbacks.
-  const instrumented = prefix.replace('let generation =', '__name(() => {}, "publish"); let generation =');
+  const instrumented = prefix.replace('let generation =', '__name2(__name(() => {}, "publish"), "publish"); let generation =');
   assert.notEqual(instrumented, prefix);
   const calls = [];
   const context = {window:{fetch:async (url, init) => {calls.push({url,method:init.method});return Response.json({ok:false},{status:401});}},
     document:{getElementById:()=>null},AbortController,Response,Uint8Array,setTimeout,clearTimeout};
   const probe = '\nreturn {fetch, waitFor:customerLoading.waitFor}; })()';
   assert.throws(()=>runInNewContext(instrumented.replace(/  const __name =[^\n]+\n/, '') + probe,context), /__name is not defined/);
+  assert.throws(() => runInNewContext(instrumented.replace('  const __name2 = __name;\n', '') + probe, context), /__name2 is not defined/);
   const browser = runInNewContext(instrumented + probe, context);
   const response = await browser.fetch('/member/api/liff/profile', {method:'GET'});
   assert.equal(response.status,401);
