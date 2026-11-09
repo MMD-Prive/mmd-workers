@@ -138,7 +138,8 @@ function lineageResponse(body, source, headers) {
 
 export async function resolvePerRenameAlias(env, query, options = {}) {
   requireStorage(env);
-  const rows = await searchAuthoritativePerRenameRows(env, query);
+  const fetchImpl = options.fetchImpl || fetch;
+  const rows = await searchAuthoritativePerRenameRows(env, query, fetchImpl);
   if (!rows.length) return { state: "none" };
 
   const matches = rows
@@ -161,7 +162,9 @@ export async function resolvePerRenameAlias(env, query, options = {}) {
   }
 
   const bestQuality = Math.max(...guardedMatches.map((match) => match.quality));
-  const best = guardedMatches.filter((match) => match.quality === bestQuality);
+  const best = expectedLineUserId && canonicalLineUserId(query) === expectedLineUserId
+    ? guardedMatches
+    : guardedMatches.filter((match) => match.quality === bestQuality);
   const linkedIds = unique(best.flatMap((match) => match.client_ids));
 
   if (!linkedIds.length) return { state: "none" };
@@ -186,7 +189,7 @@ export async function resolvePerRenameAlias(env, query, options = {}) {
       const clientId = linkedIds[index];
       const sameClient = best.filter((match) => match.client_ids.includes(clientId));
       const chosen = sameClient.sort(compareMatches)[0];
-      const client = await fetchCanonicalClient(env, clientId);
+      const client = await fetchCanonicalClient(env, clientId, fetchImpl);
       if (!client?.id) throw new Error("per_rename_canonical_client_unavailable");
       if (!chosen) {
         return {
@@ -225,7 +228,7 @@ export async function resolvePerRenameAlias(env, query, options = {}) {
   const clientId = linkedIds[0];
   const sameClient = best.filter((match) => match.client_ids.includes(clientId));
   const chosen = sameClient.sort(compareMatches)[0];
-  const client = await fetchCanonicalClient(env, clientId);
+  const client = await fetchCanonicalClient(env, clientId, fetchImpl);
   if (!client?.id) throw new Error("per_rename_canonical_client_unavailable");
   if (canonicalClientLineConflict(client, expectedLineUserId || chosen.line_user_id)) {
     return {
@@ -243,7 +246,7 @@ export async function resolvePerRenameAlias(env, query, options = {}) {
   };
 }
 
-export async function searchAuthoritativePerRenameRows(env, query) {
+export async function searchAuthoritativePerRenameRows(env, query, fetchImpl = fetch) {
   requireStorage(env);
   const table = clean(env.AIRTABLE_TABLE_PRE_SESSION_CLIENT_INDEX_ID || env.AIRTABLE_TABLE_PRE_SESSION_CLIENT_INDEX) || DEFAULT_PRE_SESSION_CLIENT_INDEX_TABLE;
   const forms = querySearchForms(query);
@@ -264,7 +267,7 @@ export async function searchAuthoritativePerRenameRows(env, query) {
     else params.delete("offset");
 
     const url = `${AIRTABLE_API}/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${encodeURIComponent(table)}?${params.toString()}`;
-    const result = await fetch(url, {
+    const result = await fetchImpl(url, {
       headers: { Authorization: `Bearer ${env.AIRTABLE_API_KEY}`, Accept: "application/json" },
     });
     if (!result.ok) throw new Error(`airtable_${table}_${result.status}`);
@@ -346,9 +349,9 @@ function authoritativeMatch(record, query) {
   };
 }
 
-async function fetchCanonicalClient(env, clientId) {
+async function fetchCanonicalClient(env, clientId, fetchImpl) {
   const table = clean(env.AIRTABLE_TABLE_CLIENTS_ID || env.AIRTABLE_TABLE_CLIENTS) || DEFAULT_CLIENTS_TABLE;
-  const response = await fetch(`${AIRTABLE_API}/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${encodeURIComponent(table)}/${encodeURIComponent(clientId)}`, {
+  const response = await fetchImpl(`${AIRTABLE_API}/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${encodeURIComponent(table)}/${encodeURIComponent(clientId)}`, {
     headers: { Authorization: `Bearer ${env.AIRTABLE_API_KEY}`, Accept: "application/json" },
   });
   if (response.status === 404) return null;

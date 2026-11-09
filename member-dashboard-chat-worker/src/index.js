@@ -1233,6 +1233,22 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
   const eventText = getLineEventText(event);
   if (isEmsAlbumCommand(eventText)) return emsAlbumNavigationReply();
   const resolvedModelIntent = options?.modelIntent?.matched === true ? options.modelIntent : resolveKenjiModelIntent(eventText);
+  if (resolvedModelIntent.campaign_trigger || options.campaignBrief === true) {
+    if (event?.type !== "message" || options.campaignLeadQueued !== true) return buildKenjiModelAccessDecision({ status: "silent" });
+    return {
+      text: options.campaignBrief === true ? buildLineCardBriefReply() : buildLineCardLeadReply(),
+      fallback: false,
+      reply_source: options.campaignBrief === true ? "line_card_campaign_brief" : "line_card_campaign_lead",
+      model_attempted: false,
+      model_success: false,
+      model_latency_ms: 0,
+      knowledge_hits: 0,
+      guard_blocked: false,
+      guard_reason: "",
+      ...(options.campaignBrief === true ? {} : { clear_model_context: true }),
+    };
+  }
+
   const inferredIntent = resolvedModelIntent.campaign_trigger ? "card_campaign_lead" : inferLineIntent(eventText, event);
   const postbackIntent = event?.type === "postback"
     ? canonicalRichMenuIntent({ data: event?.postback?.data })
@@ -1315,40 +1331,6 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
     };
   }
 
-  if (intent === "card_campaign_lead" || options.campaignBrief === true) {
-    if (options.campaignLeadQueued !== true) return buildKenjiModelAccessDecision({ status: "silent" });
-    // LINE text actions can also be typed manually. Reveal only an approved
-    // profile whose model code exactly matches this campaign text.
-    if (options.campaignBrief !== true && options.modelAccessAllowed !== false &&
-        isEnabled(env.LINE_CARD_21829530_MODEL_INFO_ENABLED)) {
-      const trigger = resolvedModelIntent.campaign_trigger;
-      if (trigger && resolvedModelIntent.query) {
-        const access = await requestKenjiModelAccess(env, getLineUserId({ event }), resolvedModelIntent.query);
-        if (access.status === "restricted_category" &&
-            (trigger.card_trigger.toLowerCase().startsWith(access.category))) {
-          const decision = buildKenjiModelAccessDecision(access, { clearOnFailure: true });
-          if (decision.text) return { ...decision, reply_source: "line_card_model_access_restricted" };
-        }
-        if (access.status === "match" &&
-            asString(access.model?.model_code).toLowerCase() === trigger.card_trigger.toLowerCase()) {
-          const decision = buildKenjiModelAccessDecision(access);
-          if (decision.text) return { ...decision, reply_source: "line_card_model_info" };
-        }
-      }
-    }
-    return {
-      text: options.campaignBrief === true ? buildLineCardBriefReply() : buildLineCardLeadReply(),
-      fallback: false,
-      reply_source: options.campaignBrief === true ? "line_card_campaign_brief" : "line_card_campaign_lead",
-      model_attempted: false,
-      model_success: false,
-      model_latency_ms: 0,
-      knowledge_hits: 0,
-      guard_blocked: false,
-      guard_reason: "",
-      ...(options.campaignBrief === true ? {} : { clear_model_context: true }),
-    };
-  }
 
   const replyOptions = liveMemberContext ? { ...options, verifiedMemberContext: liveMemberContext } : options;
   const capabilityDecision = decideKenjiCapability({ text: eventText, intent });

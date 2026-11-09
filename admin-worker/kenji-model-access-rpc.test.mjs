@@ -340,7 +340,7 @@ test("RPC match returns only safe model projection and policy version", async ()
 });
 
 
-test("canonical Sales Control projects the customer-safe matched offer after entitlement resolution", async () => {
+test("current Sales Control offer keeps the booking gate but never exposes a Standard rate", async () => {
   const model = privateModel("MX17", "standard");
   const rules = [record("rec-offer-active", {
     Model: [model.id],
@@ -360,10 +360,69 @@ test("canonical Sales Control projects the customer-safe matched offer after ent
   );
   assert.equal(result.status, "match");
   assert.equal(result.model.sales.sellable, true);
-  assert.equal(result.model.sales.customer_rate_thb, 25000);
-  assert.equal(result.model.sales.price_visible, true);
+  assert.equal(result.model.sales.customer_rate_thb, null);
+  assert.equal(result.model.sales.price_visible, false);
   assert.equal(result.model.sales.matched_rule_key, null);
   assert.equal(result.model.sales.rule_version, 2);
+});
+
+test("LINE rate requires one consistent historical Per quote for the exact verified customer, Model and work lane", async () => {
+  const clientId = "recExactCustomer";
+  const model = publicModel();
+  const current = record("recActive", {
+    Model: [model.id], status: "Active", sales_visibility: "on", offer_type: "pn",
+    Client: [clientId], customer_sell_rate_thb: 25000, price_visibility: "visible",
+    reviewed_by: "Per", reviewed_at: "2026-01-01",
+  });
+  const quote = record("recHistorical", {
+    ...current.fields, status: "Superseded", customer_sell_rate_thb: 20000,
+  });
+  const change = (fields) => record(quote.id, { ...quote.fields, ...fields });
+  const identity = (id) => record("recIndex" + id, {
+    identity_key: "line_ofc_per_rename:" + LINE_USER_ID, source_type: "line_ofc_staging",
+    resolution_status: "linked", session_lookup_status: "canonical_ready",
+    preferred_name: "Private fixture name", linked_client: [id], line_user_id: LINE_USER_ID,
+  });
+  const cases = [
+    ["ceiling inclusive", [quote], [identity(clientId)], "vip", 20000],
+    ["exact lower rate", [change({ customer_sell_rate_thb: 18500 })], [identity(clientId)], "svip", 18500],
+    ["black card still scoped", [quote], [identity(clientId)], "black_card", 20000],
+    ["current rule only", [], [identity(clientId)], "vip", null],
+    ["over ceiling", [change({ customer_sell_rate_thb: 20001 })], [identity(clientId)], "vip", null],
+    ["conflicting rates", [quote, { ...change({ customer_sell_rate_thb: 19000 }), id: "recConflict" }], [identity(clientId)], "vip", null],
+    ["not approved by Per", [change({ reviewed_by: "", updated_by: "Per" })], [identity(clientId)], "vip", null],
+    ["no approval timestamp", [change({ reviewed_at: "" })], [identity(clientId)], "vip", null],
+    ["wrong customer", [change({ Client: ["recOtherCustomer"] })], [identity(clientId)], "vip", null],
+    ["wrong Model", [change({ Model: ["recOtherModel"], model_key: model.fields.model_code })], [identity(clientId)], "vip", null],
+    ["wrong work lane", [change({ offer_type: "other" })], [identity(clientId)], "vip", null],
+    ["approval still required", [change({ requires_per_approval: "Yes" })], [identity(clientId)], "vip", null],
+    ["default price is not a quote", [change({ customer_sell_rate_thb: undefined, default_rate_thb: 18000 })], [identity(clientId)], "vip", null],
+    ["ambiguous identity", [quote], [identity(clientId), identity("recOtherCustomer")], "vip", null],
+    ["unknown identity", [quote], [], "vip", null],
+    ["Standard", [quote], [identity(clientId)], "private_standard", null],
+    ["Premium", [quote], [identity(clientId)], "private_premium", null],
+  ];
+  for (const [label, historical, identities, capability, amount] of cases) {
+    const fallback = record("recGenericOffer", { ...current.fields, Client: [], customer_sell_rate_thb: 9500 });
+    const fetchFixture = airtableFetch(baseData([entitlement(capability)], [model], [], [current, fallback, ...historical]));
+    const response = await handleKenjiModelAccessRpc(rpcRequest({
+      line_user_id: LINE_USER_ID, query: "PUB17", work_lane: "pn",
+      // Caller input must not substitute for verified LINE identity.
+      client_id: clientId, historical_per_quote: { amount_thb: 1 },
+    }), { ...ENV, AIRTABLE_TABLE_PRE_SESSION_CLIENT_INDEX: "index", AIRTABLE_TABLE_CLIENTS: "clients" }, {
+      fetchImpl(input) {
+        const path = new URL(input).pathname;
+        if (path.endsWith("/index")) return Response.json({ records: identities });
+        if (path.endsWith("/clients/" + clientId)) return Response.json(record(clientId, { line_user_id: LINE_USER_ID }));
+        return fetchFixture(input);
+      },
+    });
+    assert.equal(response.status, 200, label);
+    const result = await response.json();
+    assert.equal(result.model.sales.customer_rate_thb, amount, label);
+    assert.equal(result.model.sales.price_visible, amount !== null, label);
+    assert.doesNotMatch(JSON.stringify(result), /25000|9500|recExactCustomer|recHistorical|Private fixture name/);
+  }
 });
 
 test("lookup without a verified work lane never returns a rate", async () => {

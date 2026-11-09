@@ -1,3 +1,4 @@
+import { handleKenjiModelAccessRpc } from "../../admin-worker/src/kenji-model-access-rpc.js";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -717,17 +718,39 @@ test("authorized webhook match sends exactly one LINE Reply and never Push", asy
     networkCalls.push({ url: String(input), init });
     return new Response(JSON.stringify({}), { status: 200, headers: { "content-type": "application/json" } });
   };
+  const rpcRequests = [];
   try {
     const response = await worker.fetch(await signedWebhook([lineEvent("MX17")]), {
       ...BASE_ENV,
-      ADMIN_WORKER: adminBinding({
-        ok: true,
-        status: "match",
-        policy_version: "KENJI_MODEL_ACCESS_V1",
-        model: { model_code: "MX17", working_name: "น้องซิน", summary: "ข้อมูลที่อนุมัติแล้ว" },
-      }),
+      ADMIN_WORKER: {
+        async fetch(request) {
+          if (new URL(request.url).pathname === RUNTIME_STATUS_PATH) return healthyRuntimeResponse();
+          rpcRequests.push(await request.clone().json());
+          return handleKenjiModelAccessRpc(request, {
+            ...BASE_ENV, AIRTABLE_BASE_ID: "fixture", AIRTABLE_API_KEY: "fixture",
+            AIRTABLE_TABLE_MEMBER_ENTITLEMENTS: "entitlements",
+            AIRTABLE_TABLE_MODEL_OFFER_RULES: "rules",
+          }, {
+            async fetchImpl(input) {
+              const url = new URL(input);
+              const table = url.pathname.split("/").pop();
+              assert.notEqual(table, "rules", "an unscoped lookup must not read quote history");
+              const formula = url.searchParams.get("filterByFormula") || "";
+              const records = table === "entitlements"
+                ? [{ id: "recEntitlement", fields: { line_user_id: LINE_USER_ID, capability: "private_standard",
+                    member_lifecycle_status: "active", access_status: "active", expire_at: "2099-12-31" } }]
+                : formula.startsWith('LOWER({model_code}')
+                  ? [{ id: "recModel", fields: { model_code: "MX17", working_name: "น้องซิน",
+                      booking_visibility: "private", access_folder: "standard", status: "active" } }]
+                  : [];
+              return Response.json({ records });
+            },
+          });
+        },
+      },
     });
     assert.equal(response.status, 200);
+    assert.deepEqual(rpcRequests, [{ line_user_id: LINE_USER_ID, query: "MX17" }]);
     const replies = networkCalls.filter((call) => call.url.includes("/v2/bot/message/reply"));
     assert.equal(replies.length, 1);
     assert.equal(networkCalls.filter((call) => call.url.includes("/v2/bot/message/push")).length, 0);
@@ -752,7 +775,7 @@ test("JASPER is campaign-scoped Jasper intent and never calls model access RPC",
   assert.equal(decision.reply_source, "line_card_campaign_lead");
 });
 
-test("queued Card text can return only exact approved model information without sales", async () => {
+test("queued Card text never looks up or reveals an approved profile or rate", async () => {
   const calls = [];
   const env = {
     ...BASE_ENV,
@@ -764,17 +787,17 @@ test("queued Card text can return only exact approved model information without 
     } }, 200, calls),
   };
   const approved = await resolveKenjiLineReply(lineEvent("EMs01"), {}, env, { campaignLeadQueued: true, modelAccessAllowed: true });
-  assert.equal(approved.reply_source, "line_card_model_info");
-  assert.match(approved.text, /Jay.*EMs01.*โปรไฟล์ที่อนุมัติแล้ว/s);
+  assert.equal(approved.reply_source, "line_card_campaign_lead");
+  assert.doesNotMatch(approved.text, /Jay|EMs01|โปรไฟล์ที่อนุมัติแล้ว/);
   assert.doesNotMatch(approved.text, /9000|ส่งวัน|เช็กเรท|จอง/);
-  assert.equal(calls.length, 1);
+  assert.equal(calls.length, 0);
 
   const disabled = await resolveKenjiLineReply(lineEvent("EMs01"), {}, env, { campaignLeadQueued: true, modelAccessAllowed: false });
   assert.equal(disabled.reply_source, "line_card_campaign_lead");
-  assert.equal(calls.length, 1);
+  assert.equal(calls.length, 0);
   const unqueued = await resolveKenjiLineReply(lineEvent("EMs01"), {}, env, { campaignLeadQueued: false });
   assert.equal(unqueued.text, "");
-  assert.equal(calls.length, 1);
+  assert.equal(calls.length, 0);
 });
 
 test("Card aliases never reveal another Model profile", async () => {
@@ -787,7 +810,7 @@ test("Card aliases never reveal another Model profile", async () => {
       model_code: "EMJASPAL", working_name: "Jaspal OP", summary: "Private info",
     } }, 200, calls),
   }, { campaignLeadQueued: true, modelAccessAllowed: true });
-  assert.equal(calls.length, 1);
+  assert.equal(calls.length, 0);
   assert.equal(decision.reply_source, "line_card_campaign_lead");
   assert.doesNotMatch(decision.text, /Jaspal|Private|Jasper/i);
 });
@@ -897,6 +920,7 @@ test("campaign lead is queued before one reply and duplicate delivery is idempot
   const originalFetch = globalThis.fetch;
   const networkCalls = [];
   const binding = durableBinding();
+  const rpcCalls = [];
   globalThis.fetch = async (input, init = {}) => {
     const url = new URL(String(input));
     networkCalls.push({ url: url.toString(), init });
@@ -916,7 +940,8 @@ test("campaign lead is queued before one reply and duplicate delivery is idempot
     LINE_CARD_21829530_LEAD_ENABLED: "true",
     LINE_CARD_21829530_NATIVE_AUTORESPONSE_CLEAR: "true",
     KENJI_MODEL_DEDUPE: binding,
-    ADMIN_WORKER: adminBinding({ ok: true, status: "silent" }),
+    LINE_CARD_21829530_MODEL_INFO_ENABLED: "true",
+    ADMIN_WORKER: adminBinding({ ok: true, status: "match", model: { model_code: "JASPER", working_name: "Private fixture", sales: { customer_rate_thb: 20000 } } }, 200, rpcCalls),
   };
   try {
     const first = await worker.fetch(await signedWebhook([lineEvent("JASPER")], env), env);
@@ -926,6 +951,7 @@ test("campaign lead is queued before one reply and duplicate delivery is idempot
     const posts = networkCalls.filter((call) => call.url.includes("api.airtable.com") && call.init.method === "POST");
     const replies = networkCalls.filter((call) => call.url.includes("/v2/bot/message/reply"));
     assert.equal(posts.length, 1);
+    assert.equal(rpcCalls.length, 0);
     assert.equal(replies.length, 1);
     const record = JSON.parse(posts[0].init.body);
     assert.equal(record.fields.intent, "note_only");
@@ -939,7 +965,7 @@ test("campaign lead is queued before one reply and duplicate delivery is idempot
     assert.equal(metadata.canonical_model_id, null);
     assert.equal(metadata.auto_rate, "disabled");
     assert.equal(metadata.handoff_status, "queued");
-    assert.doesNotMatch(replies[0].init.body, /Jaspal OP|Jasper|\d{1,3}(?:,\d{3})* บาท/);
+    assert.doesNotMatch(replies[0].init.body, /Private fixture|Jaspal OP|Jasper|\d{1,3}(?:,\d{3})* บาท/);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -1354,20 +1380,14 @@ test("owner takeover that starts after queue commit suppresses the LINE acknowle
   }
 });
 
-test("verified EMs restricted-category denial stays generic and does not introduce Points", async () => {
+test("Card postback display text cannot invoke model access", async () => {
   const calls = [];
-  const env = {
-    ...BASE_ENV,
-    LINE_CARD_21829530_MODEL_INFO_ENABLED: "true",
-    ADMIN_WORKER: adminBinding({ ok: true, status: "restricted_category", category: "ems" }, 200, calls),
-  };
-  const decision = await resolveKenjiLineReply(lineEvent("EMs11"), {}, env, { campaignLeadQueued: true });
-  assert.equal(decision.reply_source, "line_card_model_access_restricted");
-  assert.match(decision.text, /กลุ่มจำกัดสิทธิ์/);
-  assert.match(decision.text, /ตรวจสิทธิ์ของบัญชีนี้และการอนุญาตของรายนั้น/);
-  assert.doesNotMatch(decision.text, /points?|แต้ม|คะแนน|1,200|2,500|120,000|250,000|Black Card|35,000|member\/liff\?view=points/i);
-  assert.doesNotMatch(decision.text, /Sprite|EMs11|รูปภาพของ|25000/);
-  assert.equal(calls.length, 1);
+  const event = { ...lineEvent(""), type: "postback", postback: { displayText: "EMs11", data: "model_lookup" } };
+  const decision = await resolveKenjiLineReply(event, {}, {
+    ...BASE_ENV, ADMIN_WORKER: adminBinding({ status: "match" }, 200, calls),
+  }, { campaignLeadQueued: true });
+  assert.equal(decision.text, "");
+  assert.equal(calls.length, 0);
 });
 
 test("unknown Model and disabled campaign never send the access promotion", async () => {
@@ -1382,7 +1402,7 @@ test("unknown Model and disabled campaign never send the access promotion", asyn
   assert.doesNotMatch(unknown.text, /1,200|2,500|35,000/);
   const disabled = await resolveKenjiLineReply(lineEvent("Tah"), {}, env, { campaignLeadQueued: false });
   assert.equal(disabled.text, "");
-  assert.equal(calls.length, 1);
+  assert.equal(calls.length, 0);
 });
 
 
