@@ -205,3 +205,68 @@ test("model-only confirmation reissue rotates only the Model URL", async () => {
     globalThis.fetch = original;
   }
 });
+
+
+for (const [label, path, handler] of [
+  ["pair reissue", "/v1/internal/confirm/reissue", handleConfirmationReissue],
+  ["model-only reissue", "/v1/internal/confirm/reissue-model", handleModelConfirmationReissue],
+]) {
+  test(`${label} cannot bypass the Partner model-link coordinator`, async () => {
+    const writes = [];
+    let paymentReads = 0;
+    const env = {
+      AIRTABLE_BASE_ID: "app-test",
+      AIRTABLE_API_KEY: "airtable-test",
+      AUTH_SERVICE_ADMIN_TO_PAYMENTS: "service-test",
+      PAYMENT_CONFIRMATION_SIGNING_SECRET: "signing-secret-for-confirmation-reissue-test",
+      PARTNER_MODEL_LINK_ISSUANCE_PAUSED: "true",
+      PAY_SESSIONS_KV: { async put(...args) { writes.push(args); } },
+    };
+
+    const original = globalThis.fetch;
+    globalThis.fetch = async (input, init = {}) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      if (request.method === "GET" && request.url.includes("tblC98mKWbzmPuNzX")) {
+        return Response.json({ records: [{
+          id: "recSession",
+          fields: {
+            fldLTq2kZbyRv22IA: "sess_partner",
+            fldojgjSQLaO0uQLX: "pay_partner",
+            fldTY5lE6m0kQf72n: "paid",
+            fld0jkscGAtyX7i2J: "P-001",
+            fldfqNBNKkmQdr6Fp: JSON.stringify({ system: "co_partner" }),
+          },
+        }] });
+      }
+      if (request.method === "GET" && request.url.includes("tblWGGJJOx5eBvBZJ")) {
+        paymentReads++;
+        return Response.json({ records: [] });
+      }
+      writes.push([request.method, request.url]);
+      throw new Error("partner reissue guard must run before writes");
+    };
+
+    try {
+      const call = () => handler(new Request(`https://payments.internal${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-internal-token": "service-test" },
+        body: JSON.stringify({ session_id: "sess_partner" }),
+      }), env);
+
+      const paused = await call();
+      assert.equal(paused.status, 503);
+      assert.equal((await paused.json()).error, "model_link_issuance_paused");
+      assert.equal(paymentReads, 0);
+      assert.deepEqual(writes, []);
+
+      env.PARTNER_MODEL_LINK_ISSUANCE_PAUSED = "false";
+      const delegated = await call();
+      assert.equal(delegated.status, 409);
+      assert.equal((await delegated.json()).error, "partner_model_link_managed_by_issuer");
+      assert.equal(paymentReads, 0);
+      assert.deepEqual(writes, []);
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+}
