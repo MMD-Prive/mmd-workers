@@ -237,6 +237,51 @@ test("signed Card actions never reach the category profile RPC with intake on or
   }
 });
 
+test("inline signed batch keeps a Card and its brief out of aggregation and category lookup", async () => {
+  for (const [flags, queueStatus] of [[true, 200], [true, 422], [false, 200]]) {
+    const f = fixture({ flags, queueStatus });
+    const rpcCalls = [];
+    const runtime = f.env.ADMIN_WORKER;
+    Object.assign(f.env, {
+      KENJI_LINE_REPLY_CATEGORY_MODE: "approved_qa_promo",
+      KENJI_LINE_MESSAGE_AGGREGATION_ENABLED: "true",
+      KENJI_LINE_MESSAGE_AGGREGATION_WAIT_MS: "0",
+      LINE_AUTO_REPLY_ENABLED: "true",
+      LINE_KENJI_MODEL_ACCESS_ENABLED: "true",
+      ADMIN_WORKER: {
+        async fetch(request) {
+          if (new URL(request.url).pathname.endsWith("/model-access")) {
+            rpcCalls.push(await request.json());
+            return Response.json({ ok: true, status: "profile_link", destination: "public" });
+          }
+          return runtime.fetch(request);
+        },
+      },
+    });
+    const timestamp = Date.now();
+    const signed = await signedWebhook([
+      lineEvent("JASPER", "msg-inline-card", { timestamp }),
+      lineEvent("Hiro", "msg-inline-brief", { timestamp }),
+      lineEvent("Hiro", "msg-other-subject", { timestamp, source: { type: "user", userId: "U" + "2".repeat(32) } }),
+    ], f.env);
+    const response = await withFetch(f.fetch, () => route.fetch(signed, f.env));
+    assert.equal(response.status, 200);
+    const result = await response.json();
+    assert.deepEqual(result.saved.slice(0, 2).map(({ campaign_handled }) => campaign_handled), [true, true]);
+    assert.deepEqual(rpcCalls.map(({ line_user_id }) => line_user_id), ["U" + "2".repeat(32)]);
+    const queues = f.calls.filter(({ type }) => type === "queue")
+      .map(({ body }) => JSON.parse(body.fields.payload_json))
+      .filter(({ parsed_intent }) => parsed_intent?.startsWith("card_campaign_"));
+    const committed = flags && queueStatus === 200;
+    assert.deepEqual(queues.map(({ parsed_intent }) => parsed_intent), committed
+      ? ["card_campaign_lead", "card_campaign_brief"] : flags ? ["card_campaign_lead"] : []);
+    if (committed) {
+      assert.equal(queues[1].lead_inbox_id, "line_msg-inline-card");
+      assert.equal(queues[1].raw_text, "Hiro");
+    }
+  }
+});
+
 test("ack-first production route completes campaign queue and reply in waitUntil", async () => {
   const f = fixture();
   const pending = [];

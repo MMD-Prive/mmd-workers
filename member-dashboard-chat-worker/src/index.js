@@ -3053,7 +3053,34 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
   }
 
   const events = Array.isArray(body.events) ? body.events : [];
-  const preparedEvents = prepareKenjiLineWebhookBatch(events);
+  const campaignFlagsEnabled = isEnabled(env.LINE_CARD_21829530_LEAD_ENABLED) &&
+    isEnabled(env.LINE_CARD_21829530_NATIVE_AUTORESPONSE_CLEAR);
+  const campaignPilotCohort = parseHashAllowlist(env.LINE_CARD_21829530_PILOT_HASHES);
+  const pilotEligibility = new Map();
+  const isolatedEvents = new Set();
+  const batchCardBriefs = new Set();
+  const cardSubjects = new Set();
+  for (const event of events) {
+    if (event?.type !== "message" || event?.message?.type !== "text") continue;
+    const userId = event.source?.type === "user" ? getLineUserId({ event }) : "";
+    if (resolveLineCardCampaignTrigger(event.message.text)) {
+      isolatedEvents.add(event);
+      if (userId) cardSubjects.add(userId);
+    } else if (userId && cardSubjects.has(userId)) {
+      batchCardBriefs.add(event);
+      isolatedEvents.add(event);
+    }
+    // A pilot user may already have a pending brief from a previous webhook.
+    // Preserve each original event so the campaign claim sees the next text.
+    if (userId && campaignFlagsEnabled && campaignPilotCohort.valid) {
+      if (!pilotEligibility.has(userId)) {
+        pilotEligibility.set(userId, campaignPilotCohort.hashes.has(await sha256Hex(userId)));
+      }
+      if (pilotEligibility.get(userId)) isolatedEvents.add(event);
+    }
+    if (options.requireCampaignContext === true) isolatedEvents.add(event);
+  }
+  const preparedEvents = prepareKenjiLineWebhookBatch(events, isolatedEvents);
   const commandIntake = env[CHECKPTS_INTAKE] === true;
   const pointsOnlyIntake = commandIntake && events.length > 0 && events.every(isCheckptsShortcut);
   // The signed Seed owner checks controls, identity and takeover before replying.
@@ -3071,7 +3098,8 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
 
   for (const prepared of preparedEvents) {
     const rawEvent = prepared.raw_event || prepared.turn_event || {};
-    if (commandIntake && isCheckptsShortcut(rawEvent)) {
+    const isolated = isolatedEvents.has(rawEvent);
+    if (!isolated && commandIntake && isCheckptsShortcut(rawEvent)) {
       const persist = syncLineEventAfterReply(env, rawEvent, "points_status", false, false, {
         turn_aggregation: { source: "points_command", suppressed: false, aggregate_count: 1 },
       }).catch(() => ({ skipped: true, reason: "airtable_sync_failed", deduped: false }));
@@ -3109,11 +3137,13 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
       continue;
     }
 
-    const aggregateResult = await aggregateKenjiLineTurn({
-      env,
-      event: prepared.turn_event || rawEvent,
-      batchCount: Number(prepared.aggregate_count) || 1,
-    });
+    const aggregateResult = isolated
+      ? { event: rawEvent, should_reply: true, count: 1, source: "campaign_isolated" }
+      : await aggregateKenjiLineTurn({
+          env,
+          event: prepared.turn_event || rawEvent,
+          batchCount: Number(prepared.aggregate_count) || 1,
+        });
     if (aggregateResult.should_reply !== true) {
       const rawText = getLineEventText(rawEvent);
       const rawIntent = inferLineIntent(rawText, rawEvent);
@@ -3141,10 +3171,7 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
       continue;
     }
 
-    // Aggregation must not turn a literal Card action into a model request.
-    const rawCardAction = rawEvent?.type === "message" && rawEvent?.message?.type === "text" &&
-      resolveLineCardCampaignTrigger(rawEvent.message.text);
-    const event = rawCardAction ? rawEvent : (aggregateResult.event || prepared.turn_event || rawEvent);
+    const event = aggregateResult.event || prepared.turn_event || rawEvent;
     const text = getLineEventText(event);
     const lineUserId = getLineUserId({ event });
     const modelIntent = resolveKenjiModelIntent(text);
@@ -3189,7 +3216,6 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
     const campaignTrigger = modelIntent.campaign_trigger || null;
     const eventMode = asString(event?.mode).toLowerCase() || "unknown";
     const supplierRegistrationName = matchHimaiSupplierRegistration(text);
-    const isSupplierRegistration = supplierRegistrationName !== null;
     const canGenerateReply = Boolean(autoReplyEnabled && kenjiEnabled && !ownerReplyBlocked && eventMode !== "standby" && getReplyToken(event));
     const campaignCanReply = Boolean(
       kenjiEnabled && !runtimeLineKill && !ownerReplyBlocked && eventMode !== "standby" &&
@@ -3197,23 +3223,17 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
       event?.type === "message" && event?.message?.type === "text" &&
       event?.source?.type === "user" && getReplyToken(event)
     );
-    const campaignFlagsEnabled = Boolean(
-      isEnabled(env.LINE_CARD_21829530_LEAD_ENABLED) &&
-      isEnabled(env.LINE_CARD_21829530_NATIVE_AUTORESPONSE_CLEAR)
-    );
-    const campaignPilotCohort = parseHashAllowlist(env.LINE_CARD_21829530_PILOT_HASHES);
-    const campaignPilotUserHash = campaignFlagsEnabled && campaignPilotCohort.valid && lineUserId
-      ? await sha256Hex(lineUserId)
-      : "";
-    const campaignPilotEligible = Boolean(campaignPilotUserHash && campaignPilotCohort.hashes.has(campaignPilotUserHash));
+    const campaignPilotEligible = pilotEligibility.get(lineUserId) === true;
     const campaignContextResult = !campaignTrigger && text && campaignCanReply && campaignFlagsEnabled && campaignPilotEligible
       ? await lineCardCampaignContext(env, lineUserId, "claim")
       : { ok: true, found: false };
     const campaignBrief = Boolean(campaignContextResult.found && campaignContextResult.context);
+    const needsCampaignContext = options.requireCampaignContext === true || batchCardBriefs.has(rawEvent);
     const campaignContextUnavailable = Boolean(
-      !campaignTrigger && text && campaignCanReply &&
-      ((options.requireCampaignContext === true && (!campaignFlagsEnabled || !campaignPilotEligible || campaignContextResult.found !== true)) ||
-        (campaignFlagsEnabled && campaignPilotEligible && (campaignContextResult.ok !== true || (campaignContextResult.found === true && (!campaignContextResult.context || campaignContextResult.committed !== true)))))
+      !campaignTrigger && text &&
+      ((needsCampaignContext && !campaignBrief) ||
+        (campaignCanReply && campaignFlagsEnabled && campaignPilotEligible &&
+          (campaignContextResult.ok !== true || (campaignContextResult.found === true && (!campaignContextResult.context || campaignContextResult.committed !== true)))))
     );
     const campaignItem = campaignTrigger || campaignContextResult.context || null;
     const campaignEvent = Boolean(campaignTrigger || campaignBrief || campaignContextUnavailable);
@@ -3312,6 +3332,7 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
     if (campaignBrief && campaignContextResult.claimed === true && !campaignLeadQueued) {
       await lineCardCampaignContext(env, lineUserId, "release", { claim_token: campaignContextResult.claim_token });
     }
+    const isSupplierRegistration = !campaignEvent && supplierRegistrationName !== null;
     const canRegisterSupplier = Boolean(!modelOnlyMode && autoReplyEnabled && !ownerReplyBlocked && eventMode !== "standby" && getReplyToken(event));
     const capabilityDecision = decideKenjiCapability({ text, intent });
     const needsModelPreflight = Boolean(modelOnlyAllowed && !campaignEvent && !isSupplierRegistration && canGenerateReply && !runtimeModelKill && capabilityDecision.capability === KENJI_CAPABILITIES.SAFE_CONVERSATION && isEnabled(env.LINE_KENJI_MODEL_ENABLED));

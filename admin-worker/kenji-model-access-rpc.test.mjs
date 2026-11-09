@@ -394,7 +394,7 @@ test("reviewed offer history and caller-supplied proof do not authorize a LINE q
 });
 
 test("approved profile fields cannot carry a quote around the sales gate", () => {
-  for (const summary of ["เรท 25,000 บาท", "THB １８０００", "฿๒๕๐๐๐", "25k", "18 500", "สองหมื่น"]) {
+  for (const summary of ["เรท 25,000 บาท", "THB １８０００", "฿๒๕๐๐๐", "25k", "18 500", "สองหมื่น", "คิดห้าร้อยต่อชั่วโมง", "five per hour"]) {
     const projected = projectKenjiSafeModel(privateModel("MX17", "standard", { customer_safe_summary: summary }));
     assert.equal(projected.summary, undefined, summary);
   }

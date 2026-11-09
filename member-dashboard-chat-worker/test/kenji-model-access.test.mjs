@@ -640,7 +640,7 @@ test("LINE lookup asks for the work brief and never exposes an unscoped RPC pric
 });
 
 test("LINE adapter drops a price in profile prose even if an older RPC labels it safe", async () => {
-  for (const summary of ["แนะนำตัวครับ เรท 25,000 บาท", "ＴＨＢ ２５０００", "25k"]) {
+  for (const summary of ["แนะนำตัวครับ เรท 25,000 บาท", "ＴＨＢ ２５０００", "25k", "คิดห้าร้อยต่อชั่วโมง"]) {
     const decision = await resolveKenjiLineReply(lineEvent("MX17"), {}, {
       ...BASE_ENV,
       ADMIN_WORKER: adminBinding({ ok: true, status: "match", model: {
@@ -759,7 +759,7 @@ test("authorized webhook sends one profile reply without leaking a price from th
                 : formula.startsWith('LOWER({model_code}')
                   ? [{ id: "recModel", fields: { model_code: "MX17", working_name: "น้องซิน",
                       booking_visibility: "private", access_folder: "standard", status: "active",
-                      customer_safe_summary: "เรท 25,000 บาท" } }]
+                      customer_safe_summary: "คิดห้าร้อยต่อชั่วโมง" } }]
                   : [];
               return Response.json({ records });
             },
@@ -775,7 +775,7 @@ test("authorized webhook sends one profile reply without leaking a price from th
     const body = JSON.parse(replies[0].init.body);
     assert.equal(body.messages.length, 1);
     assert.match(body.messages[0].text, /น้องซิน.*MX17/s);
-    assert.doesNotMatch(body.messages[0].text, /25,000|บาท/);
+    assert.doesNotMatch(body.messages[0].text, /ห้าร้อย|ต่อชั่วโมง/);
   } finally {
     globalThis.fetch = originalFetch;
   }
