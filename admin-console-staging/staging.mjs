@@ -28,13 +28,36 @@ export function readFixture(input) {
   return new Response(null, { status: 404 });
 }
 
-function protect(response) {
+async function protect(response) {
   const headers = new Headers(response.headers);
   headers.set("Cache-Control", "no-store, private");
-  headers.set("X-Robots-Tag", "noindex");
+  headers.set("X-Robots-Tag", "noindex, nofollow, noarchive");
+  headers.set("X-Content-Type-Options", "nosniff");
   headers.set("X-MMD-Staging-Source", "217a23730c4c70a7f2cb68e550bf7a74227ae424");
-  headers.append("Content-Security-Policy", "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; frame-src 'self'; form-action 'self'; base-uri 'none'");
-  return new Response(response.body, { status: response.status, headers });
+  // The pinned pages have their own stricter CSP. This additional policy
+  // only grants approved static brand assets; it never grants production API egress.
+  headers.append("Content-Security-Policy", [
+    "default-src 'none'",
+    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
+    "style-src 'self' 'unsafe-inline' https://cdn.prod.website-files.com",
+    "font-src 'self' https://cdn.prod.website-files.com data:",
+    "img-src 'self' data: blob: https://cdn.prod.website-files.com",
+    "connect-src 'self'",
+    "frame-src 'self'",
+    "frame-ancestors 'self'",
+    "form-action 'self'",
+    "base-uri 'none'",
+    "object-src 'none'",
+  ].join("; "));
+  if ((headers.get("content-type") || "").toLowerCase().includes("text/html")) {
+    // The pinned Console contains legacy absolute admin links. Keep them on
+    // the fixture host, where unimplemented routes fail closed (404).
+    const html = (await response.text())
+      .replaceAll("https://www.mmdbkk.com", origin)
+      .replaceAll("https://mmdbkk.com", origin);
+    return new Response(html, { status: response.status, statusText: response.statusText, headers });
+  }
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
 async function route(request, env, ctx) {
@@ -55,6 +78,9 @@ async function route(request, env, ctx) {
   }
   const actor = await readCredentialBoundAdminActor(request, auth);
   if (actor?.role !== "owner") return new Response(null, { status: 403 });
+  if (method === "DELETE" && path === "/internal/admin/login/session") {
+    return admin.fetch(request, auth, ctx);
+  }
 
   if (method === "POST" && path === "/v1/admin/clients/lineage-lookup") {
     const result = await lookupPerRenameFirst(request, {

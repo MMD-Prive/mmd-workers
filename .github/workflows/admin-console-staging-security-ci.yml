@@ -1,0 +1,46 @@
+name: Isolated Admin Console Staging Security Gate
+
+on:
+  push:
+    branches:
+      - codex/admin-console-3143-staging-security-gate
+    paths:
+      - 'admin-console-staging/**'
+      - '.github/workflows/admin-console-staging-security-ci.yml'
+  pull_request:
+    paths:
+      - 'admin-console-staging/**'
+      - '.github/workflows/admin-console-staging-security-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  fixture-only-preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Verify staging source and syntax
+        run: |
+          set -euo pipefail
+          test "$(sed -n 's/^workers_dev = //p' admin-console-staging/wrangler.toml)" = false
+          node --check admin-console-staging/staging.mjs
+          node --check admin-console-staging/build.mjs
+          node --check admin-console-staging/preflight.test.mjs
+          git diff --check
+      - name: Build isolated bundle and run security preflight
+        run: |
+          set -euo pipefail
+          PIN=217a23730c4c70a7f2cb68e550bf7a74227ae424
+          git cat-file -e "$PIN^{commit}"
+          node admin-console-staging/build.mjs
+          node --test admin-console-staging/preflight.test.mjs
+          git show "$PIN:admin-worker/src/create-job-worker-page.js" > "$RUNNER_TEMP/create-job-pinned.js"
+          cmp "$RUNNER_TEMP/create-job-pinned.js" admin-console-staging/.build/admin-worker/src/create-job-worker-page.js
