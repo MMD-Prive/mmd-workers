@@ -106,6 +106,14 @@ jobs:
           node --check webflow/sigil/confirm/job-model-v15-i18n.js
           node --test payments-worker/confirmation-ack.test.mjs payments-worker/confirmation-ack-revision.test.mjs payments-worker/model-confirm-no-silent-failure.test.mjs webflow/sigil/confirm/job-model-v15-no-silent-failure.test.mjs
 
+      - name: Validate Partner model-link issuance contract before release
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check payments-worker/partner-model-link.js
+          node --check payments-worker/confirmation-link-reissue.js
+          node --test payments-worker/partner-model-link.test.mjs payments-worker/confirmation-link-reissue.test.mjs
+
       - name: Validate optional Partner issuer cutover
         env:
           PARTNER_CUTOVER: ${{ inputs.partner_model_link_cutover_at }}

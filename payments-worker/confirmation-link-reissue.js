@@ -8,6 +8,8 @@ const SESSION_FIELDS = Object.freeze({
   sessionId: "fldLTq2kZbyRv22IA",
   paymentRef: "fldojgjSQLaO0uQLX",
   paymentStatus: "fldTY5lE6m0kQf72n",
+  partnerIdSnapshot: "fld0jkscGAtyX7i2J",
+  referralSnapshotJson: "fldfqNBNKkmQdr6Fp",
   customerUrl: "fldi9ZdoiUXzSv1rI",
   modelUrl: "fld0mFma9J9yfEaKb",
 });
@@ -20,6 +22,8 @@ const PAYMENT_FIELDS = Object.freeze({
   paymentStage: "fldrr9g8ZZjqAbdKQ",
   paymentType: "fldydUWHhqVLMkNSC",
 });
+
+const PARTNER_SYSTEMS = new Set(["co_partner", "profit_share"]);
 
 function approvedForConfirmation(session, payment, sessionId) {
   return new Set(["partial", "paid"]).has(clean(session.fields?.[SESSION_FIELDS.paymentStatus], 80).toLowerCase())
@@ -34,6 +38,15 @@ function clean(value, max = 4096) {
 
 function formula(value) {
   return String(value || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+}
+
+function parseObject(value) {
+  try {
+    const parsed = JSON.parse(String(value || "{}"));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
 }
 
 function json(data, status = 200) {
@@ -51,6 +64,21 @@ function authed(request, env) {
   const direct = clean(request.headers.get("x-internal-token"), 5000);
   const bearer = clean(request.headers.get("authorization"), 5000).replace(/^Bearer\s+/i, "");
   return Boolean(expected && (direct === expected || bearer === expected));
+}
+
+function partnerModelLinkReissueGuard(session, env = {}) {
+  const fields = session?.fields || {};
+  const partnerId = clean(fields[SESSION_FIELDS.partnerIdSnapshot], 120);
+  const system = clean(parseObject(fields[SESSION_FIELDS.referralSnapshotJson]).system, 40).toLowerCase();
+  if (!partnerId || !PARTNER_SYSTEMS.has(system)) return null;
+
+  // Partner-owned model links are coordinated per session by PartnerModelLinkIssuer.
+  // Admin reissue must never mint a second model token outside that coordinator.
+  const pause = String(env.PARTNER_MODEL_LINK_ISSUANCE_PAUSED ?? "").trim().toLowerCase();
+  if (pause && pause !== "false") {
+    return json({ ok: false, error: "model_link_issuance_paused" }, 503);
+  }
+  return json({ ok: false, error: "partner_model_link_managed_by_issuer" }, 409);
 }
 
 async function airtable(env, path, init = {}) {
@@ -106,6 +134,8 @@ export async function handleConfirmationReissue(request, env = {}) {
     const paymentsTable = clean(env.AIRTABLE_TABLE_PAYMENTS || "tblWGGJJOx5eBvBZJ", 160);
     const session = await findSingle(env, sessionsTable, "session_id", sessionId);
     if (!session?.id) return json({ ok: false, error: "session_not_found" }, 404);
+    const partnerGuard = partnerModelLinkReissueGuard(session, env);
+    if (partnerGuard) return partnerGuard;
 
     const paymentRef = clean(session.fields?.[SESSION_FIELDS.paymentRef], 220);
     if (!paymentRef) return json({ ok: false, error: "session_payment_ref_missing" }, 409);
@@ -196,6 +226,8 @@ export async function handleModelConfirmationReissue(request, env = {}) {
     const paymentsTable = clean(env.AIRTABLE_TABLE_PAYMENTS || "tblWGGJJOx5eBvBZJ", 160);
     const session = await findSingle(env, sessionsTable, "session_id", sessionId);
     if (!session?.id) return json({ ok: false, error: "session_not_found" }, 404);
+    const partnerGuard = partnerModelLinkReissueGuard(session, env);
+    if (partnerGuard) return partnerGuard;
 
     const paymentRef = clean(session.fields?.[SESSION_FIELDS.paymentRef], 220);
     if (!paymentRef) return json({ ok: false, error: "session_payment_ref_missing" }, 409);
