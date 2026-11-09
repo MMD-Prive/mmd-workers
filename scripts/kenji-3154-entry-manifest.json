@@ -1,0 +1,18 @@
+{
+  "source_sha": "2bf546611c1dc79ee038269e842a8563419f4e55",
+  "worker": "member-dashboard-chat-worker",
+  "baseline_version": "246f2987-75ba-4563-93cf-7465aaf13d3c",
+  "baseline_deployment": "571d7975-40d7-4a32-a438-a0663f665dc2",
+  "configuration_sha256": "efc3831a0343468349579f74b649bc64dd51bd798a543ed613e12e18248d4c6e",
+  "settings_sha256": "9c9ebf7825fbffbea427a63ae46722396d62dba1a7b2a831871b842749fb3ec2",
+  "baseline_sha256": "b4dd780d3061e40850fb5f4a1addbc40c93adc20ea513e5dd42b915426ba09c9",
+  "candidate_sha256": "6b0526753e784f6d098dcf57f6d3bd8fbddb3b84d56eaa772e913b1cad71cf5b",
+  "patches": [
+    {
+      "before": "commands = /* @__PURE__ */ new Map([",
+      "after": "commands = /* @__PURE__ */ new Map([\n      [\"my status\",\"checkpts\"],\n      [\"promotion\",\"promotion\"],\n      [\"find model\",\"models\"],\n      [\"apply job\",\"jobs\"],",
+      "before_sha256": "15b74cc9a25a63c9e9e33d58e3b0e2d854611584f105d6925a5241ae033454f6",
+      "after_sha256": "9ec937112f5058a1dce62f953576e8b03c507cc398fcf58ca5b6119b64f73a08"
+    }
+  ]
+}
