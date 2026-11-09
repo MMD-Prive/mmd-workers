@@ -98,6 +98,11 @@ binding = "HYPE_CONTEXT_WRITER"
 service = "admin-worker"
 
 # Partner job confirmation authority. Telegram only transports the verified
+# Private LINE Per callback. No public route is required.
+[[services]]
+binding = "KENJI_PER_CASE_WORKER"
+service = "member-dashboard-chat-worker"
+
 # Partner response; partners-worker re-validates Partner binding + Session snapshot.
 [[services]]
 binding = "PARTNERS_WORKER"

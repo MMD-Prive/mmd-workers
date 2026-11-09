@@ -1,3 +1,4 @@
+import { transitionKenjiPerCase } from "./kenji-per-case.mjs";
 import { observeSvipPhotoRevealMode } from "./svip-photo-reveal-mode-audit.mjs";
 import currentWorker from "./my-mmd-bounded-status-front-gate.js";
 import { handleMmsLineRequest, isMmsLineRequest } from "./mms-line-runtime.mjs";
@@ -603,6 +604,16 @@ async function maybeScheduleKenjiLineAfterAck(request, env = {}, ctx = null, han
 
 export default {
   async fetch(request, env = {}, ctx) {
+    if (normalizedPath(request) === "/__internal/kenji/per-case") {
+      const url = new URL(request.url);
+      if (request.method !== "POST" || url.hostname !== "member-dashboard-chat-worker.local" ||
+          request.headers.get("x-mmd-service-binding") !== "telegram-worker") {
+        return Response.json({ ok: false }, { status: 404 });
+      }
+      const input = await request.json().catch(() => null);
+      const result = input && await transitionKenjiPerCase(env, input);
+      return Response.json(result || { ok: false }, { status: result?.ok === true ? 200 : 409 });
+    }
     if (normalizedPath(request) === LINE_CARD_INGRESS_OWNER_PATH) return handleLineCardIngressOwner(request, env);
     if (isMyMmsTherapistAppApiRequest(request)) return forwardMyMmsTherapistAppApi(request, env);
     if (isMyMmsTherapistAppUiRequest(request)) return handleMyMmsTherapistAppUi(request, env);

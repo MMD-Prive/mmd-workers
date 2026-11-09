@@ -35,7 +35,7 @@ export async function runApprovedCategoryTurn(env, event, initialRuntime, io) {
     const routedEvent = ['package','regis','apply'].includes(topic) ? {...event,message:{...event.message,text:topic}} : event;
     const intake = lineIntakeCommand(routedEvent);
     try {
-      if (command === 'checkpts' || intake) {
+      if (command === 'my_status' || topic === 'checkpts' || intake) {
         const continuity = await io.continuity();
         const [runtime, owner] = await Promise.all([io.runtime(),io.owner(continuity)]);
         if (continuity?.available !== true) { decision = {...silent, guard_reason:'category_continuity_unavailable'}; return {decision,attempted,delivered:false,deliveryStatus:null}; }
@@ -43,9 +43,11 @@ export async function runApprovedCategoryTurn(env, event, initialRuntime, io) {
         if (
             runtime.controls?.all_kenji_mutations === true || runtime.controls?.line_oa_auto_reply === true ||
             owner?.ok !== true || owner.active === true) { decision = {...silent, guard_reason:owner?.active === true ? 'category_owner_takeover' : owner?.ok !== true ? 'category_owner_unavailable' : 'category_fresh_kill_switch'}; return {decision,attempted,delivered:false,deliveryStatus:null}; }
-        if (command === 'checkpts') {
+        if (command === 'my_status' || topic === 'checkpts') {
           const truth = await resolveKenjiLineLiveTruth({env,event,intent:'membership_status'});
-          decision = {...resolveMembershipStatusReply(truth),intent:'approved_command',reply_source:'category_checkpts'};
+          const inChatOnly = command === 'my_status';
+          decision = {...resolveMembershipStatusReply(truth,{inChatOnly}),intent:'approved_command',
+            reply_source:inChatOnly?'category_my_status':'category_checkpts'};
         } else {
           const catalog = intake === 'apply' ? null : await readLineIntakeCatalog(env,event);
           const reply = resolveLineIntakeReply(routedEvent,{},catalog,now);

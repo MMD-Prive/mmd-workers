@@ -1,3 +1,5 @@
+import { runKenjiPerCaseAlarm, updateKenjiPerCase } from "./kenji-per-case.mjs";
+
 const CLAIM_TTL_MS = 24 * 60 * 60 * 1000;
 const CAMPAIGN_LEAD_PROCESSING_TTL_MS = 60 * 1000;
 const CAMPAIGN_LEAD_TTL_MS = 24 * 60 * 60 * 1000;
@@ -159,6 +161,7 @@ export class KenjiModelIdempotency {
     }
 
     const path = new URL(request.url).pathname;
+    if (path === "/kenji-per-case") return json(await updateKenjiPerCase(this.state.storage, input || {}));
     if (path === "/line-turn-buffer") {
       const action = String(input?.action || "");
       const eventId = String(input?.event_id || "");
@@ -594,6 +597,7 @@ export class KenjiModelIdempotency {
   }
 
   async alarm() {
+    if (await runKenjiPerCaseAlarm(this.state, this.env)) return;
     const ingress = await this.state.storage.get(CAMPAIGN_INGRESS_KEY);
     if (ingress?.status === "pending" && Number(ingress.next_attempt_at) <= Date.now()) await this.processCampaignIngress();
     else if (ingress?.status === "processing" && Number(ingress.lease_expires_at) <= Date.now()) {

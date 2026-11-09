@@ -139,6 +139,10 @@ export default {
         });
         const body = await safeJson(req);
         if (!body) return json({ ok: false, error: "invalid_json" }, 400);
+        if (body.kenji_per_case === true &&
+            (!env.KENJI_PER_CASE_WORKER?.fetch || !isKenjiPerAlertDestination(body.chat_id, body.message_thread_id, env))) {
+          return json({ ok: false, error: "kenji_per_case_unavailable" }, 503);
+        }
         const tg = await telegramNotify(body, env);
         return json({ ok: true, telegram: tg }, 200);
       }
@@ -676,8 +680,40 @@ function requireHypePreviewIntroToken(req, env) {
   }
 }
 
+function isKenjiPerAlertDestination(chatId, threadId, env) {
+  const chat = clean(env.TELEGRAM_CHAT_ID || env.TELEGRAM_OPS_CHAT_ID || env.HYPE_CHAT_ID);
+  const thread = clean(env.TG_THREAD_ALERTS || env.TELEGRAM_ALERTS_THREAD_ID);
+  return /^-\d+$/.test(chat) && /^\d+$/.test(thread) && clean(chatId) === chat && clean(threadId) === thread;
+}
+
+async function handleKenjiPerCaseCallback(callback, env) {
+  const match = /^kpc\|([ad])\|([0-9a-f]{24})\|([0-9a-f]{32})$/.exec(clean(callback.data));
+  let reply = "ใช้ปุ่มนี้จากห้องแจ้งเตือนของเปอร์เท่านั้นครับ";
+  if (match && isKenjiPerAlertDestination(callback.message?.chat?.id, callback.message?.message_thread_id, env)) {
+    const owner = await verifyHypeOwnerTelegram(callback.from?.id, env);
+    if (owner.ok && env.KENJI_PER_CASE_WORKER?.fetch) {
+      reply = "เคสนี้หมดอายุหรือยังบันทึกไม่ได้ครับ";
+      try {
+        const [, action, subject, token] = match;
+        const response = await env.KENJI_PER_CASE_WORKER.fetch(new Request(
+          "https://member-dashboard-chat-worker.local/__internal/kenji/per-case",
+          { method: "POST", headers: { "content-type": "application/json", "x-mmd-service-binding": "telegram-worker" },
+            body: JSON.stringify({ action, subject, token }), signal: AbortSignal.timeout(4000) },
+        ));
+        const result = await response.json();
+        if (response.ok && result?.ok === true) reply = result.state === "done" ? "ปิดเคสแล้วครับ" : "เปอร์รับเรื่องแล้วครับ";
+      } catch {}
+    }
+  }
+  await callTelegramApiForPreviewIntro("answerCallbackQuery", {
+    callback_query_id: clean(callback.id), text: reply, show_alert: true,
+  }, env).catch(() => null);
+  return { handled: true, flow: "kenji_per_case" };
+}
+
 async function handleTelegramWebhook(update, env) {
   const callback = update.callback_query || null;
+  if (callback && /^kpc\|/.test(clean(callback.data))) return handleKenjiPerCaseCallback(callback, env);
   if (callback && /^pjc\|/i.test(clean(callback.data))) {
     return handlePartnerJobConfirmCallback(callback, env);
   }

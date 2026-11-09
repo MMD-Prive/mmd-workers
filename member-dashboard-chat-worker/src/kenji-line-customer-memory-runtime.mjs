@@ -162,7 +162,11 @@ async function findPerRename(env = {}, lineUserId = "", clientRecordId = "") {
     .replace(/\s+\d{1,2}[\/.-]\d{1,2}(?:[\/.-]\d{2,4})?\s*$/u, "")
     .trim();
   const safeName = /^[\p{L}\p{M} .]{2,40}$/u.test(name) ? name : "";
-  return { status: "matched", safe_name: safeName };
+  // Only the imported LINE OFC tag list is evidence. A display name,
+  // free-text rename, or a historical VIP hint cannot set this flag.
+  const tags = Array.isArray(fields.legacy_tags) ? fields.legacy_tags : [];
+  return { status: "matched", safe_name: safeName,
+    imported_potential: tags.some(tag => /^#potential$/i.test(text(tag))) };
 }
 
 async function findEntitlementsByLine(env = {}, lineUserId = "") {
@@ -415,7 +419,9 @@ export async function resolveKenjiLineClientIdentity({ env = {}, event = {} } = 
   if (perRename.status === "unavailable") {
     return { resolved: false, status: "unavailable", reason: perRename.reason || "per_rename_lookup_unavailable", http_status: perRename.http_status };
   }
-  return { resolved: true, status: "resolved", reason: "exact_clients_line_user_id", client_record_id: clientRecordId, per_rename_status: perRename.status };
+  return { resolved: true, status: "resolved", reason: "exact_clients_line_user_id",
+    client_record_id: clientRecordId, per_rename_status: perRename.status,
+    imported_potential: perRename.status === "matched" && perRename.imported_potential === true };
 }
 
 export async function resolveKenjiLineCustomerMemoryContext({ env = {}, event = {}, now = "" } = {}) {
