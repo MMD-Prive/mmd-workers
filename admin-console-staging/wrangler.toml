@@ -1,5 +1,9 @@
 name = "mmd-admin-console-3143-staging"
 main = ".build/staging.mjs"
 compatibility_date = "2026-11-08"
-workers_dev = true
+workers_dev = false
 preview_urls = false
+
+# Fail closed: public workers.dev stays disabled until release gate approves.
+[secrets]
+required = ["ADMIN_LOGIN_CREDENTIAL", "ADMIN_SESSION_SECRET"]
