@@ -1,3 +1,13 @@
+# Safe-hold release scope update
+
+The protected exact-live path now prepares the all-model three-calendar-month publication-review safety hold. Candidate hash: `85a851f8de481f70875076f356beefba140e896e592ea756915c00564f00b9a5`. The 12 original PR3138 replacements plus five review/runner replacements are pinned and reversible. All 89 applicable exact-candidate tests run before upload. Source code is unchanged from the reviewed draft candidate. No current-main worker rebuild occurs.
+
+**Automatic model posts may all pause.** Complete contemporaneous room-history proof is required; no synchronous reconciler is installed. Owner warnings remain **undelivered outbox entries**, not successful alerts. Safe holding is the only release outcome approved here. These known gaps block restored publication/full-feature completion, not this explicitly authorized safety-hold release.
+
+The original PR3138 manifest is retained as `pr3138-overlay-manifest.json` solely for reproducible offline construction. The existing protected workflow uses `overlay-manifest.json`, whose baseline/version/configuration guards and actual Per review remain mandatory. No protection, flags, routes, schedules or bindings are changed. HYPE_PROMOTION_ENABLED remains false.
+
+The historical description below documents the original PR3138 layer; its old candidate hash and 62-test count are superseded by this update.
+
 # Events model rotation: scope-only release
 
 Prepared for owner requests to exclude Tinn F from automatic promotion and use different people in Premium and Standard. This does not deactivate the model or delete prior Telegram posts.

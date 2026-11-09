@@ -23,3 +23,14 @@ test('release workflow requires exact main SHA and protected owner review, never
   assert.match(text, /group: .*deploy-events-worker-production/);
   assert.doesNotMatch(text, /wrangler.*deploy|environment.*bypass/);
 });
+test('safe-hold production manifest pins unchanged reviewed candidate with explicit limits', () => {
+  const manifest = JSON.parse(readFileSync('release/events-model-rotation/overlay-manifest.json','utf8'));
+  assert.equal(manifest.release_scope,'safe_hold_all_models_three_calendar_month_review');
+  assert.equal(manifest.candidate_sha256,'85a851f8de481f70875076f356beefba140e896e592ea756915c00564f00b9a5');
+  assert.equal(manifest.replacements.length,17);
+  assert.match(manifest.operational_effect,/all model posts may pause/);
+  assert.match(manifest.warning_delivery,/no verified owner/);
+  const script=readFileSync('scripts/events-model-rotation-release.mjs','utf8');
+  assert.match(script,/return testHistoryReviewCandidate\(candidate\)/);
+  assert.match(script,/HYPE_PROMOTION_ENABLED/);
+});
