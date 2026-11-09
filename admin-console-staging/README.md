@@ -69,3 +69,33 @@ binding, Production egress, 2xx write response, CSP blocked asset, session host
 mismatch, or failed Owner Logout is a STOP, not a warning. Keep `workers.dev` off.
 If the hostname was enabled, immediately disable only this Worker's
 `workers.dev` subdomain and verify disabled state; do not change Production.
+
+
+## Unified Console — read-only release evidence (2026-11-09)
+
+`release-status.mjs` adds a compact, collapsible **Release & Security** panel to
+the **existing** unified Admin Console *home* on this Staging Worker. It does not
+create a new route, expose a token, run a Cloudflare API request, alter the
+canonical #3143 Create Job source, or change Production Console. The panel
+appears only in successful authenticated `GET /internal/admin/console`
+responses and is kept out of Login and all other routes.
+
+**Snapshot, not live monitoring:** On 2026-11-09 Cloudflare showed this
+Staging Worker's `workers.dev` enabled, the worker-ID Owner Access policy
+configured, active version `6ee6eee7-235c-478e-bd12-3dbda2b3519c`
+and deployment `e83168cd-a3e1-4b10-b993-44e04b02c451`.
+The metadata still pointed to #3150, and the fetched bundle still contained
+the old `protect()` wrapper; the deployment of #3152 security fixes was
+**not verified**. Two named secret bindings exist, but rotation and independent
+origin cannot be established from Cloudflare's secret metadata.
+Cloudflare-hosted authenticated E2E/Smoke remains unverified.
+The panel must be refreshed with real evidence before changing these labels.
+
+The unified navigation still lists 14 admin tools from #3143, but this
+Staging Worker serves only the explicitly allowed fixture-backed surfaces
+(Create Job, Payments and related read endpoints); others fail closed.
+
+To preview the new panel, run the pinned isolated build and preflight on this
+PR branch. Displaying it on the Cloudflare URL requires a **separate,
+security-gated Staging-only deployment**. Do not interpret PR Merge as
+proof that the visible hosted Console was updated.

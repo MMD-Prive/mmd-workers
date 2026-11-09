@@ -4,6 +4,7 @@ import { handleCreateJobWorkerPage } from "./admin-worker/src/create-job-worker-
 import { handleMoneyControlWorkerHome } from "./admin-worker/src/money-control-worker-home.js";
 import { lookupPerRenameFirst } from "./admin-worker/src/per-rename-client-search.js";
 import { allowAdminConsoleFrame } from "./webflow/global/admin-console-views.mjs";
+import { renderStagingReleasePanel } from "./release-status.mjs";
 
 const origin = "https://mmd-admin-console-3143-staging.malemodel-bkk.workers.dev";
 const clientId = "recFixtureClient001";
@@ -28,7 +29,7 @@ export function readFixture(input) {
   return new Response(null, { status: 404 });
 }
 
-async function protect(response) {
+async function protect(response, request) {
   const headers = new Headers(response.headers);
   headers.set("Cache-Control", "no-store, private");
   headers.set("X-Robots-Tag", "noindex, nofollow, noarchive");
@@ -55,7 +56,10 @@ async function protect(response) {
     const html = (await response.text())
       .replaceAll("https://www.mmdbkk.com", origin)
       .replaceAll("https://mmdbkk.com", origin);
-    return new Response(html, { status: response.status, statusText: response.statusText, headers });
+    const isOwnerConsole = response.status === 200 && request.method === "GET"
+      && new URL(request.url).pathname === "/internal/admin/console";
+    const output = isOwnerConsole ? renderStagingReleasePanel(html) : html;
+    return new Response(output, { status: response.status, statusText: response.statusText, headers });
   }
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
@@ -124,6 +128,6 @@ async function route(request, env, ctx) {
 
 export default {
   async fetch(request, env, ctx) {
-    return protect(await route(request, env, ctx));
+    return protect(await route(request, env, ctx), request);
   },
 };
