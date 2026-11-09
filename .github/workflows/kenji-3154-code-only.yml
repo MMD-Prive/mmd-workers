@@ -1,4 +1,4 @@
-name: Kenji #3154 code-only release
+name: 'Kenji #3154 code-only release'
 on:
   pull_request:
     paths:
