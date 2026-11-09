@@ -40,6 +40,11 @@ test("staging only accepts its own Owner session, serves the original form, and 
     assert.match(html, /id="ac-staging-release-status"/);
     assert.match(html, /PR #3152/);
     assert.match(html, /Smoke/);
+    assert.ok(html.includes("217a23730c4c70a7f2cb68e550bf7a74227ae424"));
+    assert.ok(html.includes("e83168cd-a3e1-4b10-b993-44e04b02c451"));
+    assert.match(html, /Cloudflare Browser E2E.*ยังไม่มีผลครบชุด/);
+    assert.match(html, /Local Smoke.*Chromium/);
+    assert.match(html, /PostHog · Webflow Staging.*mmdprive\.webflow\.io.*Public 3 ครั้ง.*Internal 2 หน้า/);
     assert.match(html, /6ee6eee7-235c-478e-bd12-3dbda2b3519c/);
     assert.match(html, /class="ac-staging-release__summary"/);
     assert.doesNotMatch(html, /ADMIN_SESSION_SECRET\s*=/);
