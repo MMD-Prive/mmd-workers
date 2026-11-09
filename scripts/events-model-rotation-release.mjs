@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { testHistoryReviewCandidate } from './test-events-history-review-local.mjs';
 import { verifyProductionApproval } from './admin-production-approval.mjs';
 import { inspectEnvironment } from './admin-production-validation.mjs';
 import { validateSourceState } from './admin-current-session-code-only.mjs';
@@ -38,6 +39,7 @@ export function applyRotationOverlay(code, manifest) {
   return next;
 }
 export function testCandidateBundle(candidate) {
+  if (candidate.includes("const publicationHistoryReview = (() => {")) return testHistoryReviewCandidate(candidate);
   const directory = mkdtempSync(join(tmpdir(), 'events-rotation-tests-'));
   const names = new Set(['buildCompcardCaption']);
   const files = ['compcard-policy.test.mjs', 'compcard-journal.test.mjs', 'compcard-intake.test.mjs', 'compcard-cadence.test.mjs'];

@@ -1,3 +1,7 @@
+# Safe-hold release authorization update
+
+This safety-hold-only scope may proceed through the existing protected production release gates even though the history ingestor and verified owner-alert route are absent. All automatic model posting may pause. Warnings remain undelivered. Do not claim restored automation or delivered alerts. No source behavior changes accompany this release preparation.
+
 # Three-calendar-month publication review (local safety candidate)
 
 This is a fail-closed publication gate, separate from the unchanged seven-day
