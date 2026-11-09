@@ -1,5 +1,9 @@
 // Exact current-turn navigation only; no inference from old booking drafts.
 const commands = new Map([
+  ['my status', 'checkpts'],
+  ['promotion', 'promotion'],
+  ['find model', 'models'],
+  ['apply job', 'jobs'],
   ['รู้จัก mmd / สมาชิก','membership_intro'], ['สมาชิก mmd privé','membership_intro'],
   ['ดูแพ็กเกจสมาชิก','package'], ['สมัครสมาชิก','regis'],
   ['เช็กสมาชิกของฉัน','checkpts'], ['เช็กสิทธิ์โปรของฉัน','checkpts'], ['เปิด my mmd','checkpts'],
