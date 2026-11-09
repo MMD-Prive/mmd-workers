@@ -156,3 +156,26 @@ for (const [command, existingCommand] of [
     assert.equal(entryTopicCommand({...event(command), source: {type: 'group'}}), '');
   });
 }
+
+test('explicit model requests route to the right authenticated MY MMD view', async () => {
+ const booking = /miniapp\.line\.me\/2010862595-yT4DCEMc\/\?intent=status&view=jobs/;
+ const request = /miniapp\.line\.me\/2010862595-yT4DCEMc\/\?intent=status&view=my-requests/;
+ for (const [message, source, routes] of [
+  ['คนในรูปคือใครครับ', 'category_model_request_clarify', [booking, request]],
+  ['อยากให้ช่วยหาคนนี้', 'category_model_request_external', [request]],
+  ['พร้อมส่งคำขอจอง', 'category_model_request_booking', [booking]],
+ ]) {
+  const x = io();
+  const result = await runApprovedCategoryTurn(env, event(message), runtime, x);
+  assert.equal(result.decision.reply_source, source);
+  assert.equal(result.delivered, true);
+  assert.equal(x.sent.length, 1);
+  for (const route of routes) assert.match(x.sent[0], route);
+  assert.equal(booking.test(x.sent[0]), routes.includes(booking));
+  assert.equal(request.test(x.sent[0]), routes.includes(request));
+ }
+ const image = {...event(''), message:{type:'image', id:'fixture'}};
+ const x = io();
+ assert.equal((await runApprovedCategoryTurn(env, image, runtime, x)).attempted, false);
+ assert.equal(x.sent.length, 0);
+});
