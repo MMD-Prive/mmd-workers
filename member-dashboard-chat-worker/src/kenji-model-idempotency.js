@@ -15,6 +15,11 @@ const MODEL_ACCESS_PENDING_TTL_MS = 10 * 60 * 1000;
 const MODEL_ACCESS_PENDING_KEY = "model-access:pending";
 const LINE_TURN_BUFFER_KEY = "line-turn-buffer:v1";
 
+function validLeadOrder(order) {
+  return Number.isFinite(order?.occurred_at) && order.occurred_at > 0 &&
+    Number.isSafeInteger(order?.sequence) && order.sequence > 0;
+}
+
 function json(payload, status = 200) {
   return new Response(JSON.stringify(payload), {
     status,
@@ -119,7 +124,7 @@ export class KenjiModelIdempotency {
     let outcome;
     try {
       const { processDurableLineCardEvent } = await import("./index.js");
-      outcome = await processDurableLineCardEvent(entry.event, this.env, entry.received_at, entry.expected_lead_message_id);
+      outcome = await processDurableLineCardEvent(entry.event, this.env, entry.received_at, entry.expected_lead_message_id, entry.lead_order);
     } catch (_) {
       outcome = { ok: false, reason: "campaign_processor_failed" };
     }
@@ -352,6 +357,10 @@ export class KenjiModelIdempotency {
           !/^[A-Za-z0-9_-]{1,120}$/.test(expectedLeadMessageId))) {
         return json({ ok: false, error: "invalid_expected_lead" }, 400);
       }
+      const leadOrder = input?.lead_order;
+      if (leadOrder !== undefined && (expectedLeadMessageId !== undefined || !validLeadOrder(leadOrder))) {
+        return json({ ok: false, error: "invalid_lead_order" }, 400);
+      }
       const receivedAt = Date.now();
       const result = await this.state.storage.transaction(async (txn) => {
         const existing = await txn.get(CAMPAIGN_INGRESS_KEY);
@@ -365,6 +374,7 @@ export class KenjiModelIdempotency {
           webhook_event_id: webhookEventId,
           receipt_id: receiptId,
           ...(expectedLeadMessageId === undefined ? {} : { expected_lead_message_id: expectedLeadMessageId }),
+          ...(leadOrder === undefined ? {} : { lead_order: { occurred_at: leadOrder.occurred_at, sequence: leadOrder.sequence } }),
           status: "pending",
           attempts: 0,
           received_at: receivedAt,
@@ -466,7 +476,7 @@ export class KenjiModelIdempotency {
         await txn.put(orderSequenceKey, { sequence: order.sequence, expires_at: order.expires_at });
         return order;
       };
-      if (action === "observe") {
+      if (action === "observe" || action === "pin_order") {
         const occurredAt = input?.context?.occurred_at;
         if (!expectedLead || !Number.isFinite(occurredAt) || occurredAt <= 0) {
           return json({ ok: false, error: "invalid_lead_order" }, 400);
@@ -474,7 +484,7 @@ export class KenjiModelIdempotency {
         const order = await this.state.storage.transaction((txn) => observeOrder(txn, expectedLead, occurredAt));
         const alarm = await this.state.storage.getAlarm();
         if (!alarm || alarm > order.expires_at) await this.state.storage.setAlarm(order.expires_at);
-        return json({ ok: true, observed: true });
+        return json({ ok: true, observed: true, lead_order: { occurred_at: order.occurred_at, sequence: order.sequence } });
       }
       if (action === "reserve") {
         if (!briefId) return json({ ok: false, error: "brief_message_id_required" }, 400);
@@ -516,6 +526,10 @@ export class KenjiModelIdempotency {
         ) {
           return json({ ok: false, error: "invalid_context" }, 400);
         }
+        const pinnedOrder = context?.lead_order;
+        if (pinnedOrder !== undefined && !validLeadOrder(pinnedOrder)) {
+          return json({ ok: false, error: "invalid_lead_order" }, 400);
+        }
         const expiresAt = now + CAMPAIGN_CONTEXT_TTL_MS;
         const contextToken = crypto.randomUUID();
         const next = {
@@ -542,7 +556,7 @@ export class KenjiModelIdempotency {
             await txn.put(key, refreshed);
             return refreshed;
           }
-          const order = await observeOrder(txn, leadInboxId, now);
+          const order = pinnedOrder ?? await observeOrder(txn, leadInboxId, now);
           const ordered = { ...next, occurred_at: order.occurred_at, order_sequence: order.sequence };
           const olderThanLatest = latest && Number.isFinite(latest.occurred_at) &&
             (ordered.occurred_at < latest.occurred_at ||

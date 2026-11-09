@@ -595,11 +595,28 @@ async function maybeScheduleKenjiLineAfterAck(request, env = {}, ctx = null, han
           const alias = await aliasResponse.json().catch(() => ({}));
           if (!aliasResponse.ok) return Response.json({ ok: false, error: "campaign_ingress_unavailable" }, { status: 503 });
           if (alias?.cancelled === true) continue;
+          let leadOrder;
+          if (expectedLeadMessageId === undefined) {
+            try {
+              const context = env.KENJI_MODEL_DEDUPE.get(env.KENJI_MODEL_DEDUPE.idFromName(`kenji-line-card-21829530-context-v1:${subjectHash}`));
+              const timestamp = event.timestamp;
+              const response = await context.fetch("https://kenji-model-dedupe.internal/campaign-lead/context", {
+                method: "POST", headers: { "content-type": "application/json" },
+                body: JSON.stringify({ action: "pin_order", context: {
+                  expected_lead_inbox_id: `line_${eventId}`,
+                  occurred_at: Number.isFinite(timestamp) && timestamp > 0 ? timestamp : Date.now(),
+                } }),
+              });
+              const pin = response.ok ? await response.json() : null;
+              if (pin?.ok === true && pin.observed === true) leadOrder = pin.lead_order;
+            } catch (_) {}
+            if (!leadOrder) return Response.json({ ok: false, error: "campaign_lead_order_unavailable" }, { status: 503 });
+          }
           const stub = env.KENJI_MODEL_DEDUPE.get(env.KENJI_MODEL_DEDUPE.idFromName(`line-card-ingress-v1:${key}`));
           let response;
           try {
             response = await stub.fetch("https://kenji-model-dedupe.internal/campaign-lead/ingress", {
-              method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "enqueue", event, receipt_id: key, expected_lead_message_id: expectedLeadMessageId }),
+              method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "enqueue", event, receipt_id: key, expected_lead_message_id: expectedLeadMessageId, lead_order: leadOrder }),
             });
           } catch (_) { return Response.json({ ok: false, error: "campaign_ingress_unavailable" }, { status: 503 }); }
           const result = await response.json().catch(() => ({}));

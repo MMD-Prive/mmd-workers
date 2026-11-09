@@ -718,8 +718,23 @@ test("a durable brief with a planned lead cannot claim a different current lead"
 });
 
 for (const durable of [false, true]) {
-  test(`retrying an older lead does not take over a newer lead (${durable ? "durable" : "inline"} next brief)`, async () => {
+  test(`retry keeps the intake order after the first context order write fails (${durable ? "durable" : "inline"} next brief)`, async () => {
     const f = fixture({ contextPutFailures: 1 });
+    const binding = f.env.KENJI_MODEL_DEDUPE;
+    const get = binding.get.bind(binding);
+    const orderWrites = [];
+    binding.get = (id) => {
+      const object = get(id);
+      return { async fetch(input, init) {
+        if (String(input).endsWith("/campaign-lead/context")) {
+          const { action, context } = JSON.parse(init?.body || "{}");
+          // A queued lead must not allocate its order from the processor.
+          if (action === "observe") return Response.json({ ok: false }, { status: 503 });
+          if (action === "put") orderWrites.push({ lead: context.lead_inbox_id, order: context.lead_order });
+        }
+        return object.fetch(input, init);
+      } };
+    };
     const pending = [];
     const ctx = { waitUntil(promise) { pending.push(Promise.resolve(promise)); } };
     const now = Date.now() - 5000;
@@ -742,6 +757,9 @@ for (const durable of [false, true]) {
     await withFetch(f.fetch, async () => {
       await deliver(oldLead, ctx);
       assert.equal((await ingress("status")).status, "pending");
+      const object = binding.objects.get(`line-card-ingress-v1:${createHash("sha256").update(oldLead.message.id).digest("hex")}`);
+      const receipt = await object.state.storage.get("campaign-ingress:event");
+      assert.deepEqual(receipt.lead_order, { occurred_at: now, sequence: 1 });
       await deliver(newLead, ctx);
       const realNow = Date.now;
       try {
@@ -750,11 +768,40 @@ for (const durable of [false, true]) {
       } finally { Date.now = realNow; }
       await deliver(brief, durable ? ctx : undefined);
     });
+    assert.deepEqual(orderWrites, [
+      { lead: "line_msg-late-context-a", order: { occurred_at: now, sequence: 1 } },
+      { lead: "line_msg-late-context-b", order: { occurred_at: now, sequence: 2 } },
+      { lead: "line_msg-late-context-a", order: { occurred_at: now, sequence: 1 } },
+    ]);
     assert.ok(f.records.has("line_msg-late-context-a"));
     assert.ok(f.records.has("line_msg-late-context-b"));
     assert.equal(JSON.parse(f.records.get("line_msg-brief-for-newer").fields.payload_json).lead_inbox_id, "line_msg-late-context-b");
   });
 }
+
+test("an unavailable intake order returns 503 before the Card is acknowledged", async () => {
+  const f = fixture();
+  const pending = [];
+  const ctx = { waitUntil(promise) { pending.push(promise); } };
+  const binding = f.env.KENJI_MODEL_DEDUPE;
+  const get = binding.get.bind(binding);
+  binding.get = (id) => {
+    const object = get(id);
+    return { fetch(input, init) {
+      if (String(input).endsWith("/campaign-lead/context") && JSON.parse(init?.body || "{}").action === "pin_order") {
+        return Response.json({ ok: false }, { status: 503 });
+      }
+      return object.fetch(input, init);
+    } };
+  };
+  const lead = lineEvent("JASPER", "msg-unavailable-order");
+  const response = await withFetch(f.fetch, async () => route.fetch(await signedWebhook([lead], f.env), f.env, ctx));
+  assert.equal(response.status, 503);
+  assert.equal((await response.json()).error, "campaign_lead_order_unavailable");
+  assert.equal(pending.length, 0);
+  assert.equal(binding.objects.has(`line-card-ingress-v1:${createHash("sha256").update(lead.message.id).digest("hex")}`), false);
+  assert.equal(f.records.has("line_msg-unavailable-order"), false);
+});
 
 test("a lost brief context commit acknowledgement recovers without a duplicate write or reply", async () => {
   const f = fixture();

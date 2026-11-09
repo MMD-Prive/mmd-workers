@@ -3312,7 +3312,7 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
         : campaignTakeover.active === true
           ? { ok: true, claimed: false, reason: "owner_takeover_active" }
           : await claimLineCardCampaignLead(env, event, "claim");
-      if (campaignLeadClaim.claimed === true && campaignTrigger) {
+      if (campaignLeadClaim.claimed === true && campaignTrigger && options.leadOrder === undefined) {
         const timestamp = event.timestamp;
         const order = await lineCardCampaignContext(env, lineUserId, "observe", {
           expected_lead_inbox_id: `line_${getStableLineMessageId(event)}`,
@@ -3347,6 +3347,7 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
               lead_inbox_id: `line_${getStableLineMessageId(event)}`,
               lead_claim_key: campaignLeadClaim.claim_key,
               lead_claim_token: campaignLeadClaim.claim_token,
+              ...(options.leadOrder === undefined ? {} : { lead_order: options.leadOrder }),
             });
             if (contextStored?.stored !== true) {
               campaignLeadRecord = { ...campaignLeadRecord, skipped: true, reason: "campaign_context_store_failed" };
@@ -3735,7 +3736,7 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
   return json({ ok: true, worker: WORKER_NAME, route: "line_webhook", events: events.length, saved: payloadEvents.map((event) => receipts.get(event)) });
 }
 
-export async function processDurableLineCardEvent(event, env = {}, receivedAt = Date.now(), expectedLeadMessageId) {
+export async function processDurableLineCardEvent(event, env = {}, receivedAt = Date.now(), expectedLeadMessageId, leadOrder) {
   if (!resolveLineCardCampaignTrigger(event?.message?.text) && !/^[A-Za-z0-9_-]{1,120}$/.test(expectedLeadMessageId || "")) {
     return { ok: false, reason: "campaign_brief_lead_not_pinned" };
   }
@@ -3748,7 +3749,7 @@ export async function processDurableLineCardEvent(event, env = {}, receivedAt = 
     method: "POST",
     headers: { "content-type": "application/json", "x-line-signature": signature },
     body,
-  }), env, null, { suppressCampaignReply, requireCampaignContext: true, expectedLeadMessageId, receivedAt });
+  }), env, null, { suppressCampaignReply, requireCampaignContext: true, expectedLeadMessageId, receivedAt, leadOrder });
   if (!response.ok) return { ok: false, reason: "campaign_processor_unavailable" };
   const result = await response.json().catch(() => ({}));
   const saved = result?.saved?.[0];
