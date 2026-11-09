@@ -1,3 +1,4 @@
+import { hasKenjiProfilePriceText } from "../../shared/kenji-profile-price-text.mjs";
 import { restrictedReplyCategories } from './kenji-reply-category-gate.mjs';
 import { careBackOctoberReply } from './kenji-care-back-october.mjs';
 import { deliverTravelNotice } from '../../shared/model-travel-line.mjs';
@@ -820,7 +821,7 @@ async function requestKenjiModelAccess(env = {}, lineUserId = "", query = "", ve
 
 function isSafeKenjiModelCustomerText(value, max = 500) {
   const text = asString(value);
-  if (!text || text.length > max) return false;
+  if (!text || text.length > max || hasKenjiProfilePriceText(text)) return false;
   return !(
     /(?:\b0\d{8,9}\b|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|https?:\/\/|line\s*(?:id|oa)|telegram|เบอร์(?:โทร)?|อีเมล|ไลน์ส่วนตัว)/i.test(text) ||
     /(?:availability|available|schedule|ตาราง(?:งาน|คิว)|ว่าง(?:วันนี้|คืนนี้|พรุ่งนี้|ไหม)?|เช็กคิว)/i.test(text) ||
@@ -1232,7 +1233,6 @@ export async function buildKenjiKnowledgeLineReply(event = {}, profile = {}, env
 
 export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, options = {}) {
   const eventText = getLineEventText(event);
-  if (isEmsAlbumCommand(eventText)) return emsAlbumNavigationReply();
   const resolvedModelIntent = options?.modelIntent?.matched === true ? options.modelIntent : resolveKenjiModelIntent(eventText);
   if (resolvedModelIntent.campaign_trigger || options.campaignBrief === true) {
     if (event?.type !== "message" || options.campaignLeadQueued !== true) return buildKenjiModelAccessDecision({ status: "silent" });
@@ -1250,6 +1250,7 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
     };
   }
 
+  if (isEmsAlbumCommand(eventText)) return emsAlbumNavigationReply();
   const inferredIntent = resolvedModelIntent.campaign_trigger ? "card_campaign_lead" : inferLineIntent(eventText, event);
   const postbackIntent = event?.type === "postback"
     ? canonicalRichMenuIntent({ data: event?.postback?.data })
@@ -3140,7 +3141,10 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
       continue;
     }
 
-    const event = aggregateResult.event || prepared.turn_event || rawEvent;
+    // Aggregation must not turn a literal Card action into a model request.
+    const rawCardAction = rawEvent?.type === "message" && rawEvent?.message?.type === "text" &&
+      resolveLineCardCampaignTrigger(rawEvent.message.text);
+    const event = rawCardAction ? rawEvent : (aggregateResult.event || prepared.turn_event || rawEvent);
     const text = getLineEventText(event);
     const lineUserId = getLineUserId({ event });
     const modelIntent = resolveKenjiModelIntent(text);

@@ -1,6 +1,6 @@
-import { resolvePerRenameAlias } from "./per-rename-client-search.js";
+import { hasKenjiProfilePriceText } from "../../shared/kenji-profile-price-text.mjs";
 import { resolveMemberEntitlements } from "../../auth-worker/src/member-entitlement-resolver.js";
-import { HISTORICAL_PER_QUOTE_MAX_THB, normalizeModelSalesRule, resolveModelSalesOffer } from "../../shared/model-sales-control-v1.mjs";
+import { resolveModelSalesOffer } from "../../shared/model-sales-control-v1.mjs";
 import { inferAccessFolder } from "./private-model-work-policy.js";
 
 export const KENJI_MODEL_ACCESS_POLICY_VERSION = "KENJI_MODEL_ACCESS_V1";
@@ -145,7 +145,7 @@ function safeHttpsUrl(value) {
 
 function isCustomerSafeText(value, max = 500) {
   const text = clean(value, max + 1);
-  if (!text || text.length > max) return false;
+  if (!text || text.length > max || hasKenjiProfilePriceText(text)) return false;
   return !(
     /(?:\b0\d{8,9}\b|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|https?:\/\/|line\s*(?:id|oa)|telegram|เบอร์(?:โทร)?|อีเมล|ไลน์ส่วนตัว)/i.test(text) ||
     /(?:availability|available|schedule|ตาราง(?:งาน|คิว)|ว่าง(?:วันนี้|คืนนี้|พรุ่งนี้|ไหม)?|เช็กคิว)/i.test(text) ||
@@ -469,34 +469,6 @@ export async function resolveKenjiProfileLink(env, input, fetchImpl = fetch) {
   return { status: "silent" };
 }
 
-// Use the same archived quote records as Sales Control, but require exact
-// linked identities and a lane. This LINE RPC never falls back to a new price.
-const HISTORICAL_QUOTE_STATES = new Set(["inactive", "expired", "superseded", "archived", "replaced", "closed"]);
-
-function historicalRateForLine(rules, { clientId, modelId, modelKey, workLane }) {
-  if (!clientId) return null;
-  const exact = rules.map((record) => ({ rule: normalizeModelSalesRule(record), fields: record?.fields || {} }))
-    .filter(({ rule }) => rule &&
-      HISTORICAL_QUOTE_STATES.has(rule.status) &&
-      rule.client_ids.length === 1 && rule.client_ids[0] === clientId &&
-      rule.model_ids.length === 1 && rule.model_ids[0] === modelId &&
-      (!rule.model_key || rule.model_key === modelKey) &&
-      rule.offer_type === token(workLane) &&
-      !["default", "all", "any", "general"].includes(rule.offer_type));
-  if (!exact.length) return null;
-  const amounts = new Set();
-  for (const { rule, fields } of exact) {
-    const reviewedAt = Date.parse(fields.reviewed_at);
-    const amount = fields.customer_sell_rate_thb ?? fields.customer_specific_rate_thb;
-    if (token(fields.reviewed_by) !== "per" || !Number.isFinite(reviewedAt) || reviewedAt > Date.now() ||
-        rule.requires_per_approval || !Number.isFinite(amount) || amount <= 0 ||
-        amount > HISTORICAL_PER_QUOTE_MAX_THB ||
-        (rule.customer_specific_rate_thb != null && rule.customer_specific_rate_thb !== amount)) return null;
-    amounts.add(amount);
-  }
-  return amounts.size === 1 ? amounts.values().next().value : null;
-}
-
 export async function resolveKenjiModelAccess(env = {}, input = {}, options = {}) {
   const lineUserId = clean(input.line_user_id, 80);
   const query = clean(input.query, 80);
@@ -547,25 +519,17 @@ export async function resolveKenjiModelAccess(env = {}, input = {}, options = {}
     if (!relevantRules.length) {
       return { status: "match", model: authorizedRecord.safeModel };
     }
-    const eligible = access.snapshot?.entitlements?.some((entry) =>
-      PROTECTED_ENVELOPES.has(token(entry.capability)) && ["active", "expiring_soon"].includes(entry.lifecycle));
-    const identity = eligible
-      ? await resolvePerRenameAlias(env, lineUserId, { line_user_id: lineUserId, fetchImpl }).catch(() => null)
-      : null;
-    const clientId = identity?.state === "resolved" ? identity.record.client_id : "";
     const salesOffer = resolveModelSalesOffer({
       model_id: modelId,
       model_key: modelKey,
       requested_at: input.requested_at || input.requestedAt || new Date().toISOString(),
       work_lane: workLane,
-      client_id: clientId,
       entitlement_snapshot: access.snapshot,
       rules: relevantRules,
     });
-    const historicalRate = salesOffer.sellable === true && salesOffer.price_visible === true &&
-      salesOffer.requires_per_approval !== true
-      ? historicalRateForLine(relevantRules, { clientId, modelId, modelKey, workLane })
-      : null;
+    // Reviewing a Sales Control rule does not establish that Per sent that
+    // quote to this customer. Until there is a verified delivery source, the
+    // LINE RPC returns the existing sales gate without a customer price.
     return {
       status: "match",
       model: {
@@ -573,11 +537,10 @@ export async function resolveKenjiModelAccess(env = {}, input = {}, options = {}
         sales: {
           sellable: salesOffer.sellable === true,
           visibility: salesOffer.visibility || "off",
-          customer_rate_thb: historicalRate,
-          price_visible: historicalRate !== null,
+          customer_rate_thb: null,
+          price_visible: false,
           requires_per_approval: salesOffer.requires_per_approval === true,
-          reason_code: historicalRate !== null ? "historical_per_quote" :
-            salesOffer.sellable === true ? "historical_per_quote_withheld" : clean(salesOffer.reason_code, 120),
+          reason_code: salesOffer.sellable === true ? "historical_quote_delivery_unverified" : clean(salesOffer.reason_code, 120),
           term_summary: clean(salesOffer.term_summary, 240),
           matched_rule_key: clean(salesOffer.matched_rule_key, 180) || null,
           rule_version: salesOffer.rule_version ?? null,

@@ -194,6 +194,49 @@ test("production route queues JASPER and its linked brief before one reply each 
   assert.equal(f.env.LINE_AUTO_REPLY_ENABLED, "false");
 });
 
+test("a queued Card brief cannot be diverted to the EMs album shortcut", async () => {
+  const f = fixture();
+  await withFetch(f.fetch, async () => {
+    await route.fetch(await signedWebhook([lineEvent("JASPER", "msg-lead-album")], f.env), f.env);
+    await route.fetch(await signedWebhook([lineEvent("ขอดูอัลบั้ม EMs", "msg-brief-album")], f.env), f.env);
+  });
+  assert.deepEqual(f.calls.map((call) => call.type), ["queue", "reply", "queue", "reply"]);
+  const brief = f.records.get("line_msg-brief-album");
+  assert.equal(JSON.parse(brief.fields.payload_json).lead_inbox_id, "line_msg-lead-album");
+  assert.doesNotMatch(JSON.stringify(f.calls.at(-1)), /my-mmd\/ems|quickReply|ดูอัลบั้ม EMs/);
+});
+
+test("signed Card actions never reach the category profile RPC with intake on or off", async () => {
+  for (const flags of [false, true]) {
+    const f = fixture({ flags });
+    const rpcCalls = [];
+    const runtime = f.env.ADMIN_WORKER;
+    Object.assign(f.env, {
+      KENJI_LINE_REPLY_CATEGORY_MODE: "approved_qa_promo",
+      LINE_AUTO_REPLY_ENABLED: "true",
+      LINE_KENJI_MODEL_ACCESS_ENABLED: "true",
+      LINE_CARD_21829530_MODEL_INFO_ENABLED: "true",
+      ADMIN_WORKER: {
+        async fetch(request) {
+          if (new URL(request.url).pathname.endsWith("/model-access")) {
+            rpcCalls.push(await request.json());
+            return Response.json({ ok: true, status: "profile_link", destination: "public" });
+          }
+          return runtime.fetch(request);
+        },
+      },
+    });
+    await withFetch(f.fetch, async () => {
+      const response = await route.fetch(await signedWebhook([lineEvent("JASPER", "msg-category-card", { timestamp: Date.now() })], f.env), f.env);
+      assert.equal(response.status, 200);
+    });
+    assert.equal(rpcCalls.length, 0, `intake enabled: ${flags}`);
+    const lead = f.records.get("line_msg-category-card");
+    assert.equal(Boolean(lead && JSON.parse(lead.fields.payload_json).parsed_intent === "card_campaign_lead"), flags);
+    assert.equal(f.calls.filter((call) => call.type === "reply").length, 0);
+  }
+});
+
 test("ack-first production route completes campaign queue and reply in waitUntil", async () => {
   const f = fixture();
   const pending = [];

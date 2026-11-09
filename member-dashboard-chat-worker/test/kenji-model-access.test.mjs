@@ -639,6 +639,19 @@ test("LINE lookup asks for the work brief and never exposes an unscoped RPC pric
   }
 });
 
+test("LINE adapter drops a price in profile prose even if an older RPC labels it safe", async () => {
+  for (const summary of ["แนะนำตัวครับ เรท 25,000 บาท", "ＴＨＢ ２５０００", "25k"]) {
+    const decision = await resolveKenjiLineReply(lineEvent("MX17"), {}, {
+      ...BASE_ENV,
+      ADMIN_WORKER: adminBinding({ ok: true, status: "match", model: {
+        model_code: "MX17", working_name: "Fixture Model", summary,
+      } }),
+    });
+    assert.match(decision.text, /Fixture Model.*MX17/);
+    assert.ok(!decision.text.includes(summary));
+  }
+});
+
 test("thin adapter drops unsafe summary content even if a compromised RPC labels it safe", async () => {
   const decision = await resolveKenjiLineReply(lineEvent("MX17"), {}, {
     ...BASE_ENV,
@@ -715,7 +728,7 @@ test("silent RPC outcome returns webhook 200 with zero LINE Reply and Push calls
   }
 });
 
-test("authorized webhook match sends exactly one LINE Reply and never Push", async () => {
+test("authorized webhook sends one profile reply without leaking a price from the real RPC", async () => {
   const originalFetch = globalThis.fetch;
   const networkCalls = [];
   globalThis.fetch = async (input, init = {}) => {
@@ -745,7 +758,8 @@ test("authorized webhook match sends exactly one LINE Reply and never Push", asy
                     member_lifecycle_status: "active", access_status: "active", expire_at: "2099-12-31" } }]
                 : formula.startsWith('LOWER({model_code}')
                   ? [{ id: "recModel", fields: { model_code: "MX17", working_name: "น้องซิน",
-                      booking_visibility: "private", access_folder: "standard", status: "active" } }]
+                      booking_visibility: "private", access_folder: "standard", status: "active",
+                      customer_safe_summary: "เรท 25,000 บาท" } }]
                   : [];
               return Response.json({ records });
             },
@@ -761,6 +775,7 @@ test("authorized webhook match sends exactly one LINE Reply and never Push", asy
     const body = JSON.parse(replies[0].init.body);
     assert.equal(body.messages.length, 1);
     assert.match(body.messages[0].text, /น้องซิน.*MX17/s);
+    assert.doesNotMatch(body.messages[0].text, /25,000|บาท/);
   } finally {
     globalThis.fetch = originalFetch;
   }
