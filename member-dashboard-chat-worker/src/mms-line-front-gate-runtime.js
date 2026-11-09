@@ -10,7 +10,6 @@ import {
 } from "./mmd-rich-menu-scheduled-runtime.mjs";
 import {
   handleKenjiSeedLineRequestWithRedeliveryRecovery,
-  hasCardCampaignContext,
   isKenjiSeedLineRequest,
 } from "./kenji-line-redelivery-recovery.mjs";
 import { createLineSignature, LINE_CARD_ORDINARY_SUBJECTS, orderLineCardBatchEvents, resolveLineCardCampaignTrigger } from "./index.js";
@@ -474,8 +473,7 @@ async function maybeScheduleKenjiLineAfterAck(request, env = {}, ctx = null, han
       const plannedCampaignSubjects = new Set();
       for (const [userId, messages] of senderTexts) {
         if (!pilotConfigValid || !hashes.includes(await sha256HexText(userId))) continue;
-        let nextBrief = !resolveLineCardCampaignTrigger(messages[0].message.text) &&
-          await hasCardCampaignContext(env, messages[0]);
+        let nextBrief = true;
         let expectedLeadMessageId;
         for (const event of messages) {
           if (resolveLineCardCampaignTrigger(event.message.text)) {
@@ -484,9 +482,35 @@ async function maybeScheduleKenjiLineAfterAck(request, env = {}, ctx = null, han
             expectedLeadMessageId = text(event.message.id);
             nextBrief = true;
           } else if (nextBrief) {
-            plannedCampaignEvents.set(event, expectedLeadMessageId);
-            plannedCampaignSubjects.add(userId);
             nextBrief = false;
+            const briefId = text(event.message.id);
+            if (!/^[A-Za-z0-9_-]{1,120}$/.test(briefId) ||
+                (expectedLeadMessageId !== undefined && !/^[A-Za-z0-9_-]{1,120}$/.test(expectedLeadMessageId))) {
+              return Response.json({ ok: false, error: "campaign_event_id_missing" }, { status: 503 });
+            }
+            let reservation;
+            try {
+              const hash = await sha256HexText(userId);
+              const id = env.KENJI_MODEL_DEDUPE.idFromName(`kenji-line-card-21829530-context-v1:${hash}`);
+              const response = await env.KENJI_MODEL_DEDUPE.get(id).fetch("https://kenji-model-dedupe.internal/campaign-lead/context", {
+                method: "POST", headers: { "content-type": "application/json" },
+                body: JSON.stringify({ action: "reserve", context: {
+                  brief_message_id: briefId,
+                  ...(expectedLeadMessageId === undefined ? {} : { expected_lead_inbox_id: `line_${expectedLeadMessageId}` }),
+                } }),
+              });
+              if (response.ok) reservation = await response.json();
+            } catch (_) {}
+            if (reservation?.ok !== true || (expectedLeadMessageId !== undefined && reservation.found !== true)) {
+              return Response.json({ ok: false, error: "campaign_brief_reservation_unavailable" }, { status: 503 });
+            }
+            if (!reservation.found) continue;
+            const lead = /^line_([A-Za-z0-9_-]{1,120})$/.exec(reservation.lead_inbox_id);
+            if (!lead || (expectedLeadMessageId !== undefined && lead[1] !== expectedLeadMessageId)) {
+              return Response.json({ ok: false, error: "campaign_brief_reservation_unavailable" }, { status: 503 });
+            }
+            plannedCampaignEvents.set(event, lead[1]);
+            plannedCampaignSubjects.add(userId);
           }
         }
       }

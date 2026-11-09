@@ -439,6 +439,44 @@ export class KenjiModelIdempotency {
     if (path === "/campaign-lead/context") {
       const action = String(input?.action || "");
       const now = Date.now();
+      const expectedLead = String(input?.context?.expected_lead_inbox_id || "");
+      const briefId = String(input?.context?.brief_message_id || "");
+      const archiveKey = (lead) => `campaign-lead:history:${lead}`;
+      const reservationKey = (lead) => `campaign-lead:brief:${lead}`;
+      const briefKey = (id) => `campaign-lead:brief-owner:${id}`;
+      if ((expectedLead && !/^line_[A-Za-z0-9_-]{1,120}$/.test(expectedLead)) ||
+          (briefId && !/^[A-Za-z0-9_-]{1,120}$/.test(briefId))) {
+        return json({ ok: false, error: "invalid_brief_scope" }, 400);
+      }
+      const active = (entry) => Number(entry?.expires_at) > now ? entry : null;
+      const select = async (txn, lead = expectedLead) => {
+        const latest = active(await txn.get(CAMPAIGN_CONTEXT_KEY));
+        if (!lead || latest?.lead_inbox_id === lead) return [CAMPAIGN_CONTEXT_KEY, latest];
+        const key = archiveKey(lead);
+        return [key, active(await txn.get(key))];
+      };
+      if (action === "reserve") {
+        if (!briefId) return json({ ok: false, error: "brief_message_id_required" }, 400);
+        const reserved = await this.state.storage.transaction(async (txn) => {
+          const existing = active(await txn.get(briefKey(briefId)));
+          if (existing) {
+            if (expectedLead && existing.lead_inbox_id !== expectedLead) return { conflict: true };
+            return { found: true, lead_inbox_id: existing.lead_inbox_id };
+          }
+          const [, context] = await select(txn);
+          const lead = expectedLead || context?.lead_inbox_id;
+          if (!lead || context?.consumed === true || Number(context?.brief_claim?.expires_at) > now) return { found: false };
+          const previous = active(await txn.get(reservationKey(lead)));
+          if (previous && previous.brief_message_id !== briefId) return { found: false };
+          const expires_at = now + CAMPAIGN_CONTEXT_TTL_MS;
+          await txn.put(reservationKey(lead), { brief_message_id: briefId, expires_at });
+          await txn.put(briefKey(briefId), { lead_inbox_id: lead, expires_at });
+          const alarm = await this.state.storage.getAlarm();
+          if (!alarm || alarm > expires_at) await this.state.storage.setAlarm(expires_at);
+          return { found: true, lead_inbox_id: lead };
+        });
+        return json({ ok: reserved.conflict !== true, ...reserved }, reserved.conflict ? 409 : 200);
+      }
       if (action === "put") {
         const context = input?.context && typeof input.context === "object" ? input.context : null;
         const cardId = String(context?.card_id || "");
@@ -459,7 +497,7 @@ export class KenjiModelIdempotency {
         }
         const expiresAt = now + CAMPAIGN_CONTEXT_TTL_MS;
         const contextToken = crypto.randomUUID();
-        await this.state.storage.put(CAMPAIGN_CONTEXT_KEY, {
+        const next = {
           card_id: cardId,
           card_trigger: cardTrigger,
           campaign_key: campaignKey,
@@ -470,17 +508,35 @@ export class KenjiModelIdempotency {
           context_token: contextToken,
           action_type: String(context?.action_type || "text").trim().slice(0, 20),
           expires_at: expiresAt,
+        };
+        const stored = await this.state.storage.transaction(async (txn) => {
+          const latest = active(await txn.get(CAMPAIGN_CONTEXT_KEY));
+          const existing = latest?.lead_inbox_id === leadInboxId ? latest : active(await txn.get(archiveKey(leadInboxId)));
+          if (existing) {
+            if (existing.lead_claim_token === leadClaimToken) return existing;
+            // Refresh a reclaimed lead without promoting it over a newer lead or
+            // resetting a brief already consumed by the previous attempt.
+            const key = latest?.lead_inbox_id === leadInboxId ? CAMPAIGN_CONTEXT_KEY : archiveKey(leadInboxId);
+            const refreshed = { ...existing, lead_claim_key: leadClaimKey, lead_claim_token: leadClaimToken };
+            await txn.put(key, refreshed);
+            return refreshed;
+          }
+          if (latest) await txn.put(archiveKey(latest.lead_inbox_id), latest);
+          await txn.put(CAMPAIGN_CONTEXT_KEY, next);
+          return next;
         });
         if (this.state.storage.getAlarm && this.state.storage.setAlarm) {
           const currentAlarm = await this.state.storage.getAlarm();
           if (!currentAlarm || currentAlarm > expiresAt) await this.state.storage.setAlarm(expiresAt);
         }
-        return json({ ok: true, stored: true, context_token: contextToken, expires_at: expiresAt });
+        return json({ ok: true, stored: true, context_token: stored.context_token, expires_at: stored.expires_at });
       }
       if (action === "get") {
-        const context = await this.state.storage.get(CAMPAIGN_CONTEXT_KEY);
-        if (!context || Number(context.expires_at) <= now) {
-          if (context) await this.state.storage.delete(CAMPAIGN_CONTEXT_KEY);
+        const owner = briefId ? active(await this.state.storage.get(briefKey(briefId))) : null;
+        const [, context] = await select(this.state.storage, expectedLead || owner?.lead_inbox_id);
+        if (!context) return json({ ok: true, found: false });
+        const reservation = active(await this.state.storage.get(reservationKey(context.lead_inbox_id)));
+        if (input?.context?.include_inactive !== true && !owner && (context.consumed || reservation)) {
           return json({ ok: true, found: false });
         }
         const { brief_claim: _briefClaim, ...safeContext } = context;
@@ -488,10 +544,13 @@ export class KenjiModelIdempotency {
       }
       if (action === "claim") {
         const claim = await this.state.storage.transaction(async (txn) => {
-          const context = await txn.get(CAMPAIGN_CONTEXT_KEY);
-          if (!context || Number(context.expires_at) <= now) return { found: false, claimed: false };
-          if (input?.context?.expected_lead_inbox_id && input.context.expected_lead_inbox_id !== context.lead_inbox_id) {
-            return { found: false, claimed: false, reason: "campaign_context_wrong_lead" };
+          const owner = briefId ? active(await txn.get(briefKey(briefId))) : null;
+          if (owner && expectedLead && owner.lead_inbox_id !== expectedLead) return { found: false, claimed: false };
+          const [key, context] = await select(txn, expectedLead || owner?.lead_inbox_id);
+          if (!context) return { found: false, claimed: false };
+          const reservation = active(await txn.get(reservationKey(context.lead_inbox_id)));
+          if ((reservation && reservation.brief_message_id !== briefId) || (context.consumed && !owner)) {
+            return { found: false, claimed: false };
           }
           if (context.campaign_key !== "line_card_21829530_lead_v1" || context.card_id !== "21829530" || !context.lead_inbox_id) {
             return { found: true, claimed: false, reason: "invalid_context" };
@@ -501,7 +560,11 @@ export class KenjiModelIdempotency {
             return { found: true, claimed: false, reason: "context_already_claimed", context: safeContext };
           }
           const claimToken = crypto.randomUUID();
-          await txn.put(CAMPAIGN_CONTEXT_KEY, {
+          if (briefId && !reservation) {
+            await txn.put(reservationKey(context.lead_inbox_id), { brief_message_id: briefId, expires_at: context.expires_at });
+            await txn.put(briefKey(briefId), { lead_inbox_id: context.lead_inbox_id, expires_at: context.expires_at });
+          }
+          await txn.put(key, {
             ...context,
             brief_claim: { token: claimToken, expires_at: Math.min(context.expires_at, now + CAMPAIGN_LEAD_PROCESSING_TTL_MS) },
           });
@@ -512,12 +575,12 @@ export class KenjiModelIdempotency {
       if (action === "release" || action === "commit") {
         const claimToken = String(input?.context?.claim_token || "");
         const changed = await this.state.storage.transaction(async (txn) => {
-          const context = await txn.get(CAMPAIGN_CONTEXT_KEY);
+          const [key, context] = await select(txn);
           if (!claimToken || !context || context.consumed === true || context.brief_claim?.token !== claimToken || Number(context.brief_claim.expires_at) <= now) return false;
           const next = { ...context };
           delete next.brief_claim;
           if (action === "commit") next.consumed = true;
-          await txn.put(CAMPAIGN_CONTEXT_KEY, next);
+          await txn.put(key, next);
           return true;
         });
         return json({ ok: true, [action === "commit" ? "committed" : "released"]: changed });
@@ -526,7 +589,7 @@ export class KenjiModelIdempotency {
         const expectedLeadInboxId = String(input?.context?.lead_inbox_id || "").trim();
         const expectedContextToken = String(input?.context?.context_token || "").trim();
         const deleted = await this.state.storage.transaction(async (txn) => {
-          const existing = await txn.get(CAMPAIGN_CONTEXT_KEY);
+          const [key, existing] = await select(txn);
           if (
             !existing ||
             !expectedLeadInboxId ||
@@ -534,7 +597,7 @@ export class KenjiModelIdempotency {
             existing.lead_inbox_id !== expectedLeadInboxId ||
             existing.context_token !== expectedContextToken
           ) return false;
-          await txn.delete(CAMPAIGN_CONTEXT_KEY);
+          await txn.delete(key);
           return true;
         });
         return json({ ok: true, deleted, reason: deleted ? "" : "campaign_context_mismatch" });

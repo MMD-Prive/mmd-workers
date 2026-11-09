@@ -717,6 +717,82 @@ test("a durable brief with a planned lead cannot claim a different current lead"
   });
 });
 
+for (const inBatch of [false, true]) {
+  test(`durable brief retry retains its original lead (${inBatch ? "same batch" : "separate webhooks"})`, async () => {
+    const f = fixture();
+    const pending = [];
+    const ctx = { waitUntil(promise) { pending.push(Promise.resolve(promise)); } };
+    let failBrief = true;
+    const flaky = async (input, init = {}) => {
+      if (failBrief && init.method === "POST" && new URL(String(input)).hostname === "api.airtable.com" &&
+          JSON.parse(init.body).fields?.inbox_id === "line_msg-retry-original-brief") {
+        return new Response("temporary fixture outage", { status: 503 });
+      }
+      return f.fetch(input, init);
+    };
+    const deliver = async (events, mode) => route.fetch(await signedWebhook(events, f.env), f.env, mode);
+    const drain = async () => {
+      for (let round = 0; round < 6; round += 1) {
+        const count = pending.length;
+        await Promise.all(pending);
+        if (pending.length === count) break;
+      }
+    };
+    const now = Date.now() - 5000;
+    const leadA = lineEvent("JASPER", "msg-retry-original-lead", { timestamp: now });
+    const briefA = lineEvent("brief A", "msg-retry-original-brief", { timestamp: now + 1000 });
+    const leadB = lineEvent("BOOK EI", "msg-retry-new-lead", { timestamp: now + 2000 });
+    const key = createHash("sha256").update(briefA.message.id).digest("hex");
+    const stub = f.env.KENJI_MODEL_DEDUPE.get(`line-card-ingress-v1:${key}`);
+    const ingress = async (action) => (await stub.fetch("https://kenji-model-dedupe.internal/campaign-lead/ingress", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action }),
+    })).json();
+    await withFetch(flaky, async () => {
+      if (inBatch) {
+        assert.equal((await deliver([leadA, leadB, briefA], ctx)).status, 200);
+        await drain();
+      } else {
+        await deliver([leadA]);
+        assert.equal((await deliver([briefA], ctx)).status, 200);
+        await drain();
+        await deliver([leadB]);
+      }
+      assert.equal((await ingress("status")).status, "pending");
+      assert.ok(f.records.has("line_msg-retry-new-lead"));
+      failBrief = false;
+      const realNow = Date.now;
+      try {
+        Date.now = () => realNow() + 65_000;
+        assert.equal((await ingress("process")).status, "done");
+      } finally { Date.now = realNow; }
+      const originalBrief = f.records.get("line_msg-retry-original-brief");
+      assert.equal(JSON.parse(originalBrief.fields.payload_json).lead_inbox_id, "line_msg-retry-original-lead");
+      await deliver([lineEvent("brief B", "msg-retry-new-brief")]);
+      assert.equal(JSON.parse(f.records.get("line_msg-retry-new-brief").fields.payload_json).lead_inbox_id, "line_msg-retry-new-lead");
+    });
+  });
+}
+
+for (const durable of [false, true]) {
+  test(`a fresh webhook after a consumed brief stays ordinary (${durable ? "durable" : "inline"})`, async () => {
+    const f = fixture();
+    const pending = [];
+    const ctx = durable ? { waitUntil(promise) { pending.push(Promise.resolve(promise)); } } : undefined;
+    await withFetch(f.fetch, async () => {
+      for (const [value, id] of [["JASPER", "fresh-lead"], ["brief", "fresh-brief"], ["package", "fresh-ordinary"]]) {
+        assert.equal((await route.fetch(await signedWebhook([lineEvent(value, id)], f.env), f.env, ctx)).status, 200);
+        for (let round = 0; round < 6; round += 1) {
+          const count = pending.length;
+          await Promise.all(pending);
+          if (pending.length === count) break;
+        }
+      }
+    });
+    assert.equal(JSON.parse(f.records.get("line_fresh-brief").fields.payload_json).lead_inbox_id, "line_fresh-lead");
+    assert.doesNotMatch(JSON.parse(f.records.get("line_fresh-ordinary").fields.payload_json).parsed_intent, /^card_campaign_/);
+  });
+}
+
 test("Durable Object alarm recovers a persisted lead after processor restart", async () => {
   const f = fixture();
   const event = lineEvent("JASPER", "msg-restart");

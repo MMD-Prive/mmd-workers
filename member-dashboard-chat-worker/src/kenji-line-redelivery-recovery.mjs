@@ -59,7 +59,7 @@ export async function hasCardCampaignContext(env = {}, event = {}) {
     const response = await env.KENJI_MODEL_DEDUPE.get(id).fetch("https://kenji-model-dedupe.internal/campaign-lead/context", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action: "get" }),
+      body: JSON.stringify({ action: "get", context: { brief_message_id: text(event.message.id || event.webhookEventId) } }),
     });
     if (!response.ok) return true;
     const result = await response.json();
