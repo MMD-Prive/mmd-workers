@@ -1,0 +1,30 @@
+{
+  "source_sha": "c41681a99b087aceb3638e64f059fed4c85073d6",
+  "worker": "member-dashboard-chat-worker",
+  "baseline_version": "3ccc8323-0eff-4a5b-9b2e-ed044fd327ef",
+  "baseline_deployment": "be98e687-5387-409c-ac31-3e61b9c0f2d7",
+  "configuration_sha256": "efc3831a0343468349579f74b649bc64dd51bd798a543ed613e12e18248d4c6e",
+  "settings_sha256": "9c9ebf7825fbffbea427a63ae46722396d62dba1a7b2a831871b842749fb3ec2",
+  "baseline_sha256": "6b0526753e784f6d098dcf57f6d3bd8fbddb3b84d56eaa772e913b1cad71cf5b",
+  "candidate_sha256": "1070dfa82684d549565f25722fb7b411484c6f1e3ce61fb4faac74f4d4b91913",
+  "patches": [
+    {
+      "before": "commands = /* @__PURE__ */ new Map([",
+      "after": "commands = /* @__PURE__ */ new Map([\n      [\"\u0e04\u0e19\u0e43\u0e19\u0e23\u0e39\u0e1b\u0e04\u0e37\u0e2d\u0e43\u0e04\u0e23\",\"model_request_clarify\"],\n      [\"\u0e04\u0e19\u0e43\u0e19\u0e23\u0e39\u0e1b\u0e04\u0e37\u0e2d\u0e43\u0e04\u0e23\u0e04\u0e23\u0e31\u0e1a\",\"model_request_clarify\"],\n      [\"\u0e04\u0e19\u0e43\u0e19\u0e23\u0e39\u0e1b\u0e40\u0e1b\u0e47\u0e19\u0e42\u0e21\u0e40\u0e14\u0e25 mmd \u0e44\u0e2b\u0e21\",\"model_request_clarify\"],\n      [\"\u0e0a\u0e48\u0e27\u0e22\u0e2b\u0e32\u0e04\u0e19\u0e43\u0e19\u0e23\u0e39\u0e1b\",\"model_request_external\"],\n      [\"\u0e2d\u0e22\u0e32\u0e01\u0e43\u0e2b\u0e49\u0e0a\u0e48\u0e27\u0e22\u0e2b\u0e32\u0e04\u0e19\u0e19\u0e35\u0e49\",\"model_request_external\"],\n      [\"\u0e40\u0e1b\u0e34\u0e14 booking\",\"model_request_booking\"],\n      [\"\u0e1e\u0e23\u0e49\u0e2d\u0e21\u0e2a\u0e48\u0e07\u0e04\u0e4d\u0e32\u0e02\u0e2d\u0e08\u0e2d\u0e07\",\"model_request_booking\"],",
+      "before_sha256": "15b74cc9a25a63c9e9e33d58e3b0e2d854611584f105d6925a5241ae033454f6",
+      "after_sha256": "43200f91779972158a9542cd04fc63e48afea5c223e6dc8389637fc04b9effd4"
+    },
+    {
+      "before": "function entryTopicReply(command) {\n  const text43 = {",
+      "after": "function entryTopicReply(command) {\n  const text43 = {\n    model_request_clarify: \"\u0e04\u0e19\u0e43\u0e19\u0e23\u0e39\u0e1b\u0e40\u0e1b\u0e47\u0e19\u0e19\u0e49\u0e2d\u0e07 MMD \u0e2b\u0e23\u0e37\u0e2d\u0e2d\u0e22\u0e32\u0e01\u0e43\u0e2b\u0e49\u0e40\u0e1b\u0e2d\u0e23\u0e4c\u0e0a\u0e48\u0e27\u0e22\u0e2b\u0e32\u0e04\u0e19\u0e19\u0e35\u0e49\u0e43\u0e2b\u0e49\u0e04\u0e23\u0e31\u0e1a? \ud83d\udda4\\n\u0e16\u0e49\u0e32\u0e23\u0e39\u0e49\u0e0a\u0e37\u0e48\u0e2d\u0e19\u0e49\u0e2d\u0e07 \u0e2a\u0e48\u0e07\u0e21\u0e32\u0e44\u0e14\u0e49\u0e40\u0e25\u0e22\u0e04\u0e23\u0e31\u0e1a \u0e2b\u0e23\u0e37\u0e2d\u0e2a\u0e48\u0e07\u0e04\u0e33\u0e02\u0e2d\u0e08\u0e2d\u0e07\u0e17\u0e35\u0e48 Booking \u2192 https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=jobs\\n\u0e16\u0e49\u0e32\u0e2d\u0e22\u0e32\u0e01\u0e43\u0e2b\u0e49\u0e0a\u0e48\u0e27\u0e22\u0e2b\u0e32 \u0e41\u0e19\u0e1a\u0e23\u0e39\u0e1b\u0e2b\u0e23\u0e37\u0e2d\u0e25\u0e34\u0e07\u0e01\u0e4c\u0e44\u0e27\u0e49\u0e15\u0e23\u0e07\u0e19\u0e35\u0e49\u0e44\u0e14\u0e49\u0e40\u0e25\u0e22\u0e04\u0e23\u0e31\u0e1a \u2192 https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=my-requests\",\n    model_request_external: \"\u0e2a\u0e48\u0e07\u0e23\u0e39\u0e1b\u0e2b\u0e23\u0e37\u0e2d\u0e25\u0e34\u0e07\u0e01\u0e4c\u0e17\u0e35\u0e48 By Your Request \u0e44\u0e14\u0e49\u0e40\u0e25\u0e22\u0e04\u0e23\u0e31\u0e1a \u0e40\u0e14\u0e35\u0e4b\u0e22\u0e27\u0e40\u0e1b\u0e2d\u0e23\u0e4c\u0e0a\u0e48\u0e27\u0e22\u0e2b\u0e32\u0e43\u0e2b\u0e49 \ud83d\udda4\\nhttps://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=my-requests\",\n    model_request_booking: \"\u0e1e\u0e23\u0e49\u0e2d\u0e21\u0e08\u0e2d\u0e07\u0e41\u0e25\u0e49\u0e27 \u0e2a\u0e48\u0e07\u0e04\u0e33\u0e02\u0e2d\u0e15\u0e23\u0e07\u0e19\u0e35\u0e49\u0e44\u0e14\u0e49\u0e40\u0e25\u0e22\u0e04\u0e23\u0e31\u0e1a \u0e40\u0e14\u0e35\u0e4b\u0e22\u0e27\u0e40\u0e1b\u0e2d\u0e23\u0e4c\u0e40\u0e0a\u0e47\u0e01\u0e04\u0e34\u0e27\u0e43\u0e2b\u0e49 \ud83d\udda4\\nhttps://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=jobs\",",
+      "before_sha256": "5172aa6b45018076d1d2d1a0dc33fae42b7ba31d3f86747a216ada273a88dc2b",
+      "after_sha256": "f32e69cfce1513746f95cf33a1c2c6f135d99964c1632e24f037fca33317db94"
+    },
+    {
+      "before": "|models|jobs)$/.test(decision.reply_source)",
+      "after": "|models|jobs|model_request_clarify|model_request_external|model_request_booking)$/.test(decision.reply_source)",
+      "before_sha256": "6c1092b84bdecf6f8b20835255d7603b9e7738af9242390a7b1c48a8a1bf9d6c",
+      "after_sha256": "d9fa92d337efdf54a8444d417b181c28ff4527fc06863129a3cdd9884b7cd572"
+    }
+  ]
+}
