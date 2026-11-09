@@ -639,8 +639,8 @@ test("LINE lookup asks for the work brief and never exposes an unscoped RPC pric
   }
 });
 
-test("LINE adapter drops a price in profile prose even if an older RPC labels it safe", async () => {
-  for (const summary of ["แนะนำตัวครับ เรท 25,000 บาท", "ＴＨＢ ２５０００", "25k", "คิดห้าร้อยต่อชั่วโมง"]) {
+test("LINE adapter omits all profile prose even if an older RPC returns it", async () => {
+  for (const summary of ["แนะนำตัวครับ เรท 25,000 บาท", "ＴＨＢ ２５０００", "25k", "ขอห้าสิบต่อชั่วโมง", "I charge twenty for an hour", "ทักทายและพูดคุยได้ครับ"]) {
     const decision = await resolveKenjiLineReply(lineEvent("MX17"), {}, {
       ...BASE_ENV,
       ADMIN_WORKER: adminBinding({ ok: true, status: "match", model: {

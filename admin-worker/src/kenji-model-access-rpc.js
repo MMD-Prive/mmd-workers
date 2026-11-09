@@ -167,7 +167,7 @@ export function classifyKenjiModelPackage(value) {
   return { cohort: "unknown", mode: "blocked", folders: [] };
 }
 
-export function projectKenjiSafeModel(record = {}) {
+export function projectKenjiSafeModel(record = {}, { includeSummary = true } = {}) {
   const fields = record.fields || {};
   const workingName = fieldValue(fields, MODEL_WORKING_NAME_FIELDS);
   const canonicalCode = fieldValue(fields, MODEL_CODE_FIELDS);
@@ -176,9 +176,11 @@ export function projectKenjiSafeModel(record = {}) {
     !/^(?:gws|ems)[0-9]+$/i.test(canonicalCode) ? workingName : canonicalCode);
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]{1,31}$/.test(modelCode) || !isCustomerSafeText(workingName, 120)) return null;
   const projected = { model_code: modelCode, working_name: workingName };
-  const summary = fieldValue(fields, ["customer_safe_summary", "approved_profile_summary", "public_safe_summary"]);
   const imageUrl = safeHttpsUrl(fieldValue(fields, ["customer_safe_image_url", "approved_image_url"]));
-  if (isCustomerSafeText(summary, 500)) projected.summary = summary;
+  if (includeSummary) {
+    const summary = fieldValue(fields, ["customer_safe_summary", "approved_profile_summary", "public_safe_summary"]);
+    if (isCustomerSafeText(summary, 500)) projected.summary = summary;
+  }
   if (imageUrl) projected.image_url = imageUrl;
   return projected;
 }
@@ -495,7 +497,8 @@ export async function resolveKenjiModelAccess(env = {}, input = {}, options = {}
     if (cls.visibility === "private" && (privateCampaign
       ? !perModelAllowed
       : !access.folders.includes(cls.folder))) return [];
-    const safeModel = projectKenjiSafeModel(record);
+    // The LINE RPC only projects structured profile fields.
+    const safeModel = projectKenjiSafeModel(record, { includeSummary: false });
     return safeModel ? [{ cls, safeModel, record }] : [];
   });
   if (authorized.length > 1) return { status: "clarification" };

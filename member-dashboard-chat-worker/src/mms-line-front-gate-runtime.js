@@ -13,7 +13,7 @@ import {
   hasCardCampaignContext,
   isKenjiSeedLineRequest,
 } from "./kenji-line-redelivery-recovery.mjs";
-import { createLineSignature, resolveLineCardCampaignTrigger } from "./index.js";
+import { createLineSignature, LINE_CARD_ORDINARY_SUBJECTS, resolveLineCardCampaignTrigger } from "./index.js";
 import {
   handleKenjiLineTransportHealth,
   isKenjiLineTransportHealthRequest,
@@ -460,9 +460,38 @@ async function maybeScheduleKenjiLineAfterAck(request, env = {}, ctx = null, han
       const campaignEvents = [];
       const unsendEvents = [];
       const ordinaryEvents = [];
-      const triggeredUsers = new Set(events
-        .filter((event) => event?.source?.type === "user" && event?.type === "message" && event?.message?.type === "text" && resolveLineCardCampaignTrigger(event.message.text))
-        .map((event) => text(event.source.userId)));
+      const senderTexts = new Map();
+      for (const event of events) {
+        if (event?.source?.type !== "user" || event.type !== "message" ||
+            event.message?.type !== "text" || !text(event.message.text)) continue;
+        const userId = text(event.source.userId);
+        if (!/^U[a-f0-9]{32}$/i.test(userId)) continue;
+        if (!senderTexts.has(userId)) senderTexts.set(userId, []);
+        senderTexts.get(userId).push(event);
+      }
+      const plannedCampaignEvents = new Set();
+      const plannedCampaignSubjects = new Set();
+      for (const [userId, messages] of senderTexts) {
+        if (!pilotConfigValid || !hashes.includes(await sha256HexText(userId))) continue;
+        // LINE timestamps identify a later brief even if it appears first in the
+        // payload. Without timestamps, preserve signed webhook order.
+        if (messages.every((event) => Number.isFinite(event.timestamp) && event.timestamp > 0)) {
+          messages.sort((a, b) => a.timestamp - b.timestamp);
+        }
+        let nextBrief = !resolveLineCardCampaignTrigger(messages[0].message.text) &&
+          await hasCardCampaignContext(env, messages[0]);
+        for (const event of messages) {
+          if (resolveLineCardCampaignTrigger(event.message.text)) {
+            plannedCampaignEvents.add(event);
+            plannedCampaignSubjects.add(userId);
+            nextBrief = true;
+          } else if (nextBrief) {
+            plannedCampaignEvents.add(event);
+            plannedCampaignSubjects.add(userId);
+            nextBrief = false;
+          }
+        }
+      }
       for (const event of events) {
         const userId = text(event?.source?.userId);
         let pilot = false;
@@ -496,7 +525,7 @@ async function maybeScheduleKenjiLineAfterAck(request, env = {}, ctx = null, han
             continue;
           }
         }
-        const campaign = pilot && (triggeredUsers.has(userId) || await hasCardCampaignContext(env, event));
+        const campaign = plannedCampaignEvents.has(event);
         if (campaign) campaignEvents.push({ event, subjectHash });
         else ordinaryEvents.push(event);
       }
@@ -565,7 +594,7 @@ async function maybeScheduleKenjiLineAfterAck(request, env = {}, ctx = null, han
             const subsetBody = JSON.stringify({ ...body, events: ordinaryEvents });
             const subsetHeaders = new Headers(request.headers);
             subsetHeaders.set("x-line-signature", await createLineSignature(subsetBody, env.LINE_CHANNEL_SECRET));
-            await handler(new Request(request.url, { method: "POST", headers: subsetHeaders, body: subsetBody }));
+            await handler(new Request(request.url, { method: "POST", headers: subsetHeaders, body: subsetBody }), plannedCampaignSubjects);
           }
         })());
         return lineAckResponse(eventCount);
@@ -627,9 +656,14 @@ export default {
     if (isKenjiSeedLineRequest(request)) {
       const runtimeEnv = buildKenjiSeedRuntimeEnv(env);
       const tracedRequest = seedSmokeRequest(request);
-      const processLine = (lineRequest) => handleKenjiLineWithIngressTrace({
+      const processLine = (lineRequest, ordinarySubjects) => handleKenjiLineWithIngressTrace({
         request: lineRequest,
-        env: runtimeEnv,
+        env: ordinarySubjects?.size ? {
+          ...runtimeEnv,
+          ADMIN_WORKER: runtimeEnv.ADMIN_WORKER,
+          INTERNAL_TOKEN: runtimeEnv.INTERNAL_TOKEN,
+          [LINE_CARD_ORDINARY_SUBJECTS]: ordinarySubjects,
+        } : runtimeEnv,
         ctx,
         handler: (innerRequest, lineEnv, lineCtx) => handleKenjiSeedLineRequestWithRedeliveryRecovery(
           innerRequest,

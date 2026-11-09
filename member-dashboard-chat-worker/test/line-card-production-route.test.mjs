@@ -262,13 +262,15 @@ test("inline signed batch keeps a Card and its brief out of aggregation and cate
     const signed = await signedWebhook([
       lineEvent("JASPER", "msg-inline-card", { timestamp }),
       lineEvent("Hiro", "msg-inline-brief", { timestamp }),
+      lineEvent("Hiro", "msg-after-brief", { timestamp }),
       lineEvent("Hiro", "msg-other-subject", { timestamp, source: { type: "user", userId: "U" + "2".repeat(32) } }),
     ], f.env);
     const response = await withFetch(f.fetch, () => route.fetch(signed, f.env));
     assert.equal(response.status, 200);
     const result = await response.json();
     assert.deepEqual(result.saved.slice(0, 2).map(({ campaign_handled }) => campaign_handled), [true, true]);
-    assert.deepEqual(rpcCalls.map(({ line_user_id }) => line_user_id), ["U" + "2".repeat(32)]);
+    assert.deepEqual(rpcCalls.map(({ line_user_id }) => line_user_id), [LINE_USER_ID, "U" + "2".repeat(32)]);
+    assert.notEqual(result.saved[2].campaign_handled, true);
     const queues = f.calls.filter(({ type }) => type === "queue")
       .map(({ body }) => JSON.parse(body.fields.payload_json))
       .filter(({ parsed_intent }) => parsed_intent?.startsWith("card_campaign_"));
@@ -581,6 +583,7 @@ test("one signed webhook with lead and following brief journals both before HTTP
     const response = await route.fetch(await signedWebhook([
       lineEvent("JASPER", "msg-batch-lead"),
       lineEvent("พรุ่งนี้สองทุ่ม แถวสาทร", "msg-batch-brief"),
+      lineEvent("package", "msg-batch-after-brief"),
     ], f.env), f.env, ctx);
     assert.equal(response.status, 200);
     const briefKey = createHash("sha256").update("msg-batch-brief").digest("hex");
@@ -589,6 +592,12 @@ test("one signed webhook with lead and following brief journals both before HTTP
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "status" }),
     });
     assert.equal((await receipt.json()).found, true);
+    const ordinaryKey = createHash("sha256").update("msg-batch-after-brief").digest("hex");
+    const ordinaryReceipt = await f.env.KENJI_MODEL_DEDUPE.get(`line-card-ingress-v1:${ordinaryKey}`)
+      .fetch("https://kenji-model-dedupe.internal/campaign-lead/ingress", {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "status" }),
+      });
+    assert.equal((await ordinaryReceipt.json()).found, false);
     for (let round = 0; round < 6; round += 1) {
       const count = pending.length;
       await Promise.all(pending);
@@ -597,7 +606,41 @@ test("one signed webhook with lead and following brief journals both before HTTP
   });
   assert.equal(f.records.has("line_msg-batch-lead"), true);
   assert.equal(f.records.has("line_msg-batch-brief"), true);
+  const ordinary = f.records.get("line_msg-batch-after-brief");
+  assert.ok(ordinary, "ordinary message after brief is recorded");
+  assert.doesNotMatch(JSON.parse(ordinary.fields.payload_json).parsed_intent, /^card_campaign_/);
   assert.equal(JSON.parse(f.records.get("line_msg-batch-brief").fields.payload_json).lead_inbox_id, "line_msg-batch-lead");
+});
+
+test("a failed durable brief does not let the next message take its place", async () => {
+  const f = fixture();
+  const pending = [];
+  const ctx = { waitUntil(promise) { pending.push(Promise.resolve(promise)); } };
+  const fetchWithBriefFailure = async (input, init = {}) => {
+    if (init.method === "POST" && new URL(String(input)).hostname === "api.airtable.com") {
+      const { fields } = JSON.parse(init.body);
+      if (fields?.inbox_id === "line_msg-failed-batch-brief") return new Response("fixture failure", { status: 422 });
+    }
+    return f.fetch(input, init);
+  };
+  await withFetch(fetchWithBriefFailure, async () => {
+    const request = await signedWebhook([
+      lineEvent("JASPER", "msg-failed-batch-lead"),
+      lineEvent("Hiro", "msg-failed-batch-brief"),
+      lineEvent("package", "msg-failed-batch-after"),
+    ], f.env);
+    assert.equal((await route.fetch(request, f.env, ctx)).status, 200);
+    for (let round = 0; round < 6; round += 1) {
+      const count = pending.length;
+      await Promise.all(pending);
+      if (pending.length === count) break;
+    }
+  });
+  assert.ok(f.records.has("line_msg-failed-batch-lead"));
+  assert.equal(f.records.has("line_msg-failed-batch-brief"), false);
+  const ordinary = f.records.get("line_msg-failed-batch-after");
+  assert.ok(ordinary, "ordinary message is recorded while the original brief remains retryable");
+  assert.doesNotMatch(JSON.parse(ordinary.fields.payload_json).parsed_intent, /^card_campaign_/);
 });
 
 test("reordered brief waits for source lead instead of entering Inbox as ordinary text", async () => {
@@ -606,8 +649,8 @@ test("reordered brief waits for source lead instead of entering Inbox as ordinar
   const ctx = { waitUntil(promise) { pending.push(Promise.resolve(promise)); } };
   await withFetch(f.fetch, async () => {
     const response = await route.fetch(await signedWebhook([
-      lineEvent("พรุ่งนี้สองทุ่ม แถวสาทร", "msg-reordered-brief"),
-      lineEvent("JASPER", "msg-reordered-lead"),
+      lineEvent("พรุ่งนี้สองทุ่ม แถวสาทร", "msg-reordered-brief", { timestamp: Date.now() }),
+      lineEvent("JASPER", "msg-reordered-lead", { timestamp: Date.now() - 1000 }),
     ], f.env), f.env, ctx);
     assert.equal(response.status, 200);
     for (let round = 0; round < 6; round += 1) {

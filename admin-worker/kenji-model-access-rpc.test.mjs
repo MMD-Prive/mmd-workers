@@ -393,10 +393,19 @@ test("reviewed offer history and caller-supplied proof do not authorize a LINE q
   }
 });
 
-test("approved profile fields cannot carry a quote around the sales gate", () => {
-  for (const summary of ["เรท 25,000 บาท", "THB １８０００", "฿๒๕๐๐๐", "25k", "18 500", "สองหมื่น", "คิดห้าร้อยต่อชั่วโมง", "five per hour"]) {
-    const projected = projectKenjiSafeModel(privateModel("MX17", "standard", { customer_safe_summary: summary }));
-    assert.equal(projected.summary, undefined, summary);
+test("LINE RPC omits every free-text profile field, including harmless summaries", async () => {
+  for (const summary of ["ขอห้าสิบต่อชั่วโมง", "I charge twenty for an hour", "ทักทายและพูดคุยได้ครับ"]) {
+    const model = privateModel("MX17", "standard", {
+      customer_safe_summary: summary, approved_profile_summary: summary, public_safe_summary: summary,
+    });
+    const response = await handleKenjiModelAccessRpc(rpcRequest({ line_user_id: LINE_USER_ID, query: "MX17" }), ENV, {
+      fetchImpl: airtableFetch(baseData([entitlement("private_standard")], [model])),
+    });
+    const payload = await response.json();
+    assert.equal(payload.status, "match");
+    assert.equal(payload.model.model_code, "MX17");
+    assert.equal(Object.hasOwn(payload.model, "summary"), false);
+    assert.ok(!JSON.stringify(payload).includes(summary));
   }
   assert.equal(projectKenjiSafeModel(privateModel("MX17", "standard", { working_name: "Test ฿1500" })), null);
 });

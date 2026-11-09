@@ -321,6 +321,7 @@ function compactLookup(value) {
   return normalizeLookup(value).replace(/\s+/g, "");
 }
 
+export const LINE_CARD_ORDINARY_SUBJECTS = Symbol("line-card-ordinary-subjects");
 const LINE_CARD_21829530_ID = "21829530";
 const LINE_CARD_21829530_TRIGGERS = Object.freeze({
   JASPER: { display_intent: "Jasper", action_type: "text" },
@@ -806,12 +807,10 @@ async function requestKenjiModelAccess(env = {}, lineUserId = "", query = "", ve
     if (payload?.status !== "match" || !payload?.model || typeof payload.model !== "object") return { status: "silent" };
     const modelCode = asString(payload.model.model_code).slice(0, 80);
     const workingName = asString(payload.model.working_name).slice(0, 120);
-    const rawSummary = asString(payload.model.summary).slice(0, 500);
     if (!/^[A-Za-z0-9][A-Za-z0-9_-]{1,31}$/.test(modelCode) || !isSafeKenjiModelCustomerText(workingName, 120)) return { status: "silent" };
-    const summary = isSafeKenjiModelCustomerText(rawSummary, 500) ? rawSummary : "";
     // LINE card clicks carry no verified work lane or booking terms. Never render a
     // price from this thin adapter, even if a compromised RPC includes one.
-    return { status: "match", model: { model_code: modelCode, working_name: workingName, summary } };
+    return { status: "match", model: { model_code: modelCode, working_name: workingName } };
   } catch (_) {
     return { status: "silent" };
   } finally {
@@ -832,9 +831,8 @@ function isSafeKenjiModelCustomerText(value, max = 500) {
 function buildKenjiModelAccessReply(model = {}) {
   const modelCode = asString(model.model_code);
   const workingName = asString(model.working_name);
-  const summary = asString(model.summary);
   if (!modelCode || !workingName) return "";
-  return `ข้อมูลที่เปิดเผยได้ของ ${workingName} (รหัส ${modelCode}) ครับ${summary ? `\n\n${summary}` : ""}`;
+  return `ข้อมูลที่เปิดเผยได้ของ ${workingName} (รหัส ${modelCode}) ครับ`;
 }
 
 function buildKenjiModelAccessDecision(access = {}, options = {}) {
@@ -3066,7 +3064,7 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
     if (resolveLineCardCampaignTrigger(event.message.text)) {
       isolatedEvents.add(event);
       if (userId) cardSubjects.add(userId);
-    } else if (userId && cardSubjects.has(userId)) {
+    } else if (userId && asString(event.message.text).trim() && cardSubjects.delete(userId)) {
       batchCardBriefs.add(event);
       isolatedEvents.add(event);
     }
@@ -3095,6 +3093,7 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
   const lineBrainEnabled = isEnabled(env.KENJI_LINE_BRAIN_V1_ENABLED);
   const modelOnlyMode = isEnabled(env.KENJI_LINE_MODEL_ONLY_ENABLED);
   const saved = [];
+  const assignedBriefSubjects = new Set();
 
   for (const prepared of preparedEvents) {
     const rawEvent = prepared.raw_event || prepared.turn_event || {};
@@ -3224,11 +3223,17 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
       event?.source?.type === "user" && getReplyToken(event)
     );
     const campaignPilotEligible = pilotEligibility.get(lineUserId) === true;
-    const campaignContextResult = !campaignTrigger && text && campaignCanReply && campaignFlagsEnabled && campaignPilotEligible
+    const needsCampaignContext = options.requireCampaignContext === true || batchCardBriefs.has(rawEvent);
+    if (campaignTrigger) assignedBriefSubjects.delete(lineUserId);
+    const mayClaimBrief = needsCampaignContext || (!assignedBriefSubjects.has(lineUserId) &&
+      !env[LINE_CARD_ORDINARY_SUBJECTS]?.has(lineUserId));
+    const campaignContextResult = !campaignTrigger && mayClaimBrief && text && campaignCanReply && campaignFlagsEnabled && campaignPilotEligible
       ? await lineCardCampaignContext(env, lineUserId, "claim")
       : { ok: true, found: false };
     const campaignBrief = Boolean(campaignContextResult.found && campaignContextResult.context);
-    const needsCampaignContext = options.requireCampaignContext === true || batchCardBriefs.has(rawEvent);
+    if (!campaignTrigger && lineUserId && (needsCampaignContext || campaignBrief || campaignContextResult.ok !== true)) {
+      assignedBriefSubjects.add(lineUserId);
+    }
     const campaignContextUnavailable = Boolean(
       !campaignTrigger && text &&
       ((needsCampaignContext && !campaignBrief) ||

@@ -1,5 +1,5 @@
 import { isRetiredCheckptsCommand } from "./checkpts-command.mjs";
-import { createLineSignature, extractKenjiModelLookupQuery, inferLineIntent, requestKenjiRuntimeStatus, resolveLineCardCampaignTrigger, verifyLineSignature } from "./index.js";
+import { createLineSignature, extractKenjiModelLookupQuery, inferLineIntent, LINE_CARD_ORDINARY_SUBJECTS, requestKenjiRuntimeStatus, resolveLineCardCampaignTrigger, verifyLineSignature } from "./index.js";
 import { ownerContextTestAllowed, ownerContextTestRequested } from "./kenji-owner-context-test.mjs";
 import { restrictedReplyCategories, approvedCategoryReply, isExplicitCategoryCommand } from './kenji-reply-category-gate.mjs';
 import { approvedPublicQa } from './kenji-approved-public-qa.mjs';
@@ -43,6 +43,7 @@ function withoutOwnerContextTest(env = {}) {
 }
 
 export async function hasCardCampaignContext(env = {}, event = {}) {
+  if (env[LINE_CARD_ORDINARY_SUBJECTS]?.has(text(event?.source?.userId))) return false;
   if (!enabled(env.LINE_CARD_21829530_LEAD_ENABLED) || !enabled(env.LINE_CARD_21829530_NATIVE_AUTORESPONSE_CLEAR)) return false;
   if (event?.source?.type !== "user" || event?.type !== "message" || event?.message?.type !== "text") return false;
   const userId = text(event?.source?.userId);
