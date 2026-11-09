@@ -481,6 +481,8 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
   // Serialized functions may contain esbuild keepNames calls. Their helper must
   // live in this browser scope, not only in the Worker bundle that renders it.
   const __name = (target, value) => Object.defineProperty(target, "name", { value, configurable: true });
+  // Bundled functions can use a second name helper when symbols collide.
+  const __name2 = __name;
   const CONFIG = ${safeConfig};
   const entryLoading = (${installApprovedEntryLoading.toString()})(${createHypeLoaderMotion.toString()}, ${createEntryPercentMotion.toString()});
   const renderLoadingProgress = ${renderCustomerProgress.toString()};
