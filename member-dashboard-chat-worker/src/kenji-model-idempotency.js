@@ -119,7 +119,7 @@ export class KenjiModelIdempotency {
     let outcome;
     try {
       const { processDurableLineCardEvent } = await import("./index.js");
-      outcome = await processDurableLineCardEvent(entry.event, this.env, entry.received_at);
+      outcome = await processDurableLineCardEvent(entry.event, this.env, entry.received_at, entry.expected_lead_message_id);
     } catch (_) {
       outcome = { ok: false, reason: "campaign_processor_failed" };
     }
@@ -347,6 +347,11 @@ export class KenjiModelIdempotency {
       if (!/^[a-f0-9]{64}$/.test(receiptId) || !/^[A-Za-z0-9_-]{1,120}$/.test(eventId) || event?.type !== "message" || event?.message?.type !== "text" || event?.source?.type !== "user" || !/^U[a-f0-9]{32}$/i.test(String(event?.source?.userId || "")) || typeof event?.message?.text !== "string" || event.message.text.length > 5000) {
         return json({ ok: false, error: "invalid_event" }, 400);
       }
+      const expectedLeadMessageId = input?.expected_lead_message_id;
+      if (expectedLeadMessageId !== undefined && (typeof expectedLeadMessageId !== "string" ||
+          !/^[A-Za-z0-9_-]{1,120}$/.test(expectedLeadMessageId))) {
+        return json({ ok: false, error: "invalid_expected_lead" }, 400);
+      }
       const receivedAt = Date.now();
       const result = await this.state.storage.transaction(async (txn) => {
         const existing = await txn.get(CAMPAIGN_INGRESS_KEY);
@@ -359,6 +364,7 @@ export class KenjiModelIdempotency {
           event_id: eventId,
           webhook_event_id: webhookEventId,
           receipt_id: receiptId,
+          ...(expectedLeadMessageId === undefined ? {} : { expected_lead_message_id: expectedLeadMessageId }),
           status: "pending",
           attempts: 0,
           received_at: receivedAt,
@@ -484,6 +490,9 @@ export class KenjiModelIdempotency {
         const claim = await this.state.storage.transaction(async (txn) => {
           const context = await txn.get(CAMPAIGN_CONTEXT_KEY);
           if (!context || Number(context.expires_at) <= now) return { found: false, claimed: false };
+          if (input?.context?.expected_lead_inbox_id && input.context.expected_lead_inbox_id !== context.lead_inbox_id) {
+            return { found: false, claimed: false, reason: "campaign_context_wrong_lead" };
+          }
           if (context.campaign_key !== "line_card_21829530_lead_v1" || context.card_id !== "21829530" || !context.lead_inbox_id) {
             return { found: true, claimed: false, reason: "invalid_context" };
           }

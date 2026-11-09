@@ -13,7 +13,7 @@ import {
   hasCardCampaignContext,
   isKenjiSeedLineRequest,
 } from "./kenji-line-redelivery-recovery.mjs";
-import { createLineSignature, LINE_CARD_ORDINARY_SUBJECTS, resolveLineCardCampaignTrigger } from "./index.js";
+import { createLineSignature, LINE_CARD_ORDINARY_SUBJECTS, orderLineCardBatchEvents, resolveLineCardCampaignTrigger } from "./index.js";
 import {
   handleKenjiLineTransportHealth,
   isKenjiLineTransportHealthRequest,
@@ -461,7 +461,8 @@ async function maybeScheduleKenjiLineAfterAck(request, env = {}, ctx = null, han
       const unsendEvents = [];
       const ordinaryEvents = [];
       const senderTexts = new Map();
-      for (const event of events) {
+      const orderedEvents = orderLineCardBatchEvents(events);
+      for (const event of orderedEvents) {
         if (event?.source?.type !== "user" || event.type !== "message" ||
             event.message?.type !== "text" || !text(event.message.text)) continue;
         const userId = text(event.source.userId);
@@ -469,30 +470,27 @@ async function maybeScheduleKenjiLineAfterAck(request, env = {}, ctx = null, han
         if (!senderTexts.has(userId)) senderTexts.set(userId, []);
         senderTexts.get(userId).push(event);
       }
-      const plannedCampaignEvents = new Set();
+      const plannedCampaignEvents = new Map();
       const plannedCampaignSubjects = new Set();
       for (const [userId, messages] of senderTexts) {
         if (!pilotConfigValid || !hashes.includes(await sha256HexText(userId))) continue;
-        // LINE timestamps identify a later brief even if it appears first in the
-        // payload. Without timestamps, preserve signed webhook order.
-        if (messages.every((event) => Number.isFinite(event.timestamp) && event.timestamp > 0)) {
-          messages.sort((a, b) => a.timestamp - b.timestamp);
-        }
         let nextBrief = !resolveLineCardCampaignTrigger(messages[0].message.text) &&
           await hasCardCampaignContext(env, messages[0]);
+        let expectedLeadMessageId;
         for (const event of messages) {
           if (resolveLineCardCampaignTrigger(event.message.text)) {
-            plannedCampaignEvents.add(event);
+            plannedCampaignEvents.set(event, undefined);
             plannedCampaignSubjects.add(userId);
+            expectedLeadMessageId = text(event.message.id);
             nextBrief = true;
           } else if (nextBrief) {
-            plannedCampaignEvents.add(event);
+            plannedCampaignEvents.set(event, expectedLeadMessageId);
             plannedCampaignSubjects.add(userId);
             nextBrief = false;
           }
         }
       }
-      for (const event of events) {
+      for (const event of orderedEvents) {
         const userId = text(event?.source?.userId);
         let pilot = false;
         let subjectHash = "";
@@ -526,7 +524,7 @@ async function maybeScheduleKenjiLineAfterAck(request, env = {}, ctx = null, han
           }
         }
         const campaign = plannedCampaignEvents.has(event);
-        if (campaign) campaignEvents.push({ event, subjectHash });
+        if (campaign) campaignEvents.push({ event, subjectHash, expectedLeadMessageId: plannedCampaignEvents.get(event) });
         else ordinaryEvents.push(event);
       }
       if (campaignEvents.length || unsendEvents.length) {
@@ -557,7 +555,7 @@ async function maybeScheduleKenjiLineAfterAck(request, env = {}, ctx = null, han
           if (!response.ok || result?.cancelled !== true) return Response.json({ ok: false, error: "campaign_ingress_unavailable" }, { status: 503 });
         }
         for (const item of campaignEvents) {
-          const { event, subjectHash } = item;
+          const { event, subjectHash, expectedLeadMessageId } = item;
           const eventId = text(event?.message?.id);
           const webhookEventId = text(event?.webhookEventId || eventId);
           if (!/^[A-Za-z0-9_-]{1,120}$/.test(eventId) || !/^[A-Za-z0-9_-]{1,120}$/.test(webhookEventId)) return Response.json({ ok: false, error: "campaign_event_id_missing" }, { status: 503 });
@@ -577,7 +575,7 @@ async function maybeScheduleKenjiLineAfterAck(request, env = {}, ctx = null, han
           let response;
           try {
             response = await stub.fetch("https://kenji-model-dedupe.internal/campaign-lead/ingress", {
-              method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "enqueue", event, receipt_id: key }),
+              method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "enqueue", event, receipt_id: key, expected_lead_message_id: expectedLeadMessageId }),
             });
           } catch (_) { return Response.json({ ok: false, error: "campaign_ingress_unavailable" }, { status: 503 }); }
           const result = await response.json().catch(() => ({}));

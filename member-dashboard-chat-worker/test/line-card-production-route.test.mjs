@@ -643,35 +643,78 @@ test("a failed durable brief does not let the next message take its place", asyn
   assert.doesNotMatch(JSON.parse(ordinary.fields.payload_json).parsed_intent, /^card_campaign_/);
 });
 
-test("reordered brief waits for source lead instead of entering Inbox as ordinary text", async () => {
+for (const durable of [false, true]) {
+  test(`out-of-order signed batch binds each brief to its own lead (${durable ? "durable" : "inline"})`, async () => {
+    const f = fixture();
+    const pending = [];
+    const ctx = durable ? { waitUntil(promise) { pending.push(Promise.resolve(promise)); } } : undefined;
+    const now = Date.now() - 5000;
+    const events = [
+      lineEvent("JASPER", "msg-order-lead-a", { timestamp: now }),
+      lineEvent("BOOK EI", "msg-order-lead-b", { timestamp: now + 2000 }),
+      lineEvent("brief A", "msg-order-brief-a", { timestamp: now + 1000 }),
+      lineEvent("brief B", "msg-order-brief-b", { timestamp: now + 3000 }),
+      lineEvent("package", "msg-order-ordinary", { timestamp: now + 4000 }),
+    ];
+    await withFetch(f.fetch, async () => {
+      const response = await route.fetch(await signedWebhook(events, f.env), f.env, ctx);
+      assert.equal(response.status, 200);
+      if (!durable) {
+        const result = await response.json();
+        assert.deepEqual(result.saved.map(({ campaign_handled }) => Boolean(campaign_handled)), [true, true, true, true, false]);
+      }
+      for (let round = 0; round < 6; round += 1) {
+        const count = pending.length;
+        await Promise.all(pending);
+        if (pending.length === count) break;
+      }
+    });
+    const metadata = (key) => JSON.parse(f.records.get(`line_msg-order-${key}`).fields.payload_json);
+    assert.equal(metadata("brief-a").lead_inbox_id, "line_msg-order-lead-a");
+    assert.equal(metadata("brief-b").lead_inbox_id, "line_msg-order-lead-b");
+    assert.deepEqual([...f.records.keys()].slice(0, 4), [
+      "line_msg-order-lead-a", "line_msg-order-brief-a", "line_msg-order-lead-b", "line_msg-order-brief-b",
+    ]);
+    assert.doesNotMatch(metadata("ordinary").parsed_intent, /^card_campaign_/);
+  });
+}
+
+test("a brief arriving first in the payload is processed after its earlier timestamped lead", async () => {
   const f = fixture();
   const pending = [];
   const ctx = { waitUntil(promise) { pending.push(Promise.resolve(promise)); } };
   await withFetch(f.fetch, async () => {
+    const now = Date.now();
     const response = await route.fetch(await signedWebhook([
-      lineEvent("พรุ่งนี้สองทุ่ม แถวสาทร", "msg-reordered-brief", { timestamp: Date.now() }),
-      lineEvent("JASPER", "msg-reordered-lead", { timestamp: Date.now() - 1000 }),
+      lineEvent("พรุ่งนี้สองทุ่ม แถวสาทร", "msg-reordered-brief", { timestamp: now }),
+      lineEvent("JASPER", "msg-reordered-lead", { timestamp: now - 1000 }),
     ], f.env), f.env, ctx);
     assert.equal(response.status, 200);
-    for (let round = 0; round < 6; round += 1) {
-      const count = pending.length;
-      await Promise.all(pending);
-      if (pending.length === count) break;
-    }
-    assert.equal(f.records.has("line_msg-reordered-brief"), false);
-    assert.equal(f.records.has("line_msg-reordered-lead"), true);
-    const key = createHash("sha256").update("msg-reordered-brief").digest("hex");
-    const stub = f.env.KENJI_MODEL_DEDUPE.get(f.env.KENJI_MODEL_DEDUPE.idFromName(`line-card-ingress-v1:${key}`));
-    const realNow = Date.now;
-    try {
-      Date.now = () => realNow() + 2000;
-      const result = await stub.fetch("https://kenji-model-dedupe.internal/campaign-lead/ingress", {
-        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "process" }),
-      });
-      assert.equal((await result.json()).status, "done");
-    } finally { Date.now = realNow; }
+    await Promise.all(pending);
   });
+  assert.deepEqual([...f.records.keys()], ["line_msg-reordered-lead", "line_msg-reordered-brief"]);
   assert.equal(JSON.parse(f.records.get("line_msg-reordered-brief").fields.payload_json).lead_inbox_id, "line_msg-reordered-lead");
+});
+
+test("a durable brief with a planned lead cannot claim a different current lead", async () => {
+  const f = fixture();
+  const event = lineEvent("brief A", "msg-wrong-lead-brief");
+  const key = createHash("sha256").update(event.message.id).digest("hex");
+  const stub = f.env.KENJI_MODEL_DEDUPE.get(`line-card-ingress-v1:${key}`);
+  const ingress = (body) => stub.fetch("https://kenji-model-dedupe.internal/campaign-lead/ingress", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+  });
+  await withFetch(f.fetch, async () => {
+    await route.fetch(await signedWebhook([lineEvent("BOOK EI", "msg-current-lead-b")], f.env), f.env);
+    assert.equal((await (await ingress({ action: "enqueue", receipt_id: key, event,
+      expected_lead_message_id: "msg-planned-lead-a" })).json()).accepted, true);
+    const processed = await (await ingress({ action: "process" })).json();
+    assert.equal(processed.status, "pending");
+    assert.equal(processed.reason, "campaign_context_unavailable");
+    assert.equal(f.records.has("line_msg-wrong-lead-brief"), false);
+    await route.fetch(await signedWebhook([lineEvent("brief B", "msg-right-lead-brief")], f.env), f.env);
+    assert.equal(JSON.parse(f.records.get("line_msg-right-lead-brief").fields.payload_json).lead_inbox_id, "line_msg-current-lead-b");
+  });
 });
 
 test("Durable Object alarm recovers a persisted lead after processor restart", async () => {

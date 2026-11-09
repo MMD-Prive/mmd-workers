@@ -353,6 +353,28 @@ export function resolveLineCardCampaignTrigger(text = "") {
   };
 }
 
+// Reorder only text slots belonging to the same sender in a Card batch.
+export function orderLineCardBatchEvents(events) {
+  const slotsBySender = new Map();
+  const ordered = [...events];
+  for (const [index, event] of events.entries()) {
+    if (event?.type !== "message" || event.message?.type !== "text" ||
+        event.source?.type !== "user" || !asString(event.message.text).trim()) continue;
+    const userId = getLineUserId({ event });
+    if (!userId) continue;
+    if (!slotsBySender.has(userId)) slotsBySender.set(userId, []);
+    slotsBySender.get(userId).push(index);
+  }
+  for (const slots of slotsBySender.values()) {
+    const messages = slots.map((index) => events[index]);
+    if (!messages.some((event) => resolveLineCardCampaignTrigger(event.message.text)) ||
+        !messages.every((event) => Number.isFinite(event.timestamp) && event.timestamp > 0)) continue;
+    messages.sort((a, b) => a.timestamp - b.timestamp);
+    slots.forEach((index, position) => { ordered[index] = messages[position]; });
+  }
+  return ordered;
+}
+
 const RESERVED_MODEL_ENTRY_TRIGGERS = new Set(["HELLO", "HELP", "MMD", "LINE", "BOOK", "BOOKING", "PRICE", "RATE", "MEMBER", "PRIVATE", "PUBLIC", "VIP", "SVIP", "BLACKCARD"]);
 const PLAIN_MODEL_NAME_STOPWORDS = new Set([
   "สวัสดี", "ดี", "ขอบคุณ", "โอเค", "ครับ", "ค่ะ", "คะ",
@@ -2002,6 +2024,11 @@ async function lineCardCampaignContext(env = {}, lineUserId = "", action = "get"
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || payload?.ok !== true) return { ok: false, found: false, reason: "campaign_context_unavailable" };
     if ((action === "get" || action === "claim") && payload?.found === true) {
+      if (action === "claim" && context?.expected_lead_inbox_id &&
+          payload?.context?.lead_inbox_id !== context.expected_lead_inbox_id) {
+        if (payload.claimed === true) await lineCardCampaignContext(env, lineUserId, "release", { claim_token: payload.claim_token });
+        return { ok: true, found: false, reason: "campaign_context_wrong_lead" };
+      }
       const claimKey = asString(payload?.context?.lead_claim_key);
       const claimToken = asString(payload?.context?.lead_claim_token);
       if (!/^[a-f0-9]{64}$/.test(claimKey) || !claimToken) {
@@ -3050,22 +3077,24 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
     return json({ ok: false, error: "invalid_json" }, 400);
   }
 
-  const events = Array.isArray(body.events) ? body.events : [];
+  const payloadEvents = Array.isArray(body.events) ? body.events : [];
+  const events = orderLineCardBatchEvents(payloadEvents);
   const campaignFlagsEnabled = isEnabled(env.LINE_CARD_21829530_LEAD_ENABLED) &&
     isEnabled(env.LINE_CARD_21829530_NATIVE_AUTORESPONSE_CLEAR);
   const campaignPilotCohort = parseHashAllowlist(env.LINE_CARD_21829530_PILOT_HASHES);
   const pilotEligibility = new Map();
   const isolatedEvents = new Set();
-  const batchCardBriefs = new Set();
-  const cardSubjects = new Set();
+  const batchCardBriefs = new Map();
+  const cardSubjects = new Map();
   for (const event of events) {
     if (event?.type !== "message" || event?.message?.type !== "text") continue;
     const userId = event.source?.type === "user" ? getLineUserId({ event }) : "";
     if (resolveLineCardCampaignTrigger(event.message.text)) {
       isolatedEvents.add(event);
-      if (userId) cardSubjects.add(userId);
-    } else if (userId && asString(event.message.text).trim() && cardSubjects.delete(userId)) {
-      batchCardBriefs.add(event);
+      if (userId) cardSubjects.set(userId, getStableLineMessageId(event));
+    } else if (userId && asString(event.message.text).trim() && cardSubjects.has(userId)) {
+      batchCardBriefs.set(event, cardSubjects.get(userId));
+      cardSubjects.delete(userId);
       isolatedEvents.add(event);
     }
     // A pilot user may already have a pending brief from a previous webhook.
@@ -3227,8 +3256,11 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
     if (campaignTrigger) assignedBriefSubjects.delete(lineUserId);
     const mayClaimBrief = needsCampaignContext || (!assignedBriefSubjects.has(lineUserId) &&
       !env[LINE_CARD_ORDINARY_SUBJECTS]?.has(lineUserId));
-    const campaignContextResult = !campaignTrigger && mayClaimBrief && text && campaignCanReply && campaignFlagsEnabled && campaignPilotEligible
-      ? await lineCardCampaignContext(env, lineUserId, "claim")
+    const expectedLeadMessageId = batchCardBriefs.get(rawEvent) ?? options.expectedLeadMessageId;
+    const expectedLeadValid = expectedLeadMessageId === undefined || /^[A-Za-z0-9_-]{1,120}$/.test(expectedLeadMessageId);
+    const campaignContextResult = !campaignTrigger && mayClaimBrief && expectedLeadValid && text && campaignCanReply && campaignFlagsEnabled && campaignPilotEligible
+      ? await lineCardCampaignContext(env, lineUserId, "claim", expectedLeadMessageId === undefined
+        ? null : { expected_lead_inbox_id: `line_${expectedLeadMessageId}` })
       : { ok: true, found: false };
     const campaignBrief = Boolean(campaignContextResult.found && campaignContextResult.context);
     if (!campaignTrigger && lineUserId && (needsCampaignContext || campaignBrief || campaignContextResult.ok !== true)) {
@@ -3679,10 +3711,12 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
     });
   }
 
-  return json({ ok: true, worker: WORKER_NAME, route: "line_webhook", events: events.length, saved });
+  // Seed pairs these receipts with the original payload, not processing order.
+  const receipts = new Map(events.map((event, index) => [event, saved[index]]));
+  return json({ ok: true, worker: WORKER_NAME, route: "line_webhook", events: events.length, saved: payloadEvents.map((event) => receipts.get(event)) });
 }
 
-export async function processDurableLineCardEvent(event, env = {}, receivedAt = Date.now()) {
+export async function processDurableLineCardEvent(event, env = {}, receivedAt = Date.now(), expectedLeadMessageId) {
   const timestamp = Number(event?.timestamp);
   const ageStart = Number.isFinite(timestamp) && timestamp > 0 ? Math.min(timestamp, receivedAt) : receivedAt;
   const suppressCampaignReply = Date.now() - ageStart >= 50_000;
@@ -3692,7 +3726,7 @@ export async function processDurableLineCardEvent(event, env = {}, receivedAt = 
     method: "POST",
     headers: { "content-type": "application/json", "x-line-signature": signature },
     body,
-  }), env, null, { suppressCampaignReply, requireCampaignContext: true });
+  }), env, null, { suppressCampaignReply, requireCampaignContext: true, expectedLeadMessageId });
   if (!response.ok) return { ok: false, reason: "campaign_processor_unavailable" };
   const result = await response.json().catch(() => ({}));
   const saved = result?.saved?.[0];
