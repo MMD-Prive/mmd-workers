@@ -17,7 +17,16 @@ const LINE_TURN_BUFFER_KEY = "line-turn-buffer:v1";
 
 function validLeadOrder(order) {
   return Number.isFinite(order?.occurred_at) && order.occurred_at > 0 &&
-    Number.isSafeInteger(order?.sequence) && order.sequence > 0;
+    Number.isSafeInteger(order?.sequence) && order.sequence > 0 &&
+    (order.archive_only === undefined || order.archive_only === true);
+}
+
+function pinnedLeadOrder(order) {
+  return {
+    occurred_at: order.occurred_at,
+    sequence: order.sequence,
+    ...(order.archive_only === true ? { archive_only: true } : {}),
+  };
 }
 
 function json(payload, status = 200) {
@@ -374,7 +383,7 @@ export class KenjiModelIdempotency {
           webhook_event_id: webhookEventId,
           receipt_id: receiptId,
           ...(expectedLeadMessageId === undefined ? {} : { expected_lead_message_id: expectedLeadMessageId }),
-          ...(leadOrder === undefined ? {} : { lead_order: { occurred_at: leadOrder.occurred_at, sequence: leadOrder.sequence } }),
+          ...(leadOrder === undefined ? {} : { lead_order: pinnedLeadOrder(leadOrder) }),
           status: "pending",
           attempts: 0,
           received_at: receivedAt,
@@ -467,11 +476,17 @@ export class KenjiModelIdempotency {
       };
       const orderKey = (lead) => `campaign-lead:order:${lead}`;
       const orderSequenceKey = "campaign-lead:order-sequence";
-      const observeOrder = async (txn, lead, occurredAt) => {
+      const observeOrder = async (txn, lead, occurredAt, archiveOnly = false) => {
         const prior = active(await txn.get(orderKey(lead)));
         if (prior) return prior;
         const counter = active(await txn.get(orderSequenceKey));
-        const order = { occurred_at: occurredAt, sequence: (counter?.sequence || 0) + 1, expires_at: now + CAMPAIGN_CONTEXT_TTL_MS };
+        const order = {
+          occurred_at: occurredAt,
+          sequence: (counter?.sequence || 0) + 1,
+          expires_at: now + CAMPAIGN_CONTEXT_TTL_MS,
+          // A redelivery with no saved order cannot prove it belongs after the current lead.
+          ...(archiveOnly ? { archive_only: true } : {}),
+        };
         await txn.put(orderKey(lead), order);
         await txn.put(orderSequenceKey, { sequence: order.sequence, expires_at: order.expires_at });
         return order;
@@ -481,10 +496,10 @@ export class KenjiModelIdempotency {
         if (!expectedLead || !Number.isFinite(occurredAt) || occurredAt <= 0) {
           return json({ ok: false, error: "invalid_lead_order" }, 400);
         }
-        const order = await this.state.storage.transaction((txn) => observeOrder(txn, expectedLead, occurredAt));
+        const order = await this.state.storage.transaction((txn) => observeOrder(txn, expectedLead, occurredAt, input?.context?.redelivery === true));
         const alarm = await this.state.storage.getAlarm();
         if (!alarm || alarm > order.expires_at) await this.state.storage.setAlarm(order.expires_at);
-        return json({ ok: true, observed: true, lead_order: { occurred_at: order.occurred_at, sequence: order.sequence } });
+        return json({ ok: true, observed: true, lead_order: pinnedLeadOrder(order) });
       }
       if (action === "reserve") {
         if (!briefId) return json({ ok: false, error: "brief_message_id_required" }, 400);
@@ -561,7 +576,7 @@ export class KenjiModelIdempotency {
           const olderThanLatest = latest && Number.isFinite(latest.occurred_at) &&
             (ordered.occurred_at < latest.occurred_at ||
               (ordered.occurred_at === latest.occurred_at && ordered.order_sequence < latest.order_sequence));
-          if (olderThanLatest) {
+          if (order.archive_only === true || olderThanLatest) {
             await txn.put(archiveKey(leadInboxId), ordered);
           } else {
             if (latest) await txn.put(archiveKey(latest.lead_inbox_id), latest);

@@ -158,8 +158,14 @@ async function findAiEvent(env = {}, event = {}) {
   }
 }
 
+function canRecoverAsFreshEvent(event, outcome) {
+  // Card ingress uses LINE's redelivery flag to distinguish an original lead from a retry.
+  return outcome?.retry_allowed === true
+    && !(event?.type === "message" && event?.message?.type === "text" && resolveLineCardCampaignTrigger(event.message.text));
+}
+
 function recoverableEvent(event = {}, outcome = {}) {
-  if (event?.deliveryContext?.isRedelivery !== true || outcome.retry_allowed !== true) return event;
+  if (event?.deliveryContext?.isRedelivery !== true || !canRecoverAsFreshEvent(event, outcome)) return event;
   return {
     ...event,
     deliveryContext: {
@@ -362,7 +368,7 @@ export async function handleKenjiSeedLineRequestWithRedeliveryRecovery(
     outcomes.set(index, redeliveryOutcomeFromAiEvent(existing));
   }));
 
-  const hasRecoverable = redeliveryIndexes.some((index) => outcomes.get(index)?.retry_allowed === true);
+  const hasRecoverable = redeliveryIndexes.some((index) => canRecoverAsFreshEvent(events[index], outcomes.get(index)));
   const hasMembershipStatusRefinement = membershipStatusIndexes.length > 0;
   if (!hasRecoverable && !hasMembershipStatusRefinement) {
     const response = await handleKenjiSeedLineRequest(request, seedEnv, ctx, legacyWorker, perTurn);

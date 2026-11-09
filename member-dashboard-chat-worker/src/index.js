@@ -2051,6 +2051,18 @@ async function lineCardCampaignContext(env = {}, lineUserId = "", action = "get"
   }
 }
 
+export async function pinLineCardLeadOrder(env, event, { action = "pin_order", receivedAt = Date.now() } = {}) {
+  const messageId = getStableLineMessageId(event);
+  if (!/^[A-Za-z0-9_-]{1,120}$/.test(messageId)) return undefined;
+  const timestamp = event.timestamp;
+  const order = await lineCardCampaignContext(env, getLineUserId({ event }), action, {
+    expected_lead_inbox_id: `line_${messageId}`,
+    occurred_at: Number.isFinite(timestamp) && timestamp > 0 ? timestamp : receivedAt,
+    redelivery: event.deliveryContext?.isRedelivery === true,
+  });
+  return order.observed === true ? order.lead_order : undefined;
+}
+
 function buildConsoleInboxRecord(event = {}, profile = null, intent = "", metadata = null) {
   const eventId = getLineEventId(event);
   const inboxId = `line_${eventId}`;
@@ -3086,12 +3098,21 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
   const isolatedEvents = new Set();
   const batchCardBriefs = new Map();
   const cardSubjects = new Map();
+  const redeliveredLeadOrders = new Map();
   for (const event of events) {
     if (event?.type !== "message" || event?.message?.type !== "text") continue;
     const userId = event.source?.type === "user" ? getLineUserId({ event }) : "";
     if (resolveLineCardCampaignTrigger(event.message.text)) {
       isolatedEvents.add(event);
-      if (userId) cardSubjects.set(userId, getStableLineMessageId(event));
+      if (userId) {
+        const redelivery = event.deliveryContext?.isRedelivery === true;
+        if (redelivery && options.leadOrder === undefined && campaignFlagsEnabled && campaignPilotCohort.valid &&
+            campaignPilotCohort.hashes.has(await sha256Hex(userId))) {
+          redeliveredLeadOrders.set(event, await pinLineCardLeadOrder(env, event, { action: "observe", receivedAt: options.receivedAt }));
+        }
+        const order = options.leadOrder ?? redeliveredLeadOrders.get(event);
+        if (!redelivery || (order && order.archive_only !== true)) cardSubjects.set(userId, getStableLineMessageId(event));
+      }
     } else if (userId && asString(event.message.text).trim() && cardSubjects.has(userId)) {
       batchCardBriefs.set(event, cardSubjects.get(userId));
       cardSubjects.delete(userId);
@@ -3312,13 +3333,10 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
         : campaignTakeover.active === true
           ? { ok: true, claimed: false, reason: "owner_takeover_active" }
           : await claimLineCardCampaignLead(env, event, "claim");
-      if (campaignLeadClaim.claimed === true && campaignTrigger && options.leadOrder === undefined) {
-        const timestamp = event.timestamp;
-        const order = await lineCardCampaignContext(env, lineUserId, "observe", {
-          expected_lead_inbox_id: `line_${getStableLineMessageId(event)}`,
-          occurred_at: Number.isFinite(timestamp) && timestamp > 0 ? timestamp : (options.receivedAt ?? Date.now()),
-        });
-        if (order.observed !== true) {
+      let leadOrder = options.leadOrder ?? redeliveredLeadOrders.get(rawEvent);
+      if (campaignLeadClaim.claimed === true && campaignTrigger && leadOrder === undefined) {
+        leadOrder = await pinLineCardLeadOrder(env, event, { action: "observe", receivedAt: options.receivedAt });
+        if (!leadOrder) {
           await claimLineCardCampaignLead(env, event, "release", campaignLeadClaim.claim_token);
           campaignLeadClaim = { claimed: false, reason: "campaign_lead_order_unavailable" };
         }
@@ -3347,7 +3365,7 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
               lead_inbox_id: `line_${getStableLineMessageId(event)}`,
               lead_claim_key: campaignLeadClaim.claim_key,
               lead_claim_token: campaignLeadClaim.claim_token,
-              ...(options.leadOrder === undefined ? {} : { lead_order: options.leadOrder }),
+              ...(leadOrder === undefined ? {} : { lead_order: leadOrder }),
             });
             if (contextStored?.stored !== true) {
               campaignLeadRecord = { ...campaignLeadRecord, skipped: true, reason: "campaign_context_store_failed" };

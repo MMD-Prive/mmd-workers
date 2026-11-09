@@ -12,7 +12,7 @@ import {
   handleKenjiSeedLineRequestWithRedeliveryRecovery,
   isKenjiSeedLineRequest,
 } from "./kenji-line-redelivery-recovery.mjs";
-import { createLineSignature, LINE_CARD_ORDINARY_SUBJECTS, orderLineCardBatchEvents, resolveLineCardCampaignTrigger } from "./index.js";
+import { createLineSignature, LINE_CARD_ORDINARY_SUBJECTS, orderLineCardBatchEvents, pinLineCardLeadOrder, resolveLineCardCampaignTrigger } from "./index.js";
 import {
   handleKenjiLineTransportHealth,
   isKenjiLineTransportHealthRequest,
@@ -471,6 +471,7 @@ async function maybeScheduleKenjiLineAfterAck(request, env = {}, ctx = null, han
       }
       const plannedCampaignEvents = new Map();
       const plannedCampaignSubjects = new Set();
+      const redeliveredLeadOrders = new Map();
       for (const [userId, messages] of senderTexts) {
         if (!pilotConfigValid || !hashes.includes(await sha256HexText(userId))) continue;
         let nextBrief = true;
@@ -479,6 +480,12 @@ async function maybeScheduleKenjiLineAfterAck(request, env = {}, ctx = null, han
           if (resolveLineCardCampaignTrigger(event.message.text)) {
             plannedCampaignEvents.set(event, undefined);
             plannedCampaignSubjects.add(userId);
+            if (event.deliveryContext?.isRedelivery === true) {
+              const order = await pinLineCardLeadOrder(env, event);
+              if (!order) return Response.json({ ok: false, error: "campaign_lead_order_unavailable" }, { status: 503 });
+              redeliveredLeadOrders.set(event, order);
+              if (order.archive_only === true) continue;
+            }
             expectedLeadMessageId = text(event.message.id);
             nextBrief = true;
           } else if (nextBrief) {
@@ -595,22 +602,11 @@ async function maybeScheduleKenjiLineAfterAck(request, env = {}, ctx = null, han
           const alias = await aliasResponse.json().catch(() => ({}));
           if (!aliasResponse.ok) return Response.json({ ok: false, error: "campaign_ingress_unavailable" }, { status: 503 });
           if (alias?.cancelled === true) continue;
-          let leadOrder;
-          if (expectedLeadMessageId === undefined) {
-            try {
-              const context = env.KENJI_MODEL_DEDUPE.get(env.KENJI_MODEL_DEDUPE.idFromName(`kenji-line-card-21829530-context-v1:${subjectHash}`));
-              const timestamp = event.timestamp;
-              const response = await context.fetch("https://kenji-model-dedupe.internal/campaign-lead/context", {
-                method: "POST", headers: { "content-type": "application/json" },
-                body: JSON.stringify({ action: "pin_order", context: {
-                  expected_lead_inbox_id: `line_${eventId}`,
-                  occurred_at: Number.isFinite(timestamp) && timestamp > 0 ? timestamp : Date.now(),
-                } }),
-              });
-              const pin = response.ok ? await response.json() : null;
-              if (pin?.ok === true && pin.observed === true) leadOrder = pin.lead_order;
-            } catch (_) {}
-            if (!leadOrder) return Response.json({ ok: false, error: "campaign_lead_order_unavailable" }, { status: 503 });
+          const leadOrder = expectedLeadMessageId === undefined
+            ? (redeliveredLeadOrders.get(event) ?? await pinLineCardLeadOrder(env, event))
+            : undefined;
+          if (expectedLeadMessageId === undefined && !leadOrder) {
+            return Response.json({ ok: false, error: "campaign_lead_order_unavailable" }, { status: 503 });
           }
           const stub = env.KENJI_MODEL_DEDUPE.get(env.KENJI_MODEL_DEDUPE.idFromName(`line-card-ingress-v1:${key}`));
           let response;

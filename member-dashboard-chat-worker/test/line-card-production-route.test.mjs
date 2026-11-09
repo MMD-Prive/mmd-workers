@@ -803,6 +803,80 @@ test("an unavailable intake order returns 503 before the Card is acknowledged", 
   assert.equal(f.records.has("line_msg-unavailable-order"), false);
 });
 
+for (const durable of [false, true]) {
+  test(`equal-timestamp redelivery without an original pin cannot displace B (${durable ? "durable" : "inline"})`, async () => {
+    const f = fixture();
+    const pending = [];
+    const ctx = { waitUntil(promise) { pending.push(Promise.resolve(promise)); } };
+    const binding = f.env.KENJI_MODEL_DEDUPE;
+    const get = binding.get.bind(binding);
+    let failFirstPin = true;
+    binding.get = (id) => {
+      const object = get(id);
+      return { fetch(input, init) {
+        if (failFirstPin && String(input).endsWith("/campaign-lead/context") &&
+            JSON.parse(init?.body || "{}").action === "pin_order") {
+          failFirstPin = false;
+          return Response.json({ ok: false }, { status: 503 });
+        }
+        return object.fetch(input, init);
+      } };
+    };
+    const timestamp = Date.now() - 5000;
+    const a = lineEvent("JASPER", "msg-unpinned-a", { timestamp });
+    const b = lineEvent("BOOK EI", "msg-unpinned-b", { timestamp });
+    const brief = lineEvent("brief for B", "msg-unpinned-brief", { timestamp: timestamp + 1000 });
+    const deliver = async (events, mode) => {
+      const response = await route.fetch(await signedWebhook(events, f.env), f.env, mode);
+      for (let round = 0; round < 6; round += 1) {
+        const count = pending.length;
+        await Promise.all(pending);
+        if (pending.length === count) break;
+      }
+      return response;
+    };
+    await withFetch(f.fetch, async () => {
+      assert.equal((await deliver([a], ctx)).status, 503);
+      assert.equal(f.records.has("line_msg-unpinned-a"), false);
+      assert.equal((await deliver([b], ctx)).status, 200);
+      assert.equal((await deliver([
+        { ...a, deliveryContext: { isRedelivery: true } }, brief,
+      ], durable ? ctx : undefined)).status, 200);
+    });
+    assert.ok(f.records.has("line_msg-unpinned-a"), "redelivered A is still captured as a lead");
+    assert.equal(JSON.parse(f.records.get("line_msg-unpinned-brief").fields.payload_json).lead_inbox_id, "line_msg-unpinned-b");
+  });
+}
+
+test("redelivery reuses a pin whose acknowledgement was lost before enqueue", async () => {
+  const f = fixture();
+  const pending = [];
+  const ctx = { waitUntil(promise) { pending.push(Promise.resolve(promise)); } };
+  const binding = f.env.KENJI_MODEL_DEDUPE;
+  const get = binding.get.bind(binding);
+  let loseAck = true;
+  binding.get = (id) => {
+    const object = get(id);
+    return { async fetch(input, init) {
+      const response = await object.fetch(input, init);
+      if (loseAck && String(input).endsWith("/campaign-lead/context") &&
+          JSON.parse(init?.body || "{}").action === "pin_order" && response.ok) {
+        loseAck = false;
+        return Response.json({ ok: false }, { status: 503 });
+      }
+      return response;
+    } };
+  };
+  const lead = lineEvent("JASPER", "msg-known-pin");
+  await withFetch(f.fetch, async () => {
+    assert.equal((await route.fetch(await signedWebhook([lead], f.env), f.env, ctx)).status, 503);
+    const retry = { ...lead, deliveryContext: { isRedelivery: true } };
+    assert.equal((await route.fetch(await signedWebhook([retry, lineEvent("brief", "msg-known-pin-brief")], f.env), f.env, ctx)).status, 200);
+    await Promise.all(pending);
+  });
+  assert.equal(JSON.parse(f.records.get("line_msg-known-pin-brief").fields.payload_json).lead_inbox_id, "line_msg-known-pin");
+});
+
 test("a lost brief context commit acknowledgement recovers without a duplicate write or reply", async () => {
   const f = fixture();
   const pending = [];
