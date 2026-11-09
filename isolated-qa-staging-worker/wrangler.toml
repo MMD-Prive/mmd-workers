@@ -1,0 +1,13 @@
+name = "mmd-isolated-qa-staging"
+main = "gateway.mjs"
+compatibility_date = "2026-11-09"
+workers_dev = false
+preview_urls = false
+
+[[services]]
+binding = "QA_AUTH"
+service = "mmd-auth-worker-staging"
+
+[[r2_buckets]]
+binding = "QA_STORAGE"
+bucket_name = "mmd-isolated-qa-staging"
