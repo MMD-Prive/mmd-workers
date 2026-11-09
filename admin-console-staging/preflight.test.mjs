@@ -32,7 +32,12 @@ test("staging only accepts its own Owner session, serves the original form, and 
     assert.doesNotMatch(cookie, /Domain=/i);
     const headers = { cookie: cookie.split(";")[0] };
 
-    assert.equal((await send(consolePath, { headers })).status, 200);
+    const consolePage = await send(consolePath, { headers });
+    assert.equal(consolePage.status, 200);
+    assert.match(consolePage.headers.get("content-security-policy") || "", /font-src 'self' https:\/\/cdn\.prod\.website-files\.com/);
+    assert.equal(consolePage.headers.get("x-content-type-options"), "nosniff");
+    const html = await consolePage.text();
+    assert.doesNotMatch(html, /https:\/\/(?:www\.)?mmdbkk\.com\/(?:internal\/admin|v1\/admin)/i);
     const form = await send(create, { headers: { ...headers, Referer: origin + consolePath,
       "Sec-Fetch-Dest": "iframe", "Sec-Fetch-Mode": "navigate", "Sec-Fetch-Site": "same-origin",
     } });
@@ -49,6 +54,11 @@ test("staging only accepts its own Owner session, serves the original form, and 
     for (const path of ["/v1/admin/job/create", "/v1/admin/create-job", "/v1/admin/clients/profile-photo/sync", "/v1/confirm/link", "/v1/admin/payments/review-queue"]) {
       assert.equal((await send(path, { method: "POST", headers })).status, 405, path);
     }
+    const logout = await send("/internal/admin/login/session", { method: "DELETE", headers });
+    assert.equal(logout.status, 200);
+    assert.match(logout.headers.get("set-cookie") || "", /Max-Age=0/);
+    assert.doesNotMatch(logout.headers.get("set-cookie") || "", /Domain=/i);
+    assert.equal((await send("/unknown", { headers })).status, 404);
     assert.deepEqual(outbound, []);
   } finally {
     globalThis.fetch = originalFetch;
