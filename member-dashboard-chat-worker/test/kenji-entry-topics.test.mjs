@@ -135,3 +135,24 @@ test('no stale promotion claims after campaign boundary and no invented new prof
  const later=Date.parse('2026-12-01T00:00:00+07:00');const r=await runApprovedCategoryTurn(env,{...event('โปรสมาชิก'),timestamp:later},runtime,io({now:later}));assert.doesNotMatch(r.decision.text,/30 พ.ย.|เพิ่ม 6 เดือน|วันสุดท้าย/);
  const models=await runApprovedCategoryTurn(env,event('น้องมาใหม่'),runtime,io());assert.match(models.decision.text,/ยังไม่ได้ยืนยันรายชื่อ/);assert.match(models.decision.text,/https:\/\/mmdbkk.com\/profiles/);
 });
+
+for (const [command, existingCommand] of [
+  ['My Status', 'เช็กสมาชิกของฉัน'],
+  ['Promotion', 'โปรเดือนนี้'],
+  ['Find Model', 'น้องมาใหม่'],
+  ['Apply Job', 'สนใจสมัครงาน'],
+]) {
+  test(`English Greeting command reuses the existing reply: ${command}`, async () => {
+    const english = io();
+    const thai = io();
+    assert(isExplicitCategoryCommand(event(command), env));
+    const result = await runApprovedCategoryTurn(env, event(command), runtime, english);
+    const expected = await runApprovedCategoryTurn(env, event(existingCommand), runtime, thai);
+    assert.equal(result.delivered, true);
+    assert.equal(english.sent.length, 1);
+    assert.deepEqual(result, expected);
+    assert.deepEqual(english.sent, thai.sent);
+    assert.equal(entryTopicCommand(event(`${command} please`)), '');
+    assert.equal(entryTopicCommand({...event(command), source: {type: 'group'}}), '');
+  });
+}
