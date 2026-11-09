@@ -57,7 +57,7 @@ async function conversation(fn, options = {}) {
   async function send(event, valid = true) {
     const background = [];
     const ctx = { waitUntil: work => background.push(work) };
-    const raw = JSON.stringify({ events: [{ mode: "active", replyToken: `reply-${++sequence}`, webhookEventId: `evt-${sequence}`, source: textEvent("").source, ...event }] });
+    const raw = JSON.stringify({ events: [{ mode: "active", timestamp: Date.now(), replyToken: `reply-${++sequence}`, webhookEventId: `evt-${sequence}`, source: textEvent("").source, ...event }] });
     const response = await handleKenjiSeedLineRequest(new Request("https://www.mmdbkk.com/webhooks/line", {
       method: "POST", headers: { "x-line-signature": valid ? await createLineSignature(raw, "test-secret") : "invalid" }, body: raw,
     }), env, ctx, { fetch: async (_request, _env, intakeCtx) => {
@@ -128,10 +128,10 @@ test("fixed menu replies stay available while general auto reply is paused; othe
   });
 });
 
-test("SUPPORT continues renewal, Points and status without confirming truth or changing the payment contract", async () => {
+test("SUPPORT continues renewal and Points without confirming truth or changing the payment contract", async () => {
   await conversation(async ({ tap, send, replies }) => {
     await tap("mmd_action=rich_menu&menu=public&button=5");
-    for (const [text, route] of [["ต่ออายุ", "intent=renew&view=package"], ["สถานะสมาชิก", "intent=status&view=overview"]]) {
+    for (const [text, route] of [["ต่ออายุ", "intent=renew&view=package"]]) {
       await send(textEvent(text));
       assert.match(replies.at(-1).messages[0].text, new RegExp(route));
     }
@@ -191,15 +191,15 @@ test("checkpts stops advertising the October pre-renewal CTA after the campaign 
   assert.match(afterCutoff.text, /promotion\/6-years-care-back/);
 });
 
-test("Guest/Public SUPPORT offers checkpts and answers with three in-chat fields", async () => {
+test("Guest/Public SUPPORT offers My Status and answers with two in-chat fields", async () => {
   for (const menu of ["guest", "public"]) await conversation(async ({ tap, send, replies, env }) => {
     env.LINE_AUTO_REPLY_ENABLED = "false";
     await tap(`mmd_action=rich_menu&menu=${menu}&button=5`);
-    assert.match(replies.at(-1).messages[0].text, /Checkpts/);
-    const result = await send(textEvent("checkpts"));
-    assert.equal(result.body.saved[0].reply_source, "my_mmd_points_shortcut_v2");
-    assert.match(replies.at(-1).messages[0].text, /สถานะสมาชิก:.*\nPoints:.*\nวันหมดอายุสมาชิก:/);
-    assert.doesNotMatch(replies.at(-1).messages[0].text, /CARE BACK|promotion\/6-years-care-back|CTA:/);
+    assert.match(replies.at(-1).messages[0].text, /My Status/);
+    const result = await send(textEvent(menu === "guest" ? "My Status" : "สถานะสมาชิก"));
+    assert.equal(result.body.saved[0].reply_source, "deterministic");
+    assert.match(replies.at(-1).messages[0].text, /สถานะสมาชิก:.*\nวันหมดอายุ:/);
+    assert.doesNotMatch(replies.at(-1).messages[0].text, /https?:|Points|CARE BACK|promotion\/6-years-care-back|CTA:/);
     assert.doesNotMatch(replies.at(-1).messages[0].text, /\d[\d,]*\s*(?:Points|แต้ม)/);
   });
 });

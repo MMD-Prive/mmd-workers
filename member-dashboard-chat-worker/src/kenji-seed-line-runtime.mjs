@@ -968,7 +968,7 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
       const outboundTurn = delivered
         ? await recordDeliveredKenjiLineReply({ env, event, replyText: decision.text }).catch(() => ({ skipped: true, reason: "outbound_turn_runtime_error" }))
         : { skipped: true, reason: "reply_not_delivered" };
-      const matrix = continuityEnabled && directUser &&
+      const matrix = continuityEnabled && directUser && !retiredCheckpts &&
         ((!intakeRequested && !support && !navigation && !menuConversation && !checkptsShortcut) || (delivered && decision.rich_menu_state) ||
           (intakeEnabled && decision.profile_image_received)) && eventMode !== "standby" && !redelivered
         ? await writeKenjiLineMatrixTurn({

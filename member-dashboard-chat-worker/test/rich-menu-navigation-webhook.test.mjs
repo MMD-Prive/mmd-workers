@@ -62,7 +62,7 @@ test("signed navigation taps send exactly one topic reply without knowledge or a
       assert.equal(result.status, 200);
       assert.equal(result.replies.length, 1);
       if (destinations[menu][index].type === "uri") assert.ok(result.replies[0].messages[0].text.endsWith(destinations[menu][index].uri));
-      else assert.match(result.replies[0].messages[0].text, menu === "guest" ? /ฮิโตะ Y1|Checkpts/ : menu === "public" ? /ฮิโตะ 04|Checkpts/ : /Kenji ดูแลสมาชิก Privé บนเว็บ/);
+      else assert.match(result.replies[0].messages[0].text, menu === "guest" ? /เปอร์|My Status/ : menu === "public" ? /เปอร์|My Status/ : /Kenji ดูแลสมาชิก Privé บนเว็บ/);
       assert.equal(result.body.saved[0].reply_source, "rich_menu_navigation_v1");
       assert.equal(result.body.saved[0].cta_appended, false);
       assert.equal(result.body.saved[0].continuity_topic, "");
@@ -100,7 +100,7 @@ test("all Rich Menu buttons get fixed replies while only Guest/Public SUPPORT op
     const support = await run(map[menu][5].data, { auto: false, deterministic: true });
     assert.equal(support.replies.length, 1);
     assert.equal(support.body.saved[0].reply_source, "rich_menu_navigation_v1");
-    assert.match(support.replies[0].messages[0].text, menu === "guest" ? /ฮิโตะ Y1|Checkpts/ : /ฮิโตะ 04|Checkpts/);
+    assert.match(support.replies[0].messages[0].text, menu === "guest" ? /เปอร์|My Status/ : /เปอร์|My Status/);
     for (const options of [{ kill: true }, { globalKill: true }, { takeover: true }, { mode: "standby" }, { redelivery: true }])
       assert.equal((await run(map[menu][5].data, { auto: false, deterministic: true, ...options })).replies.length, 0);
     const navigation = await run(map[menu][1].data, { auto: false, deterministic: true });
@@ -129,7 +129,7 @@ test("Per AI handles a bounded SUPPORT follow-up and never exposes an unverified
 
 test("Checkpts answers in chat without campaign routes after SUPPORT expires", async () => {
   const expired = { topic: "support", entry: "per_support_button", expires_at: "2000-01-01T00:00:00Z" };
-  for (const [message, matrixState] of [["checkpts", null], ["Checkpts", expired]]) {
+  for (const [message, matrixState] of [["check points", null], ["check points", expired]]) {
     const result = await run("", { message, matrixState, auto: false, deterministic: true });
     assert.equal(result.replies.length, 1);
     assert.equal(result.body.saved[0].reply_source, "my_mmd_points_shortcut_v2");
@@ -138,7 +138,7 @@ test("Checkpts answers in chat without campaign routes after SUPPORT expires", a
     assert.doesNotMatch(result.replies[0].messages[0].text, /\d[\d,]*\s*(?:Points|แต้ม)/);
   }
   for (const options of [{ kill: true }, { globalKill: true }, { takeover: true }, { mode: "standby" }, { redelivery: true }, { signatureValid: false }])
-    assert.equal((await run("", { message: "Checkpts", auto: false, deterministic: true, ...options })).replies.length, 0);
+    assert.equal((await run("", { message: "check points", auto: false, deterministic: true, ...options })).replies.length, 0);
   assert.equal((await run("", { message: "mycheckpts", auto: false, deterministic: true })).replies.length, 0);
 });
 
@@ -147,7 +147,7 @@ test("Checkpts reports verified status, zero Points and expiry from canonical me
     membership: { level: "private_premium", label: "Private Premium", lifecycle: "active", expire_at: "2027-02-03" },
     points: { status: "verified", active_points: 0 } };
   const active = { topic: "support", entry: "per_support_button", expires_at: new Date(Date.now() + 10 * 60_000).toISOString() };
-  for (const [message, matrixState] of [["Checkpts", null], ["checkpts", active]]) {
+  for (const [message, matrixState] of [["check points", null], ["check points", active]]) {
     const result = await run("", { message, matrixState, memberTruth, auto: false, deterministic: true });
     assert.equal(result.replies.length, 1);
     assert.match(result.replies[0].messages[0].text, /สถานะสมาชิก: Private Premium.*\nPoints: 0 Points ครับ\nวันหมดอายุ: 03\/02\/2027 ครับ/);
@@ -156,13 +156,13 @@ test("Checkpts reports verified status, zero Points and expiry from canonical me
 });
 
 test("Checkpts has separate replies for unverified Points and unverified identity", async () => {
-  const known = await run("", { message: "Checkpts", auto: false, deterministic: true, memberTruth: {
+  const known = await run("", { message: "check points", auto: false, deterministic: true, memberTruth: {
     ok: true, authority: "my_mmd_entitlement_resolver_v1", identity_status: "resolved",
     membership: { level: "public_member", label: "Public Member", lifecycle: "active", expire_at: "" },
     points: { status: "unavailable", active_points: null },
   } });
   assert.match(known.replies[0].messages[0].text, /สถานะสมาชิก: Public Member.*\nPoints: ยังยืนยันยอดไม่ได้ครับ\nวันหมดอายุ: ยังไม่มีวันที่ยืนยันได้ครับ/);
-  const unknown = await run("", { message: "Checkpts", auto: false, deterministic: true, memberTruth: {
+  const unknown = await run("", { message: "check points", auto: false, deterministic: true, memberTruth: {
     ok: true, authority: "my_mmd_entitlement_resolver_v1", identity_status: "unresolved",
     membership: { level: "private_premium", label: "Private Premium", lifecycle: "active", expire_at: "2027-02-03" },
     points: { status: "verified", active_points: 999 },
@@ -175,7 +175,7 @@ test("Checkpts has separate replies for unverified Points and unverified identit
 });
 
 test("Checkpts uses canonical SVIP expiry and hides profile Points when lookup times out", async () => {
-  const result = await run("", { message: "Checkpts", auto: false, deterministic: true, memberTruthByIntent: {
+  const result = await run("", { message: "check points", auto: false, deterministic: true, memberTruthByIntent: {
     points_status: { httpStatus: 503, body: { ok: false, status: "unavailable" } },
     membership_status: { body: { ok: true, authority: "my_mmd_entitlement_resolver_v1", identity_status: "resolved",
       membership: { level: "svip", label: "SVIP", lifecycle: "active", expire_at: "2027-02-03" },
@@ -187,7 +187,7 @@ test("Checkpts uses canonical SVIP expiry and hides profile Points when lookup t
   assert.doesNotMatch(result.replies[0].messages[0].text, /CARE BACK|CTA:|https?:\/\//);
   assert.doesNotMatch(result.replies[0].messages[0].text, /999/);
 
-  const unavailable = await run("", { message: "Checkpts", auto: false, deterministic: true, memberTruthByIntent: {
+  const unavailable = await run("", { message: "check points", auto: false, deterministic: true, memberTruthByIntent: {
     points_status: { httpStatus: 503, body: { ok: false, status: "unavailable" } },
     membership_status: { httpStatus: 503, body: { ok: false, status: "unavailable" } },
   } });

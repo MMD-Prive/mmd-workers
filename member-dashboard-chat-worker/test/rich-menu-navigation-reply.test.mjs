@@ -46,7 +46,7 @@ test("spoofed Private menu never grants a private destination without fresh iden
 
 test("Public Talk to Per menu action uses the assigned Hito 04 reply", async () => {
   const reply = await resolveRichMenuNavigation(event(getMmdRichMenuActionMap().public[0].data));
-  assert.match(reply.text, /ฮิโตะ 04/);
+  assert.match(reply.text, /เปอร์/);
   assert.equal(reply.cta_route, "");
   assert.equal(reply.cta_type, "continue_in_chat");
   assert.doesNotMatch(reply.text, /Kenji|เคนจิ|https:/);
@@ -69,6 +69,6 @@ test("SUPPORT keeps bounded LINE help while Private Kenji opens the web", async 
     });
     assert.equal(reply.cta_route, "");
     assert.doesNotMatch(reply.text, /https:/);
-    assert.match(reply.text, menu === "private" ? /Kenji ดูแลสมาชิก Privé บนเว็บ/ : /Checkpts/);
+    assert.match(reply.text, menu === "private" ? /Kenji ดูแลสมาชิก Privé บนเว็บ/ : /My Status/);
   }
 });

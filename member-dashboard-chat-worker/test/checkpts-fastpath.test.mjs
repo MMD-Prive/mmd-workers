@@ -7,7 +7,7 @@ import { handleKenjiSeedLineRequestWithRedeliveryRecovery } from "../src/kenji-l
 import { aggregateKenjiLineTurn, prepareKenjiLineWebhookBatch } from "../src/kenji-line-turn-aggregation.mjs";
 
 const UID = `U${"a".repeat(32)}`;
-const ALIASES = ["Checkpts", "check point", "check points", "checkpoint", "เช็คสิทธิ์", "เช็กสิทธิ์"];
+const ALIASES = ["check point", "check points", "checkpoint", "เช็คสิทธิ์", "เช็กสิทธิ์"];
 const MATRIX = "tblS6iRgPjYLBqZJh";
 const AUTHORITY = "my_mmd_entitlement_resolver_v1";
 const event = text => ({ type: "message", mode: "active", replyToken: "fixture-reply", timestamp: Date.now(),
@@ -18,11 +18,11 @@ const truth = () => ({ ok: true, authority: AUTHORITY, identity_status: "resolve
   points: { status: "verified", active_points: 120 } });
 
 const categoryEnv = {KENJI_LINE_REPLY_CATEGORY_MODE:'approved_qa_promo',LINE_AUTO_REPLY_ENABLED:'true',LINE_KENJI_MODEL_ENABLED:'false',KENJI_LINE_APPROVED_PROMO_ENABLED:'true'};
-for (const command of ['checkpts','package','regis','apply','โปร']) test(`restricted signed intake sends once: ${command}`, async () => {
+for (const command of ['เช็กสมาชิกของฉัน','package','regis','apply','โปร']) test(`restricted signed intake sends once: ${command}`, async () => {
   const {status,calls}=await run(command,{env:categoryEnv});
   assert.equal(status,200);assert.equal(calls.replies.length,1);
   assert.ok(calls.writes.some(w=>w.table==='MMD — Console Inbox'),'inbound intake preserved');
-  if(command==='checkpts') {
+  if(command==='เช็กสมาชิกของฉัน') {
     const reply = calls.replies[0].messages[0].text;
     assert.match(reply,/ประเภทสมาชิก: Premium/);
     assert.match(reply,/สถานะสมาชิก: ใช้งานอยู่/);
@@ -33,7 +33,7 @@ for (const command of ['checkpts','package','regis','apply','โปร']) test(`
   } else assert.equal(calls.replies[0].messages[0].quickReply,undefined,'other categories must not gain a membership button');
 });
 for (const options of [{owner:true},{kill:true},{globalKill:true},{ownerAfterTruth:true},{killAfterTruth:true}]) test(`restricted checkpts pause: ${JSON.stringify(options)}`,async()=>{
-  const {calls}=await run('checkpts',{...options,env:categoryEnv});assert.equal(calls.replies.length,0);
+  const {calls}=await run('เช็กสมาชิกของฉัน',{...options,env:categoryEnv});assert.equal(calls.replies.length,0);
   const payload=calls.writes.map(w=>w.body.fields?.payload_json).filter(Boolean).map(p=>JSON.parse(p)).find(p=>p.telemetry_version==='kenji_seed_runtime_v1');
   assert.ok(payload,'existing audit telemetry must retain the bounded guard reason');
   assert.equal(payload.guard_reason,options.owner||options.ownerAfterTruth?'category_owner_takeover':options.killAfterTruth?'category_fresh_kill_switch':'category_initial_kill_switch');
@@ -153,7 +153,7 @@ for (const command of ALIASES) test(`recovery wrapper keeps Hiro draft out of ${
 
 for (const guards of [{ owner: true }, { kill: true }, { globalKill: true }, { invalidSignature: true }])
   test(`Hiro to Checkpts through recovery retains reply guards: ${JSON.stringify(guards)}`, async () => {
-    const { calls } = await run('Checkpts', { ...guards, recovery: true, booking: true, env: {
+    const { calls } = await run('check points', { ...guards, recovery: true, booking: true, env: {
       LINE_AUTO_REPLY_ENABLED: 'true', LINE_KENJI_BOOKING_INTENT_ENABLED: 'true',
       KENJI_LINE_MODEL_ONLY_ENABLED: 'true',
     } });
@@ -275,7 +275,7 @@ test("snapshot miss reads canonical membership without accepting its profile Poi
 });
 
 test("a usable snapshot with a canonical name needs no extra membership read", async () => {
-  const { calls } = await run("checkpts", { env: { LINE_MEMBER_REPLY_SNAPSHOT_ENABLED: "true" } });
+  const { calls } = await run("check points", { env: { LINE_MEMBER_REPLY_SNAPSHOT_ENABLED: "true" } });
   assert.equal(calls.truth.length, 1);
   assert.match(calls.replies[0].messages[0].text, /Points: 120 Points/);
 });
@@ -297,7 +297,7 @@ test("snapshot name is read canonically without replacing its guarded Points or 
 
 test("missing or rejected canonical name keeps verified snapshot values and never invents a name", async () => {
   for (const membershipTruth of [{ ...truth(), display_name: "" }, { ...truth(), authority: "untrusted", display_name: "Foreign" }]) {
-    const { calls } = await run("Checkpts", { env: { LINE_MEMBER_REPLY_SNAPSHOT_ENABLED: "true" },
+    const { calls } = await run("check points", { env: { LINE_MEMBER_REPLY_SNAPSHOT_ENABLED: "true" },
       truth: { ...truth(), display_name: "" }, membershipTruth,
     });
     assert.equal(calls.truth.length, 2);
@@ -308,7 +308,7 @@ test("missing or rejected canonical name keeps verified snapshot values and neve
 });
 
 test("takeover during canonical name enrichment suppresses delivery", async () => {
-  const { calls } = await run("Checkpts", { env: { LINE_MEMBER_REPLY_SNAPSHOT_ENABLED: "true" },
+  const { calls } = await run("check points", { env: { LINE_MEMBER_REPLY_SNAPSHOT_ENABLED: "true" },
     truth: { ...truth(), display_name: "" }, ownerAfterTruth: true,
   });
   assert.equal(calls.truth.length, 2);
@@ -316,7 +316,7 @@ test("takeover during canonical name enrichment suppresses delivery", async () =
 });
 
 test("Per takeover during snapshot fallback still suppresses delivery", async () => {
-  const { calls } = await run("checkpts", { env: { LINE_MEMBER_REPLY_SNAPSHOT_ENABLED: "true" },
+  const { calls } = await run("check points", { env: { LINE_MEMBER_REPLY_SNAPSHOT_ENABLED: "true" },
     truth: {}, truthStatus: 503, membershipTruth: truth(), membershipStatus: 200, ownerAfterTruth: true,
   });
   assert.equal(calls.replies.length, 0);
@@ -329,7 +329,7 @@ test("malformed provider identity never reaches the canonical reader", async () 
 });
 
 test("a public webhook body cannot request the private lightweight intake branch", async () => {
-  const { calls } = await run("Checkpts", { directCore: true, env: { KENJI_LINE_MESSAGE_AGGREGATION_ENABLED: "false", KENJI_LINE_BRAIN_V1_ENABLED: "false" } });
+  const { calls } = await run("check points", { directCore: true, env: { KENJI_LINE_MESSAGE_AGGREGATION_ENABLED: "false", KENJI_LINE_BRAIN_V1_ENABLED: "false" } });
   assert.ok(calls.runtime >= 1, "the public request still goes through normal runtime controls");
   assert.equal(calls.truth.length, 0);
   assert.equal(calls.replies.length, 0);
@@ -371,7 +371,7 @@ test("bounded membership expiry questions use the same new Checkpts lane with ge
 
 test("Checkpts rechecks current verified Points when the snapshot is pending", async () => {
   const snapshotTruth = { ...truth(), points: { status: "unavailable", active_points: 999 } };
-  const { calls, body } = await run("checkpts", {
+  const { calls, body } = await run("check points", {
     env: { LINE_MEMBER_REPLY_SNAPSHOT_ENABLED: "true", KENJI_LINE_MODEL_ONLY_ENABLED: "true" },
     snapshotTruth, pointsTruth: truth(),
   });
