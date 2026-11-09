@@ -1,3 +1,4 @@
+import { seedSyntheticReview } from './history-review-fixture.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { INTAKE_READY_FOLDER_ID, INTAKE_REGISTRY_KEY, mergeApprovedIntake, readApprovedIntakeAsset, readApprovedIntakeRegistry, validateIntakeCard } from './src/compcard-intake.js';
@@ -61,7 +62,7 @@ async function fixture({ bytes = png(), legacy = false } = {}) {
   };
   return { env: { ...ENV }, bucket, card, original, bytes, manifest, models, sends, deps };
 }
-const run = (f, date = '2026-10-24', time = '20:00') => runCompcardDaily(f.env, { now: Date.parse(`${date}T${time}:00+07:00`), deps: f.deps });
+const run = async (f, date = '2026-10-24', time = '20:00') => { const now = Date.parse(`${date}T${time}:00+07:00`); if (f.env.HYPE_COMPCARD_ENABLED === "true") await seedSyntheticReview(f.deps, now, f.models); return runCompcardDaily(f.env, { now: Date.parse(`${date}T${time}:00+07:00`), deps: f.deps }); };
 
 test('a private reviewed card merges without mutating static approval and pins its exact bytes', async () => {
   const f = await fixture({ legacy: true });
@@ -79,7 +80,7 @@ test('a private reviewed card merges without mutating static approval and pins i
   assert.equal(f.bucket.json(COMPCARD_JOURNAL_ROOT + 'plans/2026-10-24/standard.json').asset_key, f.card.asset_key);
 });
 
-test('a new intake version preserves an unfinished static plan and takes the next eligible turn', async () => {
+test('a new intake version preserves its frozen plan but cannot evade recent canonical-identity review', async () => {
   const f = await fixture({ legacy: true });
   f.bucket.records.delete(INTAKE_REGISTRY_KEY);
   let failed = false;
@@ -93,9 +94,10 @@ test('a new intake version preserves an unfinished static plan and takes the nex
   assert.equal(f.bucket.records.get(key).value, original);
   assert.equal(f.sends.length, 1);
   assert.ok(f.sends.every(row => row.card.id === f.original.id));
-  await run(f, '2026-10-31');
-  assert.equal(f.sends.length, 2);
-  assert.ok(f.sends.slice(1).every(row => row.card.id === f.card.id));
+  const repeat = await run(f, '2026-10-31');
+  assert.equal(repeat.results[0].status, 'publication_review_hold');
+  assert.equal(f.sends.length, 1);
+  assert.equal(chooseDailyCard([f.original, f.card], [], '2026-10-31').id, f.card.id);
 });
 
 test('reviewed identity, folder, category, asset path and numerical facts are mandatory', async () => {

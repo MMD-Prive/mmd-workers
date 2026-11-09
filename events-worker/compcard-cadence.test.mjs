@@ -1,3 +1,4 @@
+import { seedSyntheticReview } from './history-review-fixture.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -64,7 +65,7 @@ function fixture({ inventory = cards(), send, cadence = true } = {}) {
   };
   return { env, deps, bucket, sends, models, manifest };
 }
-const run = (f, date, time = '20:00', options = {}) => runCompcardDaily(f.env, { now: at(date, time), deps: f.deps, ...options });
+const run = async (f, date, time = '20:00', options = {}) => { const now = at(date, time); if (f.env.HYPE_COMPCARD_ENABLED === "true") await seedSyntheticReview(f.deps, now, f.models); return runCompcardDaily(f.env, { now: at(date, time), deps: f.deps, ...options }); };
 
 test('future cadence leaves 22 October daily promotion intact and starts on 23 October', async () => {
   assert.equal(publicationCadence(CADENCE, '2026-10-22').active, false);
@@ -242,8 +243,8 @@ test('afternoon and Standard evening share same-day exposure and seven-day coold
   assert.equal((await run(f, '2026-10-26', '16:30')).results[0].status, 'no_eligible_card');
   assert.equal(f.sends.length, 2);
   assert.deepEqual(f.sends.map(row => row.destination), ['premium', 'standard']);
-  assert.equal((await run(f, '2026-10-31')).results[0].status, 'sent');
-  assert.equal(f.sends.length, 3);
+  assert.equal((await run(f, '2026-10-31')).results[0].status, 'publication_review_hold');
+  assert.equal(f.sends.length, 2);
 });
 
 test('Standard repeats and concurrent cron calls keep independent per-room receipts', async () => {
@@ -280,10 +281,10 @@ test('empty Standard inventory skips without promoting or borrowing another cate
 });
 
 test('an unrelated afternoon asset outage does not block a valid Standard evening', async () => {
-  const other = { ...cards()[0], id: 'exclusive-original', file_id: 'exclusive-original', model_id: 'recOther', category: 'exclusive', canonical_name: 'Other', display_name: 'Other' };
+  const other = { ...cards()[0], id: 'exclusive-original', file_id: 'exclusive-original', model_id: 'recOther', category: 'premium', canonical_name: 'Other', display_name: 'Other' };
   const f = fixture({ inventory: [other, ...cards()] });
   await run(f, '2026-10-24', '16:30');
-  assert.equal(f.bucket.read('plans/2026-10-24/model.json').category, 'exclusive');
+  assert.equal(f.bucket.read('plans/2026-10-24/model.json').category, 'premium');
   f.deps.asset = async card => { if (card.id === other.id) throw new Error('compcard_drive_read_failed'); return { bytes: BYTES, sha256: card.sha256 }; };
   const result = await run(f, '2026-10-24');
   assert.equal(result.results[0].slot, 'standard');
@@ -602,13 +603,13 @@ test('legacy frozen plan is immutable but its pending mirror fails closed', asyn
   await run(f, '2026-10-24', '16:30');
   const receipt = rawRecord(f, 'deliveries/2026-10-24/model/standard.json');
   await run(f, '2026-10-24', '16:45');
-  assert.equal(f.sends.length, 1);
+  assert.equal(f.sends.length, 0);
   assert.equal(f.bucket.read('deliveries/2026-10-24/model/standard.json').error, 'compcard_legacy_room_selection_conflict');
   assert.equal(rawRecord(f, 'plans/2026-10-24/model.json'), original);
   assert.equal(rawRecord(f, 'deliveries/2026-10-24/model/standard.json'), receipt);
   await run(f, '2026-10-24');
-  assert.equal(f.sends.length, 2);
-  assert.notEqual(f.sends[1].card.model_id, f.sends[0].card.model_id);
+  assert.equal(f.sends.length, 1);
+  assert.notEqual(f.sends[0].card.model_id, f.manifest.cards[0].model_id);
 });
 
 test('pending legacy Tinn sends are held without rewriting the frozen plan', async () => {
