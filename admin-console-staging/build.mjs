@@ -13,6 +13,7 @@ const archive = execFileSync("git", ["archive", sha,
 ], { cwd: fileURLToPath(new URL("..", import.meta.url)), maxBuffer: 100 * 1024 * 1024 });
 execFileSync("tar", ["-xf", "-", "-C", output], { input: archive });
 copyFileSync(directory + "staging.mjs", output + "staging.mjs");
+copyFileSync(directory + "release-status.mjs", output + "release-status.mjs");
 
 const origin = "https://mmd-admin-console-3143-staging.malemodel-bkk.workers.dev";
 function edit(path, from, to) {
