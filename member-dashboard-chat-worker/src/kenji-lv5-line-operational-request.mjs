@@ -24,6 +24,7 @@ import {
 } from "./kenji-line-booking-accumulator.mjs";
 import { careBackOctoberReply } from "./kenji-care-back-october.mjs";
 import { isCheckptsShortcut } from "./checkpts-command.mjs";
+import { readKenjiPerTakeover } from "./kenji-per-case.mjs";
 
 const LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply";
 
@@ -408,7 +409,8 @@ export async function tryHandleKenjiLv5LineOperationalRequest(request, env = {},
     if (typeof ctx?.waitUntil === "function") ctx.waitUntil(actionStateWrite);
     else await actionStateWrite;
   }
-  const delivery = replyAllowed
+  const owner = replyAllowed ? await readKenjiPerTakeover(env, event.source.userId) : null;
+  const delivery = replyAllowed && owner?.ok === true && owner.taken !== true
     ? await sendReply(env, replyToken(event), decision.text)
     : { ok: false, suppressed: true, error: "line_auto_reply_paused" };
   const p4Attempted = p4?.result?.attempted === true;

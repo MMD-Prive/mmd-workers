@@ -36,7 +36,7 @@ test('category makes one membership-only canonical request and preserves fresh p
     calls++;assert.equal((await request.json()).intent,'membership_status');
     return Response.json(truth('svip'));
   }}};
-  const e={type:'message',mode:'active',timestamp:Date.now(),replyToken:'fixture',source:{type:'user',userId:'U'+'a'.repeat(32)},message:{type:'text',text:'Checkpts'}};
+  const e={type:'message',mode:'active',timestamp:Date.now(),replyToken:'fixture',source:{type:'user',userId:'U'+'a'.repeat(32)},message:{type:'text',text:'My Status'}};
   const initial={ok:true,controls:{}};
   const r=await runApprovedCategoryTurn(env,e,initial,{
     continuity:async()=>({available:true,matrix:{payload_json:{booking_draft_v1:{model_name:'Hiro'}}}}),

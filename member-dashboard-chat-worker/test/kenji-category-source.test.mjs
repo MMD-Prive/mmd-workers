@@ -14,16 +14,16 @@ const event=text=>({type:'message',mode:'active',timestamp:Date.now(),replyToken
 test('outer wrapper excludes exact category commands before operational early return',()=>{
   const source=readFileSync(new URL('../src/kenji-line-redelivery-recovery.mjs',import.meta.url),'utf8');
   assert.match(source,/const publicCategory = restrictedReplyCategories\(env\) && events.length === 1 &&\s*\(isExplicitCategoryCommand\(events\[0\], env\) \|\|/);
-  const guard=source.indexOf('&& !publicCategory)');
+  const guard=source.indexOf('!publicCategory && !exactEntry');
   assert.ok(guard>0 && guard<source.indexOf('const operational = await tryHandleKenjiLv5LineOperationalRequest'));
-  assert.match(source.slice(guard),/handleKenjiSeedLineRequest\(request, seedEnv, ctx, legacyWorker\)/);
+  assert.match(source.slice(guard),/handleKenjiSeedLineRequest\(request, seedEnv, ctx, legacyWorker, perTurn\)/);
 });
 test('only current exact commands bypass operational routing in category mode',()=>{
-  for(const text of ['checkpts','package','regis','apply',' CHECKPTS ','ＰＡＣＫＡＧＥ']) {
+  for(const text of ['เช็กสมาชิกของฉัน','package','regis','apply',' My Status ','ＰＡＣＫＡＧＥ']) {
     assert.equal(isExplicitCategoryCommand(event(text),env),true);
     assert.equal(isExplicitCategoryCommand(event(text),{}),false);
   }
-  for(const text of ['checkpts ของผม','apply now','สวัสดี','Hiro','จอง',''])
+  for(const text of ['checkpts','checkpts ของผม','apply now','สวัสดี','Hiro','จอง',''])
     assert.equal(isExplicitCategoryCommand(event(text),env),false);
   assert.equal(isExplicitCategoryCommand({...event('apply'),source:{type:'group'}},env),false);
   assert.equal(isExplicitCategoryCommand({...event('apply'),message:{type:'image'}},env),false);
@@ -45,11 +45,11 @@ test('membership URI grant binds exact command, text, token and canonical destin
   assert.equal(membershipUriButton({...d,cta_route:uri+'&next=evil'}),null);
  }
 });
-for(const command of ['checkpts','package','regis','apply'])test(`old Hiro draft cannot replace category reply or bypass pause: ${command}`,async()=>{
+for(const command of ['เช็กสมาชิกของฉัน','package','regis','apply'])test(`old Hiro draft cannot replace category reply or bypass pause: ${command}`,async()=>{
   const continuity=async()=>({available:true,matrix:{payload_json:{booking_draft_v1:{status:'collecting',model_name:'Hiro',missing_fields:['date']}}}});
   const x=io({continuity});
   const r=await runApprovedCategoryTurn({...env,LINE_KENJI_MODEL_ENABLED:'false'},event(command),runtime,x);
-  assert.equal(r.delivered,true);assert.equal(r.decision.reply_source,`category_${command}`);
+  assert.equal(r.delivered,true);assert.equal(r.decision.reply_source,`category_${command==='เช็กสมาชิกของฉัน'?'checkpts':command}`);
   assert.doesNotMatch(r.decision.text,/รับ Hiro|ต้องการวันไหน/);
   for(const controls of [{line_oa_auto_reply:true},{all_kenji_mutations:true}]) {
     const blocked=io({continuity});
@@ -57,17 +57,17 @@ for(const command of ['checkpts','package','regis','apply'])test(`old Hiro draft
     assert.equal(blocked.sent.length,0);
   }
 });
-for(const command of ['checkpts','package','regis','apply'])test(`exact command replies with model disabled: ${command}`,async()=>{
+for(const command of ['เช็กสมาชิกของฉัน','package','regis','apply'])test(`exact command replies with model disabled: ${command}`,async()=>{
   const x=io();const r=await runApprovedCategoryTurn({...env,LINE_KENJI_MODEL_ENABLED:'false'},event(command),runtime,x);
-  assert.equal(r.delivered,true);assert.equal(x.sent.length,1);assert.equal(r.decision.reply_source,`category_${command}`);
-  if(command==='checkpts')assert.match(r.decision.text,/ยังตรวจยืนยันสถานะสมาชิก/);
+  assert.equal(r.delivered,true);assert.equal(x.sent.length,1);assert.equal(r.decision.reply_source,`category_${command==='เช็กสมาชิกของฉัน'?'checkpts':command}`);
+  if(command==='เช็กสมาชิกของฉัน')assert.match(r.decision.text,/ยังตรวจยืนยันสถานะสมาชิก/);
 });
 test('checkpts reads only signed identity from canonical binding, not historical context',async()=>{
   let calls=0;const e={...env,MEMBER_PAGES_WORKER:{fetch:async request=>{
     const body=await request.json();calls++;assert.equal(body.line_user_id,'U'+'1'.repeat(32));assert.equal(body.intent,'membership_status');
     return Response.json({ok:true,authority:'my_mmd_entitlement_resolver_v1',identity_status:'resolved',membership:{level:'private_premium',label:'Premium',lifecycle:'active',expire_at:'2027-01-01'},points:{status:'verified',active_points:120}});
   }}};
-  const x=io();const r=await runApprovedCategoryTurn(e,event('CHECKPTS'),runtime,x);assert.equal(calls,1);assert.equal(r.delivered,true);assert.match(r.decision.text,/Premium/);assert.doesNotMatch(r.decision.text,/Points|120|CTA:/);assert.equal(r.decision.cta_route,'https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=overview');
+  const x=io();const r=await runApprovedCategoryTurn(e,event('เช็กสมาชิกของฉัน'),runtime,x);assert.equal(calls,1);assert.equal(r.delivered,true);assert.match(r.decision.text,/Premium/);assert.doesNotMatch(r.decision.text,/Points|120|CTA:/);assert.equal(r.decision.cta_route,'https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=overview');
 });
 test('package uses verified catalog and does not grant membership',async()=>{
   const e={...env,MEMBER_PAGES_WORKER:{fetch:async request=>{
@@ -78,7 +78,7 @@ test('package uses verified catalog and does not grant membership',async()=>{
 });
 test('owner takeover after truth blocks delivery',async()=>{
   let ownerReads=0;const x=io({owner:async()=>({ok:true,active:++ownerReads>1})});
-  assert.equal((await runApprovedCategoryTurn(env,event('checkpts'),runtime,x)).attempted,false);assert.equal(ownerReads,2);
+  assert.equal((await runApprovedCategoryTurn(env,event('เช็กสมาชิกของฉัน'),runtime,x)).attempted,false);assert.equal(ownerReads,2);
 });
 test('category diagnostics use fixed reasons for silent gates and failures',async()=>{
   const cases=[
@@ -90,7 +90,7 @@ test('category diagnostics use fixed reasons for silent gates and failures',asyn
     ['resolution exception',{continuity:async()=>{throw Error('private raw diagnostic')}} ,'category_resolution_exception'],
   ];
   for(const [name,overrides,reason] of cases){
-    const x=io(overrides),r=await runApprovedCategoryTurn(env,event('checkpts'),runtime,x);
+    const x=io(overrides),r=await runApprovedCategoryTurn(env,event('เช็กสมาชิกของฉัน'),runtime,x);
     assert.equal(r.decision.guard_reason,reason,name);assert.equal(r.attempted,false,name);assert.equal(x.sent.length,0,name);
     assert.doesNotMatch(r.decision.guard_reason,/private|raw|diagnostic|Error/);
   }
@@ -100,12 +100,12 @@ test('initial category gates have fixed diagnostic reasons',async()=>{
     [{ok:false},'category_initial_runtime_unavailable'],
     [{ok:true,controls:{line_oa_auto_reply:true}},'category_initial_kill_switch'],
   ]){
-    const r=await runApprovedCategoryTurn(env,event('checkpts'),initial,io());
+    const r=await runApprovedCategoryTurn(env,event('เช็กสมาชิกของฉัน'),initial,io());
     assert.equal(r.decision.guard_reason,expected);assert.equal(r.attempted,false);
   }
-  const off=await runApprovedCategoryTurn({...env,LINE_AUTO_REPLY_ENABLED:'false'},event('checkpts'),runtime,io());
+  const off=await runApprovedCategoryTurn({...env,LINE_AUTO_REPLY_ENABLED:'false'},event('เช็กสมาชิกของฉัน'),runtime,io());
   assert.equal(off.decision.guard_reason,'category_initial_disabled');
-  const stale=await runApprovedCategoryTurn(env,{...event('checkpts'),deliveryContext:{isRedelivery:true}},runtime,io());
+  const stale=await runApprovedCategoryTurn(env,{...event('เช็กสมาชิกของฉัน'),deliveryContext:{isRedelivery:true}},runtime,io());
   assert.equal(stale.decision.guard_reason,'category_event_ineligible');
 });
 test('category transport diagnostics distinguish suppression, failure, unconfigured and exception',async()=>{
@@ -117,14 +117,14 @@ test('category transport diagnostics distinguish suppression, failure, unconfigu
     ['missing result',async()=>undefined,'category_transport_failed'],
     ['exception',async()=>{throw Error('private raw diagnostic')},'category_transport_exception'],
   ]){
-    const r=await runApprovedCategoryTurn(env,event('checkpts'),runtime,io({send}));
+    const r=await runApprovedCategoryTurn(env,event('เช็กสมาชิกของฉัน'),runtime,io({send}));
     assert.equal(r.decision.guard_reason,reason,name);assert.equal(r.attempted,true,name);assert.equal(r.delivered,false,name);
     assert.doesNotMatch(r.decision.guard_reason,/private|raw|diagnostic|secret|Error/);
   }
 });
 test('successful checkpts preserves reply and membership button',async()=>{
   let args;const x=io({send:async(...values)=>{args=values;return {ok:true,status:200}}});
-  const r=await runApprovedCategoryTurn(env,event('checkpts'),runtime,x);
+  const r=await runApprovedCategoryTurn(env,event('เช็กสมาชิกของฉัน'),runtime,x);
   assert.equal(r.delivered,true);assert.equal(r.decision.guard_reason,undefined);
   assert.equal(args[2],r.decision.text);assert.equal(args[3].label,'เปิด My MMD');
 });
@@ -139,7 +139,7 @@ test('late guards retain bounded reasons without sending the resolved reply',asy
   ]){
     const x=io();const original=x[key];let reads=0;
     x[key]=async(...args)=>{if(++reads===1)return original(...args);if(value===null)throw Error('private');return value;};
-    const r=await runApprovedCategoryTurn(env,event('checkpts'),runtime,x);
+    const r=await runApprovedCategoryTurn(env,event('เช็กสมาชิกของฉัน'),runtime,x);
     assert.equal(r.decision.guard_reason,reason);assert.equal(r.attempted,false);assert.equal(r.delivered,false);assert.equal(x.sent.length,0);
   }
 });
@@ -149,7 +149,7 @@ test('unapproved greeting has a separate bounded silence reason',async()=>{
 });
 test('auto reply OFF prevents command truth reads and replies',async()=>{
   const e={...env,LINE_AUTO_REPLY_ENABLED:'false',MEMBER_PAGES_WORKER:{fetch:()=>{throw Error('must not read')}}};
-  for(const command of ['checkpts','package','regis','apply','โปร'])assert.equal((await runApprovedCategoryTurn(e,event(command),runtime,io())).attempted,false);
+  for(const command of ['เช็กสมาชิกของฉัน','package','regis','apply','โปร'])assert.equal((await runApprovedCategoryTurn(e,event(command),runtime,io())).attempted,false);
 });
 test('post announcement promo uses neutral approved navigation at Bangkok boundary',async()=>{
   for(const date of ['2026-12-01T00:00:00+07:00','2026-12-31T12:00:00+07:00']){

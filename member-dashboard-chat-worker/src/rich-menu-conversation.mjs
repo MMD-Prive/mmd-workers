@@ -1,3 +1,4 @@
+import { isKenjiExplicitTopicChange, kenjiPositiveClause } from "./kenji-context-followup.mjs";
 export { isCheckptsShortcut } from "./checkpts-command.mjs";
 
 // A delivered menu reply opens a bounded conversation, not general auto-reply.
@@ -138,8 +139,9 @@ export function resolveRichMenuConversation(event = {}, continuity = {}, now = D
       !Number.isFinite(expires) || expires <= now || expires > now + WINDOW_MS ||
       !Object.values(TOPICS).some(topics => topics.includes(state?.topic))) return null;
   if (event.type !== "message" || event.message?.type !== "text" || event.source?.type !== "user") return null;
-  const raw = String(event.message.text || "").trim();
-  if (!raw || raw.length > 600) return null;
+  const fullText = String(event.message.text || "").trim();
+  if (!fullText || fullText.length > 600 || isKenjiExplicitTopicChange(fullText)) return null;
+  const raw = kenjiPositiveClause(fullText) ?? fullText;
 
   let answer, intent = "support", handoff = false;
   const route = (intent, view) => `${ENTRY}?intent=${intent}&view=${view}`;
@@ -155,7 +157,7 @@ export function resolveRichMenuConversation(event = {}, continuity = {}, now = D
   } else if (/(ต่ออายุ|renew)/i.test(raw)) {
     answer = `เริ่มตรวจตัวเลือกต่ออายุของบัญชีเดิมได้ที่ ${route("renew", "package")} ครับ สถานะจะเปลี่ยนหลังการตรวจสอบทางการเท่านั้นครับ`;
     intent = "membership_renewal";
-  } else if (/(คะแนน|แต้ม|points?|\bcheckpts\b)/i.test(raw)) {
+  } else if (/(คะแนน|แต้ม|points?)/i.test(raw)) {
     answer = pointsAnswer();
     intent = "points_status";
   } else if (/(สถานะ|หมดอายุ|สิทธิ์|status)/i.test(raw)) {

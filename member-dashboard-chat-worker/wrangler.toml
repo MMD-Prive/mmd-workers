@@ -449,6 +449,8 @@ LINE_KENJI_AI_ENABLED = "true"
 KENJI_LINE_MODEL_ONLY_ENABLED = "false"
 # Keep the separate First Contact flow off; ordinary replies use reviewed intents.
 LINE_FIRST_CONTACT_ENABLED = "false"
+# Enable only after the private Telegram callback and LINE push path are verified.
+KENJI_LINE_PER_HANDOFF_ENABLED = "false"
 # Canonical Airtable Supplier registry used by the production LINE webhook.
 HIMAI_SUPPLIERS_TABLE_ID = "tbl81bnFyASeXCj9x"
 LINE_KENJI_KNOWLEDGE_ENABLED = "true"

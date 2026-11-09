@@ -19,6 +19,7 @@ import { fetchKenjiCanonicalPublishedKnowledge } from "./kenji-canonical-knowled
 import { resolveKenjiLineContinuity, writeKenjiLineMatrixTurn } from "./kenji-line-continuity-runtime.mjs";
 import { aggregateKenjiLineTurn, prepareKenjiLineWebhookBatch } from "./kenji-line-turn-aggregation.mjs";
 import { CHECKPTS_INTAKE, isCheckptsShortcut } from "./checkpts-command.mjs";
+import { readKenjiPerTakeover } from "./kenji-per-case.mjs";
 import { buildKenjiLineConversationHistory, recordDeliveredKenjiLineReply } from "./kenji-line-conversation-history.mjs";
 import { KENJI_CONTEXTUAL_SHADOW_INTERNALS } from "./kenji-line-contextual-understanding-shadow.mjs";
 // Canonical member-status voice policy (Per/HITO) is resolved before any generic LINE fallback.
@@ -1558,6 +1559,7 @@ export async function deliverLineText(env = {}, lineUserId, text, options = {}) 
       authorization: `Bearer ${token}`,
       "content-type": "application/json",
     },
+    signal: options.signal,
     body: JSON.stringify({
       to,
       messages: [{ type: "text", text: safeText }],
@@ -1766,6 +1768,11 @@ async function findExistingLineEvent(env = {}, eventId = "", inboxId = "", optio
 }
 
 export async function getLineOwnerTakeoverState(env = {}, lineUserId = "", continuity = {}, options = {}) {
+  if (!options.skipPerCase) {
+    const perCase = await readKenjiPerTakeover(env, lineUserId);
+    if (perCase.ok !== true || perCase.taken === true) return { ok: perCase.ok === true, active: perCase.taken === true,
+      reason: perCase.taken === true ? "owner_takeover" : "per_case_unavailable", source: "telegram_per_case" };
+  }
   const apiKey = asString(env.AIRTABLE_API_KEY);
   const baseId = asString(env.AIRTABLE_BASE_ID);
   const inboxTable = getAirtableTable(env);

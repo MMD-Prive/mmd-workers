@@ -1,5 +1,5 @@
 const COMMANDS = new Set([
-  "checkpts", "check point", "check points", "checkpoint", "เช็คสิทธิ์", "เช็กสิทธิ์",
+  "check point", "check points", "checkpoint", "เช็คสิทธิ์", "เช็กสิทธิ์",
 ]);
 
 // Only the signed Seed handler can request lightweight canonical intake.
@@ -11,4 +11,10 @@ export function isCheckptsShortcut(event = {}) {
   const command = String(event.message.text || "").normalize("NFKC")
     .replace(/[\u200B\uFEFF]/g, "").trim().replace(/\s+/g, " ").toLowerCase();
   return COMMANDS.has(command) || /^(?:สมาชิก(?:จะ)?หมดอายุ(?:เมื่อไหร่|วันไหน)?|วันหมดอายุ|เหลือกี่วัน)[\s?？!]*(?:ครับ)?$/.test(command);
+}
+
+// Keep retired input away from contextual booking and entitlement handlers.
+export function isRetiredCheckptsCommand(event = {}) {
+  return event.type === "message" && event.message?.type === "text" && event.source?.type === "user" &&
+    /^checkpts$/i.test(String(event.message.text || "").normalize("NFKC").replace(/[\u200B\uFEFF]/g, "").trim());
 }

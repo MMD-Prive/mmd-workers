@@ -115,7 +115,7 @@ test('Thai status CTA calls canonical membership resolver only; never classifies
  assert(calls>0);assert.equal(r.decision.reply_source,'category_checkpts');assert.match(r.decision.text,/ยังตรวจยืนยันสถานะสมาชิก/);assert.doesNotMatch(r.decision.text,/ไม่พบสมาชิก|ได้รับสิทธิ์|Points/);
 });
 test('existing legacy commands and application CTA still work without a model',async()=>{
- for(const text of ['checkpts','package','regis','apply','ดูแพ็กเกจสมาชิก','สมัครสมาชิก','สมัครเป็นนายแบบ']) {
+ for(const text of ['My Status','package','regis','apply','ดูแพ็กเกจสมาชิก','สมัครสมาชิก','สมัครเป็นนายแบบ']) {
   const x=io();assert.equal((await runApprovedCategoryTurn(env,event(text),runtime,x)).delivered,true);assert.equal(x.sent.length,1);
  }
 });
@@ -137,7 +137,6 @@ test('no stale promotion claims after campaign boundary and no invented new prof
 });
 
 for (const [command, existingCommand] of [
-  ['My Status', 'เช็กสมาชิกของฉัน'],
   ['Promotion', 'โปรเดือนนี้'],
   ['Find Model', 'น้องมาใหม่'],
   ['Apply Job', 'สนใจสมัครงาน'],
@@ -178,4 +177,13 @@ test('explicit model requests route to the right authenticated MY MMD view', asy
  const x = io();
  assert.equal((await runApprovedCategoryTurn(env, image, runtime, x)).attempted, false);
  assert.equal(x.sent.length, 0);
+});
+
+test('My Status answers in chat without Points or a link', async () => {
+ const r = await runApprovedCategoryTurn(env, event('My Status'), runtime, io());
+ assert.equal(r.delivered, true);
+ assert.equal(r.decision.reply_source, 'category_my_status');
+ assert.match(r.decision.text, /สถานะสมาชิก:.*\nวันหมดอายุ:/);
+ assert.doesNotMatch(r.decision.text, /https?:|Points/i);
+ assert.equal((await runApprovedCategoryTurn(env, event('Checkpts'), runtime, io())).delivered, false);
 });

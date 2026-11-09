@@ -1,3 +1,4 @@
+import { isRetiredCheckptsCommand } from "./checkpts-command.mjs";
 import { createLineSignature, extractKenjiModelLookupQuery, inferLineIntent, requestKenjiRuntimeStatus, resolveLineCardCampaignTrigger, verifyLineSignature } from "./index.js";
 import { ownerContextTestAllowed, ownerContextTestRequested } from "./kenji-owner-context-test.mjs";
 import { restrictedReplyCategories, approvedCategoryReply, isExplicitCategoryCommand } from './kenji-reply-category-gate.mjs';
@@ -16,6 +17,11 @@ import {
 } from "./kenji-line-canonical-client-resolution.mjs";
 import { tryHandleKenjiLv5LineOperationalRequest } from "./kenji-lv5-line-operational-request.mjs";
 import { notifyKenjiLv5Hype } from "./kenji-lv5-hype-alert.mjs";
+import { beginKenjiPerTurn, perCasesEnabled, queueKenjiPerCase } from "./kenji-per-case.mjs";
+import { isKenjiContextRoutingCandidate, isKenjiExplicitTopicChange, kenjiPositiveClause, resolveKenjiContextFollowup } from "./kenji-context-followup.mjs";
+import { resolveKenjiLineContinuity } from "./kenji-line-continuity-runtime.mjs";
+import { refineKenjiSalesIntent } from "./kenji-sales-reply-v2-policy.mjs";
+import { entryTopicCommand } from "./kenji-entry-topics.mjs";
 import { tryHandleKenjiSvipPhotoRevealRequest } from "./kenji-svip-photo-reveal.mjs";
 import { hasPendingDirectUserPaymentCandidate } from "./line-group-ingress-front-gate.js";
 
@@ -109,7 +115,8 @@ function silentModelOnlyAck(reason = "non_model_text") {
 
 function membershipStatusEvent(event = {}) {
   if (event?.type !== "message" || event?.message?.type !== "text") return false;
-  return membershipStatusText(event?.message?.text);
+  const raw = event.message.text;
+  return membershipStatusText(kenjiPositiveClause(raw) ?? raw);
 }
 
 function refineMembershipStatusEvent(event = {}) {
@@ -207,10 +214,19 @@ async function runOperationalTelemetry(env, operational) {
   }).catch(() => ({ skipped: true, reason: "lv5_operational_telemetry_runtime_error" }));
 }
 
-function scheduleOperationalSideEffects(ctx, env, events, operational) {
+function scheduleOperationalSideEffects(ctx, env, events, operational, perTurn) {
+  const decision = operational?.decision || {};
+  const protectedHandoff = /payment|identity|photo_reveal/i.test(String(decision.handoff_reason || ""));
+  const perCaseOwnsHandoff = perTurn?.accepted === true && !protectedHandoff;
   const work = Promise.all([
     runOperationalTelemetry(env, operational),
-    notifyKenjiLv5Hype(env, operational?.event || {}, operational?.decision || {}).catch(() => ({ skipped: true, reason: "lv5_hype_runtime_error" })),
+    perCaseOwnsHandoff ? null : notifyKenjiLv5Hype(env, operational?.event || {}, decision)
+      .catch(() => ({ skipped: true, reason: "lv5_hype_runtime_error" })),
+    perTurn?.accepted === true
+      ? queueKenjiPerCase(env, operational?.event || events[0], perTurn,
+        protectedHandoff ? { ...decision, handoff_required: false } : decision)
+        .catch(() => console.warn("kenji_per_case_unavailable"))
+      : null,
     syncCanonicalCustomerMemory(env, events).catch(() => []),
   ]);
   if (typeof ctx?.waitUntil === "function") ctx.waitUntil(work);
@@ -261,12 +277,19 @@ export async function handleKenjiSeedLineRequestWithRedeliveryRecovery(
     } catch (_) {
       ownerContextAllowed = false;
     }
-    if (ownerContextAllowed) return handleKenjiSeedLineRequest(request, env, ctx, legacyWorker);
+    if (ownerContextAllowed) return handleKenjiSeedLineRequest(request, env, ctx, legacyWorker, null);
   }
   // Recovery can clear the redelivery marker before Seed performs its own
   // per-event check. Keep owner-test mode disabled downstream unless the
   // wrapper explicitly authorized the original singleton event above.
   const seedEnv = withoutOwnerContextTest(env);
+  const singleEvent = events.length === 1 ? events[0] : null;
+  let perTurn;
+  if (singleEvent && perCasesEnabled(env) && singleEvent.source?.type === "user") {
+    const runtime = await requestKenjiRuntimeStatus(env).catch(() => ({ ok: false }));
+    perTurn = runtime.ok === true && runtime.controls?.all_kenji_mutations !== true &&
+      runtime.controls?.line_oa_auto_reply !== true ? await beginKenjiPerTurn(env, singleEvent) : null;
+  }
   // A fresh direct-user image candidate must reach the existing evidence intake
   // before the LV5 payment-word handler can consume the follow-up silently.
   if (events.length === 1 && events[0]?.deliveryContext?.isRedelivery !== true && text(events[0]?.mode).toLowerCase() !== "standby") {
@@ -294,7 +317,25 @@ export async function handleKenjiSeedLineRequestWithRedeliveryRecovery(
   const publicCategory = restrictedReplyCategories(env) && events.length === 1 &&
     (isExplicitCategoryCommand(events[0], env) ||
       approvedCategoryReply(events[0], env, {ownerFaq:approvedPublicQa,careBackOctoberReply}));
-  if (redeliveryIndexes.length === 0 && membershipStatusIndexes.length === 0 && !hasCardCampaignAction && !hasPendingCardCampaign && !publicCategory) {
+  const exactEntry = isRetiredCheckptsCommand(singleEvent || {}) ||
+    ["my_status", "models"].includes(entryTopicCommand(singleEvent || {}));
+  const canTryOperational = redeliveryIndexes.length === 0 && membershipStatusIndexes.length === 0 &&
+    !hasCardCampaignAction && !hasPendingCardCampaign && !publicCategory && !exactEntry &&
+    !(perTurn && (perTurn.ok !== true || perTurn.accepted !== true || perTurn.taken === true));
+  // An active booking draft must not consume a proven correction as a fresh
+  // booking action. Preserve all protected/payment routes and explicit commands.
+  let contextualFollowup = false;
+  const raw = singleEvent?.message?.type === "text" && singleEvent?.source?.type === "user"
+    ? singleEvent.message.text : "";
+  if (canTryOperational && !restrictedReplyCategories(env) && enabled(env.LINE_KENJI_DETERMINISTIC_CONVERSATION_ENABLED) &&
+      enabled(env.KENJI_LINE_CONTINUITY_ENABLED) && isKenjiContextRoutingCandidate(raw)) {
+    const intent = refineKenjiSalesIntent(raw, inferLineIntent(raw, singleEvent));
+    const continuity = isKenjiExplicitTopicChange(raw) ? null :
+      await resolveKenjiLineContinuity({ env, event: singleEvent, currentIntent: intent }).catch(() => null);
+    contextualFollowup = isKenjiExplicitTopicChange(raw) || kenjiPositiveClause(raw) !== null ||
+      Boolean(continuity && resolveKenjiContextFollowup(raw, intent, continuity));
+  }
+  if (canTryOperational && !contextualFollowup) {
     const operationalRequest = new Request(request.url, {
       method: "POST",
       headers: new Headers(request.headers),
@@ -302,13 +343,13 @@ export async function handleKenjiSeedLineRequestWithRedeliveryRecovery(
     });
     const photoReveal = await tryHandleKenjiSvipPhotoRevealRequest(operationalRequest.clone(), env, ctx).catch(() => null);
     if (photoReveal?.handled && photoReveal.response) {
-      const sideEffects = scheduleOperationalSideEffects(ctx, env, events, photoReveal);
+      const sideEffects = scheduleOperationalSideEffects(ctx, env, events, photoReveal, perTurn);
       if (typeof ctx?.waitUntil !== "function") await sideEffects;
       return photoReveal.response;
     }
     const operational = await tryHandleKenjiLv5LineOperationalRequest(operationalRequest, env, ctx).catch(() => null);
     if (operational?.handled && operational.response) {
-      const sideEffects = scheduleOperationalSideEffects(ctx, env, events, operational);
+      const sideEffects = scheduleOperationalSideEffects(ctx, env, events, operational, perTurn);
       if (typeof ctx?.waitUntil !== "function") await sideEffects;
       return operational.response;
     }
@@ -323,7 +364,7 @@ export async function handleKenjiSeedLineRequestWithRedeliveryRecovery(
   const hasRecoverable = redeliveryIndexes.some((index) => outcomes.get(index)?.retry_allowed === true);
   const hasMembershipStatusRefinement = membershipStatusIndexes.length > 0;
   if (!hasRecoverable && !hasMembershipStatusRefinement) {
-    const response = await handleKenjiSeedLineRequest(request, seedEnv, ctx, legacyWorker);
+    const response = await handleKenjiSeedLineRequest(request, seedEnv, ctx, legacyWorker, perTurn);
     const work = scheduleCanonicalCustomerMemory(ctx, env, events);
     if (typeof ctx?.waitUntil !== "function") await work;
     return response;
@@ -346,7 +387,7 @@ export async function handleKenjiSeedLineRequestWithRedeliveryRecovery(
     body: transformedBody,
   });
 
-  const response = await handleKenjiSeedLineRequest(transformedRequest, seedEnv, ctx, legacyWorker);
+  const response = await handleKenjiSeedLineRequest(transformedRequest, seedEnv, ctx, legacyWorker, perTurn);
   const work = scheduleCanonicalCustomerMemory(ctx, env, transformedEvents);
   if (typeof ctx?.waitUntil !== "function") await work;
   if (!response?.headers) return response;
