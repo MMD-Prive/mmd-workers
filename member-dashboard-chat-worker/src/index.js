@@ -334,8 +334,9 @@ const CARD_MODEL_ENTRY_NAMES = new Set(Object.keys(LINE_CARD_21829530_TRIGGERS))
 
 export function resolveLineCardCampaignTrigger(text = "") {
   const rawTrigger = asString(text).normalize("NFKC").trim();
+  // Card Manager publishes BOOK EI verbatim; other spellings are not Card actions.
   const cardTrigger = Object.keys(LINE_CARD_21829530_TRIGGERS)
-    .find((key) => key.toLowerCase() === rawTrigger.toLowerCase());
+    .find((key) => key === "BOOK EI" ? rawTrigger === key : key.toLowerCase() === rawTrigger.toLowerCase());
   if (!cardTrigger) return null;
   const config = LINE_CARD_21829530_TRIGGERS[cardTrigger];
   return {

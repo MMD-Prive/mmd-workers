@@ -763,7 +763,7 @@ test("production route keeps campaign silent on queue failure, disabled flags, a
 
 test("production route follows the exact LINE Card action text contract", async () => {
   for (const [text, expectedQueue] of [
-    ["JASPER", 1], ["BOOK EI", 1], ["JASPAL", 0], ["Book EI", 0],
+    ["JASPER", 1], ["BOOK EI", 1], ["JASPAL", 0], ["Book EI", 0], ["book ei", 0],
     ["Sky B", 0], ["https://mmdbkk.com/my-mmd", 0],
   ]) {
     const f = fixture();

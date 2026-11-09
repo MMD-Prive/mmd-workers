@@ -373,7 +373,11 @@ test("card triggers are campaign leads while neutral codes remain model lookups"
   assert.equal(resolveLineCardCampaignTrigger("Sky B"), null);
   assert.notEqual(inferLineIntent("Sky B", lineEvent("Sky B")), "card_campaign_lead");
   assert.equal(resolveLineCardCampaignTrigger("BOOK EI")?.card_trigger, "BOOK EI");
-  assert.equal(resolveLineCardCampaignTrigger("Book EI")?.card_trigger, "BOOK EI");
+  for (const name of ["Book EI", "book ei"]) {
+    assert.equal(resolveLineCardCampaignTrigger(name), null);
+    assert.equal(resolveKenjiModelIntent(name).source, "model_lookup");
+    assert.notEqual(inferLineIntent(name, lineEvent(name)), "card_campaign_lead");
+  }
   assert.equal(resolveLineCardCampaignTrigger("https://mmdbkk.com/my-mmd"), null);
   assert.notEqual(inferLineIntent("https://mmdbkk.com/my-mmd", lineEvent("https://mmdbkk.com/my-mmd")), "card_campaign_lead");
   assert.equal(extractKenjiModelLookupQuery("/my-mmd"), "");
