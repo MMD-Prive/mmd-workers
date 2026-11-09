@@ -717,6 +717,102 @@ test("a durable brief with a planned lead cannot claim a different current lead"
   });
 });
 
+for (const durable of [false, true]) {
+  test(`retrying an older lead does not take over a newer lead (${durable ? "durable" : "inline"} next brief)`, async () => {
+    const f = fixture({ contextPutFailures: 1 });
+    const pending = [];
+    const ctx = { waitUntil(promise) { pending.push(Promise.resolve(promise)); } };
+    const now = Date.now() - 5000;
+    // Equal timestamps exercise the stable first-observed tie breaker.
+    const oldLead = lineEvent("JASPER", "msg-late-context-a", { timestamp: now });
+    const newLead = lineEvent("BOOK EI", "msg-late-context-b", { timestamp: now });
+    const brief = lineEvent("brief for B", "msg-brief-for-newer", { timestamp: now + 1000 });
+    const stub = f.env.KENJI_MODEL_DEDUPE.get(`line-card-ingress-v1:${createHash("sha256").update(oldLead.message.id).digest("hex")}`);
+    const ingress = async (action) => (await stub.fetch("https://kenji-model-dedupe.internal/campaign-lead/ingress", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action }),
+    })).json();
+    const deliver = async (event, mode) => {
+      assert.equal((await route.fetch(await signedWebhook([event], f.env), f.env, mode)).status, 200);
+      for (let round = 0; round < 6; round += 1) {
+        const count = pending.length;
+        await Promise.all(pending);
+        if (pending.length === count) break;
+      }
+    };
+    await withFetch(f.fetch, async () => {
+      await deliver(oldLead, ctx);
+      assert.equal((await ingress("status")).status, "pending");
+      await deliver(newLead, ctx);
+      const realNow = Date.now;
+      try {
+        Date.now = () => realNow() + 2000;
+        assert.equal((await ingress("process")).status, "done");
+      } finally { Date.now = realNow; }
+      await deliver(brief, durable ? ctx : undefined);
+    });
+    assert.ok(f.records.has("line_msg-late-context-a"));
+    assert.ok(f.records.has("line_msg-late-context-b"));
+    assert.equal(JSON.parse(f.records.get("line_msg-brief-for-newer").fields.payload_json).lead_inbox_id, "line_msg-late-context-b");
+  });
+}
+
+test("a lost brief context commit acknowledgement recovers without a duplicate write or reply", async () => {
+  const f = fixture();
+  const pending = [];
+  const ctx = { waitUntil(promise) { pending.push(Promise.resolve(promise)); } };
+  const binding = f.env.KENJI_MODEL_DEDUPE;
+  const get = binding.get.bind(binding);
+  let loseCommitOnce = true;
+  binding.get = (id) => {
+    const stub = get(id);
+    return {
+      async fetch(input, init) {
+        const response = await stub.fetch(input, init);
+        if (loseCommitOnce && String(input).endsWith("/campaign-lead/context") &&
+            JSON.parse(init?.body || "{}").action === "commit" && (await response.clone().json()).committed === true) {
+          loseCommitOnce = false;
+          return Response.json({ ok: false }, { status: 503 });
+        }
+        return response;
+      },
+    };
+  };
+  const now = Date.now();
+  const brief = lineEvent("brief for A", "msg-lost-commit-brief", { timestamp: now });
+  const key = createHash("sha256").update(brief.message.id).digest("hex");
+  const stub = binding.get(`line-card-ingress-v1:${key}`);
+  const ingress = async (action) => (await stub.fetch("https://kenji-model-dedupe.internal/campaign-lead/ingress", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action }),
+  })).json();
+  const deliver = async (event) => {
+    assert.equal((await route.fetch(await signedWebhook([event], f.env), f.env, ctx)).status, 200);
+    for (let round = 0; round < 6; round += 1) {
+      const count = pending.length;
+      await Promise.all(pending);
+      if (pending.length === count) break;
+    }
+  };
+  await withFetch(f.fetch, async () => {
+    await deliver(lineEvent("JASPER", "msg-lost-commit-lead", { timestamp: now - 1000 }));
+    await deliver(brief);
+    assert.equal((await ingress("status")).status, "pending");
+    assert.equal(JSON.parse(f.records.get("line_msg-lost-commit-brief").fields.payload_json).lead_inbox_id, "line_msg-lost-commit-lead");
+    await deliver(lineEvent("BOOK EI", "msg-lost-commit-newer", { timestamp: now + 1000 }));
+    const realNow = Date.now;
+    try {
+      Date.now = () => realNow() + 2000; // Still inside the normal LINE reply window.
+      const result = await ingress("process");
+      assert.equal(result.status, "done");
+      assert.equal(result.reason, "campaign_brief_already_committed");
+    } finally { Date.now = realNow; }
+    const receipt = await ingress("status");
+    assert.equal(receipt.attempts, 2);
+    assert.equal(receipt.reply_suppressed, true);
+  });
+  assert.equal(f.calls.filter(({ type, body }) => type === "queue" && body.fields.inbox_id === "line_msg-lost-commit-brief").length, 1);
+  assert.equal(f.calls.filter(({ type, body }) => type === "reply" && body.replyToken === brief.replyToken).length, 0);
+});
+
 for (const inBatch of [false, true]) {
   test(`durable brief retry retains its original lead (${inBatch ? "same batch" : "separate webhooks"})`, async () => {
     const f = fixture();

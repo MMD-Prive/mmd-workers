@@ -3279,6 +3279,7 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
     const campaignEvent = Boolean(campaignTrigger || campaignBrief || campaignContextUnavailable);
     const intent = campaignBrief ? "card_campaign_brief" : effectiveIntent;
     const modelOnlyAllowed = !modelOnlyMode || kenjiLineModelOnlyAllowsReply({ intent, modelIntent });
+    const campaignBriefRecovered = campaignBrief && campaignContextResult.brief_committed === true && !campaignContextUnavailable;
     const campaignLeadEnabled = Boolean(
       !ownerReplyBlocked &&
       !campaignContextUnavailable &&
@@ -3288,7 +3289,7 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
       campaignPilotEligible &&
       (!campaignBrief || campaignContextResult.claimed === true)
     );
-    let campaignLeadQueued = false;
+    let campaignLeadQueued = campaignBriefRecovered;
     const campaignGateReason = !campaignEvent
       ? "not_campaign"
       : campaignContextUnavailable ? "campaign_context_unavailable"
@@ -3299,7 +3300,9 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
       : campaignBrief && campaignContextResult.claimed !== true ? "campaign_context_already_claimed"
       : "campaign_lead_not_processed";
     let campaignLeadClaim = { ok: false, claimed: false, reason: campaignGateReason };
-    let campaignLeadRecord = campaignEvent ? { skipped: true, reason: campaignLeadClaim.reason, deduped: false } : null;
+    let campaignLeadRecord = campaignBriefRecovered
+      ? { reason: "campaign_brief_already_committed", deduped: true }
+      : campaignEvent ? { skipped: true, reason: campaignLeadClaim.reason, deduped: false } : null;
     if (campaignLeadEnabled) {
       const campaignTakeover = lineBrainEnabled
         ? ownerTakeover
@@ -3309,6 +3312,17 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
         : campaignTakeover.active === true
           ? { ok: true, claimed: false, reason: "owner_takeover_active" }
           : await claimLineCardCampaignLead(env, event, "claim");
+      if (campaignLeadClaim.claimed === true && campaignTrigger) {
+        const timestamp = event.timestamp;
+        const order = await lineCardCampaignContext(env, lineUserId, "observe", {
+          expected_lead_inbox_id: `line_${getStableLineMessageId(event)}`,
+          occurred_at: Number.isFinite(timestamp) && timestamp > 0 ? timestamp : (options.receivedAt ?? Date.now()),
+        });
+        if (order.observed !== true) {
+          await claimLineCardCampaignLead(env, event, "release", campaignLeadClaim.claim_token);
+          campaignLeadClaim = { claimed: false, reason: "campaign_lead_order_unavailable" };
+        }
+      }
       if (campaignLeadClaim.claimed === true) {
         try {
           campaignLeadRecord = await writeLineCardCampaignEventToConsoleInbox(
@@ -3415,7 +3429,7 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
               modelIntent,
             })
           : { text: "", fallback: false, reply_source: null, model_attempted: false, model_success: false, model_latency_ms: 0, knowledge_hits: 0, guard_blocked: false, guard_reason: "" });
-    let replyText = replyDecision.text;
+    let replyText = campaignBriefRecovered ? "" : replyDecision.text;
     const postDecisionTakeover = lineUserId && replyText
       ? (lineBrainEnabled
           ? await getLineOwnerTakeoverState(env, lineUserId, continuity)
@@ -3428,6 +3442,7 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
       (postDecisionTakeover?.ok !== true && postDecisionTakeover?.reason === "takeover_lookup_unconfigured");
     let shouldReply = Boolean(
       modelOnlyAllowed &&
+      !campaignBriefRecovered &&
       (autoReplyEnabled || (campaignEvent && campaignCanReply)) &&
       eventMode !== "standby" &&
       replyText &&
@@ -3674,6 +3689,7 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
       intent,
       campaign_event: campaignEvent,
       campaign_lead_queued: campaignLeadQueued,
+      campaign_brief_recovered: campaignBriefRecovered,
       campaign_lead_reason: asString(campaignLeadRecord?.reason || campaignLeadClaim.reason).slice(0, 80),
       campaign_queue_status: Number.isInteger(campaignLeadRecord?.status) ? campaignLeadRecord.status : null,
       deduped: Boolean(record?.deduped),
@@ -3732,7 +3748,7 @@ export async function processDurableLineCardEvent(event, env = {}, receivedAt = 
     method: "POST",
     headers: { "content-type": "application/json", "x-line-signature": signature },
     body,
-  }), env, null, { suppressCampaignReply, requireCampaignContext: true, expectedLeadMessageId });
+  }), env, null, { suppressCampaignReply, requireCampaignContext: true, expectedLeadMessageId, receivedAt });
   if (!response.ok) return { ok: false, reason: "campaign_processor_unavailable" };
   const result = await response.json().catch(() => ({}));
   const saved = result?.saved?.[0];
@@ -3741,7 +3757,7 @@ export async function processDurableLineCardEvent(event, env = {}, receivedAt = 
     reason: saved?.campaign_lead_reason || "campaign_not_queued",
     queue_status: saved?.campaign_queue_status || null,
     replied: saved?.replied === true,
-    reply_suppressed: suppressCampaignReply,
+    reply_suppressed: suppressCampaignReply || saved?.campaign_brief_recovered === true,
   };
 }
 
