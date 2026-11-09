@@ -112,7 +112,7 @@ test('new and existing member CTAs are separate and promotional dates stay canon
 test('Thai status CTA calls canonical membership resolver only; never classifies missing truth as new',async()=>{
  let calls=0;const e={...env,MEMBER_PAGES_WORKER:{fetch:async req=>{calls++;const body=await req.json();assert.equal(body.intent,'membership_status');return Response.json({ok:false},{status:503});}}};
  const r=await runApprovedCategoryTurn(e,event('เช็กสิทธิ์โปรของฉัน'),runtime,io());
- assert(calls>0);assert.equal(r.decision.reply_source,'category_checkpts');assert.match(r.decision.text,/ยังตรวจยืนยันสถานะสมาชิก/);assert.doesNotMatch(r.decision.text,/ไม่พบสมาชิก|ได้รับสิทธิ์|Points/);
+ assert(calls>0);assert.equal(r.decision.reply_source,'category_checkpts');assert.match(r.decision.text,/สถานะสมาชิก: ยังตรวจสอบไม่ได้/);assert.match(r.decision.text,/วันหมดอายุ: ยังตรวจสอบไม่ได้/);assert.doesNotMatch(r.decision.text,/ไม่พบสมาชิก|ได้รับสิทธิ์|Points|https?:\/\//);
 });
 test('existing legacy commands and application CTA still work without a model',async()=>{
  for(const text of ['checkpts','package','regis','apply','ดูแพ็กเกจสมาชิก','สมัครสมาชิก','สมัครเป็นนายแบบ']) {
@@ -152,6 +152,10 @@ for (const [command, existingCommand] of [
     assert.equal(english.sent.length, 1);
     assert.deepEqual(result, expected);
     assert.deepEqual(english.sent, thai.sent);
+    if (command === 'My Status') {
+      assert.match(english.sent[0], /สถานะสมาชิก:.*วันหมดอายุ/is);
+      assert.doesNotMatch(english.sent[0], /Points|Checkpts|คะแนน|https?:\/\//i);
+    }
     assert.equal(entryTopicCommand(event(`${command} please`)), '');
     assert.equal(entryTopicCommand({...event(command), source: {type: 'group'}}), '');
   });

@@ -30,19 +30,17 @@ test('only current exact commands bypass operational routing in category mode',(
 });
 function io(overrides={}){const sent=[];return {sent,continuity:async()=>({available:true}),runtime:async()=>runtime,owner:async()=>({ok:true,active:false}),send:async(e,t,s,b)=>{assert(categoryReplyTransportAllowed(e,t,s,b));sent.push(s);return {ok:true,status:200}},...overrides};}
 
-test('membership URI grant binds exact command, text, token and canonical destination',()=>{
+test('My Status does not append a LIFF link or membership quick reply',()=>{
  for(const suffix of ['status&view=overview','renew&view=package']){
   const uri='https://miniapp.line.me/2010862595-yT4DCEMc/?intent='+suffix;
-  const d={intent:'approved_command',reply_source:'category_checkpts',cta_route:uri,text:'เปิด My MMD → '+uri};
+  const d={intent:'approved_command',reply_source:'category_checkpts',cta_route:'',text:'สถานะสมาชิก: Private Premium · ใช้งานอยู่\nวันหมดอายุ: 2027-01-01'};
   const env=withCategoryReplyGrant({KENJI_LINE_REPLY_CATEGORY_MODE:'approved_qa_promo'},'fixture',d);
   const b=membershipUriButton(d);
-  assert.equal(b.label,'เปิด My MMD');
-  assert.equal(categoryReplyTransportAllowed(env,'fixture',d.text,b),true);
-  for(const bad of [null,{...b,uri:'https://evil.example/'},{...b,label:'other'},{...b,extra:true}])assert.equal(categoryReplyTransportAllowed(env,'fixture',d.text,bad),false);
-  assert.equal(categoryReplyTransportAllowed(env,'other',d.text,b),false);
-  assert.equal(categoryReplyTransportAllowed(env,'fixture',d.text+' changed',b),false);
-  assert.equal(membershipUriButton({...d,reply_source:'category_package'}),null);
-  assert.equal(membershipUriButton({...d,cta_route:uri+'&next=evil'}),null);
+  assert.equal(b,null);
+  assert.equal(categoryReplyTransportAllowed(env,'fixture',d.text,null),true);
+  assert.equal(categoryReplyTransportAllowed(env,'fixture',d.text,{label:'เปิด My MMD',uri}),false);
+  assert.equal(categoryReplyTransportAllowed(env,'other',d.text,null),false);
+  assert.equal(categoryReplyTransportAllowed(env,'fixture',d.text+' changed',null),false);
  }
 });
 for(const command of ['checkpts','package','regis','apply'])test(`old Hiro draft cannot replace category reply or bypass pause: ${command}`,async()=>{
@@ -60,14 +58,18 @@ for(const command of ['checkpts','package','regis','apply'])test(`old Hiro draft
 for(const command of ['checkpts','package','regis','apply'])test(`exact command replies with model disabled: ${command}`,async()=>{
   const x=io();const r=await runApprovedCategoryTurn({...env,LINE_KENJI_MODEL_ENABLED:'false'},event(command),runtime,x);
   assert.equal(r.delivered,true);assert.equal(x.sent.length,1);assert.equal(r.decision.reply_source,`category_${command}`);
-  if(command==='checkpts')assert.match(r.decision.text,/ยังตรวจยืนยันสถานะสมาชิก/);
+  if(command==='checkpts'){
+    assert.match(r.decision.text,/สถานะสมาชิก: ยังตรวจสอบไม่ได้/);
+    assert.match(r.decision.text,/วันหมดอายุ: ยังตรวจสอบไม่ได้/);
+    assert.doesNotMatch(r.decision.text,/https?:\/\//);
+  }
 });
 test('checkpts reads only signed identity from canonical binding, not historical context',async()=>{
   let calls=0;const e={...env,MEMBER_PAGES_WORKER:{fetch:async request=>{
     const body=await request.json();calls++;assert.equal(body.line_user_id,'U'+'1'.repeat(32));assert.equal(body.intent,'membership_status');
     return Response.json({ok:true,authority:'my_mmd_entitlement_resolver_v1',identity_status:'resolved',membership:{level:'private_premium',label:'Premium',lifecycle:'active',expire_at:'2027-01-01'},points:{status:'verified',active_points:120}});
   }}};
-  const x=io();const r=await runApprovedCategoryTurn(e,event('CHECKPTS'),runtime,x);assert.equal(calls,1);assert.equal(r.delivered,true);assert.match(r.decision.text,/Premium/);assert.doesNotMatch(r.decision.text,/Points|120|CTA:/);assert.equal(r.decision.cta_route,'https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=overview');
+  const x=io();const r=await runApprovedCategoryTurn(e,event('CHECKPTS'),runtime,x);assert.equal(calls,1);assert.equal(r.delivered,true);assert.match(r.decision.text,/Premium/);assert.match(r.decision.text,/วันหมดอายุ: 2027-01-01/);assert.doesNotMatch(r.decision.text,/Points|120|CTA:|https?:\/\//);assert.equal(r.decision.cta_route,'');
 });
 test('package uses verified catalog and does not grant membership',async()=>{
   const e={...env,MEMBER_PAGES_WORKER:{fetch:async request=>{
@@ -122,11 +124,11 @@ test('category transport diagnostics distinguish suppression, failure, unconfigu
     assert.doesNotMatch(r.decision.guard_reason,/private|raw|diagnostic|secret|Error/);
   }
 });
-test('successful checkpts preserves reply and membership button',async()=>{
+test('successful My Status reply contains no LIFF button',async()=>{
   let args;const x=io({send:async(...values)=>{args=values;return {ok:true,status:200}}});
   const r=await runApprovedCategoryTurn(env,event('checkpts'),runtime,x);
   assert.equal(r.delivered,true);assert.equal(r.decision.guard_reason,undefined);
-  assert.equal(args[2],r.decision.text);assert.equal(args[3].label,'เปิด My MMD');
+  assert.equal(args[2],r.decision.text);assert.equal(args[3],null);
 });
 test('late guards retain bounded reasons without sending the resolved reply',async()=>{
   for(const [key,value,reason] of [
