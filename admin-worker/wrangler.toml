@@ -1099,8 +1099,8 @@ PREMIUM_GROUP_CLEANUP_DRY_RUN = "true"
 # #2141 Telegram chat_join_request -> private Owner review staging.
 # Standard was explicitly enabled on 2026-11-08 and must survive Wrangler redeploys.
 TELEGRAM_STANDARD_JOIN_CAPTURE_ENABLED = "true"
-# Premium intake is a separate new capture lane; off until owner-approved Admin release & smoke test.
-TELEGRAM_PREMIUM_JOIN_CAPTURE_ENABLED = "false"
+# Premium owner-reviewed Admin release completed 2026-11-09; keep the enabled intake setting across future deploys.
+TELEGRAM_PREMIUM_JOIN_CAPTURE_ENABLED = "true"
 AIRTABLE_TELEGRAM_STANDARD_JOIN_INTAKE_TABLE_ID = "tblGFkPcMFsxsW5Ul"
 AIRTABLE_TELEGRAM_PREMIUM_JOIN_INTAKE_TABLE_ID = "tblQVya3rvb1CpRrB"
 AIRTABLE_TELEGRAM_LINK_SOURCE_STAGING_TABLE_ID = "tblCVwWXwyEhU2AEN"
