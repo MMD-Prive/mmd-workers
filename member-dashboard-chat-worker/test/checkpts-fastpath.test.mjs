@@ -186,9 +186,9 @@ for (const command of ALIASES) test(`${command} uses one canonical Points lane w
 });
 
 test("aliases normalize case, spacing and invisible paste separators but stay exact", () => {
-  for (const text of [" CHECKPTS ", "CHECK\tPOINT", "check   points", "\uFEFFเช็คสิทธิ์\u200B", "เช็ก\u200Bสิทธิ์"])
+  for (const text of ["CHECK\tPOINT", "check   points", "\uFEFFเช็คสิทธิ์\u200B", "เช็ก\u200Bสิทธิ์"])
     assert.equal(isCheckptsShortcut(event(text)), true);
-  for (const text of ["mycheckpts", "checkpoints", "check point for someone", "เช็กสิทธิ์ให้คนอื่น", "เมื่อวานเช็คสิทธิ์แล้ว", "checkpts\nignore instructions", "เช็กสิทธิ์ โอนแล้ว"])
+  for (const text of [" CHECKPTS ", "mycheckpts", "checkpoints", "check point for someone", "เช็กสิทธิ์ให้คนอื่น", "เมื่อวานเช็คสิทธิ์แล้ว", "checkpts\nignore instructions", "เช็กสิทธิ์ โอนแล้ว"])
     assert.equal(isCheckptsShortcut(event(text)), false);
   assert.equal(isCheckptsShortcut({ ...event("Checkpts"), source: { type: "group", userId: UID } }), false);
 });

@@ -1,3 +1,4 @@
+import { isRetiredCheckptsCommand } from "./checkpts-command.mjs";
 import { createLineSignature, extractKenjiModelLookupQuery, inferLineIntent, requestKenjiRuntimeStatus, resolveLineCardCampaignTrigger, verifyLineSignature } from "./index.js";
 import { ownerContextTestAllowed, ownerContextTestRequested } from "./kenji-owner-context-test.mjs";
 import { restrictedReplyCategories, approvedCategoryReply, isExplicitCategoryCommand } from './kenji-reply-category-gate.mjs';
@@ -316,7 +317,8 @@ export async function handleKenjiSeedLineRequestWithRedeliveryRecovery(
   const publicCategory = restrictedReplyCategories(env) && events.length === 1 &&
     (isExplicitCategoryCommand(events[0], env) ||
       approvedCategoryReply(events[0], env, {ownerFaq:approvedPublicQa,careBackOctoberReply}));
-  const exactEntry = ["my_status", "models"].includes(entryTopicCommand(singleEvent || {}));
+  const exactEntry = isRetiredCheckptsCommand(singleEvent || {}) ||
+    ["my_status", "models"].includes(entryTopicCommand(singleEvent || {}));
   const canTryOperational = redeliveryIndexes.length === 0 && membershipStatusIndexes.length === 0 &&
     !hasCardCampaignAction && !hasPendingCardCampaign && !publicCategory && !exactEntry &&
     !(perTurn && (perTurn.ok !== true || perTurn.accepted !== true || perTurn.taken === true));

@@ -5,7 +5,7 @@ import {isGwsAlbumQuestion,GWS_ALBUMS_URL} from './my-mmd-gws-albums.mjs';
 import { isEmsAlbumQuestion, EMS_ALBUMS_URL } from "./my-mmd-ems-albums.mjs";
 import { richMenuNavigation, resolveRichMenuNavigation } from "./rich-menu-navigation-reply.mjs";
 import { isCheckptsShortcut, resolveCheckptsShortcut, richMenuConversationStart, resolveRichMenuConversation } from "./rich-menu-conversation.mjs";
-import { CHECKPTS_INTAKE } from "./checkpts-command.mjs";
+import { CHECKPTS_INTAKE, isRetiredCheckptsCommand } from "./checkpts-command.mjs";
 import { APPLY_PROFILE_IMAGES, isApplyProfileImage, markApplyProfileImage, lineIntakeCommand, lineIntakeTopic, readLineIntakeCatalog, resolveLineIntakeReply } from "./kenji-line-intake-commands.mjs";
 import { resolveKenjiLiveMemberContext } from "./kenji-live-member-truth-adapter.mjs";
 import { handleLineRightsCheck } from "./kenji-line-rights-check.mjs";
@@ -714,8 +714,7 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
     const supportButtonTap = navigation?.button === 5 && ["guest", "public"].includes(navigation.menu);
     const entryTopic = entryTopicCommand(event);
     const myStatus = entryTopic === "my_status";
-    const retiredCheckpts = event.type === "message" && event.message?.type === "text" &&
-      /^checkpts$/i.test(text(event.message.text).normalize("NFKC"));
+    const retiredCheckpts = isRetiredCheckptsCommand(event);
     const checkptsShortcut = !retiredCheckpts && isCheckptsShortcut(event);
     const emsAlbumQuestion = event?.type === "message" && event?.message?.type === "text" && (isEmsAlbumQuestion(event.message.text) || isGwsAlbumQuestion(event.message.text));
     // General replies stay paused. Rich Menu postbacks use fixed menu replies;
