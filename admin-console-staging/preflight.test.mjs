@@ -37,6 +37,15 @@ test("staging only accepts its own Owner session, serves the original form, and 
     assert.match(consolePage.headers.get("content-security-policy") || "", /font-src 'self' https:\/\/cdn\.prod\.website-files\.com/);
     assert.equal(consolePage.headers.get("x-content-type-options"), "nosniff");
     const html = await consolePage.text();
+    assert.match(html, /id="ac-staging-release-status"/);
+    assert.match(html, /PR #3152/);
+    assert.match(html, /Smoke/);
+    assert.match(html, /6ee6eee7-235c-478e-bd12-3dbda2b3519c/);
+    assert.match(html, /class="ac-staging-release__summary"/);
+    assert.doesNotMatch(html, /ADMIN_SESSION_SECRET\s*=/);
+    assert.doesNotMatch(html, /ADMIN_LOGIN_CREDENTIAL\s*=/);
+    const loginPage = await send("/internal/admin/login", { headers });
+    assert.doesNotMatch(await loginPage.text(), /id="ac-staging-release-status"/);
     assert.doesNotMatch(html, /https:\/\/(?:www\.)?mmdbkk\.com\/(?:internal\/admin|v1\/admin)/i);
     const form = await send(create, { headers: { ...headers, Referer: origin + consolePath,
       "Sec-Fetch-Dest": "iframe", "Sec-Fetch-Mode": "navigate", "Sec-Fetch-Site": "same-origin",
