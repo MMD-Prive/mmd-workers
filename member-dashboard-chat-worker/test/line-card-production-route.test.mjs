@@ -848,8 +848,14 @@ for (const durable of [false, true]) {
   });
 }
 
-for (const durable of [false, true]) {
-  test(`a brief waits for pending B beyond six polls when equal-timestamp A returns (${durable ? "durable" : "inline"})`, async () => {
+for (const { durable, statusFailures } of [
+  { durable: false, statusFailures: 0 },
+  { durable: true, statusFailures: 0 },
+  { durable: false, statusFailures: 6 },
+  { durable: true, statusFailures: 6 },
+]) {
+  const scenario = statusFailures ? "through six consecutive status 503s" : "beyond six polls";
+  test(`a brief waits for pending B ${scenario} when equal-timestamp A returns (${durable ? "durable" : "inline"})`, async () => {
     const f = fixture();
     const pending = [];
     const ctx = { waitUntil(promise) { pending.push(Promise.resolve(promise)); } };
@@ -863,6 +869,7 @@ for (const durable of [false, true]) {
     const binding = f.env.KENJI_MODEL_DEDUPE;
     const get = binding.get.bind(binding);
     let failFirstPin = true;
+    let remainingStatusFailures = 0;
     let releaseB;
     const bGate = new Promise((resolve) => { releaseB = resolve; });
     binding.get = (id) => {
@@ -874,6 +881,10 @@ for (const durable of [false, true]) {
           return Response.json({ ok: false }, { status: 503 });
         }
         if (id === receiptId(b) && action === "process") await bGate;
+        if (id === receiptId(b) && action === "status" && remainingStatusFailures > 0) {
+          remainingStatusFailures -= 1;
+          return Response.json({ ok: false }, { status: 503 });
+        }
         return object.fetch(input, init);
       } };
     };
@@ -892,7 +903,8 @@ for (const durable of [false, true]) {
         assert.equal(f.records.has(`line_${b.message.id}`), false);
         assert.equal(f.records.has(`line_${brief.message.id}`), false);
         const object = binding.objects.get(receiptId(brief));
-        for (let poll = 0; poll < 7; poll += 1) {
+        for (let poll = 0; poll < 8; poll += 1) {
+          if (poll === 1) remainingStatusFailures = statusFailures;
           const before = await object.state.storage.get("campaign-ingress:event");
           clock = Math.max(clock + 1000, before.next_attempt_at);
           await object.alarm();
@@ -903,6 +915,7 @@ for (const durable of [false, true]) {
           assert.equal(waiting.expected_lead_message_id, b.message.id);
           assert.ok(waiting.next_attempt_at > clock);
         }
+        assert.equal(remainingStatusFailures, 0);
         assert.equal(f.records.has(`line_${b.message.id}`), false);
         assert.equal(f.records.has(`line_${brief.message.id}`), false);
         releaseB();

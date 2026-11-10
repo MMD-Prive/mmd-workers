@@ -3812,6 +3812,7 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
   return json({ ok: true, worker: WORKER_NAME, route: "line_webhook", events: events.length, saved: payloadEvents.map((event) => receipts.get(event)) });
 }
 
+// A transient read failure leaves the pinned lead status unknown.
 async function isQueuedLineCardLeadPending(env, event, leadMessageId) {
   try {
     const binding = env.KENJI_MODEL_DEDUPE;
@@ -3825,16 +3826,20 @@ async function isQueuedLineCardLeadPending(env, event, leadMessageId) {
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ action: "lookup", message_id: leadMessageId, subject_hash: subjectHash }),
     });
+    if (aliasResponse.status >= 500 || aliasResponse.status === 429) return null;
+    if (!aliasResponse.ok) return false;
     const { receipt_id: receiptId, found } = await aliasResponse.json();
-    if (!aliasResponse.ok || !found || !/^[a-f0-9]{64}$/.test(receiptId) || receiptId === briefReceiptId) return false;
+    if (!found || !/^[a-f0-9]{64}$/.test(receiptId) || receiptId === briefReceiptId) return false;
     const receipt = binding.get(binding.idFromName(`line-card-ingress-v1:${receiptId}`));
     const response = await receipt.fetch("https://kenji-model-dedupe.internal/campaign-lead/ingress", {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "status" }),
     });
+    if (response.status >= 500 || response.status === 429) return null;
+    if (!response.ok) return false;
     const status = await response.json();
-    return response.ok && status.receipt_id === receiptId && ["pending", "processing"].includes(status.status);
+    return status.receipt_id === receiptId && ["pending", "processing"].includes(status.status);
   } catch (_) {
-    return false;
+    return null;
   }
 }
 
@@ -3856,7 +3861,8 @@ export async function processDurableLineCardEvent(event, env = {}, receivedAt = 
   const result = await response.json().catch(() => ({}));
   const saved = result?.saved?.[0];
   let reason = saved?.campaign_lead_reason || "campaign_not_queued";
-  if (reason === "campaign_brief_waiting_for_lead" && !await isQueuedLineCardLeadPending(env, event, expectedLeadMessageId)) {
+  if (reason === "campaign_brief_waiting_for_lead" &&
+      await isQueuedLineCardLeadPending(env, event, expectedLeadMessageId) === false) {
     reason = "campaign_context_unavailable";
   }
   return {
