@@ -848,6 +848,67 @@ for (const durable of [false, true]) {
   });
 }
 
+for (const durable of [false, true]) {
+  test(`an acknowledged but pending B owns the brief when equal-timestamp A returns (${durable ? "durable" : "inline"})`, async () => {
+    const f = fixture();
+    const pending = [];
+    const ctx = { waitUntil(promise) { pending.push(Promise.resolve(promise)); } };
+    const timestamp = Date.now() - 5000;
+    const a = lineEvent("JASPER", "msg-pending-order-a", { timestamp });
+    const b = lineEvent("BOOK EI", "msg-pending-order-b", { timestamp });
+    const brief = lineEvent("brief for B", "msg-pending-order-brief", { timestamp: timestamp + 1000 });
+    const receiptId = (event) => `line-card-ingress-v1:${createHash("sha256").update(event.message.id).digest("hex")}`;
+    const binding = f.env.KENJI_MODEL_DEDUPE;
+    const get = binding.get.bind(binding);
+    let failFirstPin = true;
+    let releaseB;
+    const bGate = new Promise((resolve) => { releaseB = resolve; });
+    binding.get = (id) => {
+      const object = get(id);
+      return { async fetch(input, init) {
+        const action = JSON.parse(init?.body || "{}").action;
+        if (failFirstPin && action === "pin_order") {
+          failFirstPin = false;
+          return Response.json({ ok: false }, { status: 503 });
+        }
+        if (id === receiptId(b) && action === "process") await bGate;
+        return object.fetch(input, init);
+      } };
+    };
+    const send = async (events, mode) => route.fetch(await signedWebhook(events, f.env), f.env, mode);
+    await withFetch(f.fetch, async () => {
+      try {
+        assert.equal((await send([a], ctx)).status, 503);
+        assert.equal((await send([b], ctx)).status, 200);
+        assert.equal(f.records.has(`line_${b.message.id}`), false);
+        const backgroundBeforeBrief = pending.length;
+        assert.equal((await send([
+          { ...a, deliveryContext: { isRedelivery: true } }, brief,
+        ], durable ? ctx : undefined)).status, 200);
+        await Promise.all(pending.slice(backgroundBeforeBrief));
+        assert.equal(f.records.has(`line_${b.message.id}`), false);
+        assert.equal(f.records.has(`line_${brief.message.id}`), false);
+        const receipt = await binding.objects.get(receiptId(brief)).state.storage.get("campaign-ingress:event");
+        assert.equal(receipt.status, "pending");
+        assert.equal(receipt.expected_lead_message_id, b.message.id);
+      } finally {
+        releaseB();
+        await Promise.all(pending);
+      }
+      const now = Date.now;
+      try {
+        Date.now = () => now() + 2000;
+        await binding.objects.get(receiptId(brief)).alarm();
+      } finally {
+        Date.now = now;
+      }
+    });
+    assert.ok(f.records.has(`line_${a.message.id}`));
+    const saved = f.records.get(`line_${brief.message.id}`);
+    assert.equal(JSON.parse(saved.fields.payload_json).lead_inbox_id, `line_${b.message.id}`);
+  });
+}
+
 test("redelivery reuses a pin whose acknowledgement was lost before enqueue", async () => {
   const f = fixture();
   const pending = [];

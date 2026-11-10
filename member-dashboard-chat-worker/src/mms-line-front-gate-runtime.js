@@ -12,7 +12,7 @@ import {
   handleKenjiSeedLineRequestWithRedeliveryRecovery,
   isKenjiSeedLineRequest,
 } from "./kenji-line-redelivery-recovery.mjs";
-import { createLineSignature, LINE_CARD_ORDINARY_SUBJECTS, orderLineCardBatchEvents, pinLineCardLeadOrder, resolveLineCardCampaignTrigger } from "./index.js";
+import { createLineSignature, enqueueLineCardIngress, lineCardCampaignContext, LINE_CARD_ORDINARY_SUBJECTS, orderLineCardBatchEvents, pinLineCardLeadOrder, resolveLineCardCampaignTrigger } from "./index.js";
 import {
   handleKenjiLineTransportHealth,
   isKenjiLineTransportHealthRequest,
@@ -584,40 +584,16 @@ async function maybeScheduleKenjiLineAfterAck(request, env = {}, ctx = null, han
           } catch (_) { return Response.json({ ok: false, error: "campaign_ingress_unavailable" }, { status: 503 }); }
           const result = await response.json().catch(() => ({}));
           if (!response.ok || result?.cancelled !== true) return Response.json({ ok: false, error: "campaign_ingress_unavailable" }, { status: 503 });
+          const cancelled = await lineCardCampaignContext(env, text(event.source.userId), "cancel_order", { expected_lead_inbox_id: `line_${eventId}` });
+          if (!cancelled.ok) return Response.json({ ok: false, error: "campaign_ingress_unavailable" }, { status: 503 });
         }
         for (const item of campaignEvents) {
           const { event, subjectHash, expectedLeadMessageId } = item;
-          const eventId = text(event?.message?.id);
-          const webhookEventId = text(event?.webhookEventId || eventId);
-          if (!/^[A-Za-z0-9_-]{1,120}$/.test(eventId) || !/^[A-Za-z0-9_-]{1,120}$/.test(webhookEventId)) return Response.json({ ok: false, error: "campaign_event_id_missing" }, { status: 503 });
-          const key = await sha256HexText(webhookEventId);
-          const messageKey = await sha256HexText(eventId);
-          const aliasStub = env.KENJI_MODEL_DEDUPE.get(env.KENJI_MODEL_DEDUPE.idFromName(`line-card-message-v1:${messageKey}`));
-          let aliasResponse;
-          try {
-            aliasResponse = await aliasStub.fetch("https://kenji-model-dedupe.internal/campaign-lead/message-alias", {
-              method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "bind", message_id: eventId, receipt_id: key, webhook_event_id: webhookEventId, subject_hash: subjectHash }),
-            });
-          } catch (_) { return Response.json({ ok: false, error: "campaign_ingress_unavailable" }, { status: 503 }); }
-          const alias = await aliasResponse.json().catch(() => ({}));
-          if (!aliasResponse.ok) return Response.json({ ok: false, error: "campaign_ingress_unavailable" }, { status: 503 });
-          if (alias?.cancelled === true) continue;
-          const leadOrder = expectedLeadMessageId === undefined
-            ? (redeliveredLeadOrders.get(event) ?? await pinLineCardLeadOrder(env, event))
-            : undefined;
-          if (expectedLeadMessageId === undefined && !leadOrder) {
-            return Response.json({ ok: false, error: "campaign_lead_order_unavailable" }, { status: 503 });
-          }
-          const stub = env.KENJI_MODEL_DEDUPE.get(env.KENJI_MODEL_DEDUPE.idFromName(`line-card-ingress-v1:${key}`));
-          let response;
-          try {
-            response = await stub.fetch("https://kenji-model-dedupe.internal/campaign-lead/ingress", {
-              method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "enqueue", event, receipt_id: key, expected_lead_message_id: expectedLeadMessageId, lead_order: leadOrder }),
-            });
-          } catch (_) { return Response.json({ ok: false, error: "campaign_ingress_unavailable" }, { status: 503 }); }
-          const result = await response.json().catch(() => ({}));
-          if (!response.ok || (result?.accepted !== true && result?.cancelled !== true)) return Response.json({ ok: false, error: "campaign_ingress_unavailable" }, { status: 503 });
-          if (result?.accepted === true) stubs.push(stub);
+          const queued = await enqueueLineCardIngress(env, event, subjectHash, {
+            expectedLeadMessageId, leadOrder: redeliveredLeadOrders.get(event),
+          });
+          if (queued.error) return Response.json({ ok: false, error: queued.error }, { status: 503 });
+          if (queued.stub) stubs.push(queued.stub);
         }
         ctx.waitUntil((async () => {
           for (const stub of stubs) {

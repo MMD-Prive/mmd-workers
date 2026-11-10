@@ -2008,7 +2008,7 @@ async function claimLineCardCampaignLead(env = {}, event = {}, action = "claim",
   return requestLineCardCampaignLeadClaim(env, key, action, claimToken);
 }
 
-async function lineCardCampaignContext(env = {}, lineUserId = "", action = "get", context = null) {
+export async function lineCardCampaignContext(env = {}, lineUserId = "", action = "get", context = null) {
   if (!lineUserId) return { ok: false, found: false, reason: "campaign_context_user_missing" };
   if (!env.KENJI_MODEL_DEDUPE?.idFromName || !env.KENJI_MODEL_DEDUPE?.get) {
     return { ok: false, found: false, reason: "campaign_context_binding_missing" };
@@ -2061,6 +2061,48 @@ export async function pinLineCardLeadOrder(env, event, { action = "pin_order", r
     redelivery: event.deliveryContext?.isRedelivery === true,
   });
   return order.observed === true ? order.lead_order : undefined;
+}
+
+export async function enqueueLineCardIngress(env, event, subjectHash, { expectedLeadMessageId, leadOrder } = {}) {
+  const eventId = asString(event?.message?.id);
+  const webhookEventId = asString(event?.webhookEventId || eventId);
+  if (!/^[A-Za-z0-9_-]{1,120}$/.test(eventId) || !/^[A-Za-z0-9_-]{1,120}$/.test(webhookEventId)) {
+    return { error: "campaign_event_id_missing" };
+  }
+  try {
+    const binding = env.KENJI_MODEL_DEDUPE;
+    const key = await sha256Hex(webhookEventId);
+    const messageKey = await sha256Hex(eventId);
+    const aliasStub = binding.get(binding.idFromName(`line-card-message-v1:${messageKey}`));
+    const aliasResponse = await aliasStub.fetch("https://kenji-model-dedupe.internal/campaign-lead/message-alias", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "bind", message_id: eventId, receipt_id: key, webhook_event_id: webhookEventId, subject_hash: subjectHash }),
+    });
+    const alias = await aliasResponse.json();
+    if (!aliasResponse.ok) return { error: "campaign_ingress_unavailable" };
+    if (alias.cancelled === true) return {};
+    if (expectedLeadMessageId === undefined) {
+      leadOrder ??= await pinLineCardLeadOrder(env, event);
+      if (!leadOrder) return { error: "campaign_lead_order_unavailable" };
+    }
+    const stub = binding.get(binding.idFromName(`line-card-ingress-v1:${key}`));
+    const response = await stub.fetch("https://kenji-model-dedupe.internal/campaign-lead/ingress", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "enqueue", event, receipt_id: key, expected_lead_message_id: expectedLeadMessageId, lead_order: leadOrder }),
+    });
+    const result = await response.json();
+    if (!response.ok || (result.accepted !== true && result.cancelled !== true)) return { error: "campaign_ingress_unavailable" };
+    if (result.accepted !== true) return {};
+    if (leadOrder && leadOrder.archive_only !== true && ["pending", "processing"].includes(result.status)) {
+      const accepted = await lineCardCampaignContext(env, getLineUserId({ event }), "accept_order", {
+        expected_lead_inbox_id: `line_${eventId}`,
+      });
+      if (!accepted.ok) return { error: "campaign_lead_order_unavailable" };
+    }
+    return { stub };
+  } catch (_) {
+    return { error: "campaign_ingress_unavailable" };
+  }
 }
 
 function buildConsoleInboxRecord(event = {}, profile = null, intent = "", metadata = null) {
@@ -3286,6 +3328,17 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
         ...(/^[A-Za-z0-9_-]{1,120}$/.test(briefMessageId) ? { brief_message_id: briefMessageId } : {}),
       })
       : { ok: true, found: false };
+    const pendingLeadId = campaignContextResult.pending_lead_inbox_id ||
+      (campaignContextResult.committed === false && campaignContextResult.context?.lead_inbox_id);
+    if (options.requireCampaignContext !== true && pendingLeadId) {
+      const lead = /^line_([A-Za-z0-9_-]{1,120})$/.exec(pendingLeadId);
+      if (!lead) return json({ ok: false, error: "campaign_brief_reservation_unavailable" }, 503);
+      const queued = await enqueueLineCardIngress(env, event, await sha256Hex(lineUserId), { expectedLeadMessageId: lead[1] });
+      if (queued.error) return json({ ok: false, error: queued.error }, 503);
+      assignedBriefSubjects.add(lineUserId);
+      saved.push({ ok: true, type: event.type, campaign_event: true, replied: false });
+      continue;
+    }
     const campaignBrief = Boolean(campaignContextResult.found && campaignContextResult.context);
     if (!campaignTrigger && lineUserId && (needsCampaignContext || campaignBrief || campaignContextResult.ok !== true)) {
       assignedBriefSubjects.add(lineUserId);
