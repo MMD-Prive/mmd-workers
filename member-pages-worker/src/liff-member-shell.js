@@ -2307,13 +2307,19 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
                 : "ยังส่งข้อมูลให้เปอร์ตรวจไม่ได้ครับ ลองตรวจข้อมูลแล้วส่งใหม่ได้เลย");
               return;
             }
-            form.remove();
             if (payload.data?.state === "already_linked") {
+              form.remove();
               await readProfile({ hydrate: false });
               void hydrateMemberHome();
               return;
             }
-            show("ส่งข้อมูลให้เปอร์ตรวจแล้วครับ");
+            const requestId = String(payload.data?.merge_request_id || "");
+            if (!/^IMR-[A-F0-9]{20}$/.test(requestId)) {
+              show("ยังยืนยันไม่ได้ว่าคำขอเข้าคิวครับ กรุณาให้เปอร์ช่วยตรวจ");
+              return;
+            }
+            form.remove();
+            show("ส่งข้อมูลให้เปอร์ตรวจแล้วครับ · เลขคำขอ " + requestId);
           } catch {
             show("ยังส่งข้อมูลให้เปอร์ตรวจไม่ได้ครับ ลองใหม่อีกครั้งได้เลย");
           } finally {

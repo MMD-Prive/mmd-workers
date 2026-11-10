@@ -1585,6 +1585,7 @@ test("unresolved Status Verify submits evidence with its session binding", async
   const end = html.indexOf("  async function boot(", start);
   assert.ok(start > 0 && end > start);
   const requests = [];
+  let requestId;
   const notices = [];
   const makeElement = tag => ({
     tag, children: [], value: "",
@@ -1600,7 +1601,7 @@ test("unresolved Status Verify submits evidence with its session binding", async
     show: value => notices.push(value),
     fetch: async (url, options) => {
       requests.push({ url, method: options.method, credentials: options.credentials, body: JSON.parse(options.body) });
-      return Response.json({ ok: true, data: { state: "review_required" } });
+      return Response.json({ ok: true, data: { state: "review_required", merge_request_id: requestId } });
     },
   });
   const screen = { key: "status_unresolved", actions: [
@@ -1615,10 +1616,14 @@ test("unresolved Status Verify submits evidence with its session binding", async
   assert.equal(requests.length, 0);
   form.children[2].children[0].value = " Fixture ";
   await form.submit({ preventDefault() {} });
-  assert.deepEqual(requests, [{
+  assert.equal(form.removed, undefined);
+  assert.match(notices.at(-1), /ยังยืนยันไม่ได้ว่าคำขอเข้าคิว/);
+  requestId = "IMR-0123456789ABCDEF0123";
+  await form.submit({ preventDefault() {} });
+  assert.deepEqual(requests.slice(-1), [{
     url: "/member/api/liff/recovery", method: "POST", credentials: "same-origin",
     body: { nickname: "Fixture", recovery_binding: "fixture-session-binding" },
   }]);
   assert.equal(form.removed, true);
-  assert.equal(notices.at(-1), "ส่งข้อมูลให้เปอร์ตรวจแล้วครับ");
+  assert.equal(notices.at(-1), "ส่งข้อมูลให้เปอร์ตรวจแล้วครับ · เลขคำขอ " + requestId);
 });

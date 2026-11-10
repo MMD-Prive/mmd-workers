@@ -119,13 +119,15 @@ export async function handleMemberEmailRecovery(request, env = {}) {
       sessionRecordId: safeRecordId(auth.session.gateway_record_id || auth.session.renewal_session_record_id),
     });
 
+    if (!/^IMR-[A-F0-9]{20}$/.test(merge.merge_request_id)) throw new Error("merge_request_receipt_invalid");
+
     auth.session.identity_recovery_state = result.state;
     auth.session.identity_recovery_request_id = merge.merge_request_id;
     auth.session.identity_recovery_checked_at = new Date().toISOString();
     if (result.state === "known_identity") auth.session.next_screen_key = email ? "renew_member_lookup" : "manual_review";
     if (result.state === "review_required") auth.session.next_screen_key = "manual_review";
 
-    return commitJson(env, auth, {
+    const response = await commitJson(env, auth, {
       ok: true,
       data: {
         state: result.state,
@@ -139,6 +141,8 @@ export async function handleMemberEmailRecovery(request, env = {}) {
         grants: noGrants(),
       },
     }, 200);
+    if (response.ok) console.info({ event: "member_email_recovery_queued", state: result.state, resumed: merge.resumed });
+    return response;
   } catch (error) {
     console.warn({ event: "member_email_recovery_failed", failure_class: safeFailure(error) });
     return commitError(env, auth, "IDENTITY_RECOVERY_UNAVAILABLE", "ตอนนี้ MMD ยังตรวจข้อมูลเดิมไม่สำเร็จครับ กรุณาลองใหม่อีกครั้ง", 503);
@@ -337,8 +341,12 @@ export async function persistMergeRequest(env, { lineUserId, email, memberIdCand
     throw new Error("merge_request_ambiguous");
   }
   if (existing.length === 1) {
+    if (existing[0]?.fields?.merge_request_id !== mergeRequestId) {
+      await finishMergeRequestLease(env, lease, "aborted");
+      throw new Error("merge_request_receipt_invalid");
+    }
     await finishMergeRequestLease(env, lease, "committed");
-    return { merge_request_id: String(existing[0]?.fields?.merge_request_id || mergeRequestId), record_id: existing[0].id, resumed: true };
+    return { merge_request_id: mergeRequestId, record_id: existing[0].id, resumed: true };
   }
 
   const now = new Date().toISOString();
@@ -383,6 +391,7 @@ export async function persistMergeRequest(env, { lineUserId, email, memberIdCand
   try {
     await markMergeRequestWriteStarted(env, lease);
     const created = await airtableCreate(env, table, fields);
+    if (created.fields?.merge_request_id !== mergeRequestId) throw new Error("merge_request_receipt_invalid");
     await finishMergeRequestLease(env, lease, "committed");
     return { merge_request_id: mergeRequestId, record_id: created.id, resumed: false };
   } catch (error) {
@@ -417,6 +426,8 @@ async function recoverMergeRequestAfterLostResponse(env, table, idempotencyKey, 
   const rows = await airtableList(env, table, { filterByFormula: `{idempotency_key}=${formulaString(idempotencyKey)}`, maxRecords: 2 });
   if (rows.length > 1) throw new Error("merge_request_ambiguous");
   if (rows.length !== 1 || !lease.id || !lease.operation_id || !lease.mutation_fingerprint) throw new Error("REQUEST_MUTATION_UNCERTAIN");
+  const expectedRequestId = `IMR-${idempotencyKey.slice(0, 20).toUpperCase()}`;
+  if (rows[0]?.fields?.merge_request_id !== expectedRequestId) throw new Error("merge_request_receipt_invalid");
   const binding = env.CUSTOMER_REQUEST_MUTATION;
   const response = await binding.get(lease.id).fetch("https://identity-recovery/reconcile", { method: "POST", body: JSON.stringify({ action: "reconcile", operation_id: lease.operation_id, readback_verified: true, mutation_fingerprint: lease.mutation_fingerprint }) }).catch(() => null);
   if (!response?.ok) throw new Error("REQUEST_MUTATION_RECONCILE_REQUIRED");
