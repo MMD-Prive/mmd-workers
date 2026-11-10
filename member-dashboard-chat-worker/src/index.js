@@ -3330,6 +3330,11 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
       : { ok: true, found: false };
     const pendingLeadId = campaignContextResult.pending_lead_inbox_id ||
       (campaignContextResult.committed === false && campaignContextResult.context?.lead_inbox_id);
+    if (options.requireCampaignContext === true && expectedLeadMessageId &&
+        pendingLeadId === `line_${expectedLeadMessageId}` && campaignContextResult.ok === true) {
+      saved.push({ ok: true, type: event.type, campaign_event: true, campaign_lead_reason: "campaign_brief_waiting_for_lead" });
+      continue;
+    }
     if (options.requireCampaignContext !== true && pendingLeadId) {
       const lead = /^line_([A-Za-z0-9_-]{1,120})$/.exec(pendingLeadId);
       if (!lead) return json({ ok: false, error: "campaign_brief_reservation_unavailable" }, 503);
@@ -3807,6 +3812,32 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
   return json({ ok: true, worker: WORKER_NAME, route: "line_webhook", events: events.length, saved: payloadEvents.map((event) => receipts.get(event)) });
 }
 
+async function isQueuedLineCardLeadPending(env, event, leadMessageId) {
+  try {
+    const binding = env.KENJI_MODEL_DEDUPE;
+    const [messageHash, subjectHash, briefReceiptId] = await Promise.all([
+      sha256Hex(leadMessageId),
+      sha256Hex(getLineUserId({ event })),
+      sha256Hex(asString(event.webhookEventId || event.message.id)),
+    ]);
+    const alias = binding.get(binding.idFromName(`line-card-message-v1:${messageHash}`));
+    const aliasResponse = await alias.fetch("https://kenji-model-dedupe.internal/campaign-lead/message-alias", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "lookup", message_id: leadMessageId, subject_hash: subjectHash }),
+    });
+    const { receipt_id: receiptId, found } = await aliasResponse.json();
+    if (!aliasResponse.ok || !found || !/^[a-f0-9]{64}$/.test(receiptId) || receiptId === briefReceiptId) return false;
+    const receipt = binding.get(binding.idFromName(`line-card-ingress-v1:${receiptId}`));
+    const response = await receipt.fetch("https://kenji-model-dedupe.internal/campaign-lead/ingress", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "status" }),
+    });
+    const status = await response.json();
+    return response.ok && status.receipt_id === receiptId && ["pending", "processing"].includes(status.status);
+  } catch (_) {
+    return false;
+  }
+}
+
 export async function processDurableLineCardEvent(event, env = {}, receivedAt = Date.now(), expectedLeadMessageId, leadOrder) {
   if (!resolveLineCardCampaignTrigger(event?.message?.text) && !/^[A-Za-z0-9_-]{1,120}$/.test(expectedLeadMessageId || "")) {
     return { ok: false, reason: "campaign_brief_lead_not_pinned" };
@@ -3824,9 +3855,13 @@ export async function processDurableLineCardEvent(event, env = {}, receivedAt = 
   if (!response.ok) return { ok: false, reason: "campaign_processor_unavailable" };
   const result = await response.json().catch(() => ({}));
   const saved = result?.saved?.[0];
+  let reason = saved?.campaign_lead_reason || "campaign_not_queued";
+  if (reason === "campaign_brief_waiting_for_lead" && !await isQueuedLineCardLeadPending(env, event, expectedLeadMessageId)) {
+    reason = "campaign_context_unavailable";
+  }
   return {
     ok: saved?.campaign_lead_queued === true,
-    reason: saved?.campaign_lead_reason || "campaign_not_queued",
+    reason,
     queue_status: saved?.campaign_queue_status || null,
     replied: saved?.replied === true,
     reply_suppressed: suppressCampaignReply || saved?.campaign_brief_recovered === true,

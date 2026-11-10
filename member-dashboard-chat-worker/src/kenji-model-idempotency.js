@@ -11,6 +11,7 @@ const CAMPAIGN_INGRESS_ALIAS_KEY = "campaign-ingress:message-alias";
 const CAMPAIGN_INGRESS_DONE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const CAMPAIGN_INGRESS_DEAD_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const CAMPAIGN_INGRESS_MAX_ATTEMPTS = 6;
+const CAMPAIGN_BRIEF_WAIT_INTERVAL_MS = 10_000;
 const CAMPAIGN_INGRESS_ALERT_RETRY_MS = 15 * 60 * 1000;
 const MODEL_ACCESS_PENDING_TTL_MS = 10 * 60 * 1000;
 const MODEL_ACCESS_PENDING_KEY = "model-access:pending";
@@ -144,9 +145,16 @@ export class KenjiModelIdempotency {
       outcome = { ok: false, reason: "campaign_processor_failed" };
     }
     const completedAt = Date.now();
-    const attempts = Number(entry.attempts || 0) + 1;
-    const dead = outcome.ok !== true && (attempts >= CAMPAIGN_INGRESS_MAX_ATTEMPTS || outcome.queue_status === 422);
-    const delay = outcome.reason === "campaign_lead_already_claimed" ? 61_000 : Math.min(60_000, 1000 * 2 ** (attempts - 1));
+    const waitingForLead = outcome.reason === "campaign_brief_waiting_for_lead";
+    const waitExpired = waitingForLead && completedAt >= entry.received_at + CAMPAIGN_CONTEXT_TTL_MS;
+    const attempts = Number(entry.attempts || 0) + (waitingForLead ? 0 : 1);
+    const reason = waitExpired ? "campaign_brief_wait_expired" : outcome.reason;
+    const dead = waitingForLead
+      ? waitExpired
+      : outcome.ok !== true && (attempts >= CAMPAIGN_INGRESS_MAX_ATTEMPTS || outcome.queue_status === 422);
+    const delay = waitingForLead
+      ? CAMPAIGN_BRIEF_WAIT_INTERVAL_MS
+      : reason === "campaign_lead_already_claimed" ? 61_000 : Math.min(60_000, 1000 * 2 ** (attempts - 1));
     const finalStatus = await this.state.storage.transaction(async (txn) => {
       const current = await txn.get(CAMPAIGN_INGRESS_KEY);
       if (current?.status === "cancelled" && current.event_id === entry.event_id) {
@@ -164,18 +172,18 @@ export class KenjiModelIdempotency {
               event: entry.event, received_at: entry.received_at,
               ...(entry.expected_lead_message_id === undefined ? {} : { expected_lead_message_id: entry.expected_lead_message_id }),
               ...(entry.lead_order === undefined ? {} : { lead_order: entry.lead_order }),
-              status: "dead", attempts, reason: String(outcome.reason || "processor_failed").slice(0, 80),
+              status: "dead", attempts, reason: String(reason || "processor_failed").slice(0, 80),
               alert_sent: false, next_alert_at: completedAt, expires_at: completedAt + CAMPAIGN_INGRESS_DEAD_TTL_MS,
             }
-          : { ...entry, status: "pending", attempts, reason: String(outcome.reason || "processor_failed").slice(0, 80), next_attempt_at: completedAt + delay };
+          : { ...entry, status: "pending", attempts, reason: String(reason || "processor_failed").slice(0, 80), next_attempt_at: completedAt + delay };
       await txn.put(CAMPAIGN_INGRESS_KEY, next);
       await this.state.storage.setAlarm(next.expires_at || next.next_attempt_at);
       return next.status;
     });
     if (finalStatus === "cancelled") await this.cleanupCampaignIngressUnsend();
     if (finalStatus === "dead") await this.sendPendingCampaignIngressAlert();
-    if (finalStatus === "dead") console.log(JSON.stringify({ line_card_ingress: "dead_letter", reason: String(outcome.reason || "processor_failed").slice(0, 80), attempts }));
-    return { ok: outcome.ok === true, processed: true, status: finalStatus, reason: outcome.reason || "" };
+    if (finalStatus === "dead") console.log(JSON.stringify({ line_card_ingress: "dead_letter", reason: String(reason || "processor_failed").slice(0, 80), attempts }));
+    return { ok: outcome.ok === true, processed: true, status: finalStatus, reason: reason || "" };
   }
 
   async fetch(request) {

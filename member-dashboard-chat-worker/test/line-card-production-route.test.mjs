@@ -849,15 +849,17 @@ for (const durable of [false, true]) {
 }
 
 for (const durable of [false, true]) {
-  test(`an acknowledged but pending B owns the brief when equal-timestamp A returns (${durable ? "durable" : "inline"})`, async () => {
+  test(`a brief waits for pending B beyond six polls when equal-timestamp A returns (${durable ? "durable" : "inline"})`, async () => {
     const f = fixture();
     const pending = [];
     const ctx = { waitUntil(promise) { pending.push(Promise.resolve(promise)); } };
-    const timestamp = Date.now() - 5000;
+    const realNow = Date.now;
+    let clock = realNow();
+    const timestamp = clock - 5000;
     const a = lineEvent("JASPER", "msg-pending-order-a", { timestamp });
-    const b = lineEvent("BOOK EI", "msg-pending-order-b", { timestamp });
+    const b = productionLineEvent("BOOK EI", "msg-pending-order-b", "webhook-pending-order-b", { timestamp });
     const brief = lineEvent("brief for B", "msg-pending-order-brief", { timestamp: timestamp + 1000 });
-    const receiptId = (event) => `line-card-ingress-v1:${createHash("sha256").update(event.message.id).digest("hex")}`;
+    const receiptId = (event) => `line-card-ingress-v1:${createHash("sha256").update(event.webhookEventId || event.message.id).digest("hex")}`;
     const binding = f.env.KENJI_MODEL_DEDUPE;
     const get = binding.get.bind(binding);
     let failFirstPin = true;
@@ -877,6 +879,7 @@ for (const durable of [false, true]) {
     };
     const send = async (events, mode) => route.fetch(await signedWebhook(events, f.env), f.env, mode);
     await withFetch(f.fetch, async () => {
+      Date.now = () => clock;
       try {
         assert.equal((await send([a], ctx)).status, 503);
         assert.equal((await send([b], ctx)).status, 200);
@@ -888,22 +891,37 @@ for (const durable of [false, true]) {
         await Promise.all(pending.slice(backgroundBeforeBrief));
         assert.equal(f.records.has(`line_${b.message.id}`), false);
         assert.equal(f.records.has(`line_${brief.message.id}`), false);
-        const receipt = await binding.objects.get(receiptId(brief)).state.storage.get("campaign-ingress:event");
-        assert.equal(receipt.status, "pending");
-        assert.equal(receipt.expected_lead_message_id, b.message.id);
+        const object = binding.objects.get(receiptId(brief));
+        for (let poll = 0; poll < 7; poll += 1) {
+          const before = await object.state.storage.get("campaign-ingress:event");
+          clock = Math.max(clock + 1000, before.next_attempt_at);
+          await object.alarm();
+          const waiting = await object.state.storage.get("campaign-ingress:event");
+          assert.equal(waiting.status, "pending");
+          assert.equal(waiting.reason, "campaign_brief_waiting_for_lead");
+          assert.equal(waiting.attempts, 0);
+          assert.equal(waiting.expected_lead_message_id, b.message.id);
+          assert.ok(waiting.next_attempt_at > clock);
+        }
+        assert.equal(f.records.has(`line_${b.message.id}`), false);
+        assert.equal(f.records.has(`line_${brief.message.id}`), false);
+        releaseB();
+        await Promise.all(pending);
+        assert.ok(f.records.has(`line_${b.message.id}`));
+        const waiting = await object.state.storage.get("campaign-ingress:event");
+        clock = waiting.next_attempt_at;
+        await object.alarm();
+        const completed = await object.state.storage.get("campaign-ingress:event");
+        assert.equal(completed.status, "done");
+        assert.equal(completed.attempts, 1);
       } finally {
         releaseB();
         await Promise.all(pending);
-      }
-      const now = Date.now;
-      try {
-        Date.now = () => now() + 2000;
-        await binding.objects.get(receiptId(brief)).alarm();
-      } finally {
-        Date.now = now;
+        Date.now = realNow;
       }
     });
     assert.ok(f.records.has(`line_${a.message.id}`));
+    assert.equal(f.calls.filter((call) => call.type === "owner_alert").length, 0);
     const saved = f.records.get(`line_${brief.message.id}`);
     assert.equal(JSON.parse(saved.fields.payload_json).lead_inbox_id, `line_${b.message.id}`);
   });
