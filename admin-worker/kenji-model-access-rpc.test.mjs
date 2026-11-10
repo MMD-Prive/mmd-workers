@@ -340,7 +340,7 @@ test("RPC match returns only safe model projection and policy version", async ()
 });
 
 
-test("canonical Sales Control projects the customer-safe matched offer after entitlement resolution", async () => {
+test("current Sales Control offer keeps the booking gate but never exposes a Standard rate", async () => {
   const model = privateModel("MX17", "standard");
   const rules = [record("rec-offer-active", {
     Model: [model.id],
@@ -360,10 +360,54 @@ test("canonical Sales Control projects the customer-safe matched offer after ent
   );
   assert.equal(result.status, "match");
   assert.equal(result.model.sales.sellable, true);
-  assert.equal(result.model.sales.customer_rate_thb, 25000);
-  assert.equal(result.model.sales.price_visible, true);
+  assert.equal(result.model.sales.customer_rate_thb, null);
+  assert.equal(result.model.sales.price_visible, false);
   assert.equal(result.model.sales.matched_rule_key, null);
   assert.equal(result.model.sales.rule_version, 2);
+});
+
+test("reviewed offer history and caller-supplied proof do not authorize a LINE quote", async () => {
+  const clientId = "recExactCustomer";
+  const model = publicModel();
+  const active = record("recActive", {
+    Model: [model.id], status: "Active", sales_visibility: "on", offer_type: "pn",
+    customer_sell_rate_thb: 9500, price_visibility: "visible",
+  });
+  for (const capability of ["vip", "svip", "black_card", "private_standard", "private_premium"]) {
+    const archived = record("recHistorical", {
+      ...active.fields, Client: [clientId], status: "Superseded",
+      customer_sell_rate_thb: 18500, reviewed_by: "Per", reviewed_at: "2026-01-01",
+    });
+    const response = await handleKenjiModelAccessRpc(rpcRequest({
+      line_user_id: LINE_USER_ID, query: "PUB17", work_lane: "pn", client_id: clientId,
+      historical_per_quote: { client_id: clientId, model_id: model.id, amount_thb: 18500,
+        approved_by: "Per", review_status: "approved", reviewed_at: "2026-01-01", source_ref: "unverified-proof" },
+    }), ENV, { fetchImpl: airtableFetch(baseData([entitlement(capability)], [model], [], [active, archived])) });
+    assert.equal(response.status, 200, capability);
+    const result = await response.json();
+    assert.equal(result.model.sales.sellable, true, capability);
+    assert.equal(result.model.sales.customer_rate_thb, null, capability);
+    assert.equal(result.model.sales.price_visible, false, capability);
+    assert.equal(result.model.sales.reason_code, "historical_quote_delivery_unverified");
+    assert.doesNotMatch(JSON.stringify(result), /18500|9500|recExactCustomer|unverified-proof/);
+  }
+});
+
+test("LINE RPC omits every free-text profile field, including harmless summaries", async () => {
+  for (const summary of ["ขอห้าสิบต่อชั่วโมง", "I charge twenty for an hour", "ทักทายและพูดคุยได้ครับ"]) {
+    const model = privateModel("MX17", "standard", {
+      customer_safe_summary: summary, approved_profile_summary: summary, public_safe_summary: summary,
+    });
+    const response = await handleKenjiModelAccessRpc(rpcRequest({ line_user_id: LINE_USER_ID, query: "MX17" }), ENV, {
+      fetchImpl: airtableFetch(baseData([entitlement("private_standard")], [model])),
+    });
+    const payload = await response.json();
+    assert.equal(payload.status, "match");
+    assert.equal(payload.model.model_code, "MX17");
+    assert.equal(Object.hasOwn(payload.model, "summary"), false);
+    assert.ok(!JSON.stringify(payload).includes(summary));
+  }
+  assert.equal(projectKenjiSafeModel(privateModel("MX17", "standard", { working_name: "Test ฿1500" })), null);
 });
 
 test("lookup without a verified work lane never returns a rate", async () => {

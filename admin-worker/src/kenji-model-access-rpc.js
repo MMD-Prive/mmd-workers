@@ -1,3 +1,4 @@
+import { hasKenjiProfilePriceText } from "../../shared/kenji-profile-price-text.mjs";
 import { resolveMemberEntitlements } from "../../auth-worker/src/member-entitlement-resolver.js";
 import { resolveModelSalesOffer } from "../../shared/model-sales-control-v1.mjs";
 import { inferAccessFolder } from "./private-model-work-policy.js";
@@ -13,7 +14,6 @@ export const KENJI_MODEL_ACCESS_RPC_PATH = "/v1/internal/kenji/model-access";
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const ENTITLEMENT_TABLE_FALLBACK = "MMD — Member Entitlements";
 const ENTITLEMENT_LINE_FIELD_FALLBACK = "line_user_id";
-const MODEL_OFFER_RULES_TABLE_FALLBACK = "MMD — Model Offer Rules";
 const MODEL_KEYWORD_PROFILES_TABLE_FALLBACK = "MMD — Model Keyword Profiles";
 const CANONICAL_PRIVATE_FOLDERS = new Set(["standard", "premium", "vip", "exclusive"]);
 const PRIVATE_CAPABILITIES = new Set(["private_standard", "private_premium", "vip", "svip", "black_card"]);
@@ -145,7 +145,7 @@ function safeHttpsUrl(value) {
 
 function isCustomerSafeText(value, max = 500) {
   const text = clean(value, max + 1);
-  if (!text || text.length > max) return false;
+  if (!text || text.length > max || hasKenjiProfilePriceText(text)) return false;
   return !(
     /(?:\b0\d{8,9}\b|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|https?:\/\/|line\s*(?:id|oa)|telegram|เบอร์(?:โทร)?|อีเมล|ไลน์ส่วนตัว)/i.test(text) ||
     /(?:availability|available|schedule|ตาราง(?:งาน|คิว)|ว่าง(?:วันนี้|คืนนี้|พรุ่งนี้|ไหม)?|เช็กคิว)/i.test(text) ||
@@ -167,7 +167,7 @@ export function classifyKenjiModelPackage(value) {
   return { cohort: "unknown", mode: "blocked", folders: [] };
 }
 
-export function projectKenjiSafeModel(record = {}) {
+export function projectKenjiSafeModel(record = {}, { includeSummary = true } = {}) {
   const fields = record.fields || {};
   const workingName = fieldValue(fields, MODEL_WORKING_NAME_FIELDS);
   const canonicalCode = fieldValue(fields, MODEL_CODE_FIELDS);
@@ -176,9 +176,11 @@ export function projectKenjiSafeModel(record = {}) {
     !/^(?:gws|ems)[0-9]+$/i.test(canonicalCode) ? workingName : canonicalCode);
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]{1,31}$/.test(modelCode) || !isCustomerSafeText(workingName, 120)) return null;
   const projected = { model_code: modelCode, working_name: workingName };
-  const summary = fieldValue(fields, ["customer_safe_summary", "approved_profile_summary", "public_safe_summary"]);
   const imageUrl = safeHttpsUrl(fieldValue(fields, ["customer_safe_image_url", "approved_image_url"]));
-  if (isCustomerSafeText(summary, 500)) projected.summary = summary;
+  if (includeSummary) {
+    const summary = fieldValue(fields, ["customer_safe_summary", "approved_profile_summary", "public_safe_summary"]);
+    if (isCustomerSafeText(summary, 500)) projected.summary = summary;
+  }
   if (imageUrl) projected.image_url = imageUrl;
   return projected;
 }
@@ -240,7 +242,7 @@ async function queryAcrossFields(env, tableName, fields, value, fetchImpl, limit
   return uniqueRecords(records);
 }
 
-async function airtableListRecords(env, tableName, fetchImpl = fetch, maxRecords = 500) {
+async function airtableListRecords(env, tableName, fetchImpl = fetch, maxRecords = 500, requireComplete = false) {
   const apiKey = clean(env.AIRTABLE_API_KEY, 1000);
   const baseId = clean(env.AIRTABLE_BASE_ID, 200);
   if (!apiKey || !baseId || !tableName) throw new KenjiModelAccessSourceError();
@@ -258,9 +260,11 @@ async function airtableListRecords(env, tableName, fetchImpl = fetch, maxRecords
     }
     if (!response.ok) throw new KenjiModelAccessSourceError();
     const payload = await response.json().catch(() => ({}));
+    if (requireComplete && !Array.isArray(payload?.records)) throw new KenjiModelAccessSourceError();
     records.push(...(Array.isArray(payload?.records) ? payload.records : []));
     offset = clean(payload?.offset, 200);
   } while (offset && records.length < maxRecords);
+  if (requireComplete && (offset || records.length > maxRecords)) throw new KenjiModelAccessSourceError();
   return records.slice(0, maxRecords);
 }
 
@@ -493,7 +497,8 @@ export async function resolveKenjiModelAccess(env = {}, input = {}, options = {}
     if (cls.visibility === "private" && (privateCampaign
       ? !perModelAllowed
       : !access.folders.includes(cls.folder))) return [];
-    const safeModel = projectKenjiSafeModel(record);
+    // The LINE RPC only projects structured profile fields.
+    const safeModel = projectKenjiSafeModel(record, { includeSummary: false });
     return safeModel ? [{ cls, safeModel, record }] : [];
   });
   if (authorized.length > 1) return { status: "clarification" };
@@ -503,8 +508,9 @@ export async function resolveKenjiModelAccess(env = {}, input = {}, options = {}
     if (!configuredOfferRulesTable) {
       return { status: "match", model: authorizedRecord.safeModel };
     }
-    const offerRulesTable = configuredOfferRulesTable || MODEL_OFFER_RULES_TABLE_FALLBACK;
-    const rules = await airtableListRecords(env, offerRulesTable, fetchImpl, 500);
+    const workLane = clean(input.work_lane || input.workLane, 80);
+    if (!token(workLane)) return { status: "match", model: authorizedRecord.safeModel };
+    const rules = await airtableListRecords(env, configuredOfferRulesTable, fetchImpl, 500, true);
     const modelId = authorizedRecord.record?.id || "";
     const modelKey = clean(authorizedRecord.safeModel?.model_code, 160).toLowerCase();
     const relevantRules = rules.filter((record) => {
@@ -516,8 +522,6 @@ export async function resolveKenjiModelAccess(env = {}, input = {}, options = {}
     if (!relevantRules.length) {
       return { status: "match", model: authorizedRecord.safeModel };
     }
-    const workLane = clean(input.work_lane || input.workLane, 80);
-    if (!workLane) return { status: "match", model: authorizedRecord.safeModel };
     const salesOffer = resolveModelSalesOffer({
       model_id: modelId,
       model_key: modelKey,
@@ -526,6 +530,9 @@ export async function resolveKenjiModelAccess(env = {}, input = {}, options = {}
       entitlement_snapshot: access.snapshot,
       rules: relevantRules,
     });
+    // Reviewing a Sales Control rule does not establish that Per sent that
+    // quote to this customer. Until there is a verified delivery source, the
+    // LINE RPC returns the existing sales gate without a customer price.
     return {
       status: "match",
       model: {
@@ -533,10 +540,10 @@ export async function resolveKenjiModelAccess(env = {}, input = {}, options = {}
         sales: {
           sellable: salesOffer.sellable === true,
           visibility: salesOffer.visibility || "off",
-          customer_rate_thb: Number.isFinite(salesOffer.customer_rate_thb) ? salesOffer.customer_rate_thb : null,
-          price_visible: salesOffer.price_visible === true,
+          customer_rate_thb: null,
+          price_visible: false,
           requires_per_approval: salesOffer.requires_per_approval === true,
-          reason_code: clean(salesOffer.reason_code, 120),
+          reason_code: salesOffer.sellable === true ? "historical_quote_delivery_unverified" : clean(salesOffer.reason_code, 120),
           term_summary: clean(salesOffer.term_summary, 240),
           matched_rule_key: clean(salesOffer.matched_rule_key, 180) || null,
           rule_version: salesOffer.rule_version ?? null,

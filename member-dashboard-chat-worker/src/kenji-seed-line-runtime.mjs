@@ -15,6 +15,7 @@ import {
   requestKenjiRuntimeStatus,
   getLineOwnerTakeoverState,
   resolveKenjiLineReply,
+  resolveLineCardCampaignTrigger,
   verifyLineSignature,
 } from "./index.js";
 import {
@@ -673,7 +674,14 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
   const saved = [];
 
   for (const [index, event] of events.entries()) {
-    const perTurn = perCasesEnabled(env) && !runtimeLineKill && legacyOutcome.saved[index]?.campaign_event !== true
+    const rawCardAction = event?.type === "message" && event?.message?.type === "text" &&
+      resolveLineCardCampaignTrigger(event.message.text);
+    const intakeReceipt = legacyOutcome.saved[index];
+    if (rawCardAction || intakeReceipt?.campaign_event === true) {
+      saved.push({ ok: true, type: text(event?.type), campaign_handled: true, replied: intakeReceipt?.replied === true });
+      continue;
+    }
+    const perTurn = perCasesEnabled(env) && !runtimeLineKill
       ? (events.length === 1 && registeredPerTurn !== undefined ? registeredPerTurn : await beginKenjiPerTurn(env, event))
       : null;
     if (perTurn && (perTurn.ok !== true || perTurn.accepted !== true || perTurn.taken === true)) {
@@ -702,10 +710,6 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
     // Per-event scope: never turn on the shared env or the entire webhook batch.
     const ownerContextTest = await ownerContextTestAllowed(env, event, runtime);
     const eventAutoReplyEnabled = autoReplyEnabled || ownerContextTest;
-    if (legacyOutcome.saved[index]?.campaign_event === true) {
-      saved.push({ ok: true, type: text(event?.type), campaign_handled: true, replied: legacyOutcome.saved[index].replied === true });
-      continue;
-    }
     const eventMode = text(event?.mode).toLowerCase() || "unknown";
     const redelivered = event?.deliveryContext?.isRedelivery === true;
     const replyToken = replyTokenOf(event);

@@ -1,3 +1,4 @@
+import { hasKenjiProfilePriceText } from "../../shared/kenji-profile-price-text.mjs";
 import { restrictedReplyCategories } from './kenji-reply-category-gate.mjs';
 import { careBackOctoberReply } from './kenji-care-back-october.mjs';
 import { deliverTravelNotice } from '../../shared/model-travel-line.mjs';
@@ -320,6 +321,7 @@ function compactLookup(value) {
   return normalizeLookup(value).replace(/\s+/g, "");
 }
 
+export const LINE_CARD_ORDINARY_SUBJECTS = Symbol("line-card-ordinary-subjects");
 const LINE_CARD_21829530_ID = "21829530";
 const LINE_CARD_21829530_TRIGGERS = Object.freeze({
   JASPER: { display_intent: "Jasper", action_type: "text" },
@@ -334,8 +336,9 @@ const CARD_MODEL_ENTRY_NAMES = new Set(Object.keys(LINE_CARD_21829530_TRIGGERS))
 
 export function resolveLineCardCampaignTrigger(text = "") {
   const rawTrigger = asString(text).normalize("NFKC").trim();
+  // Card Manager publishes BOOK EI verbatim; other spellings are not Card actions.
   const cardTrigger = Object.keys(LINE_CARD_21829530_TRIGGERS)
-    .find((key) => key.toLowerCase() === rawTrigger.toLowerCase());
+    .find((key) => key === "BOOK EI" ? rawTrigger === key : key.toLowerCase() === rawTrigger.toLowerCase());
   if (!cardTrigger) return null;
   const config = LINE_CARD_21829530_TRIGGERS[cardTrigger];
   return {
@@ -348,6 +351,28 @@ export function resolveLineCardCampaignTrigger(text = "") {
     model_resolution_status: "unresolved",
     canonical_model_id: null,
   };
+}
+
+// Reorder only text slots belonging to the same sender in a Card batch.
+export function orderLineCardBatchEvents(events) {
+  const slotsBySender = new Map();
+  const ordered = [...events];
+  for (const [index, event] of events.entries()) {
+    if (event?.type !== "message" || event.message?.type !== "text" ||
+        event.source?.type !== "user" || !asString(event.message.text).trim()) continue;
+    const userId = getLineUserId({ event });
+    if (!userId) continue;
+    if (!slotsBySender.has(userId)) slotsBySender.set(userId, []);
+    slotsBySender.get(userId).push(index);
+  }
+  for (const slots of slotsBySender.values()) {
+    const messages = slots.map((index) => events[index]);
+    if (!messages.some((event) => resolveLineCardCampaignTrigger(event.message.text)) ||
+        !messages.every((event) => Number.isFinite(event.timestamp) && event.timestamp > 0)) continue;
+    messages.sort((a, b) => a.timestamp - b.timestamp);
+    slots.forEach((index, position) => { ordered[index] = messages[position]; });
+  }
+  return ordered;
 }
 
 const RESERVED_MODEL_ENTRY_TRIGGERS = new Set(["HELLO", "HELP", "MMD", "LINE", "BOOK", "BOOKING", "PRICE", "RATE", "MEMBER", "PRIVATE", "PUBLIC", "VIP", "SVIP", "BLACKCARD"]);
@@ -804,12 +829,10 @@ async function requestKenjiModelAccess(env = {}, lineUserId = "", query = "", ve
     if (payload?.status !== "match" || !payload?.model || typeof payload.model !== "object") return { status: "silent" };
     const modelCode = asString(payload.model.model_code).slice(0, 80);
     const workingName = asString(payload.model.working_name).slice(0, 120);
-    const rawSummary = asString(payload.model.summary).slice(0, 500);
     if (!/^[A-Za-z0-9][A-Za-z0-9_-]{1,31}$/.test(modelCode) || !isSafeKenjiModelCustomerText(workingName, 120)) return { status: "silent" };
-    const summary = isSafeKenjiModelCustomerText(rawSummary, 500) ? rawSummary : "";
     // LINE card clicks carry no verified work lane or booking terms. Never render a
     // price from this thin adapter, even if a compromised RPC includes one.
-    return { status: "match", model: { model_code: modelCode, working_name: workingName, summary } };
+    return { status: "match", model: { model_code: modelCode, working_name: workingName } };
   } catch (_) {
     return { status: "silent" };
   } finally {
@@ -819,7 +842,7 @@ async function requestKenjiModelAccess(env = {}, lineUserId = "", query = "", ve
 
 function isSafeKenjiModelCustomerText(value, max = 500) {
   const text = asString(value);
-  if (!text || text.length > max) return false;
+  if (!text || text.length > max || hasKenjiProfilePriceText(text)) return false;
   return !(
     /(?:\b0\d{8,9}\b|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|https?:\/\/|line\s*(?:id|oa)|telegram|เบอร์(?:โทร)?|อีเมล|ไลน์ส่วนตัว)/i.test(text) ||
     /(?:availability|available|schedule|ตาราง(?:งาน|คิว)|ว่าง(?:วันนี้|คืนนี้|พรุ่งนี้|ไหม)?|เช็กคิว)/i.test(text) ||
@@ -830,9 +853,8 @@ function isSafeKenjiModelCustomerText(value, max = 500) {
 function buildKenjiModelAccessReply(model = {}) {
   const modelCode = asString(model.model_code);
   const workingName = asString(model.working_name);
-  const summary = asString(model.summary);
   if (!modelCode || !workingName) return "";
-  return `ข้อมูลที่เปิดเผยได้ของ ${workingName} (รหัส ${modelCode}) ครับ${summary ? `\n\n${summary}` : ""}`;
+  return `ข้อมูลที่เปิดเผยได้ของ ${workingName} (รหัส ${modelCode}) ครับ`;
 }
 
 function buildKenjiModelAccessDecision(access = {}, options = {}) {
@@ -1231,8 +1253,24 @@ export async function buildKenjiKnowledgeLineReply(event = {}, profile = {}, env
 
 export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, options = {}) {
   const eventText = getLineEventText(event);
-  if (isEmsAlbumCommand(eventText)) return emsAlbumNavigationReply();
   const resolvedModelIntent = options?.modelIntent?.matched === true ? options.modelIntent : resolveKenjiModelIntent(eventText);
+  if (resolvedModelIntent.campaign_trigger || options.campaignBrief === true) {
+    if (event?.type !== "message" || options.campaignLeadQueued !== true) return buildKenjiModelAccessDecision({ status: "silent" });
+    return {
+      text: options.campaignBrief === true ? buildLineCardBriefReply() : buildLineCardLeadReply(),
+      fallback: false,
+      reply_source: options.campaignBrief === true ? "line_card_campaign_brief" : "line_card_campaign_lead",
+      model_attempted: false,
+      model_success: false,
+      model_latency_ms: 0,
+      knowledge_hits: 0,
+      guard_blocked: false,
+      guard_reason: "",
+      ...(options.campaignBrief === true ? {} : { clear_model_context: true }),
+    };
+  }
+
+  if (isEmsAlbumCommand(eventText)) return emsAlbumNavigationReply();
   const inferredIntent = resolvedModelIntent.campaign_trigger ? "card_campaign_lead" : inferLineIntent(eventText, event);
   const postbackIntent = event?.type === "postback"
     ? canonicalRichMenuIntent({ data: event?.postback?.data })
@@ -1315,40 +1353,6 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
     };
   }
 
-  if (intent === "card_campaign_lead" || options.campaignBrief === true) {
-    if (options.campaignLeadQueued !== true) return buildKenjiModelAccessDecision({ status: "silent" });
-    // LINE text actions can also be typed manually. Reveal only an approved
-    // profile whose model code exactly matches this campaign text.
-    if (options.campaignBrief !== true && options.modelAccessAllowed !== false &&
-        isEnabled(env.LINE_CARD_21829530_MODEL_INFO_ENABLED)) {
-      const trigger = resolvedModelIntent.campaign_trigger;
-      if (trigger && resolvedModelIntent.query) {
-        const access = await requestKenjiModelAccess(env, getLineUserId({ event }), resolvedModelIntent.query);
-        if (access.status === "restricted_category" &&
-            (trigger.card_trigger.toLowerCase().startsWith(access.category))) {
-          const decision = buildKenjiModelAccessDecision(access, { clearOnFailure: true });
-          if (decision.text) return { ...decision, reply_source: "line_card_model_access_restricted" };
-        }
-        if (access.status === "match" &&
-            asString(access.model?.model_code).toLowerCase() === trigger.card_trigger.toLowerCase()) {
-          const decision = buildKenjiModelAccessDecision(access);
-          if (decision.text) return { ...decision, reply_source: "line_card_model_info" };
-        }
-      }
-    }
-    return {
-      text: options.campaignBrief === true ? buildLineCardBriefReply() : buildLineCardLeadReply(),
-      fallback: false,
-      reply_source: options.campaignBrief === true ? "line_card_campaign_brief" : "line_card_campaign_lead",
-      model_attempted: false,
-      model_success: false,
-      model_latency_ms: 0,
-      knowledge_hits: 0,
-      guard_blocked: false,
-      guard_reason: "",
-      ...(options.campaignBrief === true ? {} : { clear_model_context: true }),
-    };
-  }
 
   const replyOptions = liveMemberContext ? { ...options, verifiedMemberContext: liveMemberContext } : options;
   const capabilityDecision = decideKenjiCapability({ text: eventText, intent });
@@ -2004,7 +2008,7 @@ async function claimLineCardCampaignLead(env = {}, event = {}, action = "claim",
   return requestLineCardCampaignLeadClaim(env, key, action, claimToken);
 }
 
-async function lineCardCampaignContext(env = {}, lineUserId = "", action = "get", context = null) {
+export async function lineCardCampaignContext(env = {}, lineUserId = "", action = "get", context = null) {
   if (!lineUserId) return { ok: false, found: false, reason: "campaign_context_user_missing" };
   if (!env.KENJI_MODEL_DEDUPE?.idFromName || !env.KENJI_MODEL_DEDUPE?.get) {
     return { ok: false, found: false, reason: "campaign_context_binding_missing" };
@@ -2020,15 +2024,20 @@ async function lineCardCampaignContext(env = {}, lineUserId = "", action = "get"
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || payload?.ok !== true) return { ok: false, found: false, reason: "campaign_context_unavailable" };
     if ((action === "get" || action === "claim") && payload?.found === true) {
+      if (action === "claim" && context?.expected_lead_inbox_id &&
+          payload?.context?.lead_inbox_id !== context.expected_lead_inbox_id) {
+        if (payload.claimed === true) await lineCardCampaignContext(env, lineUserId, "release", { claim_token: payload.claim_token, expected_lead_inbox_id: payload?.context?.lead_inbox_id });
+        return { ok: true, found: false, reason: "campaign_context_wrong_lead" };
+      }
       const claimKey = asString(payload?.context?.lead_claim_key);
       const claimToken = asString(payload?.context?.lead_claim_token);
       if (!/^[a-f0-9]{64}$/.test(claimKey) || !claimToken) {
-        if (action === "claim" && payload?.claimed === true) await lineCardCampaignContext(env, lineUserId, "release", { claim_token: payload.claim_token });
+        if (action === "claim" && payload?.claimed === true) await lineCardCampaignContext(env, lineUserId, "release", { claim_token: payload.claim_token, expected_lead_inbox_id: payload?.context?.lead_inbox_id });
         return { ...payload, committed: false, reason: "campaign_context_link_missing" };
       }
       const claim = await requestLineCardCampaignLeadClaim(env, claimKey, "status", claimToken);
       if (action === "claim" && payload?.claimed === true && claim?.committed !== true) {
-        await lineCardCampaignContext(env, lineUserId, "release", { claim_token: payload.claim_token });
+        await lineCardCampaignContext(env, lineUserId, "release", { claim_token: payload.claim_token, expected_lead_inbox_id: payload?.context?.lead_inbox_id });
       }
       return {
         ...payload,
@@ -2039,6 +2048,60 @@ async function lineCardCampaignContext(env = {}, lineUserId = "", action = "get"
     return payload;
   } catch (_) {
     return { ok: false, found: false, reason: "campaign_context_unavailable" };
+  }
+}
+
+export async function pinLineCardLeadOrder(env, event, { action = "pin_order", receivedAt = Date.now() } = {}) {
+  const messageId = getStableLineMessageId(event);
+  if (!/^[A-Za-z0-9_-]{1,120}$/.test(messageId)) return undefined;
+  const timestamp = event.timestamp;
+  const order = await lineCardCampaignContext(env, getLineUserId({ event }), action, {
+    expected_lead_inbox_id: `line_${messageId}`,
+    occurred_at: Number.isFinite(timestamp) && timestamp > 0 ? timestamp : receivedAt,
+    redelivery: event.deliveryContext?.isRedelivery === true,
+  });
+  return order.observed === true ? order.lead_order : undefined;
+}
+
+export async function enqueueLineCardIngress(env, event, subjectHash, { expectedLeadMessageId, leadOrder } = {}) {
+  const eventId = asString(event?.message?.id);
+  const webhookEventId = asString(event?.webhookEventId || eventId);
+  if (!/^[A-Za-z0-9_-]{1,120}$/.test(eventId) || !/^[A-Za-z0-9_-]{1,120}$/.test(webhookEventId)) {
+    return { error: "campaign_event_id_missing" };
+  }
+  try {
+    const binding = env.KENJI_MODEL_DEDUPE;
+    const key = await sha256Hex(webhookEventId);
+    const messageKey = await sha256Hex(eventId);
+    const aliasStub = binding.get(binding.idFromName(`line-card-message-v1:${messageKey}`));
+    const aliasResponse = await aliasStub.fetch("https://kenji-model-dedupe.internal/campaign-lead/message-alias", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "bind", message_id: eventId, receipt_id: key, webhook_event_id: webhookEventId, subject_hash: subjectHash }),
+    });
+    const alias = await aliasResponse.json();
+    if (!aliasResponse.ok) return { error: "campaign_ingress_unavailable" };
+    if (alias.cancelled === true) return {};
+    if (expectedLeadMessageId === undefined) {
+      leadOrder ??= await pinLineCardLeadOrder(env, event);
+      if (!leadOrder) return { error: "campaign_lead_order_unavailable" };
+    }
+    const stub = binding.get(binding.idFromName(`line-card-ingress-v1:${key}`));
+    const response = await stub.fetch("https://kenji-model-dedupe.internal/campaign-lead/ingress", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "enqueue", event, receipt_id: key, expected_lead_message_id: expectedLeadMessageId, lead_order: leadOrder }),
+    });
+    const result = await response.json();
+    if (!response.ok || (result.accepted !== true && result.cancelled !== true)) return { error: "campaign_ingress_unavailable" };
+    if (result.accepted !== true) return {};
+    if (leadOrder && leadOrder.archive_only !== true && ["pending", "processing"].includes(result.status)) {
+      const accepted = await lineCardCampaignContext(env, getLineUserId({ event }), "accept_order", {
+        expected_lead_inbox_id: `line_${eventId}`,
+      });
+      if (!accepted.ok) return { error: "campaign_lead_order_unavailable" };
+    }
+    return { stub };
+  } catch (_) {
+    return { error: "campaign_ingress_unavailable" };
   }
 }
 
@@ -3068,8 +3131,46 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
     return json({ ok: false, error: "invalid_json" }, 400);
   }
 
-  const events = Array.isArray(body.events) ? body.events : [];
-  const preparedEvents = prepareKenjiLineWebhookBatch(events);
+  const payloadEvents = Array.isArray(body.events) ? body.events : [];
+  const events = orderLineCardBatchEvents(payloadEvents);
+  const campaignFlagsEnabled = isEnabled(env.LINE_CARD_21829530_LEAD_ENABLED) &&
+    isEnabled(env.LINE_CARD_21829530_NATIVE_AUTORESPONSE_CLEAR);
+  const campaignPilotCohort = parseHashAllowlist(env.LINE_CARD_21829530_PILOT_HASHES);
+  const pilotEligibility = new Map();
+  const isolatedEvents = new Set();
+  const batchCardBriefs = new Map();
+  const cardSubjects = new Map();
+  const redeliveredLeadOrders = new Map();
+  for (const event of events) {
+    if (event?.type !== "message" || event?.message?.type !== "text") continue;
+    const userId = event.source?.type === "user" ? getLineUserId({ event }) : "";
+    if (resolveLineCardCampaignTrigger(event.message.text)) {
+      isolatedEvents.add(event);
+      if (userId) {
+        const redelivery = event.deliveryContext?.isRedelivery === true;
+        if (redelivery && options.leadOrder === undefined && campaignFlagsEnabled && campaignPilotCohort.valid &&
+            campaignPilotCohort.hashes.has(await sha256Hex(userId))) {
+          redeliveredLeadOrders.set(event, await pinLineCardLeadOrder(env, event, { action: "observe", receivedAt: options.receivedAt }));
+        }
+        const order = options.leadOrder ?? redeliveredLeadOrders.get(event);
+        if (!redelivery || (order && order.archive_only !== true)) cardSubjects.set(userId, getStableLineMessageId(event));
+      }
+    } else if (userId && asString(event.message.text).trim() && cardSubjects.has(userId)) {
+      batchCardBriefs.set(event, cardSubjects.get(userId));
+      cardSubjects.delete(userId);
+      isolatedEvents.add(event);
+    }
+    // A pilot user may already have a pending brief from a previous webhook.
+    // Preserve each original event so the campaign claim sees the next text.
+    if (userId && campaignFlagsEnabled && campaignPilotCohort.valid) {
+      if (!pilotEligibility.has(userId)) {
+        pilotEligibility.set(userId, campaignPilotCohort.hashes.has(await sha256Hex(userId)));
+      }
+      if (pilotEligibility.get(userId)) isolatedEvents.add(event);
+    }
+    if (options.requireCampaignContext === true) isolatedEvents.add(event);
+  }
+  const preparedEvents = prepareKenjiLineWebhookBatch(events, isolatedEvents);
   const commandIntake = env[CHECKPTS_INTAKE] === true;
   const pointsOnlyIntake = commandIntake && events.length > 0 && events.every(isCheckptsShortcut);
   // The signed Seed owner checks controls, identity and takeover before replying.
@@ -3084,10 +3185,12 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
   const lineBrainEnabled = isEnabled(env.KENJI_LINE_BRAIN_V1_ENABLED);
   const modelOnlyMode = isEnabled(env.KENJI_LINE_MODEL_ONLY_ENABLED);
   const saved = [];
+  const assignedBriefSubjects = new Set();
 
   for (const prepared of preparedEvents) {
     const rawEvent = prepared.raw_event || prepared.turn_event || {};
-    if (commandIntake && isCheckptsShortcut(rawEvent)) {
+    const isolated = isolatedEvents.has(rawEvent);
+    if (!isolated && commandIntake && isCheckptsShortcut(rawEvent)) {
       const persist = syncLineEventAfterReply(env, rawEvent, "points_status", false, false, {
         turn_aggregation: { source: "points_command", suppressed: false, aggregate_count: 1 },
       }).catch(() => ({ skipped: true, reason: "airtable_sync_failed", deduped: false }));
@@ -3125,11 +3228,13 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
       continue;
     }
 
-    const aggregateResult = await aggregateKenjiLineTurn({
-      env,
-      event: prepared.turn_event || rawEvent,
-      batchCount: Number(prepared.aggregate_count) || 1,
-    });
+    const aggregateResult = isolated
+      ? { event: rawEvent, should_reply: true, count: 1, source: "campaign_isolated" }
+      : await aggregateKenjiLineTurn({
+          env,
+          event: prepared.turn_event || rawEvent,
+          batchCount: Number(prepared.aggregate_count) || 1,
+        });
     if (aggregateResult.should_reply !== true) {
       const rawText = getLineEventText(rawEvent);
       const rawIntent = inferLineIntent(rawText, rawEvent);
@@ -3202,7 +3307,6 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
     const campaignTrigger = modelIntent.campaign_trigger || null;
     const eventMode = asString(event?.mode).toLowerCase() || "unknown";
     const supplierRegistrationName = matchHimaiSupplierRegistration(text);
-    const isSupplierRegistration = supplierRegistrationName !== null;
     const canGenerateReply = Boolean(autoReplyEnabled && kenjiEnabled && !ownerReplyBlocked && eventMode !== "standby" && getReplyToken(event));
     const campaignCanReply = Boolean(
       kenjiEnabled && !runtimeLineKill && !ownerReplyBlocked && eventMode !== "standby" &&
@@ -3210,28 +3314,51 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
       event?.type === "message" && event?.message?.type === "text" &&
       event?.source?.type === "user" && getReplyToken(event)
     );
-    const campaignFlagsEnabled = Boolean(
-      isEnabled(env.LINE_CARD_21829530_LEAD_ENABLED) &&
-      isEnabled(env.LINE_CARD_21829530_NATIVE_AUTORESPONSE_CLEAR)
-    );
-    const campaignPilotCohort = parseHashAllowlist(env.LINE_CARD_21829530_PILOT_HASHES);
-    const campaignPilotUserHash = campaignFlagsEnabled && campaignPilotCohort.valid && lineUserId
-      ? await sha256Hex(lineUserId)
-      : "";
-    const campaignPilotEligible = Boolean(campaignPilotUserHash && campaignPilotCohort.hashes.has(campaignPilotUserHash));
-    const campaignContextResult = !campaignTrigger && text && campaignCanReply && campaignFlagsEnabled && campaignPilotEligible
-      ? await lineCardCampaignContext(env, lineUserId, "claim")
+    const campaignPilotEligible = pilotEligibility.get(lineUserId) === true;
+    const needsCampaignContext = options.requireCampaignContext === true || batchCardBriefs.has(rawEvent);
+    if (campaignTrigger) assignedBriefSubjects.delete(lineUserId);
+    const mayClaimBrief = needsCampaignContext || (!assignedBriefSubjects.has(lineUserId) &&
+      !env[LINE_CARD_ORDINARY_SUBJECTS]?.has(lineUserId));
+    const expectedLeadMessageId = batchCardBriefs.get(rawEvent) ?? options.expectedLeadMessageId;
+    const expectedLeadValid = expectedLeadMessageId === undefined || /^[A-Za-z0-9_-]{1,120}$/.test(expectedLeadMessageId);
+    const briefMessageId = getStableLineMessageId(event);
+    const campaignContextResult = !campaignTrigger && mayClaimBrief && expectedLeadValid && text && campaignCanReply && campaignFlagsEnabled && campaignPilotEligible
+      ? await lineCardCampaignContext(env, lineUserId, "claim", {
+        ...(expectedLeadMessageId === undefined ? {} : { expected_lead_inbox_id: `line_${expectedLeadMessageId}` }),
+        ...(/^[A-Za-z0-9_-]{1,120}$/.test(briefMessageId) ? { brief_message_id: briefMessageId } : {}),
+      })
       : { ok: true, found: false };
+    const pendingLeadId = campaignContextResult.pending_lead_inbox_id ||
+      (campaignContextResult.committed === false && campaignContextResult.context?.lead_inbox_id);
+    if (options.requireCampaignContext === true && expectedLeadMessageId &&
+        pendingLeadId === `line_${expectedLeadMessageId}` && campaignContextResult.ok === true) {
+      saved.push({ ok: true, type: event.type, campaign_event: true, campaign_lead_reason: "campaign_brief_waiting_for_lead" });
+      continue;
+    }
+    if (options.requireCampaignContext !== true && pendingLeadId) {
+      const lead = /^line_([A-Za-z0-9_-]{1,120})$/.exec(pendingLeadId);
+      if (!lead) return json({ ok: false, error: "campaign_brief_reservation_unavailable" }, 503);
+      const queued = await enqueueLineCardIngress(env, event, await sha256Hex(lineUserId), { expectedLeadMessageId: lead[1] });
+      if (queued.error) return json({ ok: false, error: queued.error }, 503);
+      assignedBriefSubjects.add(lineUserId);
+      saved.push({ ok: true, type: event.type, campaign_event: true, replied: false });
+      continue;
+    }
     const campaignBrief = Boolean(campaignContextResult.found && campaignContextResult.context);
+    if (!campaignTrigger && lineUserId && (needsCampaignContext || campaignBrief || campaignContextResult.ok !== true)) {
+      assignedBriefSubjects.add(lineUserId);
+    }
     const campaignContextUnavailable = Boolean(
-      !campaignTrigger && text && campaignCanReply &&
-      ((options.requireCampaignContext === true && (!campaignFlagsEnabled || !campaignPilotEligible || campaignContextResult.found !== true)) ||
-        (campaignFlagsEnabled && campaignPilotEligible && (campaignContextResult.ok !== true || (campaignContextResult.found === true && (!campaignContextResult.context || campaignContextResult.committed !== true)))))
+      !campaignTrigger && text &&
+      ((needsCampaignContext && !campaignBrief) ||
+        (campaignCanReply && campaignFlagsEnabled && campaignPilotEligible &&
+          (campaignContextResult.ok !== true || (campaignContextResult.found === true && (!campaignContextResult.context || campaignContextResult.committed !== true)))))
     );
     const campaignItem = campaignTrigger || campaignContextResult.context || null;
     const campaignEvent = Boolean(campaignTrigger || campaignBrief || campaignContextUnavailable);
     const intent = campaignBrief ? "card_campaign_brief" : effectiveIntent;
     const modelOnlyAllowed = !modelOnlyMode || kenjiLineModelOnlyAllowsReply({ intent, modelIntent });
+    const campaignBriefRecovered = campaignBrief && campaignContextResult.brief_committed === true && !campaignContextUnavailable;
     const campaignLeadEnabled = Boolean(
       !ownerReplyBlocked &&
       !campaignContextUnavailable &&
@@ -3241,7 +3368,7 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
       campaignPilotEligible &&
       (!campaignBrief || campaignContextResult.claimed === true)
     );
-    let campaignLeadQueued = false;
+    let campaignLeadQueued = campaignBriefRecovered;
     const campaignGateReason = !campaignEvent
       ? "not_campaign"
       : campaignContextUnavailable ? "campaign_context_unavailable"
@@ -3252,7 +3379,9 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
       : campaignBrief && campaignContextResult.claimed !== true ? "campaign_context_already_claimed"
       : "campaign_lead_not_processed";
     let campaignLeadClaim = { ok: false, claimed: false, reason: campaignGateReason };
-    let campaignLeadRecord = campaignEvent ? { skipped: true, reason: campaignLeadClaim.reason, deduped: false } : null;
+    let campaignLeadRecord = campaignBriefRecovered
+      ? { reason: "campaign_brief_already_committed", deduped: true }
+      : campaignEvent ? { skipped: true, reason: campaignLeadClaim.reason, deduped: false } : null;
     if (campaignLeadEnabled) {
       const campaignTakeover = lineBrainEnabled
         ? ownerTakeover
@@ -3262,6 +3391,14 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
         : campaignTakeover.active === true
           ? { ok: true, claimed: false, reason: "owner_takeover_active" }
           : await claimLineCardCampaignLead(env, event, "claim");
+      let leadOrder = options.leadOrder ?? redeliveredLeadOrders.get(rawEvent);
+      if (campaignLeadClaim.claimed === true && campaignTrigger && leadOrder === undefined) {
+        leadOrder = await pinLineCardLeadOrder(env, event, { action: "observe", receivedAt: options.receivedAt });
+        if (!leadOrder) {
+          await claimLineCardCampaignLead(env, event, "release", campaignLeadClaim.claim_token);
+          campaignLeadClaim = { claimed: false, reason: "campaign_lead_order_unavailable" };
+        }
+      }
       if (campaignLeadClaim.claimed === true) {
         try {
           campaignLeadRecord = await writeLineCardCampaignEventToConsoleInbox(
@@ -3286,6 +3423,7 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
               lead_inbox_id: `line_${getStableLineMessageId(event)}`,
               lead_claim_key: campaignLeadClaim.claim_key,
               lead_claim_token: campaignLeadClaim.claim_token,
+              ...(leadOrder === undefined ? {} : { lead_order: leadOrder }),
             });
             if (contextStored?.stored !== true) {
               campaignLeadRecord = { ...campaignLeadRecord, skipped: true, reason: "campaign_context_store_failed" };
@@ -3299,7 +3437,7 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
               }
             }
           } else if (campaignBrief) {
-            const contextCommitted = await lineCardCampaignContext(env, lineUserId, "commit", { claim_token: campaignContextResult.claim_token });
+            const contextCommitted = await lineCardCampaignContext(env, lineUserId, "commit", { claim_token: campaignContextResult.claim_token, expected_lead_inbox_id: campaignItem?.lead_inbox_id });
             if (contextCommitted?.committed === true) {
               const committed = await claimLineCardCampaignLead(env, event, "commit", campaignLeadClaim.claim_token);
               campaignLeadQueued = committed?.committed === true;
@@ -3323,8 +3461,9 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
       }
     }
     if (campaignBrief && campaignContextResult.claimed === true && !campaignLeadQueued) {
-      await lineCardCampaignContext(env, lineUserId, "release", { claim_token: campaignContextResult.claim_token });
+      await lineCardCampaignContext(env, lineUserId, "release", { claim_token: campaignContextResult.claim_token, expected_lead_inbox_id: campaignItem?.lead_inbox_id });
     }
+    const isSupplierRegistration = !campaignEvent && supplierRegistrationName !== null;
     const canRegisterSupplier = Boolean(!modelOnlyMode && autoReplyEnabled && !ownerReplyBlocked && eventMode !== "standby" && getReplyToken(event));
     const capabilityDecision = decideKenjiCapability({ text, intent });
     const needsModelPreflight = Boolean(modelOnlyAllowed && !campaignEvent && !isSupplierRegistration && canGenerateReply && !runtimeModelKill && capabilityDecision.capability === KENJI_CAPABILITIES.SAFE_CONVERSATION && isEnabled(env.LINE_KENJI_MODEL_ENABLED));
@@ -3367,7 +3506,7 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
               modelIntent,
             })
           : { text: "", fallback: false, reply_source: null, model_attempted: false, model_success: false, model_latency_ms: 0, knowledge_hits: 0, guard_blocked: false, guard_reason: "" });
-    let replyText = replyDecision.text;
+    let replyText = campaignBriefRecovered ? "" : replyDecision.text;
     const postDecisionTakeover = lineUserId && replyText
       ? (lineBrainEnabled
           ? await getLineOwnerTakeoverState(env, lineUserId, continuity)
@@ -3380,6 +3519,7 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
       (postDecisionTakeover?.ok !== true && postDecisionTakeover?.reason === "takeover_lookup_unconfigured");
     let shouldReply = Boolean(
       modelOnlyAllowed &&
+      !campaignBriefRecovered &&
       (autoReplyEnabled || (campaignEvent && campaignCanReply)) &&
       eventMode !== "standby" &&
       replyText &&
@@ -3626,6 +3766,7 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
       intent,
       campaign_event: campaignEvent,
       campaign_lead_queued: campaignLeadQueued,
+      campaign_brief_recovered: campaignBriefRecovered,
       campaign_lead_reason: asString(campaignLeadRecord?.reason || campaignLeadClaim.reason).slice(0, 80),
       campaign_queue_status: Number.isInteger(campaignLeadRecord?.status) ? campaignLeadRecord.status : null,
       deduped: Boolean(record?.deduped),
@@ -3666,10 +3807,46 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
     });
   }
 
-  return json({ ok: true, worker: WORKER_NAME, route: "line_webhook", events: events.length, saved });
+  // Seed pairs these receipts with the original payload, not processing order.
+  const receipts = new Map(events.map((event, index) => [event, saved[index]]));
+  return json({ ok: true, worker: WORKER_NAME, route: "line_webhook", events: events.length, saved: payloadEvents.map((event) => receipts.get(event)) });
 }
 
-export async function processDurableLineCardEvent(event, env = {}, receivedAt = Date.now()) {
+// A transient read failure leaves the pinned lead status unknown.
+async function isQueuedLineCardLeadPending(env, event, leadMessageId) {
+  try {
+    const binding = env.KENJI_MODEL_DEDUPE;
+    const [messageHash, subjectHash, briefReceiptId] = await Promise.all([
+      sha256Hex(leadMessageId),
+      sha256Hex(getLineUserId({ event })),
+      sha256Hex(asString(event.webhookEventId || event.message.id)),
+    ]);
+    const alias = binding.get(binding.idFromName(`line-card-message-v1:${messageHash}`));
+    const aliasResponse = await alias.fetch("https://kenji-model-dedupe.internal/campaign-lead/message-alias", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "lookup", message_id: leadMessageId, subject_hash: subjectHash }),
+    });
+    if (aliasResponse.status >= 500 || aliasResponse.status === 429) return null;
+    if (!aliasResponse.ok) return false;
+    const { receipt_id: receiptId, found } = await aliasResponse.json();
+    if (!found || !/^[a-f0-9]{64}$/.test(receiptId) || receiptId === briefReceiptId) return false;
+    const receipt = binding.get(binding.idFromName(`line-card-ingress-v1:${receiptId}`));
+    const response = await receipt.fetch("https://kenji-model-dedupe.internal/campaign-lead/ingress", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "status" }),
+    });
+    if (response.status >= 500 || response.status === 429) return null;
+    if (!response.ok) return false;
+    const status = await response.json();
+    return status.receipt_id === receiptId && ["pending", "processing"].includes(status.status);
+  } catch (_) {
+    return null;
+  }
+}
+
+export async function processDurableLineCardEvent(event, env = {}, receivedAt = Date.now(), expectedLeadMessageId, leadOrder) {
+  if (!resolveLineCardCampaignTrigger(event?.message?.text) && !/^[A-Za-z0-9_-]{1,120}$/.test(expectedLeadMessageId || "")) {
+    return { ok: false, reason: "campaign_brief_lead_not_pinned" };
+  }
   const timestamp = Number(event?.timestamp);
   const ageStart = Number.isFinite(timestamp) && timestamp > 0 ? Math.min(timestamp, receivedAt) : receivedAt;
   const suppressCampaignReply = Date.now() - ageStart >= 50_000;
@@ -3679,16 +3856,21 @@ export async function processDurableLineCardEvent(event, env = {}, receivedAt = 
     method: "POST",
     headers: { "content-type": "application/json", "x-line-signature": signature },
     body,
-  }), env, null, { suppressCampaignReply, requireCampaignContext: true });
+  }), env, null, { suppressCampaignReply, requireCampaignContext: true, expectedLeadMessageId, receivedAt, leadOrder });
   if (!response.ok) return { ok: false, reason: "campaign_processor_unavailable" };
   const result = await response.json().catch(() => ({}));
   const saved = result?.saved?.[0];
+  let reason = saved?.campaign_lead_reason || "campaign_not_queued";
+  if (reason === "campaign_brief_waiting_for_lead" &&
+      await isQueuedLineCardLeadPending(env, event, expectedLeadMessageId) === false) {
+    reason = "campaign_context_unavailable";
+  }
   return {
     ok: saved?.campaign_lead_queued === true,
-    reason: saved?.campaign_lead_reason || "campaign_not_queued",
+    reason,
     queue_status: saved?.campaign_queue_status || null,
     replied: saved?.replied === true,
-    reply_suppressed: suppressCampaignReply,
+    reply_suppressed: suppressCampaignReply || saved?.campaign_brief_recovered === true,
   };
 }
 
@@ -3727,7 +3909,7 @@ export async function processDurableLineCardUnsend(eventId, env = {}, subjectHas
   if (!env.KENJI_MODEL_DEDUPE?.idFromName || !env.KENJI_MODEL_DEDUPE?.get) return { ok: false, found: Boolean(existing?.id), redacted, reason: "campaign_context_binding_missing" };
   const contextStub = env.KENJI_MODEL_DEDUPE.get(env.KENJI_MODEL_DEDUPE.idFromName(`kenji-line-card-21829530-context-v1:${safeSubjectHash}`));
   const contextResponse = await contextStub.fetch("https://kenji-model-dedupe.internal/campaign-lead/context", {
-    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "get" }),
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "get", context: { expected_lead_inbox_id: `line_${safeEventId}`, include_inactive: true } }),
   });
   const contextPayload = await contextResponse.json().catch(() => ({}));
   if (!contextResponse.ok || contextPayload?.ok !== true) return { ok: false, found: Boolean(existing?.id), redacted, reason: "campaign_context_unavailable" };
@@ -3735,7 +3917,7 @@ export async function processDurableLineCardUnsend(eventId, env = {}, subjectHas
   if (contextPayload?.found === true && contextPayload?.context?.lead_inbox_id === `line_${safeEventId}`) {
     const deleteResponse = await contextStub.fetch("https://kenji-model-dedupe.internal/campaign-lead/context", {
       method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action: "delete", context: { lead_inbox_id: contextPayload.context.lead_inbox_id, context_token: contextPayload.context.context_token } }),
+      body: JSON.stringify({ action: "delete", context: { expected_lead_inbox_id: `line_${safeEventId}`, lead_inbox_id: contextPayload.context.lead_inbox_id, context_token: contextPayload.context.context_token } }),
     });
     const deleted = await deleteResponse.json().catch(() => ({}));
     if (!deleteResponse.ok || deleted?.deleted !== true) return { ok: false, found: Boolean(existing?.id), redacted, reason: "campaign_context_delete_failed" };

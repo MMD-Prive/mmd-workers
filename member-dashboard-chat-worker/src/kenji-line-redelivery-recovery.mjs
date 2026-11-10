@@ -1,5 +1,5 @@
 import { isRetiredCheckptsCommand } from "./checkpts-command.mjs";
-import { createLineSignature, extractKenjiModelLookupQuery, inferLineIntent, requestKenjiRuntimeStatus, resolveLineCardCampaignTrigger, verifyLineSignature } from "./index.js";
+import { createLineSignature, extractKenjiModelLookupQuery, inferLineIntent, LINE_CARD_ORDINARY_SUBJECTS, requestKenjiRuntimeStatus, resolveLineCardCampaignTrigger, verifyLineSignature } from "./index.js";
 import { ownerContextTestAllowed, ownerContextTestRequested } from "./kenji-owner-context-test.mjs";
 import { restrictedReplyCategories, approvedCategoryReply, isExplicitCategoryCommand } from './kenji-reply-category-gate.mjs';
 import { approvedPublicQa } from './kenji-approved-public-qa.mjs';
@@ -43,6 +43,7 @@ function withoutOwnerContextTest(env = {}) {
 }
 
 export async function hasCardCampaignContext(env = {}, event = {}) {
+  if (env[LINE_CARD_ORDINARY_SUBJECTS]?.has(text(event?.source?.userId))) return false;
   if (!enabled(env.LINE_CARD_21829530_LEAD_ENABLED) || !enabled(env.LINE_CARD_21829530_NATIVE_AUTORESPONSE_CLEAR)) return false;
   if (event?.source?.type !== "user" || event?.type !== "message" || event?.message?.type !== "text") return false;
   const userId = text(event?.source?.userId);
@@ -58,7 +59,7 @@ export async function hasCardCampaignContext(env = {}, event = {}) {
     const response = await env.KENJI_MODEL_DEDUPE.get(id).fetch("https://kenji-model-dedupe.internal/campaign-lead/context", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action: "get" }),
+      body: JSON.stringify({ action: "get", context: { brief_message_id: text(event.message.id || event.webhookEventId) } }),
     });
     if (!response.ok) return true;
     const result = await response.json();
@@ -157,8 +158,14 @@ async function findAiEvent(env = {}, event = {}) {
   }
 }
 
+function canRecoverAsFreshEvent(event, outcome) {
+  // Card ingress uses LINE's redelivery flag to distinguish an original lead from a retry.
+  return outcome?.retry_allowed === true
+    && !(event?.type === "message" && event?.message?.type === "text" && resolveLineCardCampaignTrigger(event.message.text));
+}
+
 function recoverableEvent(event = {}, outcome = {}) {
-  if (event?.deliveryContext?.isRedelivery !== true || outcome.retry_allowed !== true) return event;
+  if (event?.deliveryContext?.isRedelivery !== true || !canRecoverAsFreshEvent(event, outcome)) return event;
   return {
     ...event,
     deliveryContext: {
@@ -361,7 +368,7 @@ export async function handleKenjiSeedLineRequestWithRedeliveryRecovery(
     outcomes.set(index, redeliveryOutcomeFromAiEvent(existing));
   }));
 
-  const hasRecoverable = redeliveryIndexes.some((index) => outcomes.get(index)?.retry_allowed === true);
+  const hasRecoverable = redeliveryIndexes.some((index) => canRecoverAsFreshEvent(events[index], outcomes.get(index)));
   const hasMembershipStatusRefinement = membershipStatusIndexes.length > 0;
   if (!hasRecoverable && !hasMembershipStatusRefinement) {
     const response = await handleKenjiSeedLineRequest(request, seedEnv, ctx, legacyWorker, perTurn);

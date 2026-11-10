@@ -194,6 +194,96 @@ test("production route queues JASPER and its linked brief before one reply each 
   assert.equal(f.env.LINE_AUTO_REPLY_ENABLED, "false");
 });
 
+test("a queued Card brief cannot be diverted to the EMs album shortcut", async () => {
+  const f = fixture();
+  await withFetch(f.fetch, async () => {
+    await route.fetch(await signedWebhook([lineEvent("JASPER", "msg-lead-album")], f.env), f.env);
+    await route.fetch(await signedWebhook([lineEvent("ขอดูอัลบั้ม EMs", "msg-brief-album")], f.env), f.env);
+  });
+  assert.deepEqual(f.calls.map((call) => call.type), ["queue", "reply", "queue", "reply"]);
+  const brief = f.records.get("line_msg-brief-album");
+  assert.equal(JSON.parse(brief.fields.payload_json).lead_inbox_id, "line_msg-lead-album");
+  assert.doesNotMatch(JSON.stringify(f.calls.at(-1)), /my-mmd\/ems|quickReply|ดูอัลบั้ม EMs/);
+});
+
+test("signed Card actions never reach the category profile RPC with intake on or off", async () => {
+  for (const flags of [false, true]) {
+    const f = fixture({ flags });
+    const rpcCalls = [];
+    const runtime = f.env.ADMIN_WORKER;
+    Object.assign(f.env, {
+      KENJI_LINE_REPLY_CATEGORY_MODE: "approved_qa_promo",
+      LINE_AUTO_REPLY_ENABLED: "true",
+      LINE_KENJI_MODEL_ACCESS_ENABLED: "true",
+      LINE_CARD_21829530_MODEL_INFO_ENABLED: "true",
+      ADMIN_WORKER: {
+        async fetch(request) {
+          if (new URL(request.url).pathname.endsWith("/model-access")) {
+            rpcCalls.push(await request.json());
+            return Response.json({ ok: true, status: "profile_link", destination: "public" });
+          }
+          return runtime.fetch(request);
+        },
+      },
+    });
+    await withFetch(f.fetch, async () => {
+      const response = await route.fetch(await signedWebhook([lineEvent("JASPER", "msg-category-card", { timestamp: Date.now() })], f.env), f.env);
+      assert.equal(response.status, 200);
+    });
+    assert.equal(rpcCalls.length, 0, `intake enabled: ${flags}`);
+    const lead = f.records.get("line_msg-category-card");
+    assert.equal(Boolean(lead && JSON.parse(lead.fields.payload_json).parsed_intent === "card_campaign_lead"), flags);
+    assert.equal(f.calls.filter((call) => call.type === "reply").length, 0);
+  }
+});
+
+test("inline signed batch keeps a Card and its brief out of aggregation and category lookup", async () => {
+  for (const [flags, queueStatus] of [[true, 200], [true, 422], [false, 200]]) {
+    const f = fixture({ flags, queueStatus });
+    const rpcCalls = [];
+    const runtime = f.env.ADMIN_WORKER;
+    Object.assign(f.env, {
+      KENJI_LINE_REPLY_CATEGORY_MODE: "approved_qa_promo",
+      KENJI_LINE_MESSAGE_AGGREGATION_ENABLED: "true",
+      KENJI_LINE_MESSAGE_AGGREGATION_WAIT_MS: "0",
+      LINE_AUTO_REPLY_ENABLED: "true",
+      LINE_KENJI_MODEL_ACCESS_ENABLED: "true",
+      ADMIN_WORKER: {
+        async fetch(request) {
+          if (new URL(request.url).pathname.endsWith("/model-access")) {
+            rpcCalls.push(await request.json());
+            return Response.json({ ok: true, status: "profile_link", destination: "public" });
+          }
+          return runtime.fetch(request);
+        },
+      },
+    });
+    const timestamp = Date.now();
+    const signed = await signedWebhook([
+      lineEvent("JASPER", "msg-inline-card", { timestamp }),
+      lineEvent("Hiro", "msg-inline-brief", { timestamp }),
+      lineEvent("Hiro", "msg-after-brief", { timestamp }),
+      lineEvent("Hiro", "msg-other-subject", { timestamp, source: { type: "user", userId: "U" + "2".repeat(32) } }),
+    ], f.env);
+    const response = await withFetch(f.fetch, () => route.fetch(signed, f.env));
+    assert.equal(response.status, 200);
+    const result = await response.json();
+    assert.deepEqual(result.saved.slice(0, 2).map(({ campaign_handled }) => campaign_handled), [true, true]);
+    assert.deepEqual(rpcCalls.map(({ line_user_id }) => line_user_id), [LINE_USER_ID, "U" + "2".repeat(32)]);
+    assert.notEqual(result.saved[2].campaign_handled, true);
+    const queues = f.calls.filter(({ type }) => type === "queue")
+      .map(({ body }) => JSON.parse(body.fields.payload_json))
+      .filter(({ parsed_intent }) => parsed_intent?.startsWith("card_campaign_"));
+    const committed = flags && queueStatus === 200;
+    assert.deepEqual(queues.map(({ parsed_intent }) => parsed_intent), committed
+      ? ["card_campaign_lead", "card_campaign_brief"] : flags ? ["card_campaign_lead"] : []);
+    if (committed) {
+      assert.equal(queues[1].lead_inbox_id, "line_msg-inline-card");
+      assert.equal(queues[1].raw_text, "Hiro");
+    }
+  }
+});
+
 test("ack-first production route completes campaign queue and reply in waitUntil", async () => {
   const f = fixture();
   const pending = [];
@@ -493,6 +583,7 @@ test("one signed webhook with lead and following brief journals both before HTTP
     const response = await route.fetch(await signedWebhook([
       lineEvent("JASPER", "msg-batch-lead"),
       lineEvent("พรุ่งนี้สองทุ่ม แถวสาทร", "msg-batch-brief"),
+      lineEvent("package", "msg-batch-after-brief"),
     ], f.env), f.env, ctx);
     assert.equal(response.status, 200);
     const briefKey = createHash("sha256").update("msg-batch-brief").digest("hex");
@@ -501,6 +592,12 @@ test("one signed webhook with lead and following brief journals both before HTTP
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "status" }),
     });
     assert.equal((await receipt.json()).found, true);
+    const ordinaryKey = createHash("sha256").update("msg-batch-after-brief").digest("hex");
+    const ordinaryReceipt = await f.env.KENJI_MODEL_DEDUPE.get(`line-card-ingress-v1:${ordinaryKey}`)
+      .fetch("https://kenji-model-dedupe.internal/campaign-lead/ingress", {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "status" }),
+      });
+    assert.equal((await ordinaryReceipt.json()).found, false);
     for (let round = 0; round < 6; round += 1) {
       const count = pending.length;
       await Promise.all(pending);
@@ -509,39 +606,501 @@ test("one signed webhook with lead and following brief journals both before HTTP
   });
   assert.equal(f.records.has("line_msg-batch-lead"), true);
   assert.equal(f.records.has("line_msg-batch-brief"), true);
+  const ordinary = f.records.get("line_msg-batch-after-brief");
+  assert.ok(ordinary, "ordinary message after brief is recorded");
+  assert.doesNotMatch(JSON.parse(ordinary.fields.payload_json).parsed_intent, /^card_campaign_/);
   assert.equal(JSON.parse(f.records.get("line_msg-batch-brief").fields.payload_json).lead_inbox_id, "line_msg-batch-lead");
 });
 
-test("reordered brief waits for source lead instead of entering Inbox as ordinary text", async () => {
+test("a failed durable brief does not let the next message take its place", async () => {
   const f = fixture();
   const pending = [];
   const ctx = { waitUntil(promise) { pending.push(Promise.resolve(promise)); } };
-  await withFetch(f.fetch, async () => {
-    const response = await route.fetch(await signedWebhook([
-      lineEvent("พรุ่งนี้สองทุ่ม แถวสาทร", "msg-reordered-brief"),
-      lineEvent("JASPER", "msg-reordered-lead"),
-    ], f.env), f.env, ctx);
-    assert.equal(response.status, 200);
+  const fetchWithBriefFailure = async (input, init = {}) => {
+    if (init.method === "POST" && new URL(String(input)).hostname === "api.airtable.com") {
+      const { fields } = JSON.parse(init.body);
+      if (fields?.inbox_id === "line_msg-failed-batch-brief") return new Response("fixture failure", { status: 422 });
+    }
+    return f.fetch(input, init);
+  };
+  await withFetch(fetchWithBriefFailure, async () => {
+    const request = await signedWebhook([
+      lineEvent("JASPER", "msg-failed-batch-lead"),
+      lineEvent("Hiro", "msg-failed-batch-brief"),
+      lineEvent("package", "msg-failed-batch-after"),
+    ], f.env);
+    assert.equal((await route.fetch(request, f.env, ctx)).status, 200);
     for (let round = 0; round < 6; round += 1) {
       const count = pending.length;
       await Promise.all(pending);
       if (pending.length === count) break;
     }
-    assert.equal(f.records.has("line_msg-reordered-brief"), false);
-    assert.equal(f.records.has("line_msg-reordered-lead"), true);
-    const key = createHash("sha256").update("msg-reordered-brief").digest("hex");
-    const stub = f.env.KENJI_MODEL_DEDUPE.get(f.env.KENJI_MODEL_DEDUPE.idFromName(`line-card-ingress-v1:${key}`));
-    const realNow = Date.now;
-    try {
-      Date.now = () => realNow() + 2000;
-      const result = await stub.fetch("https://kenji-model-dedupe.internal/campaign-lead/ingress", {
-        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "process" }),
-      });
-      assert.equal((await result.json()).status, "done");
-    } finally { Date.now = realNow; }
   });
+  assert.ok(f.records.has("line_msg-failed-batch-lead"));
+  assert.equal(f.records.has("line_msg-failed-batch-brief"), false);
+  const ordinary = f.records.get("line_msg-failed-batch-after");
+  assert.ok(ordinary, "ordinary message is recorded while the original brief remains retryable");
+  assert.doesNotMatch(JSON.parse(ordinary.fields.payload_json).parsed_intent, /^card_campaign_/);
+});
+
+for (const durable of [false, true]) {
+  test(`out-of-order signed batch binds each brief to its own lead (${durable ? "durable" : "inline"})`, async () => {
+    const f = fixture();
+    const pending = [];
+    const ctx = durable ? { waitUntil(promise) { pending.push(Promise.resolve(promise)); } } : undefined;
+    const now = Date.now() - 5000;
+    const events = [
+      lineEvent("JASPER", "msg-order-lead-a", { timestamp: now }),
+      lineEvent("BOOK EI", "msg-order-lead-b", { timestamp: now + 2000 }),
+      lineEvent("brief A", "msg-order-brief-a", { timestamp: now + 1000 }),
+      lineEvent("brief B", "msg-order-brief-b", { timestamp: now + 3000 }),
+      lineEvent("package", "msg-order-ordinary", { timestamp: now + 4000 }),
+    ];
+    await withFetch(f.fetch, async () => {
+      const response = await route.fetch(await signedWebhook(events, f.env), f.env, ctx);
+      assert.equal(response.status, 200);
+      if (!durable) {
+        const result = await response.json();
+        assert.deepEqual(result.saved.map(({ campaign_handled }) => Boolean(campaign_handled)), [true, true, true, true, false]);
+      }
+      for (let round = 0; round < 6; round += 1) {
+        const count = pending.length;
+        await Promise.all(pending);
+        if (pending.length === count) break;
+      }
+    });
+    const metadata = (key) => JSON.parse(f.records.get(`line_msg-order-${key}`).fields.payload_json);
+    assert.equal(metadata("brief-a").lead_inbox_id, "line_msg-order-lead-a");
+    assert.equal(metadata("brief-b").lead_inbox_id, "line_msg-order-lead-b");
+    assert.deepEqual([...f.records.keys()].slice(0, 4), [
+      "line_msg-order-lead-a", "line_msg-order-brief-a", "line_msg-order-lead-b", "line_msg-order-brief-b",
+    ]);
+    assert.doesNotMatch(metadata("ordinary").parsed_intent, /^card_campaign_/);
+  });
+}
+
+test("a brief arriving first in the payload is processed after its earlier timestamped lead", async () => {
+  const f = fixture();
+  const pending = [];
+  const ctx = { waitUntil(promise) { pending.push(Promise.resolve(promise)); } };
+  await withFetch(f.fetch, async () => {
+    const now = Date.now();
+    const response = await route.fetch(await signedWebhook([
+      lineEvent("พรุ่งนี้สองทุ่ม แถวสาทร", "msg-reordered-brief", { timestamp: now }),
+      lineEvent("JASPER", "msg-reordered-lead", { timestamp: now - 1000 }),
+    ], f.env), f.env, ctx);
+    assert.equal(response.status, 200);
+    await Promise.all(pending);
+  });
+  assert.deepEqual([...f.records.keys()], ["line_msg-reordered-lead", "line_msg-reordered-brief"]);
   assert.equal(JSON.parse(f.records.get("line_msg-reordered-brief").fields.payload_json).lead_inbox_id, "line_msg-reordered-lead");
 });
+
+test("a durable brief with a planned lead cannot claim a different current lead", async () => {
+  const f = fixture();
+  const event = lineEvent("brief A", "msg-wrong-lead-brief");
+  const key = createHash("sha256").update(event.message.id).digest("hex");
+  const stub = f.env.KENJI_MODEL_DEDUPE.get(`line-card-ingress-v1:${key}`);
+  const ingress = (body) => stub.fetch("https://kenji-model-dedupe.internal/campaign-lead/ingress", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+  });
+  await withFetch(f.fetch, async () => {
+    await route.fetch(await signedWebhook([lineEvent("BOOK EI", "msg-current-lead-b")], f.env), f.env);
+    assert.equal((await (await ingress({ action: "enqueue", receipt_id: key, event,
+      expected_lead_message_id: "msg-planned-lead-a" })).json()).accepted, true);
+    const processed = await (await ingress({ action: "process" })).json();
+    assert.equal(processed.status, "pending");
+    assert.equal(processed.reason, "campaign_context_unavailable");
+    assert.equal(f.records.has("line_msg-wrong-lead-brief"), false);
+    await route.fetch(await signedWebhook([lineEvent("brief B", "msg-right-lead-brief")], f.env), f.env);
+    assert.equal(JSON.parse(f.records.get("line_msg-right-lead-brief").fields.payload_json).lead_inbox_id, "line_msg-current-lead-b");
+  });
+});
+
+for (const durable of [false, true]) {
+  test(`retry keeps the intake order after the first context order write fails (${durable ? "durable" : "inline"} next brief)`, async () => {
+    const f = fixture({ contextPutFailures: 1 });
+    const binding = f.env.KENJI_MODEL_DEDUPE;
+    const get = binding.get.bind(binding);
+    const orderWrites = [];
+    binding.get = (id) => {
+      const object = get(id);
+      return { async fetch(input, init) {
+        if (String(input).endsWith("/campaign-lead/context")) {
+          const { action, context } = JSON.parse(init?.body || "{}");
+          // A queued lead must not allocate its order from the processor.
+          if (action === "observe") return Response.json({ ok: false }, { status: 503 });
+          if (action === "put") orderWrites.push({ lead: context.lead_inbox_id, order: context.lead_order });
+        }
+        return object.fetch(input, init);
+      } };
+    };
+    const pending = [];
+    const ctx = { waitUntil(promise) { pending.push(Promise.resolve(promise)); } };
+    const now = Date.now() - 5000;
+    // Equal timestamps exercise the stable first-observed tie breaker.
+    const oldLead = lineEvent("JASPER", "msg-late-context-a", { timestamp: now });
+    const newLead = lineEvent("BOOK EI", "msg-late-context-b", { timestamp: now });
+    const brief = lineEvent("brief for B", "msg-brief-for-newer", { timestamp: now + 1000 });
+    const stub = f.env.KENJI_MODEL_DEDUPE.get(`line-card-ingress-v1:${createHash("sha256").update(oldLead.message.id).digest("hex")}`);
+    const ingress = async (action) => (await stub.fetch("https://kenji-model-dedupe.internal/campaign-lead/ingress", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action }),
+    })).json();
+    const deliver = async (event, mode) => {
+      assert.equal((await route.fetch(await signedWebhook([event], f.env), f.env, mode)).status, 200);
+      for (let round = 0; round < 6; round += 1) {
+        const count = pending.length;
+        await Promise.all(pending);
+        if (pending.length === count) break;
+      }
+    };
+    await withFetch(f.fetch, async () => {
+      await deliver(oldLead, ctx);
+      assert.equal((await ingress("status")).status, "pending");
+      const object = binding.objects.get(`line-card-ingress-v1:${createHash("sha256").update(oldLead.message.id).digest("hex")}`);
+      const receipt = await object.state.storage.get("campaign-ingress:event");
+      assert.deepEqual(receipt.lead_order, { occurred_at: now, sequence: 1 });
+      await deliver(newLead, ctx);
+      const realNow = Date.now;
+      try {
+        Date.now = () => realNow() + 2000;
+        assert.equal((await ingress("process")).status, "done");
+      } finally { Date.now = realNow; }
+      await deliver(brief, durable ? ctx : undefined);
+    });
+    assert.deepEqual(orderWrites, [
+      { lead: "line_msg-late-context-a", order: { occurred_at: now, sequence: 1 } },
+      { lead: "line_msg-late-context-b", order: { occurred_at: now, sequence: 2 } },
+      { lead: "line_msg-late-context-a", order: { occurred_at: now, sequence: 1 } },
+    ]);
+    assert.ok(f.records.has("line_msg-late-context-a"));
+    assert.ok(f.records.has("line_msg-late-context-b"));
+    assert.equal(JSON.parse(f.records.get("line_msg-brief-for-newer").fields.payload_json).lead_inbox_id, "line_msg-late-context-b");
+  });
+}
+
+test("an unavailable intake order returns 503 before the Card is acknowledged", async () => {
+  const f = fixture();
+  const pending = [];
+  const ctx = { waitUntil(promise) { pending.push(promise); } };
+  const binding = f.env.KENJI_MODEL_DEDUPE;
+  const get = binding.get.bind(binding);
+  binding.get = (id) => {
+    const object = get(id);
+    return { fetch(input, init) {
+      if (String(input).endsWith("/campaign-lead/context") && JSON.parse(init?.body || "{}").action === "pin_order") {
+        return Response.json({ ok: false }, { status: 503 });
+      }
+      return object.fetch(input, init);
+    } };
+  };
+  const lead = lineEvent("JASPER", "msg-unavailable-order");
+  const response = await withFetch(f.fetch, async () => route.fetch(await signedWebhook([lead], f.env), f.env, ctx));
+  assert.equal(response.status, 503);
+  assert.equal((await response.json()).error, "campaign_lead_order_unavailable");
+  assert.equal(pending.length, 0);
+  assert.equal(binding.objects.has(`line-card-ingress-v1:${createHash("sha256").update(lead.message.id).digest("hex")}`), false);
+  assert.equal(f.records.has("line_msg-unavailable-order"), false);
+});
+
+for (const durable of [false, true]) {
+  test(`equal-timestamp redelivery without an original pin cannot displace B (${durable ? "durable" : "inline"})`, async () => {
+    const f = fixture();
+    const pending = [];
+    const ctx = { waitUntil(promise) { pending.push(Promise.resolve(promise)); } };
+    const binding = f.env.KENJI_MODEL_DEDUPE;
+    const get = binding.get.bind(binding);
+    let failFirstPin = true;
+    binding.get = (id) => {
+      const object = get(id);
+      return { fetch(input, init) {
+        if (failFirstPin && String(input).endsWith("/campaign-lead/context") &&
+            JSON.parse(init?.body || "{}").action === "pin_order") {
+          failFirstPin = false;
+          return Response.json({ ok: false }, { status: 503 });
+        }
+        return object.fetch(input, init);
+      } };
+    };
+    const timestamp = Date.now() - 5000;
+    const a = lineEvent("JASPER", "msg-unpinned-a", { timestamp });
+    const b = lineEvent("BOOK EI", "msg-unpinned-b", { timestamp });
+    const brief = lineEvent("brief for B", "msg-unpinned-brief", { timestamp: timestamp + 1000 });
+    const deliver = async (events, mode) => {
+      const response = await route.fetch(await signedWebhook(events, f.env), f.env, mode);
+      for (let round = 0; round < 6; round += 1) {
+        const count = pending.length;
+        await Promise.all(pending);
+        if (pending.length === count) break;
+      }
+      return response;
+    };
+    await withFetch(f.fetch, async () => {
+      assert.equal((await deliver([a], ctx)).status, 503);
+      assert.equal(f.records.has("line_msg-unpinned-a"), false);
+      assert.equal((await deliver([b], ctx)).status, 200);
+      assert.equal((await deliver([
+        { ...a, deliveryContext: { isRedelivery: true } }, brief,
+      ], durable ? ctx : undefined)).status, 200);
+    });
+    assert.ok(f.records.has("line_msg-unpinned-a"), "redelivered A is still captured as a lead");
+    assert.equal(JSON.parse(f.records.get("line_msg-unpinned-brief").fields.payload_json).lead_inbox_id, "line_msg-unpinned-b");
+  });
+}
+
+for (const { durable, statusFailures } of [
+  { durable: false, statusFailures: 0 },
+  { durable: true, statusFailures: 0 },
+  { durable: false, statusFailures: 6 },
+  { durable: true, statusFailures: 6 },
+]) {
+  const scenario = statusFailures ? "through six consecutive status 503s" : "beyond six polls";
+  test(`a brief waits for pending B ${scenario} when equal-timestamp A returns (${durable ? "durable" : "inline"})`, async () => {
+    const f = fixture();
+    const pending = [];
+    const ctx = { waitUntil(promise) { pending.push(Promise.resolve(promise)); } };
+    const realNow = Date.now;
+    let clock = realNow();
+    const timestamp = clock - 5000;
+    const a = lineEvent("JASPER", "msg-pending-order-a", { timestamp });
+    const b = productionLineEvent("BOOK EI", "msg-pending-order-b", "webhook-pending-order-b", { timestamp });
+    const brief = lineEvent("brief for B", "msg-pending-order-brief", { timestamp: timestamp + 1000 });
+    const receiptId = (event) => `line-card-ingress-v1:${createHash("sha256").update(event.webhookEventId || event.message.id).digest("hex")}`;
+    const binding = f.env.KENJI_MODEL_DEDUPE;
+    const get = binding.get.bind(binding);
+    let failFirstPin = true;
+    let remainingStatusFailures = 0;
+    let releaseB;
+    const bGate = new Promise((resolve) => { releaseB = resolve; });
+    binding.get = (id) => {
+      const object = get(id);
+      return { async fetch(input, init) {
+        const action = JSON.parse(init?.body || "{}").action;
+        if (failFirstPin && action === "pin_order") {
+          failFirstPin = false;
+          return Response.json({ ok: false }, { status: 503 });
+        }
+        if (id === receiptId(b) && action === "process") await bGate;
+        if (id === receiptId(b) && action === "status" && remainingStatusFailures > 0) {
+          remainingStatusFailures -= 1;
+          return Response.json({ ok: false }, { status: 503 });
+        }
+        return object.fetch(input, init);
+      } };
+    };
+    const send = async (events, mode) => route.fetch(await signedWebhook(events, f.env), f.env, mode);
+    await withFetch(f.fetch, async () => {
+      Date.now = () => clock;
+      try {
+        assert.equal((await send([a], ctx)).status, 503);
+        assert.equal((await send([b], ctx)).status, 200);
+        assert.equal(f.records.has(`line_${b.message.id}`), false);
+        const backgroundBeforeBrief = pending.length;
+        assert.equal((await send([
+          { ...a, deliveryContext: { isRedelivery: true } }, brief,
+        ], durable ? ctx : undefined)).status, 200);
+        await Promise.all(pending.slice(backgroundBeforeBrief));
+        assert.equal(f.records.has(`line_${b.message.id}`), false);
+        assert.equal(f.records.has(`line_${brief.message.id}`), false);
+        const object = binding.objects.get(receiptId(brief));
+        for (let poll = 0; poll < 8; poll += 1) {
+          if (poll === 1) remainingStatusFailures = statusFailures;
+          const before = await object.state.storage.get("campaign-ingress:event");
+          clock = Math.max(clock + 1000, before.next_attempt_at);
+          await object.alarm();
+          const waiting = await object.state.storage.get("campaign-ingress:event");
+          assert.equal(waiting.status, "pending");
+          assert.equal(waiting.reason, "campaign_brief_waiting_for_lead");
+          assert.equal(waiting.attempts, 0);
+          assert.equal(waiting.expected_lead_message_id, b.message.id);
+          assert.ok(waiting.next_attempt_at > clock);
+        }
+        assert.equal(remainingStatusFailures, 0);
+        assert.equal(f.records.has(`line_${b.message.id}`), false);
+        assert.equal(f.records.has(`line_${brief.message.id}`), false);
+        releaseB();
+        await Promise.all(pending);
+        assert.ok(f.records.has(`line_${b.message.id}`));
+        const waiting = await object.state.storage.get("campaign-ingress:event");
+        clock = waiting.next_attempt_at;
+        await object.alarm();
+        const completed = await object.state.storage.get("campaign-ingress:event");
+        assert.equal(completed.status, "done");
+        assert.equal(completed.attempts, 1);
+      } finally {
+        releaseB();
+        await Promise.all(pending);
+        Date.now = realNow;
+      }
+    });
+    assert.ok(f.records.has(`line_${a.message.id}`));
+    assert.equal(f.calls.filter((call) => call.type === "owner_alert").length, 0);
+    const saved = f.records.get(`line_${brief.message.id}`);
+    assert.equal(JSON.parse(saved.fields.payload_json).lead_inbox_id, `line_${b.message.id}`);
+  });
+}
+
+test("redelivery reuses a pin whose acknowledgement was lost before enqueue", async () => {
+  const f = fixture();
+  const pending = [];
+  const ctx = { waitUntil(promise) { pending.push(Promise.resolve(promise)); } };
+  const binding = f.env.KENJI_MODEL_DEDUPE;
+  const get = binding.get.bind(binding);
+  let loseAck = true;
+  binding.get = (id) => {
+    const object = get(id);
+    return { async fetch(input, init) {
+      const response = await object.fetch(input, init);
+      if (loseAck && String(input).endsWith("/campaign-lead/context") &&
+          JSON.parse(init?.body || "{}").action === "pin_order" && response.ok) {
+        loseAck = false;
+        return Response.json({ ok: false }, { status: 503 });
+      }
+      return response;
+    } };
+  };
+  const lead = lineEvent("JASPER", "msg-known-pin");
+  await withFetch(f.fetch, async () => {
+    assert.equal((await route.fetch(await signedWebhook([lead], f.env), f.env, ctx)).status, 503);
+    const retry = { ...lead, deliveryContext: { isRedelivery: true } };
+    assert.equal((await route.fetch(await signedWebhook([retry, lineEvent("brief", "msg-known-pin-brief")], f.env), f.env, ctx)).status, 200);
+    await Promise.all(pending);
+  });
+  assert.equal(JSON.parse(f.records.get("line_msg-known-pin-brief").fields.payload_json).lead_inbox_id, "line_msg-known-pin");
+});
+
+test("a lost brief context commit acknowledgement recovers without a duplicate write or reply", async () => {
+  const f = fixture();
+  const pending = [];
+  const ctx = { waitUntil(promise) { pending.push(Promise.resolve(promise)); } };
+  const binding = f.env.KENJI_MODEL_DEDUPE;
+  const get = binding.get.bind(binding);
+  let loseCommitOnce = true;
+  binding.get = (id) => {
+    const stub = get(id);
+    return {
+      async fetch(input, init) {
+        const response = await stub.fetch(input, init);
+        if (loseCommitOnce && String(input).endsWith("/campaign-lead/context") &&
+            JSON.parse(init?.body || "{}").action === "commit" && (await response.clone().json()).committed === true) {
+          loseCommitOnce = false;
+          return Response.json({ ok: false }, { status: 503 });
+        }
+        return response;
+      },
+    };
+  };
+  const now = Date.now();
+  const brief = lineEvent("brief for A", "msg-lost-commit-brief", { timestamp: now });
+  const key = createHash("sha256").update(brief.message.id).digest("hex");
+  const stub = binding.get(`line-card-ingress-v1:${key}`);
+  const ingress = async (action) => (await stub.fetch("https://kenji-model-dedupe.internal/campaign-lead/ingress", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action }),
+  })).json();
+  const deliver = async (event) => {
+    assert.equal((await route.fetch(await signedWebhook([event], f.env), f.env, ctx)).status, 200);
+    for (let round = 0; round < 6; round += 1) {
+      const count = pending.length;
+      await Promise.all(pending);
+      if (pending.length === count) break;
+    }
+  };
+  await withFetch(f.fetch, async () => {
+    await deliver(lineEvent("JASPER", "msg-lost-commit-lead", { timestamp: now - 1000 }));
+    await deliver(brief);
+    assert.equal((await ingress("status")).status, "pending");
+    assert.equal(JSON.parse(f.records.get("line_msg-lost-commit-brief").fields.payload_json).lead_inbox_id, "line_msg-lost-commit-lead");
+    await deliver(lineEvent("BOOK EI", "msg-lost-commit-newer", { timestamp: now + 1000 }));
+    const realNow = Date.now;
+    try {
+      Date.now = () => realNow() + 2000; // Still inside the normal LINE reply window.
+      const result = await ingress("process");
+      assert.equal(result.status, "done");
+      assert.equal(result.reason, "campaign_brief_already_committed");
+    } finally { Date.now = realNow; }
+    const receipt = await ingress("status");
+    assert.equal(receipt.attempts, 2);
+    assert.equal(receipt.reply_suppressed, true);
+  });
+  assert.equal(f.calls.filter(({ type, body }) => type === "queue" && body.fields.inbox_id === "line_msg-lost-commit-brief").length, 1);
+  assert.equal(f.calls.filter(({ type, body }) => type === "reply" && body.replyToken === brief.replyToken).length, 0);
+});
+
+for (const inBatch of [false, true]) {
+  test(`durable brief retry retains its original lead (${inBatch ? "same batch" : "separate webhooks"})`, async () => {
+    const f = fixture();
+    const pending = [];
+    const ctx = { waitUntil(promise) { pending.push(Promise.resolve(promise)); } };
+    let failBrief = true;
+    const flaky = async (input, init = {}) => {
+      if (failBrief && init.method === "POST" && new URL(String(input)).hostname === "api.airtable.com" &&
+          JSON.parse(init.body).fields?.inbox_id === "line_msg-retry-original-brief") {
+        return new Response("temporary fixture outage", { status: 503 });
+      }
+      return f.fetch(input, init);
+    };
+    const deliver = async (events, mode) => route.fetch(await signedWebhook(events, f.env), f.env, mode);
+    const drain = async () => {
+      for (let round = 0; round < 6; round += 1) {
+        const count = pending.length;
+        await Promise.all(pending);
+        if (pending.length === count) break;
+      }
+    };
+    const now = Date.now() - 5000;
+    const leadA = lineEvent("JASPER", "msg-retry-original-lead", { timestamp: now });
+    const briefA = lineEvent("brief A", "msg-retry-original-brief", { timestamp: now + 1000 });
+    const leadB = lineEvent("BOOK EI", "msg-retry-new-lead", { timestamp: now + 2000 });
+    const key = createHash("sha256").update(briefA.message.id).digest("hex");
+    const stub = f.env.KENJI_MODEL_DEDUPE.get(`line-card-ingress-v1:${key}`);
+    const ingress = async (action) => (await stub.fetch("https://kenji-model-dedupe.internal/campaign-lead/ingress", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action }),
+    })).json();
+    await withFetch(flaky, async () => {
+      if (inBatch) {
+        assert.equal((await deliver([leadA, leadB, briefA], ctx)).status, 200);
+        await drain();
+      } else {
+        await deliver([leadA]);
+        assert.equal((await deliver([briefA], ctx)).status, 200);
+        await drain();
+        await deliver([leadB]);
+      }
+      assert.equal((await ingress("status")).status, "pending");
+      assert.ok(f.records.has("line_msg-retry-new-lead"));
+      failBrief = false;
+      const realNow = Date.now;
+      try {
+        Date.now = () => realNow() + 65_000;
+        assert.equal((await ingress("process")).status, "done");
+      } finally { Date.now = realNow; }
+      const originalBrief = f.records.get("line_msg-retry-original-brief");
+      assert.equal(JSON.parse(originalBrief.fields.payload_json).lead_inbox_id, "line_msg-retry-original-lead");
+      await deliver([lineEvent("brief B", "msg-retry-new-brief")]);
+      assert.equal(JSON.parse(f.records.get("line_msg-retry-new-brief").fields.payload_json).lead_inbox_id, "line_msg-retry-new-lead");
+    });
+  });
+}
+
+for (const durable of [false, true]) {
+  test(`a fresh webhook after a consumed brief stays ordinary (${durable ? "durable" : "inline"})`, async () => {
+    const f = fixture();
+    const pending = [];
+    const ctx = durable ? { waitUntil(promise) { pending.push(Promise.resolve(promise)); } } : undefined;
+    await withFetch(f.fetch, async () => {
+      for (const [value, id] of [["JASPER", "fresh-lead"], ["brief", "fresh-brief"], ["package", "fresh-ordinary"]]) {
+        assert.equal((await route.fetch(await signedWebhook([lineEvent(value, id)], f.env), f.env, ctx)).status, 200);
+        for (let round = 0; round < 6; round += 1) {
+          const count = pending.length;
+          await Promise.all(pending);
+          if (pending.length === count) break;
+        }
+      }
+    });
+    assert.equal(JSON.parse(f.records.get("line_fresh-brief").fields.payload_json).lead_inbox_id, "line_fresh-lead");
+    assert.doesNotMatch(JSON.parse(f.records.get("line_fresh-ordinary").fields.payload_json).parsed_intent, /^card_campaign_/);
+  });
+}
 
 test("Durable Object alarm recovers a persisted lead after processor restart", async () => {
   const f = fixture();
@@ -763,7 +1322,7 @@ test("production route keeps campaign silent on queue failure, disabled flags, a
 
 test("production route follows the exact LINE Card action text contract", async () => {
   for (const [text, expectedQueue] of [
-    ["JASPER", 1], ["BOOK EI", 1], ["JASPAL", 0], ["Book EI", 0],
+    ["JASPER", 1], ["BOOK EI", 1], ["JASPAL", 0], ["Book EI", 0], ["book ei", 0],
     ["Sky B", 0], ["https://mmdbkk.com/my-mmd", 0],
   ]) {
     const f = fixture();

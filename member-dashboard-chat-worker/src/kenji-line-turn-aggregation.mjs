@@ -51,13 +51,13 @@ async function sha256Hex(value) {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-export function prepareKenjiLineWebhookBatch(events = []) {
+export function prepareKenjiLineWebhookBatch(events = [], isolatedEvents = new Set()) {
   const source = Array.isArray(events) ? events : [];
   const grouped = new Map();
   source.forEach((event, index) => {
     const uid = lineUserId(event);
     const value = customerText(event);
-    if (!uid || !value || isCheckptsShortcut(event) || lineIntakeCommand(event) || event?.deliveryContext?.isRedelivery === true) return;
+    if (isolatedEvents.has(event) || !uid || !value || isCheckptsShortcut(event) || lineIntakeCommand(event) || event?.deliveryContext?.isRedelivery === true) return;
     if (!grouped.has(uid)) grouped.set(uid, []);
     grouped.get(uid).push({ index, event, value });
   });
