@@ -613,7 +613,8 @@ async function handleStartTimed(request, env, diagnostic) {
     route_after_liff: null,
     next_screen_key: liffIntent === "unknown" ? "start_intent" : nextScreenForIntent(liffIntent, memberState.exists),
     continuity,
-    recovery_binding: intent === "signup" || liffIntent === "signup" ? randomToken(24) : null,
+    recovery_binding: intent === "signup" || liffIntent === "signup" || (liffIntent === "status" && !memberState.exists)
+      ? randomToken(24) : null,
   }));
   let remembered;
   try {
