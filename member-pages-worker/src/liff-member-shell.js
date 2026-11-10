@@ -2259,6 +2259,70 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
       const id = String(action && action.id || "");
       const endpoint = String(action && action.endpoint || "");
       const label = String(action && action.label || "");
+      if (screen.key === "status_unresolved" && id === "recovery_evidence"
+          && endpoint === "/member/api/liff/recovery" && action.method === "POST") {
+        const binding = String(data.recovery_binding || "");
+        if (!binding) continue;
+        const form = document.createElement("form");
+        form.className = "form-stack";
+        const fields = [
+          ["email", "อีเมล", "email", 160],
+          ["phone", "เบอร์โทร", "tel", 40],
+          ["nickname", "ชื่อเล่นหรือนามแฝง", "text", 120],
+        ].map(([name, title, type, maxLength]) => {
+          const fieldLabel = document.createElement("label");
+          const input = document.createElement("input");
+          fieldLabel.textContent = title;
+          input.name = name;
+          input.type = type;
+          input.maxLength = maxLength;
+          fieldLabel.append(input);
+          form.append(fieldLabel);
+          return input;
+        });
+        const verify = document.createElement("button");
+        verify.type = "submit";
+        verify.textContent = "Verify";
+        form.append(verify);
+        form.addEventListener("submit", async event => {
+          event.preventDefault();
+          if (busy) return;
+          const evidence = fields.map(input => [input.name, input.value.trim()]).filter(([, value]) => value);
+          if (evidence.length < 1 || evidence.length > 2) {
+            show("กรอกข้อมูลเดิม 1–2 อย่างเพื่อให้เปอร์ช่วยตรวจบัญชีครับ");
+            return;
+          }
+          setBusy(true);
+          try {
+            const response = await fetch("/member/api/liff/recovery", {
+              method: "POST",
+              credentials: "same-origin",
+              headers: { "content-type": "application/json", "accept": "application/json" },
+              body: JSON.stringify({ ...Object.fromEntries(evidence), recovery_binding: binding }),
+            });
+            const payload = await response.json();
+            if (!response.ok || payload?.ok !== true) {
+              show(response.status === 401 || response.status === 409
+                ? "กรุณาเปิด My MMD จาก LINE อีกครั้ง แล้วลอง Verify ใหม่นะครับ"
+                : "ยังส่งข้อมูลให้เปอร์ตรวจไม่ได้ครับ ลองตรวจข้อมูลแล้วส่งใหม่ได้เลย");
+              return;
+            }
+            form.remove();
+            if (payload.data?.state === "already_linked") {
+              await readProfile({ hydrate: false });
+              void hydrateMemberHome();
+              return;
+            }
+            show("ส่งข้อมูลให้เปอร์ตรวจแล้วครับ");
+          } catch {
+            show("ยังส่งข้อมูลให้เปอร์ตรวจไม่ได้ครับ ลองใหม่อีกครั้งได้เลย");
+          } finally {
+            setBusy(false);
+          }
+        });
+        actions.append(form);
+        continue;
+      }
       if (!label || endpoint !== "/member/api/liff/intent" || !allowedIntentIds.has(id)) continue;
       const button = document.createElement("button");
       button.type = "button";

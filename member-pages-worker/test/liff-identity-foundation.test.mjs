@@ -501,6 +501,7 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     const runtime = env({ MEMBER_STATUS_RESOLVER: initialResolver });
     const started = await start(runtime, { id_token: "stale-pending-token", liff_intent: "status" });
     const staleCookie = cookiePair(findCookie(started.response, "__Host-mmd_liff_session"));
+    assert.match(started.payload.data.recovery_binding, /^[A-Za-z0-9._~-]{32,}$/);
 
     assert.equal(started.payload.data.member_resolved, false);
     assert.equal(started.payload.data.pending_identity, true);

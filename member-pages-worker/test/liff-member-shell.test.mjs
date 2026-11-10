@@ -1577,3 +1577,48 @@ test("renewal member lookup can retry canonical profile without exposing a payme
  assert.deepEqual(hydrations,['hydrate']);
  assert.equal(buttons.length,0);
 });
+
+
+test("unresolved Status Verify submits evidence with its session binding", async () => {
+  const html = await (await shell("/member/liff?intent=status")).text();
+  const start = html.indexOf("  function render(data) {");
+  const end = html.indexOf("  async function boot(", start);
+  assert.ok(start > 0 && end > start);
+  const requests = [];
+  const notices = [];
+  const makeElement = tag => ({
+    tag, children: [], value: "",
+    append(...nodes) { this.children.push(...nodes); },
+    replaceChildren() { this.children = []; },
+    addEventListener(type, handler) { this[type] = handler; },
+    remove() { this.removed = true; },
+  });
+  const actions = makeElement("div");
+  const render = runInNewContext("let busy = false; function setBusy(value) { busy = value; }\n"
+    + html.slice(start, end) + "\nrender", {
+    CONFIG: { intent: "status" }, actions, document: { createElement: makeElement },
+    show: value => notices.push(value),
+    fetch: async (url, options) => {
+      requests.push({ url, method: options.method, credentials: options.credentials, body: JSON.parse(options.body) });
+      return Response.json({ ok: true, data: { state: "review_required" } });
+    },
+  });
+  const screen = { key: "status_unresolved", actions: [
+    { id: "recovery_evidence", method: "POST", endpoint: "/member/api/liff/recovery" },
+  ] };
+  render({ screen });
+  assert.equal(actions.children.length, 0);
+  render({ screen, recovery_binding: "fixture-session-binding" });
+  const [form] = actions.children;
+  assert.equal(form.children.at(-1).textContent, "Verify");
+  await form.submit({ preventDefault() {} });
+  assert.equal(requests.length, 0);
+  form.children[2].children[0].value = " Fixture ";
+  await form.submit({ preventDefault() {} });
+  assert.deepEqual(requests, [{
+    url: "/member/api/liff/recovery", method: "POST", credentials: "same-origin",
+    body: { nickname: "Fixture", recovery_binding: "fixture-session-binding" },
+  }]);
+  assert.equal(form.removed, true);
+  assert.equal(notices.at(-1), "ส่งข้อมูลให้เปอร์ตรวจแล้วครับ");
+});
