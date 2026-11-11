@@ -1,0 +1,139 @@
+<script>
+(()=>{
+  const r=document.querySelector('#mmdCompanionV10');
+  if(!r||r.dataset.ready)return;
+  r.dataset.ready='1';
+
+  const q=s=>[...r.querySelectorAll(s)];
+  const continuityKeys=['promo','src','campaign','invite','t'];
+  const sp=new URLSearchParams(location.search);
+
+  q('h1,h2,h3').forEach(h=>{
+    h.style.setProperty('background','none','important');
+    h.style.setProperty('-webkit-background-clip','border-box','important');
+    h.style.setProperty('-webkit-text-fill-color','currentColor','important');
+  });
+
+  q('a[href^="/"]').forEach(a=>{
+    const u=new URL(a.getAttribute('href'),location.origin);
+    continuityKeys.forEach(k=>{
+      const v=sp.get(k);
+      if(v)u.searchParams.set(k,v);
+    });
+    if(/^\/(booking|profiles)/.test(u.pathname)){
+      u.searchParams.set('from','services_companion');
+      if(u.pathname==='/booking')u.searchParams.set('service','companion');
+    }
+    a.href=u.pathname+(u.search||'')+(u.hash||'');
+  });
+
+  const normalizeLang=v=>{
+    const x=String(v||'').trim().toLowerCase();
+    if(x==='zh'||x.startsWith('zh-')||x==='cn')return'zh';
+    if(x==='en'||x.startsWith('en-'))return'en';
+    if(x==='th'||x.startsWith('th-'))return'th';
+    return'';
+  };
+
+  const applyLangToInternalLinks=l=>{
+    q('a[href^="/"]').forEach(a=>{
+      const u=new URL(a.getAttribute('href'),location.origin);
+      u.searchParams.set('lang',l);
+      a.href=u.pathname+(u.search||'')+(u.hash||'');
+    });
+  };
+
+  const syncLangUrl=l=>{
+    try{
+      const u=new URL(location.href);
+      u.searchParams.set('lang',l);
+      history.replaceState(null,'',u.pathname+(u.search||'')+(u.hash||''));
+    }catch(e){}
+  };
+
+  const setLang=(raw,{syncUrl=false}={})=>{
+    const l=normalizeLang(raw)||'th';
+    const htmlLang=l==='zh'?'zh-Hans':l;
+
+    r.lang=htmlLang;
+    if(document.documentElement)document.documentElement.lang=htmlLang;
+
+    q('[data-th]').forEach(e=>{
+      const v=e.dataset[l];
+      if(v)e.textContent=v;
+    });
+
+    q('[data-lang]').forEach(b=>{
+      const active=b.dataset.lang===l;
+      b.classList.toggle('is-active',active);
+      b.setAttribute('aria-pressed',active?'true':'false');
+    });
+
+    applyLangToInternalLinks(l);
+
+    try{localStorage.setItem('mmd_lang',l)}catch(e){}
+    if(syncUrl)syncLangUrl(l);
+  };
+
+  q('[data-lang]').forEach(b=>{
+    b.addEventListener('click',()=>setLang(b.dataset.lang,{syncUrl:true}));
+  });
+
+  let lang=normalizeLang(sp.get('lang'));
+  if(!lang){
+    try{lang=normalizeLang(localStorage.getItem('mmd_lang'))}catch(e){}
+  }
+  setLang(lang||'th');
+
+  q('[data-filter]').forEach(b=>b.addEventListener('click',()=>{
+    const f=b.dataset.filter;
+    q('[data-filter]').forEach(x=>x.classList.toggle('is-active',x===b));
+    q('.mc10-card').forEach(c=>{
+      c.hidden=f!=='all'&&!c.dataset.tags.split(' ').includes(f);
+    });
+    const rail=r.querySelector('[data-rail]');
+    if(rail)rail.scrollTo({
+      left:0,
+      behavior:matchMedia('(prefers-reduced-motion:reduce)').matches?'auto':'smooth'
+    });
+  }));
+
+  q('.mc10-faq').forEach(d=>d.addEventListener('toggle',()=>{
+    if(d.open)q('.mc10-faq[open]').forEach(x=>{
+      if(x!==d)x.open=false;
+    });
+  }));
+
+  const rev=q('.mc10-reveal');
+  if('IntersectionObserver'in window){
+    const io=new IntersectionObserver(es=>es.forEach(e=>{
+      if(e.isIntersecting){
+        e.target.classList.add('is-in');
+        io.unobserve(e.target);
+      }
+    }),{threshold:.08,rootMargin:'0px 0px -4%'});
+    rev.forEach(e=>io.observe(e));
+  }else{
+    rev.forEach(e=>e.classList.add('is-in'));
+  }
+
+  const dock=r.querySelector('.mc10-dock');
+  const hero=r.querySelector('.mc10-hero');
+  if(dock&&hero&&'IntersectionObserver'in window){
+    new IntersectionObserver(
+      es=>dock.classList.toggle('is-visible',!es[0].isIntersecting),
+      {threshold:.05}
+    ).observe(hero);
+  }
+
+  q('[data-track]').forEach(a=>a.addEventListener('click',()=>{
+    window.dataLayer=window.dataLayer||[];
+    window.dataLayer.push({
+      event:'mmd_cta_click',
+      page:'services_companion',
+      cta:a.dataset.track,
+      package:a.closest('[data-package]')?.dataset.package||null
+    });
+  }));
+})();
+</script>
