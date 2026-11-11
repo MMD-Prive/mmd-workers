@@ -97,6 +97,24 @@ test("NEXT LV remains member-only, mobile-first and CSP-nonced", async () => {
   assert.ok(html.includes("Kenji04%20Member%20NEXT%20LV%20Chat%20Avatar.webp"));
   assert.ok(!html.includes("Kenji%20CC%2002.webp"));
   assert.ok(!html.includes("Kenji%20Alove.webp"));
+  const qaStart = html.indexOf('data-mode-panel="qa"');
+  const promoStart = html.indexOf('data-mode-panel="promo"', qaStart);
+  assert.ok(qaStart >= 0 && promoStart > qaStart);
+  const qaPanel = html.slice(qaStart, promoStart);
+  assert.deepEqual([...qaPanel.matchAll(/data-prompt="([^"]+)"/g)].map(([, prompt]) => prompt), [
+    "GWs คืออะไร",
+    "EMs คืออะไร",
+    "สมัครสมาชิกแล้วได้อะไรบ้าง",
+    "Black Card คืออะไร",
+    "MMD คืออะไร",
+    "ชำระเงินอย่างไร",
+  ]);
+  const promptStart = html.indexOf('document.querySelectorAll("[data-prompt]").forEach(function (button) {');
+  const modesStart = html.indexOf("  modes.forEach(function (button) {", promptStart);
+  assert.ok(promptStart >= 0 && modesStart > promptStart);
+  const promptHandler = html.slice(promptStart, modesStart);
+  assert.ok(promptHandler.includes('input.value = button.getAttribute("data-prompt") || "";'));
+  assert.ok(!promptHandler.includes("ask()"));
   // Official two-brand mapping: MMD = Curated, SIGIL = Private; no local access grant is possible.
   // Logos are exact Webflow-approved marks, embedded as content-addressed image data
   // to work in standalone Worker HTML and offline review (not text or broken CDN URLs).
