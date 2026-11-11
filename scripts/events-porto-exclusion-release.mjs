@@ -1,4 +1,4 @@
-// Porto only, one Standard round. No work runs on import.
+// Porto only, all future automated model rounds. No work runs on import.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync, mkdtempSync } from 'node:fs';
@@ -12,10 +12,10 @@ import { validateSourceState } from './admin-current-session-code-only.mjs';
 import { releaseEventsRotation, createTransport, ROOT, ACCOUNT } from './events-rotation-release-transport.mjs';
 
 export const MANIFEST = 'release/events-porto-exclusion/overlay-manifest.json';
-export const OWNER_REQUEST = 'Sentinel_96f4a14c0dd481919bba7618d7a0a314';
+export const OWNER_REQUEST = 'Sentinel_7d526138545c8191b8f609294acbe26f';
 export const BASELINE_HASH = 'd517c7ef259f17f66d1cb991a8cfd69748f08228540ea057b08adc3662cec8ee';
-export const CANDIDATE_HASH = 'c7a2013edcc2502d804ffba0b083e896d3f3850e335bc7ed55c410b8bcf72387';
-export const MANIFEST_HASH = '47ea02c699deb6831c17c5cfc830a0c07691d4dfb9b160ab3c6349a9d4dfb0b7';
+export const CANDIDATE_HASH = 'd01134c376e654b38c91146993f0d008b797a64f49e184c6fb30983e314244e0';
+export const MANIFEST_HASH = '2240fc42c9201dade551aab05aefa0a8aef8b14a0d0adc0805529a30674c82a4';
 export const ROUND_DATE = '2026-11-11';
 const BUCKET = 'mmd-hype-compcard-state';
 const R2 = `/accounts/${ACCOUNT}/r2/buckets/${BUCKET}/objects`;
@@ -28,7 +28,7 @@ export const digest = value => createHash('sha256').update(value).digest('hex');
 export function validateManifestBytes(bytes) {
   assert.equal(digest(bytes), MANIFEST_HASH, 'Porto manifest differs from exact reviewed scope');
   const manifest = JSON.parse(bytes);
-  assert.deepEqual(manifest.scope, { model_id: 'recnl4Fksh6pXEwA1', canonical_name: 'Porto MJ', date: ROUND_DATE, slot: 'standard' });
+  assert.deepEqual(manifest.scope, { model_id: 'recnl4Fksh6pXEwA1', canonical_name: 'Porto MJ', slots: ['model', 'standard'], persistence: 'until_explicitly_reenabled', selection_sources: ['static_manifest', 'approved_intake'] });
   assert.equal(manifest.worker, 'events-worker');
   assert.equal(manifest.module, 'model-eta-wrapper.js');
   assert.equal(manifest.baseline_sha256, BASELINE_HASH);
@@ -170,7 +170,7 @@ async function main() {
       assert.equal(version.resources.bindings.find(row => row.name === 'HYPE_PROMOTION_ENABLED')?.text, 'false');
       const bucket = version.resources.bindings.find(row => row.name === 'HYPE_COMPCARD_STATE');
       assert.equal(bucket?.type, 'r2_bucket'); assert.equal(bucket.bucket_name, BUCKET);
-      return { commit_sha: sha, dirty_tree: false, method: 'exact-live-porto-only-standard-round-overlay',
+      return { commit_sha: sha, dirty_tree: false, method: 'exact-live-canonical-porto-automatic-exclusion',
         baseline_module_sha256: BASELINE_HASH, candidate_module_sha256: CANDIDATE_HASH };
     },
     bundle: async () => {

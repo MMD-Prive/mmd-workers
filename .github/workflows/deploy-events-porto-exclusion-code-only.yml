@@ -3,12 +3,13 @@ on:
   pull_request:
     paths:
       - 'scripts/events-porto-exclusion-*'
+      - 'events-worker/src/compcard-policy.js'
       - 'release/events-porto-exclusion/**'
       - '.github/workflows/deploy-events-porto-exclusion-code-only.yml'
   workflow_dispatch:
     inputs:
       production_approved:
-        description: 'Owner authorization to exclude Porto from the 2026-11-11 Standard round only'
+        description: 'Owner authorization to exclude canonical Porto from future automated model rounds'
         type: boolean
         required: true
         default: false

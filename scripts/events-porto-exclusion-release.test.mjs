@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { automaticModelAllowed, chooseDailyCard } from '../events-worker/src/compcard-policy.js';
 import {
   MANIFEST, MANIFEST_HASH, BASELINE_HASH, CANDIDATE_HASH, OWNER_REQUEST, ROUND_KEYS,
   digest, validateManifestBytes, applyPortoOverlay, assertReleaseWindow, readActiveModule, readRoundState, withPortoBoundary,
@@ -10,6 +11,29 @@ const manifestBytes = readFileSync(MANIFEST);
 const manifest = validateManifestBytes(manifestBytes);
 const release = readFileSync('scripts/events-porto-exclusion-release.mjs', 'utf8');
 const workflow = readFileSync('.github/workflows/deploy-events-porto-exclusion-code-only.yml', 'utf8');
+test('normal-source policy keeps Porto excluded across static and intake cards on future dates', () => {
+  assert.equal(automaticModelAllowed('recnl4Fksh6pXEwA1'), false);
+  assert.equal(automaticModelAllowed('recW0Whpu9maVjYF6'), false);
+  assert.equal(automaticModelAllowed('recOtherModel01'), true);
+  for (const date of ['2026-11-11', '2026-11-12', '2027-02-15']) for (const source of [undefined, 'owner_drive_intake']) {
+    const card = { id: 'porto', model_id: 'recnl4Fksh6pXEwA1', category: 'standard', display_name: 'Porto MJ', ...(source ? { source } : {}) };
+    assert.equal(chooseDailyCard([card], [], date), null);
+    const other = { ...card, id: 'other', model_id: 'recOtherModel01', display_name: 'Other' };
+    assert.equal(chooseDailyCard([card, other], [], date).model_id, other.model_id);
+  }
+});
+test('normal-source dispatch rechecks the identity rule for frozen plans in both model slots before delivery', () => {
+  const daily = readFileSync('events-worker/src/compcard-daily.js', 'utf8');
+  assert.match(daily, /const modelSlot = slot === "model" \|\| slot === "standard"/);
+  const frozen = daily.indexOf('let plan =');
+  const prepare = daily.indexOf('prepare: async', frozen);
+  const guard = daily.indexOf('if (!automaticModelAllowed(card.model_id)) throw problem("compcard_automatic_selection_excluded", false);', prepare);
+  const reserve = daily.indexOf('await reserveCompcardExposure', prepare);
+  const deliver = daily.indexOf('deliver:', prepare);
+  assert.ok(frozen >= 0 && prepare > frozen && guard > prepare && reserve > guard && deliver > reserve);
+  const modelBlock = daily.lastIndexOf('if (modelSlot) {', guard);
+  assert.ok(modelBlock > prepare && guard - modelBlock < 300);
+});
 const json = value => new Response(JSON.stringify(value), { status: 200 });
 function roundFixture(records = {}) {
   const calls = [];
@@ -37,14 +61,14 @@ function frozen(status = 'pending') {
   return { [ROUND_KEYS[0]]: JSON.stringify(plan), [ROUND_KEYS[1]]: JSON.stringify(receipt('premium')), [ROUND_KEYS[2]]: JSON.stringify(receipt('standard')) };
 }
 
-test('manifest is fixed to Porto, one date, one slot, two changes and exact hashes', () => {
+test('manifest is fixed to canonical Porto, both model slots, ongoing scope and exact hashes', () => {
   assert.equal(digest(manifestBytes), MANIFEST_HASH);
   assert.equal(manifest.baseline_sha256, BASELINE_HASH);
   assert.equal(manifest.candidate_sha256, CANDIDATE_HASH);
-  assert.deepEqual(manifest.scope, { model_id: 'recnl4Fksh6pXEwA1', canonical_name: 'Porto MJ', date: '2026-11-11', slot: 'standard' });
+  assert.deepEqual(manifest.scope, { model_id: 'recnl4Fksh6pXEwA1', canonical_name: 'Porto MJ', slots: ['model', 'standard'], persistence: 'until_explicitly_reenabled', selection_sources: ['static_manifest', 'approved_intake'] });
   assert.equal(manifest.replacements.length, 2);
   for (const row of manifest.replacements) assert.equal(row.section, 'compcard-daily');
-  assert.equal(OWNER_REQUEST, 'Sentinel_96f4a14c0dd481919bba7618d7a0a314');
+  assert.equal(OWNER_REQUEST, 'Sentinel_7d526138545c8191b8f609294acbe26f');
 });
 test('any manifest-byte, scope, hash or baseline drift is rejected', () => {
   assert.throws(() => validateManifestBytes(Buffer.concat([manifestBytes, Buffer.from(' ')])), /differs/);

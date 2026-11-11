@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 globalThis.fetch = () => { throw new Error('Network forbidden in this offline test'); };
 const baselineText = readFileSync(new URL('./live-baseline.mjs', import.meta.url), 'utf8');
 const candidateText = readFileSync(new URL('./porto-only-candidate.mjs', import.meta.url), 'utf8');
-const exports = '\nexport { executeSlot, APPROVED_COMPCARD_MANIFEST, COMPCARD_JOURNAL_ROOT, jsonDigest, captionForLiveCard };\n';
+const exports = '\nexport { executeSlot, APPROVED_COMPCARD_MANIFEST, COMPCARD_JOURNAL_ROOT, jsonDigest, captionForLiveCard, eligibleCards };\n';
 const load = source => import('data:text/javascript;base64,' + Buffer.from(source + exports).toString('base64'));
 const [base, candidate] = await Promise.all([load(baselineText), load(candidateText)]);
 const PORTO = 'recnl4Fksh6pXEwA1';
@@ -48,12 +48,12 @@ const run = (api, f, date = '2026-11-11', slot = 'standard') => api.executeSlot(
 async function history(f) {
   for (const card of inventory) await f.bucket.put(base.COMPCARD_JOURNAL_ROOT + `history/${card.model_id}.json`, JSON.stringify({ model_id: card.model_id, category: card.category, date: card.model_id === PORTO ? '2026-11-04' : card.canonical_name.includes('Simba') ? '2026-11-07' : '2026-11-08', status: 'sent' }));
 }
-async function freezePorto(f) {
+async function freezePorto(f, date = '2026-11-11', slot = 'standard') {
   const card = inventory.find(card => card.model_id === PORTO);
   const destinations = ['premium', 'standard'];
-  const plan = { schema: 'hype_compcard_plan_v1', date: '2026-11-11', slot: 'standard', manifest_revision: f.manifest.revision, created_at: at('2026-11-11', 'standard'), card_id: card.id, model_id: card.model_id, category: card.category, file_id: card.file_id, sha256: card.sha256, destinations, chat_ids: Object.fromEntries(destinations.map(destination => [destination, f.manifest.destinations[destination]])), captions: Object.fromEntries(destinations.map(destination => [destination, base.captionForLiveCard(card, destination, f.models.find(model => model.id === card.model_id))])) };
+  const plan = { schema: 'hype_compcard_plan_v1', date, slot, manifest_revision: f.manifest.revision, created_at: at(date, slot), card_id: card.id, model_id: card.model_id, category: card.category, file_id: card.file_id, sha256: card.sha256, destinations, chat_ids: Object.fromEntries(destinations.map(destination => [destination, f.manifest.destinations[destination]])), captions: Object.fromEntries(destinations.map(destination => [destination, base.captionForLiveCard(card, destination, f.models.find(model => model.id === card.model_id))])) };
   plan.digest = await base.jsonDigest(plan);
-  await f.bucket.put(base.COMPCARD_JOURNAL_ROOT + 'plans/2026-11-11/standard.json', JSON.stringify(plan));
+  await f.bucket.put(base.COMPCARD_JOURNAL_ROOT + `plans/${date}/${slot}.json`, JSON.stringify(plan));
   return plan;
 }
 async function seedDelivery(f, plan, destination, status, extra = {}) {
@@ -62,7 +62,7 @@ async function seedDelivery(f, plan, destination, status, extra = {}) {
     model_id: plan.model_id, card_id: plan.card_id, plan_digest: plan.digest,
     approved_sha256: plan.sha256, expected_chat_id: plan.chat_ids[destination],
     status, attempts: status === 'pending' ? 0 : 1, lease_until: 0,
-    created_at: at('2026-11-11', 'standard') - 1000,
+    created_at: at(plan.date, plan.slot) - 1000,
     receipt: status === 'sent' ? { message_id: 123, chat_id: plan.chat_ids[destination], approved_sha256: plan.sha256 } : null,
     ...extra,
   };
@@ -124,21 +124,25 @@ test('already sent Porto receipts remain truthful, unchanged, and are not re-sen
   assert.deepEqual(['premium', 'standard'].map(destination => f.records.get(base.COMPCARD_JOURNAL_ROOT + `deliveries/2026-11-11/standard/${destination}.json`).value), oldReceipts);
 });
 
-test('all other dates preserve exact baseline behavior, including Porto', async () => {
+test('canonical Porto is excluded from fresh selection on both slots and future dates', async () => {
   const porto = inventory.filter(card => card.model_id === PORTO);
-  for (const date of ['2026-11-10', '2026-11-12', '2026-12-11']) {
+  for (const date of ['2026-11-11', '2026-11-12', '2026-12-11', '2027-01-15']) for (const slot of ['model', 'standard']) {
     const before = fixture(porto); const after = fixture(porto);
-    assert.deepEqual(await run(candidate, after, date), await run(base, before, date));
-    assert.deepEqual(after.sends, before.sends);
-    assert.equal(after.sends[0].model_id, PORTO);
+    assert.equal((await run(base, before, date, slot)).status, 'sent');
+    assert.equal((await run(candidate, after, date, slot)).status, 'no_eligible_card');
+    assert.deepEqual(after.sends, []); assert.deepEqual(after.assetReads, []);
+    assert.equal(after.records.size, 0);
   }
 });
 
-test('the afternoon model slot is unchanged on the excluded Standard date', async () => {
-  const porto = inventory.filter(card => card.model_id === PORTO);
-  const before = fixture(porto); const after = fixture(porto);
-  assert.deepEqual(await run(candidate, after, '2026-11-11', 'model'), await run(base, before, '2026-11-11', 'model'));
-  assert.deepEqual(after.sends, before.sends);
+test('canonical Porto is excluded from static and intake candidate sources in every category', () => {
+  const original = inventory.find(card => card.model_id === PORTO);
+  for (const category of ['exclusive', 'premium', 'standard', 'travel', 'extreme']) for (const source of [undefined, 'owner_drive_intake']) {
+    const card = { ...original, category, ...(source ? { source } : {}) };
+    const result = candidate.eligibleCards({ cards: [card] }, []);
+    assert.deepEqual(result.eligible, []);
+    assert.equal(result.excluded[0].reason, 'owner_automatic_selection_excluded');
+  }
 });
 
 test('non-Porto inventories preserve exact outcomes and history', async () => {
@@ -146,6 +150,57 @@ test('non-Porto inventories preserve exact outcomes and history', async () => {
   const before = fixture(others); const after = fixture(others);
   assert.deepEqual(await run(candidate, after), await run(base, before));
   assert.deepEqual([...after.records].map(([key, value]) => [key, value.value]), [...before.records].map(([key, value]) => [key, value.value]));
+});
+
+for (const date of ['2026-11-12', '2026-12-11', '2027-01-15']) for (const slot of ['model', 'standard']) {
+  test(`frozen pending Porto is blocked in both destinations on ${date}/${slot}`, async () => {
+    const f = fixture(); await freezePorto(f, date, slot);
+    const key = base.COMPCARD_JOURNAL_ROOT + `plans/${date}/${slot}.json`;
+    const originalPlan = f.records.get(key).value;
+    const result = await run(candidate, f, date, slot);
+    assert.equal(result.sent, 0);
+    assert.deepEqual(result.outcomes.map(row => row.destination), ['premium', 'standard']);
+    assert.ok(result.outcomes.every(row => row.status === 'blocked' && row.error === 'compcard_owner_excluded_porto'));
+    assert.deepEqual(f.sends, []); assert.deepEqual(f.assetReads, []);
+    assert.equal(f.records.get(key).value, originalPlan);
+  });
+}
+test('future partial sent and uncertain receipts stay byte-identical on both slots while the other destination is blocked', async () => {
+  for (const date of ['2026-11-12', '2027-01-15']) for (const slot of ['model', 'standard']) for (const preservedDestination of ['premium', 'standard']) for (const terminal of ['sent', 'delivery_uncertain']) {
+    const f = fixture(); const plan = await freezePorto(f, date, slot);
+    const saved = await seedDelivery(f, plan, preservedDestination, terminal);
+    const pendingDestination = preservedDestination === 'premium' ? 'standard' : 'premium';
+    await seedDelivery(f, plan, pendingDestination, 'pending');
+    const result = await run(candidate, f, date, slot);
+    assert.equal(result.outcomes.find(row => row.destination === preservedDestination).status, terminal);
+    assert.equal(result.outcomes.find(row => row.destination === pendingDestination).status, 'blocked');
+    assert.equal(f.records.get(saved.key).value, saved.value);
+    assert.deepEqual(f.sends, []); assert.deepEqual(f.assetReads, []);
+  }
+});
+test('future non-Porto selections and receipts remain exactly equivalent on both slots', async () => {
+  const others = inventory.filter(card => card.model_id !== PORTO);
+  for (const date of ['2026-11-12', '2027-01-15']) for (const slot of ['model', 'standard']) {
+    const before = fixture(others); const after = fixture(others);
+    assert.deepEqual(await run(candidate, after, date, slot), await run(base, before, date, slot));
+    assert.deepEqual([...after.records].map(([key, value]) => [key, value.value]), [...before.records].map(([key, value]) => [key, value.value]));
+  }
+});
+test('future in-flight and expired sending evidence follows baseline truth on both slots', async () => {
+  const date = '2027-01-15';
+  for (const slot of ['model', 'standard']) for (const destination of ['premium', 'standard']) for (const activeLease of [true, false]) {
+    const before = fixture(); const after = fixture();
+    const bp = await freezePorto(before, date, slot); const ap = await freezePorto(after, date, slot);
+    const extra = { lease_until: activeLease ? at(date, slot) + 60000 : 0 };
+    await seedDelivery(before, bp, destination, 'sending', extra);
+    const preserved = await seedDelivery(after, ap, destination, 'sending', extra);
+    const sibling = destination === 'premium' ? 'standard' : 'premium';
+    await seedDelivery(before, bp, sibling, 'sent'); await seedDelivery(after, ap, sibling, 'sent');
+    assert.deepEqual(await run(candidate, after, date, slot), await run(base, before, date, slot));
+    assert.equal(after.records.get(preserved.key).value, before.records.get(preserved.key).value);
+    if (activeLease) assert.equal(after.records.get(preserved.key).value, preserved.value);
+    assert.deepEqual(after.sends, []); assert.deepEqual(after.assetReads, []);
+  }
 });
 
 for (const destination of ['premium', 'standard']) {
