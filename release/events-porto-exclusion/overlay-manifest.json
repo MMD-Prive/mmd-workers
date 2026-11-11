@@ -1,0 +1,34 @@
+{
+  "worker": "events-worker",
+  "module": "model-eta-wrapper.js",
+  "expected_version": "88e741df-15bd-40ba-a4ce-f88a2735822b",
+  "expected_deployment": "d9617e88-3f2f-4698-a3e5-3853fd197e06",
+  "baseline_sha256": "d517c7ef259f17f66d1cb991a8cfd69748f08228540ea057b08adc3662cec8ee",
+  "candidate_sha256": "c7a2013edcc2502d804ffba0b083e896d3f3850e335bc7ed55c410b8bcf72387",
+  "scope": {
+    "model_id": "recnl4Fksh6pXEwA1",
+    "canonical_name": "Porto MJ",
+    "date": "2026-11-11",
+    "slot": "standard"
+  },
+  "unrelated_bytes_preserved": true,
+  "sections": [
+    {
+      "name": "compcard-daily",
+      "baseline_sha256": "0148ded9e46406ee474a63331c450bf5ded8b73b3e0adb32b8d0803f2b377809",
+      "candidate_sha256": "86ccb4966fff79c3d6819f9974184f4938de8eeb5499c32e5c110437fb773061"
+    }
+  ],
+  "replacements": [
+    {
+      "section": "compcard-daily",
+      "before": "const card2 = chooseDailyCard(slot === \"standard\" ? eligible.filter((card3) => card3.category === \"standard\") : eligible, history, date);",
+      "after": "const card2 = chooseDailyCard(slot === \"standard\" ? eligible.filter((card3) => card3.category === \"standard\" && !(date === \"2026-11-11\" && card3.model_id === \"recnl4Fksh6pXEwA1\")) : eligible, history, date);"
+    },
+    {
+      "section": "compcard-daily",
+      "before": "if (plan.chat_ids[destination] !== manifest.destinations[destination]) throw problem(\"compcard_destination_approval_changed\", false);",
+      "after": "if (plan.chat_ids[destination] !== manifest.destinations[destination]) throw problem(\"compcard_destination_approval_changed\", false);\n          if (slot === \"standard\" && date === \"2026-11-11\" && card.model_id === \"recnl4Fksh6pXEwA1\") throw problem(\"compcard_owner_excluded_porto\", false);"
+    }
+  ]
+}
