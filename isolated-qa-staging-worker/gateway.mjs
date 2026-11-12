@@ -39,7 +39,7 @@ async function memberFixture(env) {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-mmd-member-resolver-secret": env.QA_AUTH_RESOLVER_SECRET },
     body: JSON.stringify({ line_user_id: fixtureUser, purpose: "liff_identity_resolution" }),
-    redirect: "error",
+    redirect: "manual",
   });
   if (!response.ok || (await response.json())?.data?.member_exists !== true) {
     return json(503, { error: "qa_fixture_unavailable" });
