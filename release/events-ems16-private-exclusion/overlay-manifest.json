@@ -1,0 +1,48 @@
+{
+  "worker": "events-worker",
+  "module": "model-eta-wrapper.js",
+  "expected_version": "88e741df-15bd-40ba-a4ce-f88a2735822b",
+  "expected_deployment": "d9617e88-3f2f-4698-a3e5-3853fd197e06",
+  "baseline_sha256": "d517c7ef259f17f66d1cb991a8cfd69748f08228540ea057b08adc3662cec8ee",
+  "candidate_sha256": "570b7a8e310aa0b6588260ece6139889e1b72c526149aa7510df3ca634a7ed3d",
+  "scope": {
+    "model_id": "recbdC0waCS3qp452",
+    "canonical_name": "EMs16",
+    "private_categories": [
+      "exclusive",
+      "premium",
+      "standard"
+    ],
+    "public_categories_unchanged": [
+      "travel",
+      "extreme"
+    ],
+    "slots": [
+      "model",
+      "standard"
+    ],
+    "selection_sources": [
+      "static_manifest",
+      "approved_intake"
+    ],
+    "persistence": "until_explicitly_reenabled"
+  },
+  "unrelated_bytes_preserved": true,
+  "sections": [
+    {
+      "name": "compcard-daily"
+    }
+  ],
+  "replacements": [
+    {
+      "section": "compcard-daily",
+      "before": "const check = evaluateCard(card, byId.get(card.model_id));",
+      "after": "const check = card.model_id === \"recbdC0waCS3qp452\" && [\"exclusive\", \"premium\", \"standard\"].includes(card.category) ? { ok: false, reason: \"owner_private_automation_excluded\" } : evaluateCard(card, byId.get(card.model_id));"
+    },
+    {
+      "section": "compcard-daily",
+      "before": "if (plan.chat_ids[destination] !== manifest.destinations[destination]) throw problem(\"compcard_destination_approval_changed\", false);",
+      "after": "if (plan.chat_ids[destination] !== manifest.destinations[destination]) throw problem(\"compcard_destination_approval_changed\", false);\n          if (modelSlot && card.model_id === \"recbdC0waCS3qp452\" && [\"exclusive\", \"premium\", \"standard\"].includes(card.category)) throw problem(\"compcard_owner_private_automation_excluded\", false);"
+    }
+  ]
+}

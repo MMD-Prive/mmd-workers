@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "events-worker/**"
+      - "release/events-ems16-private-exclusion/**"
       - "telegram-worker/src/compcard-photo.js"
       - "telegram-worker/src/index.js"
       - "telegram-worker/test/compcard-photo.test.mjs"
@@ -28,6 +29,8 @@ jobs:
       - name: Verify schedules, approvals, recipients and durable delivery
         run: |
           node --check events-worker/src/compcard-daily.js
+          node --check release/events-ems16-private-exclusion/build-candidate.mjs
+          node --test events-worker/ems16-private-automation.test.mjs
           node --check events-worker/src/compcard-journal.js
           node --check telegram-worker/src/compcard-photo.js
           node --check scripts/hype-prepare-intake.mjs
