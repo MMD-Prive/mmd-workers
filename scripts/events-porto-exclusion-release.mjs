@@ -16,14 +16,19 @@ export const OWNER_REQUEST = 'Sentinel_7d526138545c8191b8f609294acbe26f';
 export const BASELINE_HASH = 'd517c7ef259f17f66d1cb991a8cfd69748f08228540ea057b08adc3662cec8ee';
 export const CANDIDATE_HASH = 'd01134c376e654b38c91146993f0d008b797a64f49e184c6fb30983e314244e0';
 export const MANIFEST_HASH = '2240fc42c9201dade551aab05aefa0a8aef8b14a0d0adc0805529a30674c82a4';
-export const ROUND_DATE = '2026-11-11';
+export const ROUND_DATE = '2026-11-12';
+export const RELEASE_WINDOW = Object.freeze({
+  start: '2026-11-12T14:45:00Z', // 21:45 ICT, after the 90-minute evening catch-up and lease margin.
+  end: '2026-11-12T16:45:00Z', // 23:45 ICT, before the publishing date changes.
+});
+const ROUND_SLOTS = ['model', 'standard', 'promotion'];
+const ROOM_NAMES = ['premium', 'standard', 'preview'];
 const BUCKET = 'mmd-hype-compcard-state';
 const R2 = `/accounts/${ACCOUNT}/r2/buckets/${BUCKET}/objects`;
-export const ROUND_KEYS = [
-  `hype-compcards/v1/plans/${ROUND_DATE}/standard.json`,
-  `hype-compcards/v1/deliveries/${ROUND_DATE}/standard/premium.json`,
-  `hype-compcards/v1/deliveries/${ROUND_DATE}/standard/standard.json`,
-];
+export const ROUND_KEYS = ROUND_SLOTS.flatMap(slot => [
+  `hype-compcards/v1/plans/${ROUND_DATE}/${slot}.json`,
+  ...ROOM_NAMES.map(room => `hype-compcards/v1/deliveries/${ROUND_DATE}/${slot}/${room}.json`),
+]);
 export const digest = value => createHash('sha256').update(value).digest('hex');
 export function validateManifestBytes(bytes) {
   assert.equal(digest(bytes), MANIFEST_HASH, 'Porto manifest differs from exact reviewed scope');
@@ -58,8 +63,24 @@ export function applyPortoOverlay(code, manifest) {
   return candidate;
 }
 export function assertReleaseWindow(now = Date.now()) {
-  assert.ok(Number.isSafeInteger(now) && now >= Date.parse('2026-11-10T17:00:00Z')
-    && now < Date.parse('2026-11-11T12:55:00Z'), 'release must finish preparation before 19:55 ICT on the exact round date');
+  assert.ok(Number.isSafeInteger(now) && now >= Date.parse(RELEASE_WINDOW.start)
+    && now < Date.parse(RELEASE_WINDOW.end), 'release requires the reviewed Nov12 21:45–23:45 ICT quiet window');
+}
+export function validateQuietSchedule(version, schedules) {
+  const bindings = version?.resources?.bindings;
+  assert.ok(Array.isArray(bindings), 'schedule bindings unavailable');
+  for (const [name, text] of Object.entries({
+    HYPE_COMPCARD_ENABLED: 'true', HYPE_STANDARD_ENABLED: 'true', HYPE_INTAKE_ENABLED: 'true',
+    HYPE_PROMOTION_ENABLED: 'false', HYPE_COMPCARD_SEND_AT_ICT: '16:30',
+    HYPE_STANDARD_SEND_AT_ICT: '20:00', HYPE_PROMOTION_SEND_AT_ICT: '20:00',
+    HYPE_CADENCE_START_DATE: '2026-10-23', HYPE_PROMOTION_WEEKDAYS: '2,5',
+  })) {
+    const matches = bindings.filter(row => row.name === name);
+    assert.equal(matches.length, 1, 'ambiguous schedule binding');
+    assert.equal(matches[0].type, 'plain_text');
+    assert.equal(matches[0].text, text, 'reviewed quiet-window schedule changed');
+  }
+  assert.deepEqual(schedules?.schedules?.map(row => row.cron), ['*/15 * * * *'], 'reviewed cron changed');
 }
 export async function readActiveModule(token, expectedName, request = fetch) {
   assert.ok(['model-eta-wrapper.js', 'worker.js'].includes(expectedName));
@@ -73,7 +94,8 @@ export async function readActiveModule(token, expectedName, request = fetch) {
   assert.ok(typeof entries[0][1] !== 'string' && entries[0][1].size < 1024 * 1024);
   return entries[0][1].text();
 }
-export async function readRoundState(token, request = fetch) {
+export async function readRoundState(token, request = fetch, now = Date.now()) {
+  assertReleaseWindow(now);
   const headers = { Authorization: 'Bearer ' + token };
   const get = path => request('https://api.cloudflare.com/client/v4' + path, {
     method: 'GET', headers, redirect: 'error', signal: AbortSignal.timeout(30000),
@@ -96,20 +118,33 @@ export async function readRoundState(token, request = fetch) {
     assert.ok(record && typeof record === 'object' && !Array.isArray(record));
     rows.push({ key, sha256: digest(text), record });
   }
-  const plan = rows[0].record;
-  if (!plan) assert.ok(rows.slice(1).every(row => row.record === null), 'orphan round receipts');
-  else {
+  for (const [index, slot] of ROUND_SLOTS.entries()) {
+    const group = rows.slice(index * 4, index * 4 + 4);
+    const plan = group[0].record;
+    if (slot === 'promotion') {
+      assert.ok(group.every(row => row.record === null), 'promotion evidence conflicts with the reviewed disabled-promotion window');
+      continue;
+    }
+    if (!plan) { assert.ok(group.slice(1).every(row => row.record === null), 'orphan round receipts'); continue; }
     assert.equal(plan.schema, 'hype_compcard_plan_v1');
-    assert.equal(plan.date, ROUND_DATE); assert.equal(plan.slot, 'standard');
+    assert.equal(plan.date, ROUND_DATE); assert.equal(plan.slot, slot);
     const { digest: claimed, ...payload } = plan;
     assert.equal(digest(JSON.stringify(payload)), claimed, 'frozen plan integrity changed');
-    assert.ok(Array.isArray(plan.destinations) && plan.destinations.length > 0
-      && new Set(plan.destinations).size === plan.destinations.length
-      && plan.destinations.every(destination => ['premium', 'standard'].includes(destination)));
-    for (const row of rows.slice(1)) if (row.record) {
+    const destinations = { exclusive: ['premium', 'preview'], premium: ['premium'],
+      standard: ['premium', 'standard'], travel: ['preview'], extreme: ['preview'] }[plan.category];
+    assert.ok(destinations, 'invalid round category');
+    if (slot === 'standard') assert.equal(plan.category, 'standard');
+    assert.deepEqual(plan.destinations, destinations, 'round destinations changed');
+    for (const row of group.slice(1)) if (row.record) {
       const destination = row.key.split('/').at(-1).replace('.json', '');
+      assert.ok(plan.destinations.includes(destination), 'receipt outside frozen destinations');
       assert.equal(row.record.schema, 'hype_compcard_delivery_v1');
-      assert.ok(['pending', 'preparing', 'sending', 'not_sent', 'sent', 'blocked', 'delivery_uncertain'].includes(row.record.status));
+      assert.ok(['pending', 'not_sent', 'sent', 'blocked', 'delivery_uncertain'].includes(row.record.status), 'preparing, sending or invalid delivery state requires reconciliation');
+      assert.ok(Number.isInteger(row.record.attempts) && row.record.attempts >= 0 && row.record.attempts <= 3);
+      assert.ok(Number.isFinite(row.record.lease_until) && row.record.lease_until >= 0
+        && row.record.lease_until <= now, 'active delivery lease');
+      assert.ok(row.record.next_attempt_at == null || (Number.isFinite(row.record.next_attempt_at)
+        && row.record.next_attempt_at >= 0 && row.record.next_attempt_at <= now), 'future delivery retry');
       for (const [field, value] of Object.entries({ date: plan.date, slot: plan.slot, destination,
         model_id: plan.model_id, card_id: plan.card_id, plan_digest: plan.digest,
         approved_sha256: plan.sha256, expected_chat_id: plan.chat_ids?.[destination] })) assert.equal(row.record[field], value);
@@ -147,13 +182,19 @@ async function main() {
   const manifest = validateManifestBytes(manifestBytes);
   const sha = process.env.GITHUB_SHA;
   const token = process.env.CLOUDFLARE_API_TOKEN;
+  const transport = createTransport(token);
+  const readCurrent = async () => {
+    validateQuietSchedule(await transport(ROOT + '/versions/' + manifest.expected_version),
+      await transport(ROOT + '/schedules'));
+    return readRoundState(token);
+  };
   let roundState;
   const approve = async () => {
     await verifyProductionApproval(process.env);
     assert.equal((await inspectEnvironment(process.env)).ready, true, 'protected main-only reviewer environment required');
     validateSourceState({ expectedSha: sha, headSha: git('rev-parse', 'HEAD'), dirtyStatus: git('status', '--porcelain=v1', '--untracked-files=all') });
     assertReleaseWindow();
-    const current = await readRoundState(token);
+    const current = await readCurrent();
     if (roundState) assert.deepEqual(current, roundState, 'round plan or evidence changed; stop without mutation');
     else roundState = current;
     assertReleaseWindow();
@@ -165,7 +206,7 @@ async function main() {
   const journal = join(process.env.RUNNER_TEMP, 'events-porto-exclusion-release.json');
   await releaseEventsRotation({
     sha, approve, expectedVersion: manifest.expected_version, expectedDeployment: manifest.expected_deployment,
-    call: withPortoBoundary(createTransport(token), () => readRoundState(token), () => roundState),
+    call: withPortoBoundary(transport, readCurrent, () => roundState),
     sourceCheck: async version => {
       assert.equal(version.resources.bindings.find(row => row.name === 'HYPE_PROMOTION_ENABLED')?.text, 'false');
       const bucket = version.resources.bindings.find(row => row.name === 'HYPE_COMPCARD_STATE');
@@ -184,10 +225,11 @@ async function main() {
       preservation: { unrelated_bytes_preserved: true, sections: manifest.sections, manifest_sha256: digest(manifestBytes) } }),
     verifyActiveModule: async expected => {
       assert.equal(digest(await readActiveModule(token, 'worker.js')), expected, 'active module digest mismatch');
-      assert.deepEqual(await readRoundState(token), roundState, 'round evidence changed during release');
+      assert.deepEqual(await readCurrent(), roundState, 'round evidence changed during release');
     },
     now: () => new Date().toISOString(),
-    save: state => writeFileSync(journal, JSON.stringify({ ...state, round_state: roundState }, null, 2), { mode: 0o600 }),
+    save: state => writeFileSync(journal, JSON.stringify({ ...state, release_window: RELEASE_WINDOW,
+      round_date: ROUND_DATE, round_state: roundState }, null, 2), { mode: 0o600 }),
   });
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
