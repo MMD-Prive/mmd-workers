@@ -53,6 +53,13 @@ export function automaticModelAllowed(modelId) {
   return modelId !== 'recW0Whpu9maVjYF6' && modelId !== 'recnl4Fksh6pXEwA1';
 }
 
+// Owner's private-work restriction follows the commercial category, not room visibility.
+// Public Travel/Extreme work and all other canonical identities are unaffected.
+export function privateAutomationAllowed(card) {
+  return !(card?.model_id === 'recbdC0waCS3qp452'
+    && ['exclusive', 'premium', 'standard'].includes(card.category));
+}
+
 export function destinationsForModelSlot(category, slot) {
   if (slot === 'standard') return category === 'standard' ? ['standard'] : [];
   return destinationsForCategory(category).filter(destination => destination !== 'standard');
@@ -62,6 +69,7 @@ export function evaluateCard(card, record) {
   if (!card || !CATEGORIES.includes(card.category) || !card.model_id || !card.canonical_name) {
     return { ok: false, reason: 'manifest_invalid' };
   }
+  if (!privateAutomationAllowed(card)) return { ok: false, reason: 'owner_private_automation_excluded' };
   if (!record || record.id !== card.model_id || !record.fields) {
     return { ok: false, reason: 'model_identity_mismatch' };
   }
@@ -182,7 +190,7 @@ export function chooseDailyCard(cards, history, date) {
     lastExposure.set(row.model_id, Math.max(lastExposure.get(row.model_id) ?? -Infinity, previous));
   }
   const eligible = (Array.isArray(cards) ? cards : []).filter(card => {
-    if (!card || !card.model_id || !automaticModelAllowed(card.model_id) || !CATEGORIES.includes(card.category) || card.selectable === false) return false;
+    if (!card || !card.model_id || !automaticModelAllowed(card.model_id) || !privateAutomationAllowed(card) || !CATEGORIES.includes(card.category) || card.selectable === false) return false;
     const previous = lastExposure.get(card.model_id);
     return previous === undefined || today - previous >= COOLDOWN_DAYS;
   });
