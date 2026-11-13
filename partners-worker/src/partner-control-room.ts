@@ -28,7 +28,7 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
     $$("dialog", root).forEach(function (dialog) { dialog.close(); });
     $$("form", root).forEach(function (form) { form.reset(); });
     $$('[data-vault-pin],[data-general-note],[data-private-travel],[name^="private_"]', root).forEach(function (field) { field.value = ""; });
-    $$('[data-jobs],[data-models],[data-earnings],[data-private-events],[data-model-history],[data-model-contacts],[data-activity],[data-console-history],[data-agreements],[data-performance]', root).forEach(function (el) { el.replaceChildren(); });
+    $$('[data-jobs],[data-models],[data-home-models],[data-earnings],[data-private-events],[data-model-history],[data-model-contacts],[data-activity],[data-console-history],[data-agreements],[data-performance]', root).forEach(function (el) { el.replaceChildren(); });
     window.location.replace(loginUrl);
   }
 
@@ -114,9 +114,19 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
   }
 
   function renderJobs(data) {
-    var jobs = data.jobs || [];
+    var now = Date.now();
+    var day = new Intl.DateTimeFormat("sv-SE", { timeZone:"Asia/Bangkok" }).format(new Date(now));
+    var jobs = (data.jobs || []).map(function (job) {
+      var when = job.start_at || job.date || "";
+      var dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(when);
+      return { job:job, sort:Date.parse(when), upcoming: dateOnly ? when >= day : Date.parse(when) >= now };
+    });
+    var finished = /^(declined|cancelled|canceled|completed|closed|expired)$/i;
+    var upcoming = jobs.filter(function (item) { return item.upcoming && !finished.test(item.job.status); }).sort(function (a,b) { return a.sort-b.sort; });
+    var earlier = jobs.filter(function (item) { return upcoming.indexOf(item) < 0; });
     var target = $("[data-jobs]", root);
-    target.innerHTML = jobs.length ? jobs.map(jobCard).join("") : '<div class="pcr-empty">งานใหม่ที่เชื่อมกับ Partner นี้จะแสดงที่นี่</div>';
+    target.innerHTML = (upcoming.length ? upcoming.map(function (item) { return jobCard(item.job); }).join("") : '<div class="pcr-empty">ยังไม่มีงานที่กำลังจะมาถึง</div>') +
+      (earlier.length ? '<details class="pcr-mission-extra"><summary>งานอื่นและประวัติ</summary>' + earlier.map(function (item) { return jobCard(item.job); }).join("") + '</details>' : '');
   }
 
   function modelCard(model) {
@@ -128,16 +138,17 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
       '<div class="pcr-model-image">' + image + '</div><div class="pcr-model-copy"><div class="pcr-model-title"><div><h3>' + esc(model.display_name) + '</h3><p>' + esc(model.height_cm || "—") + ' cm · ' + esc(model.weight_kg || "—") + ' kg</p></div><span class="pcr-switch is-' + esc(visibility) + '">' + (approved ? (visibility === "on" ? "ON · ตามตารางที่อนุมัติ" : "OFF · ตามตารางที่อนุมัติ") : "กำลังตรวจเรทและ Visibility") + '</span></div>' +
       '<p>' + esc(model.sales_copy || model.profile_summary || model.skills_summary || "เพิ่มข้อความแนะนำตัวเพื่อใช้ในโปรไฟล์") + '</p>' +
       '<div class="pcr-meta"><span>' + esc(model.referral_status) + '</span><span>' + esc(model.availability_status) + '</span>' + (model.profile_request_status ? '<span>Profile: ' + esc(model.profile_request_status) + '</span>' : '') + '</div>' +
-      (proposal ? '<p>เรทถึงตัว '+esc(money(proposal.partner_source_rate_thb))+' · เรทขายที่เสนอ '+esc(money(proposal.customer_sell_rate_thb))+' · '+esc(proposal.status)+'</p>' : '') + '<button type="button" data-edit-model>Edit model & sales control</button></div></article>';
+      (proposal ? '<p>เรทถึงตัว '+esc(money(proposal.partner_source_rate_thb))+' · เรทขายที่เสนอ '+esc(money(proposal.customer_sell_rate_thb))+' · '+esc(proposal.status)+'</p>' : '') + '<div class="pcr-quick-actions"><button type="button" data-edit-model>แก้โปรไฟล์ / เรท</button><button type="button" class="ghost" data-edit-model="photo">อัปโหลดรูปใหม่</button><button type="button" class="ghost" data-edit-model="visibility">ขอเปลี่ยน Visibility</button></div></div></article>';
   }
 
   function renderModels(data) {
-    var target = $("[data-models]", root);
+    var targets = $$("[data-models],[data-home-models]", root);
     var models = data.models || [];
     var pending = (data.model_changes || []).filter(function (item) { return item.action === "add_model" && item.status === "review"; });
-    target.innerHTML = models.map(modelCard).join("") + pending.map(function (item) {
+    var markup = models.map(modelCard).join("") + pending.map(function (item) {
       return '<article class="pcr-model pending"><div class="pcr-model-image"><span>+</span></div><div class="pcr-model-copy"><h3>' + esc(item.payload.display_name || "New model") + '</h3><p>MMD Review กำลังดำเนินการ</p><div class="pcr-meta"><span>Review</span></div></div></article>';
     }).join("") || '<div class="pcr-empty">Model ที่เชื่อมกับ Partner จะปรากฏที่นี่</div>';
+    targets.forEach(function (target) { target.innerHTML = markup; });
   }
 
   function renderEarnings(data) {
@@ -172,6 +183,23 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
       : '<div><small>LINE READY · TELEGRAM OPTIONAL</small><b>Telegram เชื่อมภายหลังได้</b><span>Dashboard ใช้งานได้ด้วย LINE แล้ว · เชื่อม Telegram เมื่อต้องการรับการแจ้งเตือนเพิ่มเติม</span></div><button type="button" data-connect-telegram>Connect Telegram later</button>';
   }
 
+  function prepareMissionHome() {
+    var home = $('[data-view-panel="home"]', root);
+    if (!home || $("[data-home-models]", home)) return;
+    var jobs = $("[data-jobs]", home).parentElement;
+    var title = $(".pcr-section-head h3", jobs);
+    title.textContent = "Our Mission";
+    var roster = document.createElement("section");
+    roster.className = "pcr-section pcr-mission-roster";
+    roster.innerHTML = '<div class="pcr-section-head"><h3>MY Co MODELS</h3></div><div class="pcr-models" data-home-models></div>';
+    var overview = document.createElement("details");
+    overview.className = "pcr-mission-extra";
+    var summary = document.createElement("summary");
+    summary.textContent = "ภาพรวมบัญชีและ Telegram";
+    overview.append(summary, $("[data-metrics]", home), $("[data-telegram]", home));
+    home.append(jobs, roster, overview);
+  }
+
   function hydrate(data) {
     if (state.authBlocked) return;
     if (!state.data) setFlash("");
@@ -179,12 +207,12 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
     $(".pcr-shell", root).hidden = false;
     $("[data-loading]", root).textContent = "";
     $("[data-partner-name]", root).textContent = (data.partner && data.partner.name) || "SĪGIL Partner";
-    renderMetrics(data); renderJobs(data); renderModels(data); renderEarnings(data); renderTelegram(data);
+    prepareMissionHome(); renderMetrics(data); renderJobs(data); renderModels(data); renderEarnings(data); renderTelegram(data);
     bindDynamic(); renderOperations(data);
   }
 
   function bindDynamic() {
-    $$('[data-edit-model]', root).forEach(function (button) { button.onclick = function () { openModelEditor(button.closest('[data-model]').dataset.model); }; });
+    $$('[data-edit-model]', root).forEach(function (button) { button.onclick = function () { openModelEditor(button.closest('[data-model]').dataset.model); var form = $("[data-model-form]",root); if (button.dataset.editModel === "photo") form.elements.model_file.focus(); if (button.dataset.editModel === "visibility") form.elements.sales_visibility.focus(); }; });
     $$('[data-job-action]', root).forEach(function (button) { button.onclick = function () { submitJobAction(button); }; });
     $$('[data-model-link]', root).forEach(function (button) { button.onclick = function () { issueModelLink(button); }; });
     var connect = $("[data-connect-telegram]", root);
@@ -355,6 +383,7 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
 `;
 
 export const PARTNER_CONTROL_ROOM_CSS = String.raw`
+.pcr-mission-extra{margin-block:14px}.pcr-mission-extra summary{cursor:pointer;padding:12px;min-height:44px}.pcr-mission-roster .pcr-models{display:grid;grid-template-columns:minmax(0,1fr)}.pcr-mission-roster .pcr-model{grid-template-columns:64px minmax(0,1fr)}.pcr-mission-roster .pcr-model-image{min-height:64px;height:64px}.pcr-quick-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}.pcr-quick-actions button{min-height:44px}
 .pcr-finance-card{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;padding:18px;margin:0 0 14px;border:1px solid var(--mmdp-line);border-radius:16px;background:linear-gradient(135deg,rgba(215,175,103,.10),rgba(49,16,21,.16))}.pcr-finance-card small,.pcr-table small{display:block;color:var(--mmdp-muted);margin-top:4px}.pcr-finance-card h3{margin:5px 0}.pcr-finance-state,.pcr-audit-flag{display:inline-flex;align-items:center;padding:5px 8px;border:1px solid var(--mmdp-line);border-radius:999px;color:var(--mmdp-gold-2);font-family:var(--mmdp-font-en);font-size:10px;font-weight:600;letter-spacing:.08em}.pcr-finance-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:0 0 14px}.pcr-finance-metrics article{padding:14px;border:1px solid var(--mmdp-line);border-radius:14px;background:rgba(255,255,255,.025)}.pcr-finance-metrics span{display:block;color:var(--mmdp-muted);font-size:12px}.pcr-finance-metrics strong{display:block;margin-top:5px;color:var(--mmdp-ivory);font-family:var(--mmdp-font-secondary);font-size:18px}.pcr-finance-warning{margin:0 0 14px;padding:14px;border:1px solid rgba(255,142,142,.42);border-radius:14px;background:rgba(105,32,32,.18);color:var(--mmdp-copy)}.pcr-finance-warning b{color:#ffd1d1}.pcr-table td b{display:block}.pcr-table td .pcr-audit-flag{margin-top:6px;color:#ffd1d1}@media(max-width:720px){.pcr-finance-metrics{grid-template-columns:1fr 1fr}.pcr-finance-card{flex-direction:column}.pcr-table{overflow-x:auto}}
 .pcr-side small,.pcr-side button,.pcr-status,.pcr-meta span,.pcr-table th,.pcr-telegram small{font-family:var(--mmdp-font-en)}
 .pcr-metrics strong{font-family:var(--mmdp-font-secondary)}
