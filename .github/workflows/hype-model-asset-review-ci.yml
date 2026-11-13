@@ -1,0 +1,31 @@
+name: HYPE model asset review CI
+
+on:
+  pull_request:
+    paths:
+      - "scripts/hype-model-asset-review.mjs"
+      - "scripts/hype-model-asset-review.test.mjs"
+      - "docs/ops/HYPE_MODEL_ASSET_REVIEW.md"
+      - ".github/workflows/hype-model-asset-review-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  offline-review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    strategy:
+      matrix:
+        node: [20, 22, 24]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Validate metadata-only review planner
+        run: |
+          node --check scripts/hype-model-asset-review.mjs
+          node --test scripts/hype-model-asset-review.test.mjs
