@@ -33,7 +33,7 @@ function unique(values, label) {
   if (new Set(values).size !== values.length) fail(`Duplicate ${label}`);
 }
 function modelId(id) {
-  if (!/^rec[A-Za-z0-9]{8,40}$/.test(id || '')) fail('Invalid canonical model ID');
+  if (typeof id !== 'string' || !/^rec[A-Za-z0-9]{8,40}$/.test(id)) fail('Invalid canonical model ID');
 }
 
 export function validateSnapshot(snapshot) {
@@ -59,7 +59,7 @@ export function validateSnapshot(snapshot) {
       exact(binding, ['root_id', 'folder_id', 'scope_key', 'evidence_ref'], 'binding');
       for (const key of Object.keys(binding)) text(binding[key], key);
       if (!snapshot.scope.root_ids.includes(binding.root_id)) fail('Binding outside approved roots');
-      const key = `${binding.root_id}/${binding.folder_id}/${binding.scope_key}`;
+      const key = binding.folder_id;
       if (bindings.has(key) || folders.has(binding.folder_id)) fail('Ambiguous or duplicate folder binding');
       bindings.add(key); folders.add(binding.folder_id);
     }
@@ -75,7 +75,7 @@ export function validateSnapshot(snapshot) {
     if (!['canonical_folder_binding', 'reviewed_library_link'].includes(asset.identity_source)) fail('Invalid identity evidence source');
     if (asset.identity_source === 'canonical_folder_binding' && !model.folder_bindings.some(binding => binding.root_id === asset.root_id && binding.folder_id === asset.folder_id && binding.scope_key === asset.scope_key)) fail('Asset lacks an exact canonical folder binding');
     if (asset.identity_source === 'reviewed_library_link' && asset.kind !== 'compcard') fail('Library link must identify a reviewed compcard');
-    if (asset.content_sha256 !== null && !/^[a-f0-9]{64}$/.test(asset.content_sha256)) fail('Invalid content hash');
+    if (asset.content_sha256 !== null && (typeof asset.content_sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(asset.content_sha256))) fail('Invalid content hash');
     if (date(asset.modified_at, 'modified_at') > captured) fail('Asset modified after snapshot');
     if (!['photo', 'compcard', 'other', 'unknown'].includes(asset.kind)) fail('Invalid reviewed asset kind');
     if (asset.template_id !== null) text(asset.template_id, 'template ID');
@@ -87,6 +87,9 @@ export function validateSnapshot(snapshot) {
 function fingerprint(asset) {
   // Same content under a new Drive metadata revision is not a new photograph.
   return asset.content_sha256 ? `sha256:${asset.content_sha256}` : `revision:${asset.revision}`;
+}
+function bindingIdentity(model) {
+  return model.folder_bindings.map(b => [b.root_id, b.folder_id, b.scope_key]).sort();
 }
 function assetEvidence(asset) {
   return [asset.asset_id, asset.model_id, asset.root_id, asset.folder_id, asset.scope_key, fingerprint(asset), asset.kind, asset.template_id, asset.identity_source, asset.evidence_ref];
@@ -103,7 +106,7 @@ export function planModelAssetReview(current, { previous = null, targetTemplate,
   const reviewed = new Map();
   for (const decision of decisions) {
     exact(decision, ['review_key', 'state', 'reviewed_at', 'evidence_ref'], 'decision');
-    if (!/^[a-f0-9]{64}$/.test(decision.review_key || '') || !['reviewed', 'deferred'].includes(decision.state)) fail('Invalid review decision');
+    if (typeof decision.review_key !== 'string' || !/^[a-f0-9]{64}$/.test(decision.review_key) || !['reviewed', 'deferred'].includes(decision.state)) fail('Invalid review decision');
     date(decision.reviewed_at, 'reviewed_at'); text(decision.evidence_ref, 'decision evidence');
     if (reviewed.has(decision.review_key)) fail('Duplicate review decision');
     reviewed.set(decision.review_key, decision);
@@ -125,6 +128,8 @@ export function planModelAssetReview(current, { previous = null, targetTemplate,
   for (const model of [...current.models].sort((a, b) => a.model_id.localeCompare(b.model_id))) {
     const assets = (byModel.get(model.model_id) || []).sort((a, b) => a.asset_id.localeCompare(b.asset_id));
     const cards = assets.filter(asset => asset.kind === 'compcard');
+    const oldModel = oldModels.get(model.model_id);
+    const bindingsChanged = !!oldModel && hash(bindingIdentity(oldModel)) !== hash(bindingIdentity(model));
     const reasons = [];
     const add = (kind, affected = []) => reasons.push({ kind, asset_ids: ordered(affected.map(asset => asset.asset_id)) });
     if (!model.folder_bindings.length) add('missing_folder_binding');
@@ -132,7 +137,7 @@ export function planModelAssetReview(current, { previous = null, targetTemplate,
     const unknown = assets.filter(asset => asset.kind === 'unknown');
     if (unknown.length) add('unclassified_assets', unknown);
     // Absence is only established within the declared, fully reconciled source scope.
-    if (!cards.length && model.inventory_complete && model.folder_bindings.length && !unknown.length) add('no_compcard_in_verified_scope');
+    if (!cards.length && model.inventory_complete && model.folder_bindings.length && !unknown.length && !bindingsChanged) add('no_compcard_in_verified_scope');
     if (cards.some(card => card.template_id === null)) add('template_review_required', cards.filter(card => card.template_id === null));
     if (cards.length && cards.every(card => card.template_id !== null && card.template_id !== targetTemplate)) add('legacy_template_review', cards);
     if (!previous) {
@@ -155,11 +160,10 @@ export function planModelAssetReview(current, { previous = null, targetTemplate,
       if (rebound.length) add('asset_binding_changed', rebound);
       if (uncertain.length) add('asset_change_unverified', uncertain);
       const missing = (previousByModel.get(model.model_id) || []).filter(asset => !currentAssets.has(asset.asset_id));
-      if (missing.length) add(model.inventory_complete ? 'assets_absent_in_verified_scope' : 'asset_absence_unverified', missing);
+      if (missing.length) add(model.inventory_complete && !bindingsChanged ? 'assets_absent_in_verified_scope' : 'asset_absence_unverified', missing);
       const departed = (previousByModel.get(model.model_id) || []).map(asset => currentAssets.get(asset.asset_id)).filter(asset => asset && asset.model_id !== model.model_id);
       if (departed.length) reasons.push({ kind: 'asset_binding_departed', asset_ids: ordered(departed.map(asset => asset.asset_id)), current_bindings: departed.map(asset => [asset.asset_id, asset.model_id, asset.root_id, asset.folder_id, asset.scope_key]).sort() });
-      const oldModel = oldModels.get(model.model_id);
-      if (oldModel && hash(oldModel.folder_bindings.map(b => [b.root_id, b.folder_id, b.scope_key]).sort()) !== hash(model.folder_bindings.map(b => [b.root_id, b.folder_id, b.scope_key]).sort())) add('model_folder_bindings_changed');
+      if (bindingsChanged) add('model_folder_bindings_changed');
     }
     if (!reasons.length) continue;
     const reviewKey = hash([current.scope.id, current.scope.evidence_ref, ordered(current.scope.root_ids), targetTemplate, model.model_id, model.inventory_complete, model.inventory_evidence_ref, model.folder_bindings.map(b => [b.root_id, b.folder_id, b.scope_key, b.evidence_ref]).sort(), reasons, assets.map(assetEvidence)]);

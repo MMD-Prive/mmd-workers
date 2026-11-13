@@ -190,3 +190,44 @@ test('asset rebinding keeps a review for both source and destination Models', ()
   assert.ok(destination.reasons.some(reason => reason.kind === 'asset_binding_changed'));
   assert.ok(!source.reasons.some(reason => reason.kind === 'assets_absent_in_verified_scope'));
 });
+
+test('canonical model IDs must be primitive strings, not coercible arrays', () => {
+  const s = snapshot(); s.models[0].model_id = [modelId];
+  assert.throws(() => plan(s), /canonical model ID/);
+});
+test('physical canonical folders cannot bind two Models through different scopes', () => {
+  const s = snapshot();
+  s.models.push({ ...structuredClone(s.models[0]), model_id: 'recSynthetic002', folder_bindings: [{ ...binding, scope_key: 'another-lane' }] });
+  assert.throws(() => plan(s), /Ambiguous or duplicate folder binding/);
+});
+test('physical canonical folders cannot bind two Models through different roots', () => {
+  const s = snapshot(); s.scope.root_ids.push('second-root');
+  s.models.push({ ...structuredClone(s.models[0]), model_id: 'recSynthetic002', folder_bindings: [{ ...binding, root_id: 'second-root' }] });
+  assert.throws(() => plan(s), /Ambiguous or duplicate folder binding/);
+});
+test('removed source bindings cannot prove missing assets or cards', () => {
+  const old = snapshot(); old.models[0].folder_bindings.push({ ...binding, folder_id: 'retained-folder' });
+  old.assets = [asset({ kind: 'compcard', template_id: 'reviewed-layout-v2' })];
+  const s = structuredClone(old); s.models[0].folder_bindings = [s.models[0].folder_bindings[1]]; s.assets = [];
+  const reasons = kinds(plan(s, { previous: old }));
+  assert.ok(reasons.includes('model_folder_bindings_changed'));
+  assert.ok(reasons.includes('asset_absence_unverified'));
+  assert.ok(!reasons.includes('assets_absent_in_verified_scope'));
+  assert.ok(!reasons.includes('no_compcard_in_verified_scope'));
+});
+
+for (const [label, malformed] of [['array', ['a'.repeat(64)]], ['object', { value: 'a'.repeat(64) }], ['number', 123]]) {
+  test(`rejects JSON ${label} instead of content hash`, () => {
+    const s = snapshot(); s.assets = [asset({ content_sha256: malformed })];
+    assert.throws(() => plan(JSON.parse(JSON.stringify(s))), /Invalid content hash/);
+  });
+  test(`rejects JSON ${label} instead of review key`, () => {
+    const decision = { review_key: malformed, state: 'reviewed', reviewed_at: at, evidence_ref: 'review-note-1' };
+    assert.throws(() => plan(snapshot(), { decisions: JSON.parse(JSON.stringify([decision])) }), /Invalid review decision/);
+  });
+}
+test('null model ID and review key are invalid while null content hash is explicit unknown', () => {
+  const s = snapshot(); s.models[0].model_id = null; assert.throws(() => plan(s));
+  const valid = snapshot(); valid.assets = [asset({ content_sha256: null })]; assert.doesNotThrow(() => plan(valid));
+  assert.throws(() => plan(snapshot(), { decisions: [{ review_key: null, state: 'reviewed', reviewed_at: at, evidence_ref: 'review-1' }] }));
+});

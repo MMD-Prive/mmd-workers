@@ -44,7 +44,9 @@ verify** that these reads occurred or that the declared scope is comprehensive.
 2. Resolve exact source folder ID + root + scope key bindings from canonical
    evidence, not names or images. Retain unresolved/duplicate mappings in the
    collector's exception list; do not silently omit them or claim full coverage.
-   The planner rejects ambiguous bindings instead of choosing a person.
+   The planner rejects ambiguous bindings instead of choosing a person. A
+   physical canonical folder cannot be assigned to multiple Models by changing
+   its root or scope label; shared card folders use explicit Library links.
 3. Reconcile every bound folder and the relevant card archives/Library/Studio
    completed assets. Include already completed cards, even if not in READY or
    not in the automatic posting registry. A single shared folder can contain
@@ -132,6 +134,9 @@ next diff. This PR provides neither a durable queue nor a background collector.
 Snapshot replacement/retention and any automation need a separately reviewed
 integration. Keep previous plans as audit history. Removed files/models remain
 visible as absences with completeness information, never as automatic deletions.
+Changed Model folder bindings invalidate absence comparisons even when the new
+inventory is declared complete; re-establish a reviewed baseline before making
+missing-card conclusions for that source scope.
 
 The review key binds exact canonical ID, source scope/evidence, template target,
 inventory evidence, bindings, reasons and asset fingerprints. Decisions are a
