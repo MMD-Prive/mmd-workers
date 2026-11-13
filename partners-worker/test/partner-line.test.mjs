@@ -198,3 +198,63 @@ test('Pages can call Partner APIs without bypassing Partner token checks', async
   assert.equal(denied.headers.get('Access-Control-Allow-Origin'), null);
  }
 });
+
+test('silent recognition requires admin, the configured QA Partner, and a verified reciprocal LINE claim', async () => {
+ const partnerId = 'recAAAAAAAAAAAAAA';
+ const claimId = 'recCCCCCCCCCCCCCC';
+ const env = {
+  ADMIN_APPROVE_SECRET: 'fixture-admin', PARTNER_QA_RECORD_ID: partnerId,
+  AIRTABLE_API_KEY: 'fixture-airtable', AIRTABLE_BASE_ID: 'fixture', AIRTABLE_TABLE_MODEL_PARTNERS: 'partners',
+ };
+ let lastWrite;
+ let writes = 0, notifications = 0, reads = 0, duplicate = false, mismatch = false;
+ const original = globalThis.fetch;
+ globalThis.fetch = async (input, init) => {
+  const url = new URL(String(input));
+  if (url.hostname === 'api.line.me') return Response.json({
+   aud: '2010864854', iss: 'https://access.line.me', exp: Math.floor(Date.now()/1000)+300, sub: 'U'+'a'.repeat(32),
+  });
+  if (init?.method === 'PATCH') { writes++; lastWrite = JSON.parse(init.body).fields; return Response.json({id:partnerId, fields:{}}); }
+  reads++;
+  if (url.pathname.endsWith('/'+partnerId)) return Response.json({id:partnerId,fields:{fldXs6VyfXIHxBMpQ:[claimId]}});
+  assert.match(url.pathname, /tbluoZ5JiRcoUP6WT$/);
+  const claim = {id:claimId,fields:{fld6PAywOhvDeelDJ:'verified_unlinked',fldGB7Raqm6O1NIhh:'published',
+   fldaMlO1fRoazxfHg:[mismatch ? 'recBBBBBBBBBBBBBB' : partnerId]}};
+  return Response.json({records:duplicate ? [claim,claim] : [claim]});
+ };
+ const approve = (overrides={}, credential='fixture-admin') => worker.fetch(new Request('https://mmdbkk.com/v1/partner/approve', {
+  method:'POST', headers:{'x-mmd-admin-secret':credential,'content-type':'application/json'},
+  body:JSON.stringify({partner_record_id:partnerId,action:'recognized',silent_test:true,id_token:'fixture-line',...overrides}),
+ }),env,{waitUntil(){notifications++;}});
+ try {
+  assert.equal((await approve({},'wrong')).status,403);
+  assert.equal((await approve({partner_record_id:'recBBBBBBBBBBBBBB'})).status,403);
+  delete env.PARTNER_QA_RECORD_ID;
+  assert.equal((await approve()).status,403);
+  env.PARTNER_QA_RECORD_ID = partnerId;
+  delete env.ADMIN_APPROVE_SECRET;
+  env.TOKEN_SECRET = 'fixture-signing';
+  assert.equal((await approve({}, 'fixture-signing')).status,503);
+  env.ADMIN_APPROVE_SECRET = 'fixture-admin';
+  assert.equal(reads,0);
+  assert.equal((await approve({id_token:''})).status,401);
+  duplicate = true;
+  assert.equal((await approve()).status,409);
+  duplicate = false;
+  mismatch = true;
+  assert.equal((await approve()).status,409);
+  mismatch = false;
+  assert.equal(writes,0);
+  const result = await approve();
+  assert.equal(result.status,200);
+  assert.deepEqual(await result.json(), {ok:true,partner_record_id:partnerId,action:'recognized'});
+  assert.equal(writes,1);
+  assert.equal(notifications,0);
+  assert.equal(lastWrite.fldoaCF4k4YqyuQ7Q, null);
+  const normal = await approve({silent_test:undefined,id_token:undefined});
+  assert.equal(normal.status,200);
+  assert.ok((await normal.json()).dashboard_url);
+  assert.match(lastWrite.fldoaCF4k4YqyuQ7Q,/^[a-f0-9]{64}$/);
+  assert.equal(notifications,1);
+ } finally { globalThis.fetch = original; }
+});
