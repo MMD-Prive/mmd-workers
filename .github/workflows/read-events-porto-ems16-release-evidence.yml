@@ -1,0 +1,109 @@
+name: Read combined guard release evidence
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/read-events-porto-ems16-release-evidence.yml'
+      - 'scripts/events-porto-ems16-evidence-read*'
+      - 'scripts/events-porto-ems16-readonly-evidence*'
+      - 'scripts/events-porto-ems16-release-state*'
+      - 'release/events-porto-ems16-exclusion/**'
+      - 'scripts/admin-production-approval*'
+      - 'scripts/admin-production-validation*'
+      - 'scripts/admin-current-session-code-only.mjs'
+      - '.github/workflows/admin-production-approval.yml'
+  workflow_dispatch:
+    inputs:
+      read_approved:
+        description: 'Observe exact live state only; cannot upload, deploy, or change state'
+        type: boolean
+        required: true
+        default: false
+      approval_ref:
+        description: 'Verified owner authorization reference; not protected environment approval'
+        type: string
+        required: true
+      approved_sha:
+        description: 'Exact current main SHA for this read-only observation'
+        type: string
+        required: true
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: ${{ github.event_name == 'workflow_dispatch' && 'deploy-events-worker-production' || format('events-combined-evidence-contracts-{0}', github.ref) }}
+  cancel-in-progress: false
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Verify read-only contracts without production credentials
+        run: >-
+          node --test
+          scripts/events-porto-ems16-evidence-read.test.mjs
+          scripts/events-porto-ems16-readonly-evidence.test.mjs
+          scripts/events-porto-ems16-release-state.test.mjs
+          scripts/admin-production-approval.test.mjs
+          scripts/admin-production-validation.test.mjs
+  readiness:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.read_approved == true && inputs.approved_sha == github.sha
+    needs: contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Verify exact current main and CI before protected approval
+        env:
+          GH_TOKEN: ${{ github.token }}
+          READ_APPROVED: ${{ inputs.read_approved }}
+          APPROVAL_REF: ${{ inputs.approval_ref }}
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+        run: node scripts/events-porto-ems16-evidence-read.mjs --check-readiness
+  protection-config:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.read_approved == true && inputs.approved_sha == github.sha
+    needs: [contracts, readiness]
+    uses: ./.github/workflows/admin-production-approval.yml
+    with:
+      approval_ref: ${{ inputs.approval_ref }}
+      approved_sha: ${{ inputs.approved_sha }}
+      environment_name: mmd-production-mutation
+  collect-evidence:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.read_approved == true && inputs.approved_sha == github.sha
+    needs: [contracts, readiness, protection-config]
+    environment: mmd-production-mutation
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Read exact bytes and verify stable observations without mutation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          READ_APPROVED: ${{ inputs.read_approved }}
+          APPROVAL_REF: ${{ inputs.approval_ref }}
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node scripts/events-porto-ems16-evidence-read.mjs --collect-approved
+      - name: Save sanitized observations only
+        uses: actions/upload-artifact@v4
+        with:
+          name: events-porto-ems16-readonly-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/events-porto-ems16-readonly-evidence.json
+          if-no-files-found: error
+          retention-days: 90
