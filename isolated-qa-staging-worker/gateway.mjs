@@ -26,7 +26,7 @@ async function verifyLine(token, channel) {
   const response = await fetch("https://api.line.me/oauth2/v2.1/verify", {
     method: "POST",
     body: new URLSearchParams({ id_token: token, client_id: channel }),
-    redirect: "error",
+    redirect: "manual",
     signal: AbortSignal.timeout(5000),
   });
   if (!response.ok) return null;
@@ -39,7 +39,7 @@ async function memberFixture(env) {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-mmd-member-resolver-secret": env.QA_AUTH_RESOLVER_SECRET },
     body: JSON.stringify({ line_user_id: fixtureUser, purpose: "liff_identity_resolution" }),
-    redirect: "error",
+    redirect: "manual",
   });
   if (!response.ok || (await response.json())?.data?.member_exists !== true) {
     return json(503, { error: "qa_fixture_unavailable" });

@@ -75,6 +75,23 @@ test("test session reads synthetic member, deduplicates payment evidence and rev
   assert.equal((await send("/qa/member", { headers })).status, 401);
 });
 
+test("member resolver rejects redirects without following them", async () => {
+  const { env, send } = setup();
+  let calls = 0;
+  env.QA_AUTH.fetch = async (_url, options) => {
+    calls++;
+    assert.equal(options.redirect, "manual");
+    return new Response(null, { status: 307, headers: { Location: "https://unrelated.invalid/" } });
+  };
+  const session = await send("/qa/session", login("test"));
+  assert.equal(session.status, 200);
+  const Cookie = session.headers.get("Set-Cookie").split(";")[0];
+  const response = await send("/qa/member", { headers: { Cookie } });
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { error: "qa_fixture_unavailable" });
+  assert.equal(calls, 1);
+});
+
 test("real verifier sends only the ID token and QA audience to the fixed LINE endpoint", async () => {
   const { env } = setup();
   const app = createGateway();
@@ -83,10 +100,11 @@ test("real verifier sends only the ID token and QA audience to the fixed LINE en
   globalThis.fetch = async (url, options) => {
     assert.equal(url, "https://api.line.me/oauth2/v2.1/verify");
     assert.equal(options.method, "POST");
-    assert.equal(options.redirect, "error");
+    assert.equal(options.redirect, "manual");
     assert.deepEqual(Object.fromEntries(options.body), { id_token: "test", client_id: "12345" });
     calls++;
-    return Response.json({ aud: calls === 1 ? "another-channel" : "12345", sub: env.QA_LINE_SUBJECT,
+    if (calls === 1) return new Response(null, { status: 307, headers: { Location: "https://unrelated.invalid/" } });
+    return Response.json({ aud: "12345", sub: env.QA_LINE_SUBJECT,
       exp: Math.floor(Date.now() / 1000) + 60 });
   };
   try {
