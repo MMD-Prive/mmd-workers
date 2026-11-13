@@ -1,9 +1,9 @@
-# Combined Porto and EMs16 guards: draft source-review preparation
+# Combined Porto, EMs16 and EMs23 guards: draft source-review preparation
 
 ## Status and exact scope
 
 This is a draft, source-review release-path preparation based on repository commit
-`977a826273850c6f37818263d629e6303354ee08`. Publishing this draft does not authorize
+`bade7ff22b27ab8ec3ac83099e868e1b926f373e`. Publishing this draft does not authorize
 marking it ready, merging, dispatching, or changing production. The executable policy is
 deliberately `null`. Dispatch readiness stops before requesting the protected
 release-job approval or accessing production credentials. PR contracts still
@@ -13,16 +13,19 @@ The preparation base is provenance for the input files. It is NOT the future
 executing release SHA. A future commit adding these files necessarily has its
 own SHA; dispatch must use that exact reviewed current main SHA.
 
-The runtime contains only the two existing exclusions:
+The runtime contains only these three canonical exclusions:
 
 - Canonical Porto MJ (`recnl4Fksh6pXEwA1`): exclude fresh automatic selection and
   pending preparation in `model` and `standard`, for every category.
 - Canonical EMs16 (`recbdC0waCS3qp452`): exclude those same automatic operations
   only for `exclusive`, `premium`, and `standard`. Public `travel` and `extreme`
   retain the original eligibility and routing rules.
+- Canonical EMs23 Faymn (`recHyQc4g70RTldS5`): exclude fresh group-automation
+  selection and pending preparation in `model` and `standard`, for every category
+  (`exclusive`, `premium`, `standard`, `travel`, `extreme`).
 
-Both cover static and approved-intake cards and future dates without policy
-expiry. Both retain their distinct exclusion reasons. Identity is determined by
+All three cover static and approved-intake cards and future dates without policy
+expiry. Each retains its distinct exclusion reason. Identity is determined by
 the canonical record ID, not a display name. The changes do not deactivate a
 catalog, restrict booking, delete posts, rewrite exposure history, change room
 routing/cooldowns, or change any enable flag. Promotion stays OFF. Roster/Tinn,
@@ -35,15 +38,15 @@ part of the deployed artifact. Do not deploy a full-main Worker build.
 - Baseline SHA256: `d517c7ef259f17f66d1cb991a8cfd69748f08228540ea057b08adc3662cec8ee`.
 - Observed baseline version: `88e741df-15bd-40ba-a4ce-f88a2735822b`.
 - Observed baseline deployment: `d9617e88-3f2f-4698-a3e5-3853fd197e06`.
-- Combined candidate: 207,623 bytes.
-- Candidate SHA256: `0c1d2e76b5d4af4f700dca3bc63d8dc7e0c254b1fd2ab0bb386262a62f3b4898`.
-- Manifest SHA256: `2794b74e276da6268d0690634377e05d91e1bd9a48cd94db499548567d4d365c`.
+- Combined candidate: 207,854 bytes.
+- Candidate SHA256: `9bcf5249602cf1505a7c1e70b14d757add0d241cd1949e910c9f2efddcd800a6`.
+- Manifest SHA256: `ec6ca187e315b438c4cb771bdcd5bca3422c103eab838b5d33fce58f31d52ae4`.
 
 The builder accepts only the exact reviewed manifest/schema/scope and exact
 baseline. It requires two unique anchors in the `compcard-daily` section, pins
 the resulting candidate and reverses both changes to the original bytes. The
-fresh eligibility expression contains both independent predicates. The pending
-preparation anchor inserts both checks before asset reads. Other bytes are
+fresh eligibility expression contains all three independent predicates. The pending
+preparation anchor inserts all three checks before asset reads. Other bytes are
 unchanged.
 
 The old single-target overlays cannot be applied sequentially: each consumes
@@ -52,9 +55,37 @@ repurpose the expired Porto-only entry. No future Cloudflare version or
 deployment ID is preassigned. Any baseline drift requires a new reviewed
 candidate and evidence, not relaxed hash checks.
 
+## Latest observation and unresolved blocker
+
+At 20:27 ICT on 2026-11-13, the active/latest version and deployment still matched
+the baseline above. A fresh module read at 20:28:14 ICT reproduced its exact
+207,037 bytes and SHA256. Compcard, Standard and intake were enabled; Promotion
+was OFF. These observations are not a release window or a raw-state proof.
+
+The protected read-only evidence run
+[43374087746](https://github.com/MMD-Prive/mmd-workers/actions/runs/43374087746)
+failed in `R2_OBSERVATION`, operation `r2_list_get`, with `http_403` using its
+existing release credential. It has not been retried for this preparation.
+Current raw object bytes and GET ETags remain unavailable. No alternate credential
+or connected-service route is used to bypass this denial. Old semantic inventory
+and synthetic fixture data cannot fill the missing evidence.
+
+`REVIEWED_RELEASE_POLICY` stays `null`. No protected approval is currently pending.
+A future release requires legitimately available complete state evidence, current
+protection and exact-main CI evidence, a fresh finite window and producer horizon,
+a reviewed policy tied to these new candidate/manifest pins, and the actual
+protected-environment approval. The 20:00 send window is not presumed quiet.
+
+The source implementation was merged separately in
+[PR #3185](https://github.com/MMD-Prive/mmd-workers/pull/3185); that does not deploy
+this artifact. The repository path retains its historical Porto/EMs16 name for
+workflow compatibility, while its manifest and candidate tests pin all three
+scopes. No workflow, state scanner, approval rule or runtime flag is changed by
+this update. The release provenance method label now names EMs23 as well.
+
 ## Implemented release gates
 
-The new workflow uses only existing `contents: read` and `actions: read`, the
+The existing workflow uses only existing `contents: read` and `actions: read`, the
 existing Cloudflare secret, the `mmd-production-mutation` environment, and the
 `deploy-events-worker-production` concurrency group with `cancel-in-progress: false`.
 Automatic concurrency cancellation is disabled; manual cancellation remains
@@ -81,7 +112,7 @@ changed. The shared release transport and approval validators are unchanged.
    complete R2 evidence and current main/CI. The shared transport separately
    validates active/latest version, inherited configuration, routes, cron,
    settings, source annotations, upload and promotion readback.
-6. Immediately before each upload and promotion, the new boundary repeats the
+6. Immediately before each upload and promotion, the boundary repeats the
    state/CI checks and clock checks, then rechecks exact deployment/latest,
    settings/routes/cron/subdomain, current main and current-run cancellation
    state after the potentially long state scan. Drift results in zero POST at that boundary.
@@ -120,8 +151,9 @@ request becomes visible. Already accepted messages cannot be cancelled by this
 release. Existing sent/uncertain receipts remain preserved and truthful. Their
 visibility may remain uncertain independently of the no-new-producer proof.
 
-Those real artifacts, timing bounds, room identities, promotion-disable boundary
-and combined authorization do not yet exist here. The policy must remain null
+The required complete raw-state artifacts, timing bounds, room identities,
+promotion-disable boundary and reviewed authorization reference are not assembled
+in an executable release policy here. The policy must remain null
 until they are independently obtained and reviewed. Hash-shaped synthetic test
 values are not evidence and must never be copied into production policy.
 
@@ -183,20 +215,29 @@ node --test release/events-porto-ems16-exclusion/candidate.test.mjs \
   events-worker/ems16-private-automation.test.mjs \
   events-worker/compcard-policy.test.mjs events-worker/compcard-journal.test.mjs \
   events-worker/compcard-daily.test.mjs events-worker/compcard-cadence.test.mjs \
-  events-worker/compcard-intake.test.mjs
+  events-worker/compcard-intake.test.mjs \
+  scripts/events-porto-exclusion-release.test.mjs \
+  scripts/events-porto-ems16-evidence-read.test.mjs \
+  scripts/events-porto-ems16-readonly-evidence.test.mjs
 ```
 
 Runtime tests use memory-only storage, approved-intake fixtures and mocked sends,
-with network forbidden. They cover both guards together and independently,
+with network forbidden. They cover all three guards together and independently,
 static/intake, future dates, frozen pending plans, sent/uncertain receipts,
 leases/retry holds, category changes, public EMs16, unrelated identities and
-Promotion OFF. Release/state contracts use synthetic providers and clocks,
+Promotion OFF. Valid standard-intake control fixtures must actually reach the
+mocked send path; all three exclusions block asset reads for fresh and frozen
+plans. The live intake validator admits only `standard` cards. These tests do not
+claim that intake adds exclusive/premium-category or Preview candidates.
+Release/state contracts use synthetic providers and clocks,
 including CI, approval, pagination, date, state and mutation-boundary failures.
 
 The review package records actual command results and file hashes. Local Node
 24 results are not future remote Node 18/20/22 CI or production prevention.
-Before publication or release, recheck current main, review the exact new target,
-obtain the owner's authorization for any remote publication/ready/merge/dispatch
-steps, satisfy required exact-head checks without bypass, and obtain actual
-protected-environment approval. Until then this is source-review preparation
-only, not deployment-ready.
+The owner has authorized the narrow combined deny-only deployment and necessary
+PR. That intent does not supply missing raw-state evidence or the separate actual
+protected-environment approval. Before release, recheck current main, review the
+exact target, bind the authorized scope and verified evidence in an executable
+policy, and satisfy required exact-head checks without bypass. This draft does
+not mark itself ready, merge or dispatch. Until the gates are satisfied it is
+source-review preparation, not deployment-ready.

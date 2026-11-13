@@ -2,7 +2,7 @@
 // independently obtained local baseline is absent. The release gate MUST supply
 // COMBINED_GUARD_BASELINE and reject skips. No deployed handlers are invoked.
 // Fixtures and behavioral assertions preserve the reviewed Porto, EMs16 and
-// cross-guard experiment at source 977a826273850c6f37818263d629e6303354ee08.
+// cross-guard experiments; EMs23 preparation base bade7ff22b27ab8ec3ac83099e868e1b926f373e.
 import test, { describe, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -84,12 +84,12 @@ function standaloneControl(baseline, control) {
 
 // These fail-closed contracts do not depend on access to the runtime module.
 test('contract: immutable provenance, manifest and byte-count pins', () => {
-  assert.equal(SOURCE_SHA, '977a826273850c6f37818263d629e6303354ee08');
+  assert.equal(SOURCE_SHA, 'bade7ff22b27ab8ec3ac83099e868e1b926f373e');
   assert.equal(BASELINE_SHA256, 'd517c7ef259f17f66d1cb991a8cfd69748f08228540ea057b08adc3662cec8ee');
-  assert.equal(CANDIDATE_SHA256, '0c1d2e76b5d4af4f700dca3bc63d8dc7e0c254b1fd2ab0bb386262a62f3b4898');
-  assert.equal(MANIFEST_SHA256, '2794b74e276da6268d0690634377e05d91e1bd9a48cd94db499548567d4d365c');
+  assert.equal(CANDIDATE_SHA256, '9bcf5249602cf1505a7c1e70b14d757add0d241cd1949e910c9f2efddcd800a6');
+  assert.equal(MANIFEST_SHA256, 'ec6ca187e315b438c4cb771bdcd5bca3422c103eab838b5d33fce58f31d52ae4');
   assert.equal(BASELINE_BYTES, 207037);
-  assert.equal(CANDIDATE_BYTES, 207623);
+  assert.equal(CANDIDATE_BYTES, 207854);
   assert.ok(Object.isFrozen(PINS));
   assert.equal(PINS.worker, 'events-worker');
   assert.equal(PINS.module, 'model-eta-wrapper.js');
@@ -98,10 +98,11 @@ test('contract: immutable provenance, manifest and byte-count pins', () => {
   assert.equal(digest(manifestBytes), MANIFEST_SHA256);
 });
 
-test('contract: exact scope is canonical Porto plus private EMs16 on both sources and slots', () => {
+test('contract: exact scope is canonical Porto, private EMs16 and all-category EMs23 on both sources and slots', () => {
   assert.deepEqual(manifest.scope.models, [
     { model_id: 'recnl4Fksh6pXEwA1', canonical_name: 'Porto MJ', slots: ['model', 'standard'], persistence: 'until_explicitly_reenabled', selection_sources: ['static_manifest', 'approved_intake'] },
     { model_id: 'recbdC0waCS3qp452', canonical_name: 'EMs16', private_categories: ['exclusive', 'premium', 'standard'], public_categories_unchanged: ['travel', 'extreme'], slots: ['model', 'standard'], selection_sources: ['static_manifest', 'approved_intake'], persistence: 'until_explicitly_reenabled' },
+    { model_id: 'recHyQc4g70RTldS5', canonical_name: 'EMs23 Faymn', categories: ['exclusive', 'premium', 'standard', 'travel', 'extreme'], slots: ['model', 'standard'], selection_sources: ['static_manifest', 'approved_intake'], persistence: 'until_explicitly_reenabled' },
   ]);
   assert.deepEqual(manifest.sections, [{ name: 'compcard-daily' }]);
   assert.equal(manifest.replacements.length, 2);
@@ -125,6 +126,7 @@ for (const [label, change] of [
   ['version', raw => raw.replace('88e741df', '00000000')],
   ['deployment', raw => raw.replace('d9617e88', '00000000')],
   ['model identity', raw => raw.replaceAll('recnl4Fksh6pXEwA1', 'recWrongIdentity01')],
+  ['EMs23 identity', raw => raw.replaceAll('recHyQc4g70RTldS5', 'recWrongIdentity23')],
   ['category scope', raw => raw.replace('"exclusive",', '"travel",')],
   ['selection source', raw => raw.replace('approved_intake', 'unapproved_intake')],
   ['slot', raw => raw.replace('"standard"', '"promotion"')],
@@ -430,6 +432,7 @@ exactSuite('exact runtime: EMs16 and cross-guard evidence', async () => {
   const baseline = runtime.base;
   const apis = [{ name: 'exact combined overlay', api: runtime.candidate, source: false }];
   const EMS16 = 'recbdC0waCS3qp452';
+  const EMS23 = 'recHyQc4g70RTldS5';
   const PRIVATE = ['exclusive', 'premium', 'standard'];
   const PUBLIC = ['travel', 'extreme'];
   const ROOT = baseline.COMPCARD_JOURNAL_ROOT;
@@ -620,7 +623,7 @@ async function approvedIntakeFixture(api, modelId, date, slot) {
   const card = {
     id: `intake_${fileId}_${sha256}`, source: 'owner_drive_intake',
     source_folder_id: api.INTAKE_READY_FOLDER_ID, file_id: fileId,
-    model_id: modelId, canonical_name: modelId === PORTO ? 'Porto MJ' : modelId === EMS16 ? 'EMs16' : 'Unaffected',
+    model_id: modelId, canonical_name: modelId === PORTO ? 'Porto MJ' : modelId === EMS16 ? 'EMs16' : modelId === EMS23 ? 'EMs23 Faymn' : 'Unaffected',
     display_name: 'Synthetic review fixture', category: 'standard', approved: true,
     status: 'active', selectable: true, asset_key: `${ROOT}intake/assets/${sha256}.json`,
     sha256, content_type: 'image/png', bytes: png.length, width: 1322, height: 1200,
@@ -648,9 +651,9 @@ async function approvedIntakeFixture(api, modelId, date, slot) {
   return f;
 }
 
-test('valid approved intake independently proves both exclusions and unchanged unrelated sends on both slots', async () => {
+test('valid approved intake independently proves all three exclusions and unchanged unrelated sends on both slots', async () => {
   const date = '2027-01-15';
-  for (const modelId of [PORTO, EMS16, 'recUnaffected01']) for (const slot of ['model', 'standard']) for (const frozen of [false, true]) {
+  for (const modelId of [PORTO, EMS16, EMS23, 'recUnaffected01']) for (const slot of ['model', 'standard']) for (const frozen of [false, true]) {
     const before = await approvedIntakeFixture(baseline, modelId, date, slot);
     const after = await approvedIntakeFixture(combined.api, modelId, date, slot);
     if (frozen) { await freeze({ api: baseline }, before, date, slot); await freeze(combined, after, date, slot); }
@@ -669,7 +672,7 @@ test('valid approved intake independently proves both exclusions and unchanged u
       assert.equal(after.reads.some(key => key.includes('/intake/assets/')), false);
       assert.equal(after.records.has(ROOT + `history/${modelId}.json`), false);
       if (frozen) {
-        const error = modelId === PORTO ? 'compcard_owner_excluded_porto' : 'compcard_owner_private_automation_excluded';
+        const error = modelId === PORTO ? 'compcard_owner_excluded_porto' : modelId === EMS23 ? 'compcard_owner_group_automation_excluded' : 'compcard_owner_private_automation_excluded';
         assert.ok(result.outcomes.every(row => row.status === 'blocked' && row.error === error));
         for (const [key, value] of saved) assert.equal(after.records.get(key).value, value);
       } else {
@@ -772,4 +775,108 @@ exactSuite('exact runtime: byte preservation and fail-closed inputs', () => {
       Buffer.concat([Buffer.from([0xff]), Buffer.from(baselineText)]),
     ]) assert.throws(() => applyCombinedOverlay(changed, manifestBytes), /baseline drift/);
   });
+});
+
+
+exactSuite('exact runtime: EMs23 all-category group exclusion and prior-guard equivalence', async () => {
+  const MODEL_ID = 'recHyQc4g70RTldS5';
+  const output = runtime.candidateText;
+  const previousPaired = output
+    .replace('card.model_id === "recHyQc4g70RTldS5" ? { ok: false, reason: "owner_group_automation_excluded" } : ', '')
+    .replace('\n          if (modelSlot && card.model_id === "recHyQc4g70RTldS5") throw problem("compcard_owner_group_automation_excluded", false);', '');
+  // Historical control only. It is never accepted as a release baseline.
+  assert.equal(digest(previousPaired), '0c1d2e76b5d4af4f700dca3bc63d8dc7e0c254b1fd2ab0bb386262a62f3b4898');
+  const before = await dataImport(previousPaired), api = runtime.candidate;
+  test('EMs23 adds only the two reviewed predicates to the previous paired artifact', () => {
+    assert.deepEqual(api.APPROVED_COMPCARD_MANIFEST, before.APPROVED_COMPCARD_MANIFEST);
+    assert.ok(output.indexOf('if (modelSlot && card.model_id === "recHyQc4g70RTldS5")') < output.indexOf('if (!sharedAsset)'));
+    assert.throws(() => applyCombinedOverlay(previousPaired), /baseline drift/);
+  });
+const original = api.APPROVED_COMPCARD_MANIFEST.cards.find(x=>x.model_id === MODEL_ID);
+const PRIVATE = ['exclusive','premium','standard'], PUBLIC = ['travel','extreme'], CATEGORIES=[...PRIVATE,...PUBLIC];
+const ROOT='hype-compcards/v1/';
+const at=(date,slot)=>Date.parse(`${date}T${slot==='standard'?'20:00':'16:30'}:00+07:00`);
+const cardFor=(category,extra={})=>({...original,category,...extra});
+function fixture(cards) {
+  const records=new Map();let etag=0;
+  const bucket={records,async get(key){const row=records.get(key);return row?{etag:row.etag,size:Buffer.byteLength(row.value),text:async()=>row.value}:null;},async put(key,value,options={}){const old=records.get(key);if(options.onlyIf?.etagDoesNotMatch==='*'&&old||options.onlyIf?.etagMatches&&old?.etag!==options.onlyIf.etagMatches)return null;const row={value:String(value),etag:String(++etag)};records.set(key,row);return {etag:row.etag};}};
+  const models=cards.map(card=>({id:card.model_id,fields:{working_name:card.canonical_name,status:'Active',sales_layer:PUBLIC.includes(card.category)?'public':'private',private_tier:card.category,'MMD Public Category':card.category,visibility:'private'}}));
+  const sends=[],assets=[];
+  const manifest={...api.APPROVED_COMPCARD_MANIFEST,cards};
+  const env={HYPE_COMPCARD_ENABLED:'true',HYPE_STANDARD_ENABLED:'true',HYPE_INTAKE_ENABLED:'true',HYPE_PROMOTION_ENABLED:'false'};
+  const deps={bucket,manifest,models:async()=>models,model:async id=>models.find(x=>x.id===id),asset:async card=>{assets.push(card.model_id);return {bytes:new Uint8Array([1]),content_type:card.content_type,sha256:card.sha256};},send:async(card,destination,caption,asset,chatId)=>{sends.push({model_id:card.model_id,destination});return {ok:true,delivery_state:'sent',message_id:sends.length,chat_id:chatId,destination,approved_sha256:card.sha256};}};
+  return {records,bucket,models,sends,assets,manifest,env,deps};
+}
+const run=(f,date='2026-11-13',slot='model',runtime=api)=>runtime.executeSlot(f.env,f.manifest,f.bucket,slot,at(date,slot),f.deps,()=>at(date,slot));
+async function freeze(f,date,slot,card=f.manifest.cards[0]) {
+  const destinations=api.destinationsForCategory(card.category);
+  const plan={schema:'hype_compcard_plan_v1',date,slot,manifest_revision:f.manifest.revision,created_at:at(date,slot),card_id:card.id,model_id:card.model_id,category:card.category,file_id:card.file_id,sha256:card.sha256,destinations,chat_ids:Object.fromEntries(destinations.map(d=>[d,f.manifest.destinations[d]])),captions:Object.fromEntries(destinations.map(d=>[d,api.captionForLiveCard(card,d,f.models.find(x=>x.id===card.model_id))])),...(card.source==='owner_drive_intake'?{asset_key:card.asset_key}:{})};
+  plan.digest=await api.jsonDigest(plan);await f.bucket.put(ROOT+`plans/${date}/${slot}.json`,JSON.stringify(plan));return plan;
+}
+async function receipt(f,plan,destination,status,extra={}) {
+  const key=ROOT+`deliveries/${plan.date}/${plan.slot}/${destination}.json`;
+  const record={schema:'hype_compcard_delivery_v1',date:plan.date,slot:plan.slot,destination,model_id:plan.model_id,card_id:plan.card_id,plan_digest:plan.digest,approved_sha256:plan.sha256,expected_chat_id:plan.chat_ids[destination],status,attempts:status==='pending'?0:1,lease_until:0,created_at:at(plan.date,plan.slot)-1000,receipt:status==='sent'?{message_id:123,chat_id:plan.chat_ids[destination],approved_sha256:plan.sha256}:null,...extra};
+  await f.bucket.put(key,JSON.stringify(record));return {key,value:f.records.get(key).value};
+}
+const bytes=f=>[...f.records].map(([key,row])=>[key,row.value]);
+const matrix=CATEGORIES.flatMap(category=>(category==='standard'?['model','standard']:['model']).map(slot=>({category,slot})));
+
+for(const {category,slot} of matrix){
+  test(`${category}/${slot}: excludes fresh selection for canonical ID, source-independent, forever`,async()=>{
+    for(const date of ['2026-11-13','2026-11-20','2027-02-14'])for(const source of [undefined,'owner_drive_intake']){
+      const card=cardFor(category,source?{source,asset_key:'offline-fixture-only'}:{});const f=fixture([card]);
+      assert.equal(api.eligibleCards(f.manifest,f.models).excluded[0].reason,'owner_group_automation_excluded');
+      const result=await run(f,date,slot);assert.equal(result.status,'no_eligible_card');assert.deepEqual(f.sends,[]);assert.deepEqual(f.assets,[]);
+      assert.equal(f.records.has(ROOT+`plans/${date}/${slot}.json`),false);
+      assert.equal(f.models[0].fields.status,'Active');assert.equal(f.env.HYPE_COMPCARD_ENABLED,'true');assert.equal(f.env.HYPE_PROMOTION_ENABLED,'false');
+    }
+  });
+  test(`${category}/${slot}: frozen plans block all pending destinations before assets; preserve plan/history`,async()=>{
+    for(const source of [undefined,'owner_drive_intake'])for(const seedPending of [false,true]){
+      const f=fixture([cardFor(category,source?{source,asset_key:'offline-fixture-only'}:{})]);
+      const plan=await freeze(f,'2026-11-13',slot);const key=ROOT+`plans/${plan.date}/${slot}.json`,oldPlan=f.records.get(key).value;
+      const historyKey=ROOT+`history/${MODEL_ID}.json`;await f.bucket.put(historyKey,JSON.stringify({model_id:MODEL_ID,category,date:'2026-10-29',status:'sent'}));const oldHistory=f.records.get(historyKey).value;
+      if(seedPending)for(const d of plan.destinations)await receipt(f,plan,d,'pending');
+      const result=await run(f,plan.date,slot);assert.equal(result.sent,0);assert.ok(result.outcomes.every(x=>x.status==='blocked'&&x.error==='compcard_owner_group_automation_excluded'));
+      assert.deepEqual(f.sends,[]);assert.deepEqual(f.assets,[]);assert.equal(f.records.get(key).value,oldPlan);assert.equal(f.records.get(historyKey).value,oldHistory);
+    }
+  });
+  test(`${category}/${slot}: sent and uncertain receipts retained, no resend or delete`,async()=>{
+    for(const status of ['sent','delivery_uncertain'])for(const destination of api.destinationsForCategory(category)){
+      const f=fixture([cardFor(category)]),plan=await freeze(f,'2026-11-13',slot);const saved=await receipt(f,plan,destination,status);
+      for(const d of plan.destinations.filter(x=>x!==destination))await receipt(f,plan,d,'pending');
+      const result=await run(f,plan.date,slot);assert.equal(f.records.get(saved.key).value,saved.value);assert.equal(result.outcomes.find(x=>x.destination===destination).status,status);
+      assert.ok(result.outcomes.filter(x=>x.destination!==destination).every(x=>x.status==='blocked'));assert.deepEqual(f.sends,[]);assert.deepEqual(f.assets,[]);
+    }
+  });
+  test(`${category}/${slot}: active leases/retries unchanged; expired sending remains uncertain`,async()=>{
+    for(const status of ['preparing','sending','not_sent'])for(const active of [false,true]){
+      const f=fixture([cardFor(category)]),plan=await freeze(f,'2026-11-13',slot),now=at(plan.date,slot);const saved=[];
+      for(const d of plan.destinations)saved.push(await receipt(f,plan,d,status,status==='not_sent'?{next_attempt_at:active?now+60000:now-1}:{lease_until:active?now+60000:0}));
+      const result=await run(f,plan.date,slot);assert.deepEqual(f.sends,[]);assert.deepEqual(f.assets,[]);
+      if(active){for(const s of saved)assert.equal(f.records.get(s.key).value,s.value);}else assert.ok(result.outcomes.every(x=>x.status===(status==='sending'?'delivery_uncertain':'blocked')));
+    }
+  });
+  test(`${category}/${slot}: unrelated identity output/state byte-equivalent to previous combined guard`,async()=>{
+    const cards=[cardFor(category,{model_id:'recUnrelatedGuard01',canonical_name:'Offline control'})];
+    for(const frozen of [false,true]){
+      const prior=fixture(cards),next=fixture(cards);if(frozen){await freeze(prior,'2026-11-13',slot);await freeze(next,'2026-11-13',slot);}
+      assert.deepEqual(await run(next,'2026-11-13',slot),await run(prior,'2026-11-13',slot,before));assert.deepEqual(bytes(next),bytes(prior));assert.deepEqual(next.env,prior.env);
+    }
+  });
+}
+test('identity-based hold cannot be bypassed by changed display name, card ID, asset ID or duplicate cards',async()=>{
+  const cards=[cardFor('exclusive',{id:'alternate-card-a',file_id:'alternate-file-a',canonical_name:'Renamed canonical',display_name:'Different display'}),cardFor('exclusive',{id:'alternate-card-b'})];
+  const f=fixture(cards);assert.equal((await run(f)).status,'no_eligible_card');assert.deepEqual(f.sends,[]);
+  const frozen=fixture([cards[0]]);await freeze(frozen,'2026-11-13','model');assert.equal((await run(frozen)).sent,0);assert.deepEqual(frozen.assets,[]);
+});
+test('previous Porto all-category and EMs16 private-only guards preserved exactly',async()=>{
+  for(const model_id of ['recnl4Fksh6pXEwA1','recbdC0waCS3qp452'])for(const {category,slot}of matrix)for(const frozen of [false,true]){
+    const cards=[cardFor(category,{model_id})],prior=fixture(cards),next=fixture(cards);
+    if(frozen){await freeze(prior,'2026-11-13',slot);await freeze(next,'2026-11-13',slot);}
+    assert.deepEqual(await run(next,'2026-11-13',slot),await run(prior,'2026-11-13',slot,before));assert.deepEqual(bytes(next),bytes(prior));
+    if(model_id==='recnl4Fksh6pXEwA1'||PRIVATE.includes(category))assert.deepEqual(next.sends,[]);
+  }
+});
+
 });

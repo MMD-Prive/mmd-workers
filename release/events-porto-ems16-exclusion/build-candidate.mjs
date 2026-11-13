@@ -5,12 +5,12 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
-export const SOURCE_SHA = '977a826273850c6f37818263d629e6303354ee08';
+export const SOURCE_SHA = 'bade7ff22b27ab8ec3ac83099e868e1b926f373e';
 export const BASELINE_SHA256 = 'd517c7ef259f17f66d1cb991a8cfd69748f08228540ea057b08adc3662cec8ee';
-export const CANDIDATE_SHA256 = '0c1d2e76b5d4af4f700dca3bc63d8dc7e0c254b1fd2ab0bb386262a62f3b4898';
-export const MANIFEST_SHA256 = '2794b74e276da6268d0690634377e05d91e1bd9a48cd94db499548567d4d365c';
+export const CANDIDATE_SHA256 = '9bcf5249602cf1505a7c1e70b14d757add0d241cd1949e910c9f2efddcd800a6';
+export const MANIFEST_SHA256 = 'ec6ca187e315b438c4cb771bdcd5bca3422c103eab838b5d33fce58f31d52ae4';
 export const BASELINE_BYTES = 207037;
-export const CANDIDATE_BYTES = 207623;
+export const CANDIDATE_BYTES = 207854;
 export const PINS = Object.freeze({
   source_sha: SOURCE_SHA,
   worker: 'events-worker',
@@ -47,7 +47,7 @@ const REVIEWED_MANIFEST = freezeDeep({
   "expected_version": "88e741df-15bd-40ba-a4ce-f88a2735822b",
   "expected_deployment": "d9617e88-3f2f-4698-a3e5-3853fd197e06",
   "baseline_sha256": "d517c7ef259f17f66d1cb991a8cfd69748f08228540ea057b08adc3662cec8ee",
-  "candidate_sha256": "0c1d2e76b5d4af4f700dca3bc63d8dc7e0c254b1fd2ab0bb386262a62f3b4898",
+  "candidate_sha256": "9bcf5249602cf1505a7c1e70b14d757add0d241cd1949e910c9f2efddcd800a6",
   "scope": {
     "models": [
       {
@@ -84,6 +84,26 @@ const REVIEWED_MANIFEST = freezeDeep({
           "approved_intake"
         ],
         "persistence": "until_explicitly_reenabled"
+      },
+      {
+        "model_id": "recHyQc4g70RTldS5",
+        "canonical_name": "EMs23 Faymn",
+        "categories": [
+          "exclusive",
+          "premium",
+          "standard",
+          "travel",
+          "extreme"
+        ],
+        "slots": [
+          "model",
+          "standard"
+        ],
+        "selection_sources": [
+          "static_manifest",
+          "approved_intake"
+        ],
+        "persistence": "until_explicitly_reenabled"
       }
     ]
   },
@@ -97,12 +117,12 @@ const REVIEWED_MANIFEST = freezeDeep({
     {
       "section": "compcard-daily",
       "before": "const check = evaluateCard(card, byId.get(card.model_id));",
-      "after": "const check = card.model_id === \"recnl4Fksh6pXEwA1\" ? { ok: false, reason: \"owner_automatic_selection_excluded\" } : card.model_id === \"recbdC0waCS3qp452\" && [\"exclusive\", \"premium\", \"standard\"].includes(card.category) ? { ok: false, reason: \"owner_private_automation_excluded\" } : evaluateCard(card, byId.get(card.model_id));"
+      "after": "const check = card.model_id === \"recHyQc4g70RTldS5\" ? { ok: false, reason: \"owner_group_automation_excluded\" } : card.model_id === \"recnl4Fksh6pXEwA1\" ? { ok: false, reason: \"owner_automatic_selection_excluded\" } : card.model_id === \"recbdC0waCS3qp452\" && [\"exclusive\", \"premium\", \"standard\"].includes(card.category) ? { ok: false, reason: \"owner_private_automation_excluded\" } : evaluateCard(card, byId.get(card.model_id));"
     },
     {
       "section": "compcard-daily",
       "before": "if (plan.chat_ids[destination] !== manifest.destinations[destination]) throw problem(\"compcard_destination_approval_changed\", false);",
-      "after": "if (plan.chat_ids[destination] !== manifest.destinations[destination]) throw problem(\"compcard_destination_approval_changed\", false);\n          if (modelSlot && card.model_id === \"recnl4Fksh6pXEwA1\") throw problem(\"compcard_owner_excluded_porto\", false);\n          if (modelSlot && card.model_id === \"recbdC0waCS3qp452\" && [\"exclusive\", \"premium\", \"standard\"].includes(card.category)) throw problem(\"compcard_owner_private_automation_excluded\", false);"
+      "after": "if (plan.chat_ids[destination] !== manifest.destinations[destination]) throw problem(\"compcard_destination_approval_changed\", false);\n          if (modelSlot && card.model_id === \"recHyQc4g70RTldS5\") throw problem(\"compcard_owner_group_automation_excluded\", false);\n          if (modelSlot && card.model_id === \"recnl4Fksh6pXEwA1\") throw problem(\"compcard_owner_excluded_porto\", false);\n          if (modelSlot && card.model_id === \"recbdC0waCS3qp452\" && [\"exclusive\", \"premium\", \"standard\"].includes(card.category)) throw problem(\"compcard_owner_private_automation_excluded\", false);"
     }
   ]
 });

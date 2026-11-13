@@ -297,7 +297,7 @@ async function main() {
       validateQuietSchedule(version, await transport(ROOT + '/schedules'));
       const buckets = version.resources.bindings.filter(row => row.name === 'HYPE_COMPCARD_STATE');
       assert.equal(buckets.length, 1); assert.equal(buckets[0].type, 'r2_bucket'); assert.equal(buckets[0].bucket_name, BUCKET);
-      return { commit_sha: sha, dirty_tree: false, method: 'exact-live-porto-and-ems16-private-guards-only',
+      return { commit_sha: sha, dirty_tree: false, method: 'exact-live-porto-ems16-private-ems23-group-guards-only',
         baseline_module_sha256: BASELINE_SHA256, candidate_module_sha256: CANDIDATE_SHA256 };
     },
     bundle: async () => {
