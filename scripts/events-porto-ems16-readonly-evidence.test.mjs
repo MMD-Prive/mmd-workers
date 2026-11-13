@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { inspect } from 'node:util';
-import { collectReadOnlyEvidence, createReadOnlyEvidenceTransport, EVIDENCE_ACCOUNT_ID, EVIDENCE_LIMITS } from './events-porto-ems16-readonly-evidence.mjs';
+import { collectReadOnlyEvidence, createReadOnlyEvidenceTransport, describeReadOnlyEvidenceFailure, EVIDENCE_ACCOUNT_ID, EVIDENCE_LIMITS } from './events-porto-ems16-readonly-evidence.mjs';
 import { STATE_PREFIXES, STATE_BUCKET, sha256 } from './events-porto-ems16-release-state.mjs';
 
 const ROOT = 'hype-compcards/v1/';
@@ -361,4 +361,149 @@ test('100000-object bound rejects overflow before object requests', async () => 
   };
   await rejected(collectReadOnlyEvidence({ accountId: EVIDENCE_ACCOUNT_ID, token: TOKEN, request }));
   assert.equal(pages, 101);
+});
+
+async function diagnosticFailure(promise, stage, code) {
+  let failure;
+  await assert.rejects(promise, caught => { failure = caught; return true; });
+  const detail = describeReadOnlyEvidenceFailure(failure);
+  assert.deepEqual(detail, { stage, code }); assert.ok(Object.isFrozen(detail));
+  assert.equal(failure.code, 'READONLY_EVIDENCE_FAILED');
+  assert.deepEqual(Object.keys(failure), ['code']); assert.equal(failure.cause, undefined);
+  for (const secret of [SENTINEL, CHAT, TOKEN, PLAN, URL_ROOT]) {
+    assert.ok(!inspect(failure, { depth: null }).includes(secret));
+    assert.ok(!JSON.stringify(detail).includes(secret));
+  }
+  return failure;
+}
+function collectWith(request) { return collectReadOnlyEvidence({ accountId: EVIDENCE_ACCOUNT_ID, token: TOKEN, request }); }
+
+test('diagnostic getter returns null for unbranded values without reading any fields', () => {
+  let propertyReads = 0;
+  const hostile = new Proxy({}, { get() { propertyReads += 1; throw new Error(SENTINEL); }, getPrototypeOf() { throw new Error(SENTINEL); } });
+  for (const value of [null, undefined, true, 123, 'r2_list_get/http_403', Symbol('private'), hostile,
+    new Error('http_403'), { code: 'READONLY_EVIDENCE_FAILED', stage: 'r2_list_get', diagnostic: { stage: 'r2_list_get', code: 'http_403' } }]) {
+    assert.equal(describeReadOnlyEvidenceFailure(value), null);
+  }
+  assert.equal(propertyReads, 0);
+});
+for (const stage of ['r2_list_get', 'r2_object_get']) {
+  for (const [status, code] of [[401, 'http_401'], [403, 'http_403'], [302, 'http_3xx'], [404, 'http_4xx'],
+    [429, 'http_4xx'], [503, 'http_5xx'], [201, 'http_other']]) {
+    test(`${stage} diagnostic distinguishes HTTP ${status} without reading its private body`, async () => {
+      let bodyReads = 0; const api = provider(fixture());
+      const badResponse = { status, redirected: false, url: '', get body() { bodyReads += 1; throw new Error(SENTINEL); } };
+      const request = async (url, options) => (stage === 'r2_list_get' || !new URL(url).searchParams.has('prefix'))
+        ? badResponse : api.request(url, options);
+      await diagnosticFailure(collectWith(request), stage, code); assert.equal(bodyReads, 0);
+    });
+  }
+  test(`${stage} diagnostic distinguishes redirect metadata from status classes`, async () => {
+    for (const change of [{ redirected: true }, { url: 'https://private.invalid/' + TOKEN }]) {
+      const api = provider(fixture());
+      const request = async (url, options) => stage === 'r2_list_get' || !new URL(url).searchParams.has('prefix')
+        ? { status: 200, ...change } : api.request(url, options);
+      await diagnosticFailure(collectWith(request), stage, 'redirect_detected');
+    }
+  });
+  test(`${stage} diagnostic rejects spoofed upstream error code/message/cause/stack`, async () => {
+    let reads = 0; const secretURL = 'https://private.invalid/' + TOKEN;
+    const forged = Object.assign(new Error(SENTINEL + CHAT + secretURL), {
+      code: 'http_403', stage, cause: { code: 'READONLY_EVIDENCE_FAILED', private: TOKEN },
+      stack: SENTINEL, diagnostic: { stage, code: 'http_403' },
+    });
+    const hostile = new Proxy(forged, { get() { reads += 1; throw new Error(SENTINEL); } });
+    for (const upstream of [forged, hostile]) {
+      const api = provider(fixture());
+      const request = async (url, options) => {
+        if (stage === 'r2_list_get' || !new URL(url).searchParams.has('prefix')) throw upstream;
+        return api.request(url, options);
+      };
+      await diagnosticFailure(collectWith(request), stage, 'network_failure');
+    }
+    assert.equal(reads, 0);
+  });
+  test(`${stage} diagnostic separates malformed response metadata and body validation`, async () => {
+    const raw = stage === 'r2_list_get' ? '{"success":true,"result":[]}' : JSON.stringify(fixture()[PLAN]);
+    for (const [response, code] of [
+      [() => new Response(raw, { headers: { etag: 'etag', 'content-length': 'private' + TOKEN } }), 'response_metadata_invalid'],
+      [() => new Response(raw, { headers: { etag: 'etag', 'content-encoding': 'invalid encoding' } }), 'response_metadata_invalid'],
+      [() => new Response(raw, { headers: { etag: 'etag', 'content-length': String(Buffer.byteLength(raw) + 1) } }), 'body_validation_failed'],
+      [() => new Response(Buffer.from([0xff]), { headers: { etag: 'etag' } }), 'body_validation_failed'],
+      [() => new Response(Buffer.from([0xef, 0xbb, 0xbf, 0x7b, 0x7d]), { headers: { etag: 'etag' } }), 'body_validation_failed'],
+      [() => ({ status: 200, headers: new Headers({ etag: 'etag' }), body: null }), 'body_validation_failed'],
+      [() => new Response(new ReadableStream({ start(controller) { controller.error(Object.assign(new Error(SENTINEL), { code: 'http_403' })); } }),
+        { headers: { etag: 'etag' } }), 'body_validation_failed'],
+    ]) {
+      const api = provider(fixture());
+      const request = async (url, options) => stage === 'r2_list_get' || !new URL(url).searchParams.has('prefix') ? response() : api.request(url, options);
+      await diagnosticFailure(collectWith(request), stage, code);
+    }
+  });
+}
+test('upstream cannot replay a genuine branded error as a different failure stage', async () => {
+  const branded = await diagnosticFailure(collectWith(async () => new Response(SENTINEL, { status: 403 })), 'r2_list_get', 'http_403');
+  await diagnosticFailure(collectWith(async () => { throw branded; }), 'r2_list_get', 'network_failure');
+  await diagnosticFailure(collectWith(async () => ({ status: 200, get headers() { throw branded; } })), 'r2_list_get', 'response_metadata_invalid');
+  const clone = Object.assign(new Error(branded.message), branded);
+  assert.equal(describeReadOnlyEvidenceFailure(clone), null);
+});
+test('configuration and request-scope diagnostics preserve existing public error codes', async () => {
+  await diagnosticFailure(collectReadOnlyEvidence({ accountId: 'wrong', token: TOKEN }), 'configuration', 'invalid_configuration');
+  await diagnosticFailure(collectReadOnlyEvidence({ accountId: EVIDENCE_ACCOUNT_ID, token: '' }), 'configuration', 'invalid_configuration');
+  const transport = createReadOnlyEvidenceTransport({ accountId: EVIDENCE_ACCOUNT_ID, request: async () => { throw new Error(SENTINEL); } });
+  await assert.rejects(transport.request('https://private.invalid/' + TOKEN, init()), caught => {
+    assert.equal(caught.code, 'READONLY_TRANSPORT_REJECTED');
+    assert.deepEqual(describeReadOnlyEvidenceFailure(caught), { stage: 'transport_scope', code: 'request_not_allowed' }); return true;
+  });
+});
+test('strict provider JSON is distinguishable from inventory metadata and schema validation', async () => {
+  for (const raw of ['{"private":"' + SENTINEL, '{"success":true,"success":false,"result":[]}']) {
+    await diagnosticFailure(read({}, { list: () => raw }), 'inventory', 'invalid_json');
+  }
+  await diagnosticFailure(read({}, { list: () => ({ success: true, result: [], result_info: {} }) }), 'inventory', 'invalid_inventory');
+  await diagnosticFailure(read({}, { list: () => '{"success":true,"result":[],"__proto__":{"private":"' + SENTINEL + '"}}' }), 'inventory', 'invalid_inventory');
+});
+test('strict state JSON is distinguishable from state schema validation', async () => {
+  const malformed = fixture(); malformed[PLAN] = '{"private":"' + SENTINEL;
+  await diagnosticFailure(read(malformed), 'state_object', 'invalid_json');
+  const duplicate = fixture(); duplicate[PLAN] = '{"schema":"first","schema":"second"}';
+  await diagnosticFailure(read(duplicate), 'state_object', 'invalid_json');
+  const invalid = fixture(); invalid[PLAN].schema = SENTINEL;
+  await diagnosticFailure(read(invalid), 'state_object', 'invalid_schema');
+  const proto = fixture(); proto[HISTORY] = '{"__proto__":{"private":"' + SENTINEL + '"}}';
+  await diagnosticFailure(read(proto), 'state_object', 'invalid_schema');
+});
+test('object ETag validity, version mismatch and size mismatch have separate closed diagnostics', async () => {
+  await diagnosticFailure(read(fixture(), { object: (response, { raw }) => new Response(raw, { headers: { etag: 'W/"invalid"' } }) }), 'r2_object_get', 'etag_invalid');
+  await diagnosticFailure(read(fixture(), { object: (response, { raw }) => new Response(raw, { headers: { etag: 'different' } }) }), 'object_consistency', 'etag_mismatch');
+  await diagnosticFailure(read(fixture(), { list: body => { body.result.forEach(row => { row.size += 1; }); return body; } }), 'object_consistency', 'size_mismatch');
+});
+test('raw hash mismatch is distinguished even when an adversarial reader mutates returned bytes', async () => {
+  await diagnosticFailure(read(fixture(), { object: (response, { key, raw }) => {
+    if (key !== PLAN) return response;
+    const original = Buffer.from(raw), changed = Buffer.from(raw.replace('TOKEN_SECRET', 'TOKEN_SECREX'));
+    assert.equal(original.length, changed.length);
+    let doneReads = 0, emitted = false;
+    return { status: 200, headers: new Headers({ etag: sha256(raw) }), body: { getReader() { return {
+      async read() {
+        if (emitted) return { done: true }; emitted = true;
+        return { get done() { if (++doneReads === 2) original.set(changed); return false; }, value: original };
+      }, cancel() {}, releaseLock() {},
+    }; } } };
+  } }), 'object_consistency', 'raw_hash_mismatch');
+});
+test('two-pass drift receives a fixed diagnostic without exposing differing state', async () => {
+  await diagnosticFailure(read(fixture(), { object: (response, { raw, key, n }) => {
+    if (key !== PLAN || n !== 2) return response;
+    const changed = JSON.parse(raw); changed.captions.premium = changed.captions.premium.replace('TOKEN_SECRET', 'TOKEN_SECREX');
+    return new Response(JSON.stringify(resign(changed)), { headers: { etag: '"' + sha256(raw) + '"' } });
+  } }), 'snapshot', 'pass_drift');
+});
+test('diagnostic objects cannot be mutated to inject data or change future descriptions', async () => {
+  const failure = await diagnosticFailure(collectWith(async () => new Response(SENTINEL, { status: 401 })), 'r2_list_get', 'http_401');
+  const detail = describeReadOnlyEvidenceFailure(failure);
+  assert.throws(() => { detail.code = SENTINEL; }, TypeError);
+  failure.code = SENTINEL; failure.message = TOKEN; failure.cause = CHAT;
+  assert.deepEqual(describeReadOnlyEvidenceFailure(failure), { stage: 'r2_list_get', code: 'http_401' });
 });

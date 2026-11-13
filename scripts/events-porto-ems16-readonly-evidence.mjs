@@ -31,9 +31,34 @@ function validDate(value) {
     && Number.isFinite(Date.parse(value + 'T00:00:00Z'))
     && new Date(value + 'T00:00:00Z').toISOString().slice(0, 10) === value;
 }
-function error(code = 'READONLY_EVIDENCE_FAILED') {
+const failureDetails = new WeakMap();
+const diagnosticAllowlist = new Map([
+  ['configuration', ['invalid_configuration']], ['transport_scope', ['request_not_allowed']],
+  ...['r2_list_get', 'r2_object_get'].map(stage => [stage, ['http_401', 'http_403', 'http_3xx', 'http_4xx',
+    'http_5xx', 'http_other', 'redirect_detected', 'network_failure', 'body_validation_failed', 'response_metadata_invalid',
+    ...(stage === 'r2_object_get' ? ['etag_invalid'] : [])]]),
+  ['inventory', ['invalid_json', 'invalid_inventory']], ['state_object', ['invalid_json', 'invalid_schema']],
+  ['object_consistency', ['etag_mismatch', 'size_mismatch', 'raw_hash_mismatch']],
+  ['snapshot', ['pass_drift']], ['collection', ['unclassified_failure']],
+].flatMap(([stage, codes]) => codes.map(code => [stage + '/' + code, Object.freeze({ stage, code })])));
+function diagnostic(stage, code) { return diagnosticAllowlist.get(stage + '/' + code); }
+/** Only locally branded errors carry diagnostics. Never inspect an upstream
+ * error's fields, prototype, message, cause, stack, or string representation. */
+export function describeReadOnlyEvidenceFailure(value) { return failureDetails.get(value) ?? null; }
+function error(code = 'READONLY_EVIDENCE_FAILED', detail = diagnostic('collection', 'unclassified_failure')) {
   // Never include the upstream exception, its cause, object bytes, key or URL.
-  return Object.assign(new Error('Read-only evidence collection failed; no release clearance produced.'), { code });
+  const failure = Object.assign(new Error('Read-only evidence collection failed; no release clearance produced.'), { code });
+  failureDetails.set(failure, detail); return failure;
+}
+function checked(stage, code, operation) {
+  try { return operation(); } catch (caught) {
+    throw error('READONLY_EVIDENCE_FAILED', failureDetails.get(caught) ?? diagnostic(stage, code));
+  }
+}
+async function checkedAsync(stage, code, operation) {
+  try { return await operation(); } catch (caught) {
+    throw error('READONLY_EVIDENCE_FAILED', failureDetails.get(caught) ?? diagnostic(stage, code));
+  }
 }
 function safeTree(value, depth = 0) {
   assert.ok(depth < 30);
@@ -74,10 +99,12 @@ function validCursor(value) {
  * Byte evidence is of the R2 object payload, not compressed HTTP wire bytes.
  */
 export function createReadOnlyEvidenceTransport({ accountId, request = globalThis.fetch } = {}) {
-  if (accountId !== EVIDENCE_ACCOUNT_ID || typeof request !== 'function') throw error('READONLY_TRANSPORT_REJECTED');
+  if (accountId !== EVIDENCE_ACCOUNT_ID || typeof request !== 'function') throw error('READONLY_TRANSPORT_REJECTED', diagnostic('configuration', 'invalid_configuration'));
   const completed = new Map();
   return Object.freeze({
     async request(input, init) {
+      let stage = 'transport_scope';
+      const localFailures = new WeakSet();
       try {
         assert.equal(typeof input, 'string');
         const url = new URL(input);
@@ -102,19 +129,41 @@ export function createReadOnlyEvidenceTransport({ accountId, request = globalThi
           assert.equal(input, API + PATH + '/' + key);
           assert.ok(!completed.has(key));
         }
-        const response = await request(input, init);
-        assert.ok(response && response.status === 200 && response.redirected !== true
-          && (!response.url || response.url === input));
-        assert.ok(response.body && typeof response.body.getReader === 'function');
+        stage = key === null ? 'r2_list_get' : 'r2_object_get';
+        const reject = code => {
+          const failure = error('READONLY_TRANSPORT_REJECTED', diagnostic(stage, code));
+          localFailures.add(failure); return failure;
+        };
+        let response;
+        // This is an untrusted boundary: even a replayed branded error supplied
+        // by request must be classified here, not promoted from its contents.
+        try { response = await request(input, init); } catch { throw reject('network_failure'); }
+        assert.ok(response);
+        if (response.redirected === true || response.url && response.url !== input) throw reject('redirect_detected');
+        const status = response.status;
+        if (status !== 200) throw reject(status === 401 ? 'http_401' : status === 403 ? 'http_403'
+          : Number.isInteger(status) && status >= 300 && status < 400 ? 'http_3xx'
+            : Number.isInteger(status) && status >= 400 && status < 500 ? 'http_4xx'
+              : Number.isInteger(status) && status >= 500 && status < 600 ? 'http_5xx' : 'http_other');
         const max = key === null ? EVIDENCE_LIMITS.maxListBytes : EVIDENCE_LIMITS.maxObjectBytes;
+        // Mirror the imported client's existing metadata/body checks before its
+        // parser, solely to identify their fixed failure stage. No limit changes.
+        const claimed = response.headers?.get('content-length'), encoding = response.headers?.get('content-encoding');
+        const coding = encoding === null || encoding === undefined ? null : encoding.trim().toLowerCase();
+        if (coding !== null) assert.ok(/^[!#$%&'*+.^_`|~0-9a-z-]+(?:\s*,\s*[!#$%&'*+.^_`|~0-9a-z-]+)*$/.test(coding));
+        if (claimed !== null && claimed !== undefined) assert.ok(/^\d+$/.test(claimed)
+          && Number.isSafeInteger(Number(claimed)) && Number(claimed) <= max);
+        const etag = key === null ? undefined : response.headers?.get('etag');
+        if (key !== null) { try { normalizedEtag(etag); } catch { throw reject('etag_invalid'); } }
+        if (!response.body || typeof response.body.getReader !== 'function') throw reject('body_validation_failed');
         // The imported client enforces header/stream lengths, fatal UTF-8 and
         // object ETags. Capture the very same streamed bytes, without a second
         // request or relying on JSON reserialization for a raw-object digest.
         const chunks = []; let size = 0; let used = false;
         const body = { getReader() {
-          if (used) throw error('READONLY_TRANSPORT_REJECTED'); used = true;
+          if (used) throw reject('body_validation_failed'); used = true;
           let reader;
-          try { reader = response.body.getReader(); } catch { throw error('READONLY_TRANSPORT_REJECTED'); }
+          try { reader = response.body.getReader(); } catch { throw reject('body_validation_failed'); }
           return {
             async read() {
               try {
@@ -122,28 +171,33 @@ export function createReadOnlyEvidenceTransport({ accountId, request = globalThi
                 if (!part.done) {
                   assert.ok(part.value instanceof Uint8Array);
                   size += part.value.byteLength;
-                  if (size > max) { await reader.cancel(); throw error(); }
+                  if (size > max) { await reader.cancel(); throw reject('body_validation_failed'); }
                   chunks.push(Buffer.from(part.value));
                 } else {
                   const raw = Buffer.concat(chunks);
                   // TextDecoder would silently strip a BOM. Reject it rather
                   // than claiming a digest of decoded text is the raw digest.
                   assert.ok(!(raw.length >= 3 && raw[0] === 0xef && raw[1] === 0xbb && raw[2] === 0xbf));
+                  if (claimed !== null && claimed !== undefined && (coding === null || coding === 'identity')) assert.equal(size, Number(claimed));
+                  new TextDecoder('utf-8', { fatal: true }).decode(raw);
                   if (key !== null) completed.set(key, Object.freeze({ raw_sha256: sha256(raw), size }));
                 }
                 return part;
-              } catch { throw error('READONLY_TRANSPORT_REJECTED'); }
+              } catch { throw reject('body_validation_failed'); }
             },
-            async cancel() { try { return await reader.cancel(); } catch { throw error('READONLY_TRANSPORT_REJECTED'); } },
-            releaseLock() { try { return reader.releaseLock(); } catch { throw error('READONLY_TRANSPORT_REJECTED'); } },
+            async cancel() { try { return await reader.cancel(); } catch { throw reject('body_validation_failed'); } },
+            releaseLock() { try { return reader.releaseLock(); } catch { throw reject('body_validation_failed'); } },
           };
         } };
         return { status: response.status, redirected: response.redirected, url: response.url,
-          headers: response.headers, body };
-      } catch { throw error('READONLY_TRANSPORT_REJECTED'); }
+          headers: { get(name) { return ({ 'content-length': claimed, 'content-encoding': encoding, etag })[name]; } }, body };
+      } catch (caught) {
+        throw error('READONLY_TRANSPORT_REJECTED', localFailures.has(caught) ? failureDetails.get(caught)
+          : diagnostic(stage, stage === 'transport_scope' ? 'request_not_allowed' : 'response_metadata_invalid'));
+      }
     },
     takeObjectEvidence(key) {
-      if (!completed.has(key)) throw error('READONLY_TRANSPORT_REJECTED');
+      if (!completed.has(key)) throw error('READONLY_TRANSPORT_REJECTED', diagnostic('r2_object_get', 'body_validation_failed'));
       const evidence = completed.get(key); completed.delete(key); return evidence;
     },
   });
@@ -154,7 +208,7 @@ async function inventory(client) {
   for (const prefix of STATE_PREFIXES) {
     const cursors = new Set(); let cursor = '', complete = false;
     for (let page = 0; page < EVIDENCE_LIMITS.maxPages; page += 1) {
-      const result = await client.list(prefix, cursor); safeTree(result);
+      const result = await checkedAsync('inventory', 'invalid_json', () => client.list(prefix, cursor)); safeTree(result);
       assert.ok(onlyKeys(result, ['success', 'errors', 'messages', 'result', 'result_info']) && result.success === true
         && (!Object.hasOwn(result, 'errors') || Array.isArray(result.errors) && result.errors.length === 0)
         && (!Object.hasOwn(result, 'messages') || Array.isArray(result.messages) && result.messages.length === 0)
@@ -278,14 +332,17 @@ function recordMetadata(key, record) {
 }
 
 async function readPass(client, transport) {
-  const items = await inventory(client), rows = [];
+  const items = await checkedAsync('inventory', 'invalid_inventory', () => inventory(client)), rows = [];
   for (const item of items) {
-    const fetched = await client.object(item.key), raw = transport.takeObjectEvidence(item.key);
-    assert.equal(fetched.etag, item.etag);
-    assert.equal(raw.size, item.size);
-    assert.equal(Buffer.byteLength(fetched.text, 'utf8'), raw.size);
-    assert.equal(sha256(fetched.text), raw.raw_sha256);
-    const metadata = recordMetadata(item.key, parseStrictJson(fetched.text));
+    const fetched = await checkedAsync('r2_object_get', 'response_metadata_invalid', () => client.object(item.key));
+    const raw = transport.takeObjectEvidence(item.key);
+    checked('object_consistency', 'etag_mismatch', () => assert.equal(fetched.etag, item.etag));
+    checked('object_consistency', 'size_mismatch', () => {
+      assert.equal(raw.size, item.size); assert.equal(Buffer.byteLength(fetched.text, 'utf8'), raw.size);
+    });
+    checked('object_consistency', 'raw_hash_mismatch', () => assert.equal(sha256(fetched.text), raw.raw_sha256));
+    const record = checked('state_object', 'invalid_json', () => parseStrictJson(fetched.text));
+    const metadata = checked('state_object', 'invalid_schema', () => recordMetadata(item.key, record));
     rows.push(Object.freeze({ key: item.key, raw_sha256: raw.raw_sha256, size: raw.size,
       etag_sha256: sha256(item.etag), ...metadata }));
   }
@@ -299,10 +356,10 @@ async function readPass(client, transport) {
 export async function collectReadOnlyEvidence({ accountId, token, request = globalThis.fetch } = {}) {
   try {
     const transport = createReadOnlyEvidenceTransport({ accountId, request });
-    const client = createR2ReadOnlyClient({ token, request: transport.request,
-      policy: Object.freeze({ account_id: EVIDENCE_ACCOUNT_ID, bucket: STATE_BUCKET }) });
+    const client = checked('configuration', 'invalid_configuration', () => createR2ReadOnlyClient({ token, request: transport.request,
+      policy: Object.freeze({ account_id: EVIDENCE_ACCOUNT_ID, bucket: STATE_BUCKET }) }));
     const first = await readPass(client, transport), second = await readPass(client, transport);
-    assert.deepEqual(first, second);
+    checked('snapshot', 'pass_drift', () => assert.deepEqual(first, second));
     const statusCounts = Object.fromEntries(STATUS_NAMES.map(status => [status, 0]));
     const prefixCounts = Object.fromEntries(STATE_PREFIXES.map(prefix => [prefix, 0]));
     for (const row of first) {
@@ -325,5 +382,5 @@ export async function collectReadOnlyEvidence({ accountId, token, request = glob
       prefix_counts: Object.freeze(prefixCounts), status_counts: Object.freeze(statusCounts), risk_counts: riskCounts,
       historical_promotion_observations: Object.freeze(promotions), objects: Object.freeze(first),
       fingerprint: sha256(JSON.stringify(first)) });
-  } catch { throw error(); }
+  } catch (caught) { throw error('READONLY_EVIDENCE_FAILED', failureDetails.get(caught) ?? diagnostic('collection', 'unclassified_failure')); }
 }

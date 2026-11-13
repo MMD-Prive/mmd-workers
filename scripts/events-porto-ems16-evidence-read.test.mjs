@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { validateReadInputs, verifyReadSource, readOnlyWorkerFetch, readBaseline, ROOT, WORKFLOW } from './events-porto-ems16-evidence-read.mjs';
+import { validateReadInputs, verifyReadSource, readOnlyWorkerFetch, readBaseline, ROOT, WORKFLOW,
+  runReadPhase, describeReadFailure, formatReadFailure } from './events-porto-ems16-evidence-read.mjs';
 import { BASELINE_SHA256, digest } from '../release/events-porto-ems16-exclusion/build-candidate.mjs';
 const SHA='a'.repeat(40);
 const ENV={GITHUB_EVENT_NAME:'workflow_dispatch',GITHUB_REF:'refs/heads/main',GITHUB_REPOSITORY:'MMD-Prive/mmd-workers',GITHUB_SHA:SHA,APPROVED_SHA:SHA,READ_APPROVED:'true',APPROVAL_REF:'synthetic-offline-authorization',GITHUB_RUN_ID:'22',GITHUB_RUN_ATTEMPT:'1',GH_TOKEN:'synthetic-read-token'};
@@ -58,4 +59,36 @@ for(const kind of ['latest','deployment-race','latest-race','flag','bucket','mod
 test('production default hashing rejects synthetic bytes even with the right reported size',async()=>{await assert.rejects(readBaseline(baselineApi(),manifest));});
 test('configuration drift across complete observations changes fingerprint and stops comparison',async()=>{const before=await readBaseline(baselineApi(),manifest,mockHash);const after=await readBaseline(baselineApi((v,p)=>{if(p.endsWith('/script-settings'))v.unreviewed=true;}),manifest,mockHash);assert.throws(()=>assert.deepEqual(after,before));});
 test('workflow preserves permissions, protected approval, concurrency and read-only commands',()=>{const text=readFileSync(new URL('../.github/workflows/read-events-porto-ems16-release-evidence.yml',import.meta.url),'utf8');assert.match(text,/contents: read\n  actions: read/);assert.match(text,/environment: mmd-production-mutation/);assert.match(text,/deploy-events-worker-production/);assert.match(text,/cancel-in-progress: false/);assert.match(text,/needs: \[contracts, readiness, protection-config\]/);assert.match(text,/--collect-approved/);assert.doesNotMatch(text,/--execute-approved|wrangler|checks: write|contents: write|always\(\)/);});
-test('entry has no deployment helper, write transport or policy enablement',()=>{const text=readFileSync(new URL('./events-porto-ems16-evidence-read.mjs',import.meta.url),'utf8');assert.doesNotMatch(text,/releaseEventsRotation|createTransport|method: ['"](?:POST|PUT|DELETE|PATCH)['"]|REVIEWED_RELEASE_POLICY\s*=/);assert.match(text,/Read-only evidence collection stopped; no production mutation/);});
+test('entry has no deployment helper, write transport or policy enablement',()=>{const text=readFileSync(new URL('./events-porto-ems16-evidence-read.mjs',import.meta.url),'utf8');assert.doesNotMatch(text,/releaseEventsRotation|createTransport|method: ['"](?:POST|PUT|DELETE|PATCH)['"]|REVIEWED_RELEASE_POLICY\s*=/);assert.match(text,/no production mutation or release clearance/);});
+const PRIVATE='PRIVATE_SENTINEL_TOKEN_CHAT_CAPTION_BODY';
+test('unbranded exceptions cannot forge trusted diagnostic fields or leak private values',async()=>{
+ const forged=Object.assign(new Error(PRIVATE),{phase:'BASELINE_INITIAL',operation:'WORKER_MODULE_GET',code:'HTTP_AUTHORIZATION_REJECTED',cause:PRIVATE});
+ assert.equal(describeReadFailure(forged),null);
+ assert.equal(formatReadFailure(forged),'Read-only evidence collection stopped: phase=ENTRY operation=CHECK code=CHECK_FAILED; no production mutation or release clearance.');
+ await assert.rejects(runReadPhase('R2_OBSERVATION',async()=>{throw forged;}),err=>{
+   assert.deepEqual(describeReadFailure(err),{phase:'R2_OBSERVATION',operation:'CHECK',code:'CHECK_FAILED'});
+   assert.ok(!formatReadFailure(err).includes(PRIVATE));assert.equal(err.cause,undefined);return true;
+ });
+});
+test('error getters and proxies are not inspected for diagnostics',()=>{
+ const forged=new Proxy({}, {get(){throw new Error(PRIVATE);}});
+ assert.equal(describeReadFailure(forged),null);assert.ok(!formatReadFailure(forged).includes(PRIVATE));
+ for(const err of [null,undefined,PRIVATE,17])assert.match(formatReadFailure(err),/phase=ENTRY operation=CHECK code=CHECK_FAILED/);
+});
+for(const [status,code] of [[401,'HTTP_AUTHORIZATION_REJECTED'],[403,'HTTP_AUTHORIZATION_REJECTED'],[404,'HTTP_NOT_FOUND'],[429,'HTTP_RATE_LIMITED'],[500,'HTTP_SERVER_ERROR'],[502,'HTTP_SERVER_ERROR'],[302,'HTTP_STATUS_UNEXPECTED'],[418,'HTTP_STATUS_UNEXPECTED'],[PRIVATE,'HTTP_STATUS_UNEXPECTED']])test('Worker diagnostic class '+status,async()=>{
+ const read=readOnlyWorkerFetch('offline',async()=>({status,body:PRIVATE}));
+ await assert.rejects(runReadPhase('BASELINE_INITIAL',()=>read(ROOT+'/deployments')),err=>{
+   assert.deepEqual(describeReadFailure(err),{phase:'BASELINE_INITIAL',operation:'WORKER_DEPLOYMENTS_GET',code});
+   assert.ok(Object.isFrozen(describeReadFailure(err)));assert.ok(!formatReadFailure(err).includes(PRIVATE));return true;
+ });
+});
+test('network exception diagnostics ignore upstream spoofed codes and response content',async()=>{
+ const read=readOnlyWorkerFetch('offline',async()=>{throw Object.assign(new Error(PRIVATE),{code:'HTTP_AUTHORIZATION_REJECTED'});});
+ await assert.rejects(runReadPhase('BASELINE_FINAL',()=>read(ROOT+'/content/v2')),err=>{
+   assert.deepEqual(describeReadFailure(err),{phase:'BASELINE_FINAL',operation:'WORKER_MODULE_GET',code:'HTTP_TRANSPORT_FAILED'});
+   assert.ok(!formatReadFailure(err).includes(PRIVATE));return true;
+ });
+});
+test('invalid phase names never reach a callback or enter a printable diagnostic',async()=>{
+ let ran=false;try{await runReadPhase(PRIVATE,()=>{ran=true;});}catch(err){assert.ok(!formatReadFailure(err).includes(PRIVATE));}assert.equal(ran,false);
+});
