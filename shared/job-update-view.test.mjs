@@ -1,0 +1,16 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { projectJobUpdate } from './job-update-view.mjs';
+const at='2026-11-13T10:00:00.000Z';
+const event={request_id:'request_fixture_0001',at,model_name:'Model B',reason:'private reason',customer_total_thb:9900,by:'private actor'};
+const record=(extra={})=>({fields:{model_name:'Model B',note:'[MMD JOB EDIT v1] '+JSON.stringify(event),...extra}});
+test('legacy job without edit evidence stays unchanged',()=>assert.equal(projectJobUpdate({fields:{}}),null));
+test('new edit waits for customer and does not leak original audit',()=>{const result=projectJobUpdate(record());assert.equal(result.state,'awaiting_customer');assert.deepEqual(Object.keys(result).sort(),['changed_at','contract','state']);assert.doesNotMatch(JSON.stringify(result),/private|9900|Model B|request_fixture/);});
+test('old acknowledgements do not carry across edits',()=>assert.equal(projectJobUpdate(record({customer_ack_at:'2026-11-12T10:00:00Z',model_ack_at:'2026-11-12T10:00:00Z'})).state,'awaiting_customer'));
+test('new customer acknowledgement waits for model',()=>assert.equal(projectJobUpdate(record({customer_ack_at:at})).state,'awaiting_model'));
+test('both new acknowledgements are visible',()=>assert.equal(projectJobUpdate(record({customer_ack_at:at,model_ack_at:at})).state,'acknowledged'));
+test('later edit supersedes earlier acknowledgements',()=>{const next={...event,request_id:'request_fixture_0002',at:'2026-11-14T10:00:00Z'};assert.equal(projectJobUpdate(record({notes:'[MMD JOB EDIT v1] '+JSON.stringify(next),customer_ack_at:at,model_ack_at:at})).state,'awaiting_customer');});
+test('field-ID projection matches field-name projection',()=>assert.deepEqual(projectJobUpdate({fields:{flddVz6eoWRHrzIQr:'Model B',fldEcDkF7CH9VixWM:record().fields.note,fldJSS5GNN7quJwa8:at}}),projectJobUpdate(record({customer_ack_at:at}))));
+test('conflicting event or model yields review, never inferred success',()=>{assert.equal(projectJobUpdate(record({model_name:'Model C'})).state,'review_required');assert.equal(projectJobUpdate(record({notes:'[MMD JOB EDIT v1] '+JSON.stringify({...event,request_id:'request_fixture_0002'})})).state,'review_required');});
+test('malformed evidence stays explicit',()=>assert.equal(projectJobUpdate(record({note:'[MMD JOB EDIT v1] broken'})).state,'review_required'));
+test('duplicate notes and rereads are stable and never mutate input',()=>{const r=record({notes:record().fields.note});const before=JSON.stringify(r);assert.deepEqual(projectJobUpdate(r),projectJobUpdate(JSON.parse(before)));assert.equal(JSON.stringify(r),before);});

@@ -1,0 +1,32 @@
+name: Partner replacement contract CI
+on:
+  pull_request:
+    paths:
+      - 'shared/job-update-view.mjs'
+      - 'shared/job-update-view.test.mjs'
+      - 'shared/partner-replacement-flow*'
+      - 'admin-worker/src/owner-job-edit.js'
+      - 'payments-worker/confirmation-link-reissue.js'
+      - '.github/workflows/job-update-view-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  replacement-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check contract and fixture syntax
+        run: |
+          node --check shared/job-update-view.mjs
+          node --check shared/partner-replacement-flow.mjs
+          node --check shared/partner-replacement-flow.fixture.mjs
+          node --check shared/partner-replacement-flow.test.mjs
+      - name: Mock replacement, readback and existing ownership guards
+        run: >-
+          node --test shared/job-update-view.test.mjs
+          shared/partner-replacement-flow.test.mjs
