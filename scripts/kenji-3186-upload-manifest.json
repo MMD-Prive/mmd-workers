@@ -1,0 +1,11 @@
+{
+  "worker": "member-dashboard-chat-worker",
+  "workerId": "0879743e79f14eb1999a93cabe328397",
+  "mergeSha": "9475c4e98f975995edbc0d6df0d55a25c0f6a45b",
+  "version": "61a43052-5b1b-4bca-8b71-b45f9508f68b",
+  "deployment": "58587941-bf15-499b-b152-785095b57812",
+  "module": "guide-notification-entry.js",
+  "baselineHash": "e3e3cfa241b9f09d50f96c88e248a42cf87ad80af47743b80308c5be1d911200",
+  "candidateHash": "111548ad148fd9fa03d036508a155d8c07d858a027d9abb1a5f2e16f35663935",
+  "configHash": "0a626f5b70b2f6b6917f33edcbc93aa86bb466255cdacf65886eaff6adf5d0e5"
+}
