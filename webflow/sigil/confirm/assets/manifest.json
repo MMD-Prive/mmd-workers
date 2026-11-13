@@ -1,0 +1,98 @@
+{
+  "webflowSiteId": "68f879d546d2f4e2ab186e90",
+  "assets": [
+    {
+      "key": "customer-confirm-mobile",
+      "routes": [
+        "/sigil/confirm/job-confirmation"
+      ],
+      "role": "Hero",
+      "viewport": "Below 900px",
+      "webflowAssetId": "6aee94e2d8fd63d2fd23cee3",
+      "url": "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aee94e2d8fd63d2fd23cee3_sigil-customer-confirm-bg.webp",
+      "repoSources": [
+        "webflow/sigil/confirm/customer-confirm-portrait-v1.js",
+        "webflow/sigil/confirm/customer-confirm-skin-v1.css"
+      ]
+    },
+    {
+      "key": "customer-confirm-desktop",
+      "routes": [
+        "/sigil/confirm/job-confirmation"
+      ],
+      "role": "Hero",
+      "viewport": "900px and wider",
+      "webflowAssetId": "6aee9cef86b87a770052d184",
+      "url": "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aee9cef86b87a770052d184_sigil-customer-confirm-desktop-bg.webp",
+      "repoSources": [
+        "webflow/sigil/confirm/customer-confirm-portrait-v1.js",
+        "webflow/sigil/confirm/customer-confirm-skin-v1.css"
+      ]
+    },
+    {
+      "key": "job-model-mobile",
+      "routes": [
+        "/sigil/confirm/job-model"
+      ],
+      "role": "Hero",
+      "viewport": "Up to 560px",
+      "webflowAssetId": "6aaf1cc6fdfd853b3d9f2c1a",
+      "url": "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aaf1cc6fdfd853b3d9f2c1a_Group%20SIGIL%20Pay%20Mob.webp",
+      "repoSources": [
+        "webflow/sigil/confirm/job-model-head-v1.js"
+      ]
+    },
+    {
+      "key": "job-model-desktop",
+      "routes": [
+        "/sigil/confirm/job-model"
+      ],
+      "role": "Hero",
+      "viewport": "Above 560px",
+      "webflowAssetId": "6aae01986694a15782cd6d83",
+      "url": "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aae01986694a15782cd6d83_Confirmation%20Group.webp",
+      "repoSources": [
+        "webflow/sigil/confirm/job-model-head-v1.js"
+      ]
+    },
+    {
+      "key": "payment-confirm-kenji-s07",
+      "routes": [
+        "/sigil/confirm/payment-confirmation"
+      ],
+      "role": "Hero",
+      "viewport": "All widths",
+      "webflowAssetId": "6aef33f5107fd86b05894eb2",
+      "url": "https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90/6aef33f5107fd86b05894eb2_kenji-s07-concierge.png",
+      "webflowPageId": "6943cb4f47e548630fa0b498",
+      "webflowEmbedId": "4e4b51c0-2771-e51a-d88d-f4b39acce710",
+      "selector": "#mmd-payment-confirmation.atelier .atelier-picture",
+      "backup": {
+        "path": "payment-confirmation-kenji-s07.webp",
+        "width": 2172,
+        "height": 724,
+        "bytes": 115616,
+        "sha256": "6c815a83dd72e3ef1e3236dc82fe170c635b315e772b3294f2065e06801ed162",
+        "sourceFile": "S07.png",
+        "sourceSha256": "156422242857636f719b920c0b80350ff27e61d2ff73a5e0340c2d8f9bba35b6",
+        "description": "Full-frame WebP export of the owner-selected PNG. The saved Webflow picture uses its hosted PNG."
+      }
+    },
+    {
+      "key": "sigil-confirm-logo",
+      "routes": [
+        "/sigil/confirm/job-confirmation",
+        "/sigil/confirm/job-model",
+        "/sigil/confirm/payment-confirmation",
+        "/sigil/confirm/model-confirmation"
+      ],
+      "role": "SĪGIL brand mark",
+      "viewport": "All widths",
+      "webflowAssetId": "6aee826654df354be4f72513",
+      "url": "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aee826654df354be4f72513_sigil-system-logo-v1.png",
+      "repoSources": [
+        "webflow/sigil/confirm/sigil-confirm-brand-swap-v1.js"
+      ]
+    }
+  ]
+}
