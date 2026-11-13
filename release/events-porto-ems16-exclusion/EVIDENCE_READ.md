@@ -3,8 +3,8 @@
 This preparation adds an observation workflow, not another release path. It
 does not enable `REVIEWED_RELEASE_POLICY`, choose a release window, upload a
 Worker version, promote a deployment, edit R2, or invoke a live send handler.
-Live posting continues unchanged. The existing paired runtime artifact and all
-existing files remain unchanged.
+Live posting continues unchanged. The existing paired runtime artifact and
+release gates remain unchanged.
 
 The connected API established a complete semantic inventory of 125 objects on
 November 13, but parsed JSON and omitted object-response headers. Reserializing
@@ -36,13 +36,32 @@ the existing release credential without granting it new permissions.
    truncated or changing data stops collection without retry or cleanup.
 6. After collection, the entry repeats baseline/configuration and exact current
    main/CI/current-dispatch checks before saving the artifact. Failures produce
-   only a generic diagnostic, not provider bodies or private state.
+   only source-defined phase, operation and reason codes, not provider bodies
+   or private state.
 
 The artifact contains sanitized keys, byte hashes, sizes, hashed ETags, minimal
 validated identity/status summaries and source/runtime provenance. It excludes
 captions, chat IDs, message receipts, credentials and raw object bodies. Observed
 historical promotion hashes are data for later review, not approved exceptions.
 No observation is labeled producer clearance or permission to release.
+
+## Failure diagnosis
+
+The first protected observation stopped with a generic error and no artifact.
+Its exact failed check is not established. An offline replay of the unchanged
+entry accepted the pinned runtime, and a fresh semantic replay accepted the
+captured parsed records. Neither replay proves original response bytes, headers,
+credential access or the failed run's state. They do not clear a release.
+
+The corrective diagnostics preserve every existing gate and GET-only boundary.
+Failure output is limited to fixed, locally branded phase, operation and reason
+codes. It never prints exception messages, stacks, causes, URLs, object keys,
+provider bodies or arbitrary error fields. Unbranded exceptions receive a
+generic check code. An HTTP denial is reported only from an observed response;
+failure before a response is a transport failure, not an inferred denial.
+The collector additionally distinguishes transport, JSON/schema, byte/ETag
+consistency and two-pass stability failures. Diagnostics do not retry, change
+permissions, create partial evidence artifacts or grant release clearance.
 
 ## Execution after review and merge
 

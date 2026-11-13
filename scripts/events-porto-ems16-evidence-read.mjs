@@ -8,7 +8,7 @@ import { verifyProductionApproval } from './admin-production-approval.mjs';
 import { inspectEnvironment } from './admin-production-validation.mjs';
 import { validateSourceState, activeVersion } from './admin-current-session-code-only.mjs';
 import { validateManifestBytes, BASELINE_SHA256, digest } from '../release/events-porto-ems16-exclusion/build-candidate.mjs';
-import { collectReadOnlyEvidence } from './events-porto-ems16-readonly-evidence.mjs';
+import { collectReadOnlyEvidence, describeReadOnlyEvidenceFailure } from './events-porto-ems16-readonly-evidence.mjs';
 
 export const ACCOUNT = 'b176eda1172b741fd2e58904cc9d77c5';
 export const ROOT = `/accounts/${ACCOUNT}/workers/scripts/events-worker`;
@@ -17,6 +17,46 @@ const REPOSITORY = 'MMD-Prive/mmd-workers';
 const SHA = /^[a-f0-9]{40}$/;
 const REQUIRED = ['build (18.x)', 'build (20.x)', 'build (22.x)'];
 const MANIFEST = 'release/events-porto-ems16-exclusion/overlay-manifest.json';
+
+// Only locally branded diagnostics are printable. Never copy an exception's
+// message, code, stack, cause, URL, response body, or arbitrary metadata.
+const failureDetails = new WeakMap();
+const PHASES = new Set(['SOURCE_INITIAL','PROTECTION_CONFIG','ENVIRONMENT_POLICY','CHECKOUT','MANIFEST',
+  'BASELINE_INITIAL','R2_OBSERVATION','BASELINE_FINAL','SOURCE_FINAL','ARTIFACT_WRITE']);
+const OPS = new Set(['CHECK','WORKER_DEPLOYMENTS_GET','WORKER_VERSIONS_GET','WORKER_VERSION_GET',
+  'WORKER_SETTINGS_GET','WORKER_SCHEDULES_GET','WORKER_SUBDOMAIN_GET','WORKER_MODULE_GET','WORKER_REQUEST_BOUNDARY',
+  'ENVIRONMENT_LIST_GET','ENVIRONMENT_PROTECTION_GET','ENVIRONMENT_BRANCH_POLICY_GET']);
+const CODES = new Set(['CHECK_FAILED','HTTP_AUTHORIZATION_REJECTED','HTTP_NOT_FOUND','HTTP_RATE_LIMITED',
+  'HTTP_SERVER_ERROR','HTTP_STATUS_UNEXPECTED','HTTP_REDIRECT_REJECTED','HTTP_TRANSPORT_FAILED',
+  'ENV_CONTEXT_MISSING','ENV_READ_AUTHORIZATION_REJECTED','ENV_MISSING','ENV_PROTECTION_UNVERIFIED',
+  'ENV_REQUIRED_PROTECTION_MISMATCH','ENV_BRANCH_POLICY_UNVERIFIED','ENV_UNVERIFIED']);
+function failure(operation, code, phase = null) {
+  const valid = OPS.has(operation) && CODES.has(code) && (phase === null || PHASES.has(phase));
+  const err = new Error('Read-only evidence verification failed.');
+  failureDetails.set(err, Object.freeze(valid ? {phase,operation,code} : {phase:null,operation:'CHECK',code:'CHECK_FAILED'}));
+  return err;
+}
+export function describeReadFailure(err) {
+  return failureDetails.get(err) || null;
+}
+export async function runReadPhase(phase, work) {
+  assert.ok(PHASES.has(phase));
+  try { return await work(); }
+  catch (err) {
+    const local = failureDetails.get(err);
+    const collector = describeReadOnlyEvidenceFailure(err);
+    const wrapped = new Error('Read-only evidence verification failed.');
+    failureDetails.set(wrapped, Object.freeze({phase, operation:local?.operation || collector?.stage || 'CHECK',
+      code:local?.code || collector?.code || 'CHECK_FAILED'}));
+    throw wrapped;
+  }
+}
+export function formatReadFailure(err) {
+  const details = failureDetails.get(err);
+  const code = details ? `phase=${details.phase || 'ENTRY'} operation=${details.operation} code=${details.code}`
+    : 'phase=ENTRY operation=CHECK code=CHECK_FAILED';
+  return `Read-only evidence collection stopped: ${code}; no production mutation or release clearance.`;
+}
 
 export function validateReadInputs(env) {
   assert.equal(env.GITHUB_EVENT_NAME, 'workflow_dispatch');
@@ -96,9 +136,22 @@ export function readOnlyWorkerFetch(token, request = fetch) {
   assert.ok(token && !/[\r\n]/.test(token));
   return async path => {
     assert.ok(new RegExp('^' + ROOT + '/(?:deployments|versions(?:/[a-f0-9-]{36})?|script-settings|schedules|subdomain|content/v2)$').test(path));
-    const response = await request('https://api.cloudflare.com/client/v4' + path, { method: 'GET', redirect: 'error',
-      signal: AbortSignal.timeout(30000), headers: { Authorization: 'Bearer ' + token } });
-    assert.equal(response.status, 200); assert.notEqual(response.redirected, true);
+    const suffix = path.slice(ROOT.length);
+    const operation = ({'/deployments':'WORKER_DEPLOYMENTS_GET','/versions':'WORKER_VERSIONS_GET',
+      '/script-settings':'WORKER_SETTINGS_GET','/schedules':'WORKER_SCHEDULES_GET',
+      '/subdomain':'WORKER_SUBDOMAIN_GET','/content/v2':'WORKER_MODULE_GET'})[suffix] || 'WORKER_VERSION_GET';
+    let response;
+    try { response = await request('https://api.cloudflare.com/client/v4' + path, { method: 'GET', redirect: 'error',
+      signal: AbortSignal.timeout(30000), headers: { Authorization: 'Bearer ' + token } }); }
+    catch { throw failure(operation,'HTTP_TRANSPORT_FAILED'); }
+    if (response?.redirected === true) throw failure(operation,'HTTP_REDIRECT_REJECTED');
+    if (response?.status !== 200) {
+      const status = response?.status;
+      const code = [401,403].includes(status) ? 'HTTP_AUTHORIZATION_REJECTED' : status === 404 ? 'HTTP_NOT_FOUND'
+        : status === 429 ? 'HTTP_RATE_LIMITED' : Number.isInteger(status) && status >= 500 && status <= 599
+          ? 'HTTP_SERVER_ERROR' : 'HTTP_STATUS_UNEXPECTED';
+      throw failure(operation,code);
+    }
     return response;
   };
 }
@@ -135,26 +188,38 @@ export async function readBaseline(read, manifest, hashBytes = digest) {
 async function main() {
   assert.ok(['--check-readiness','--collect-approved'].includes(process.argv[2]));
   const env = process.env;
-  await verifyReadSource(env);
+  await runReadPhase('SOURCE_INITIAL', () => verifyReadSource(env));
   if (process.argv[2] === '--check-readiness') return;
   // Config validation is not a receipt; the workflow job's environment is the
   // separate actual Per approval gate. These calls never change its settings.
-  await verifyProductionApproval(env);
-  assert.equal((await inspectEnvironment(env)).ready, true);
+  await runReadPhase('PROTECTION_CONFIG', () => verifyProductionApproval(env));
+  await runReadPhase('ENVIRONMENT_POLICY', async () => {
+    const report = await inspectEnvironment(env);
+    if (report.ready !== true) {
+      const code = ({permission_context_missing:'ENV_CONTEXT_MISSING', permission_denied:'ENV_READ_AUTHORIZATION_REJECTED',
+        missing_environment:'ENV_MISSING', protection_read_unverified:'ENV_PROTECTION_UNVERIFIED',
+        missing_protection:'ENV_REQUIRED_PROTECTION_MISMATCH', branch_restriction_unverified:'ENV_BRANCH_POLICY_UNVERIFIED'})[report.status]
+        || 'ENV_UNVERIFIED';
+      const denied = value => [401,403].includes(value);
+      const operation = denied(report.list_http) ? 'ENVIRONMENT_LIST_GET' : denied(report.protection_http)
+        ? 'ENVIRONMENT_PROTECTION_GET' : denied(report.branch_policy_http) ? 'ENVIRONMENT_BRANCH_POLICY_GET' : 'CHECK';
+      throw failure(operation,code);
+    }
+  });
   const git = (...args) => execFileSync('git', args, {encoding:'utf8'}).trim();
-  validateSourceState({expectedSha:env.GITHUB_SHA,headSha:git('rev-parse','HEAD'),dirtyStatus:git('status','--porcelain=v1','--untracked-files=all')});
-  const manifest = validateManifestBytes(readFileSync(MANIFEST));
-  const read = readOnlyWorkerFetch(env.CLOUDFLARE_API_TOKEN);
-  const before = await readBaseline(read, manifest);
-  const evidence = await collectReadOnlyEvidence({accountId:ACCOUNT,token:env.CLOUDFLARE_API_TOKEN});
-  assert.deepEqual(await readBaseline(read, manifest), before);
-  const source = await verifyReadSource(env);
+  await runReadPhase('CHECKOUT', () => validateSourceState({expectedSha:env.GITHUB_SHA,headSha:git('rev-parse','HEAD'),dirtyStatus:git('status','--porcelain=v1','--untracked-files=all')}));
+  const manifest = await runReadPhase('MANIFEST', () => validateManifestBytes(readFileSync(MANIFEST)));
+  let read;
+  const before = await runReadPhase('BASELINE_INITIAL', async () => { read = readOnlyWorkerFetch(env.CLOUDFLARE_API_TOKEN); return readBaseline(read, manifest); });
+  const evidence = await runReadPhase('R2_OBSERVATION', () => collectReadOnlyEvidence({accountId:ACCOUNT,token:env.CLOUDFLARE_API_TOKEN}));
+  await runReadPhase('BASELINE_FINAL', async () => assert.deepEqual(await readBaseline(read, manifest), before));
+  const source = await runReadPhase('SOURCE_FINAL', () => verifyReadSource(env));
   const artifact = { schema:'porto_ems16_protected_observation_v1', purpose:'observation_only_not_release_clearance',
     observed_at:new Date().toISOString(), source, baseline:before, evidence,
     production_mutations:0, release_policy_changed:false, protected_approval_is_separate:true };
-  writeFileSync(join(env.RUNNER_TEMP, 'events-porto-ems16-readonly-evidence.json'), JSON.stringify(artifact,null,2), {mode:0o600,flag:'wx'});
+  await runReadPhase('ARTIFACT_WRITE', () => writeFileSync(join(env.RUNNER_TEMP, 'events-porto-ems16-readonly-evidence.json'), JSON.stringify(artifact,null,2), {mode:0o600,flag:'wx'}));
   console.log('Protected read-only observation completed; no release clearance or production mutation.');
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main().catch(() => { console.error('Read-only evidence collection stopped; no production mutation or release clearance.'); process.exitCode=1; });
+  main().catch(err => { console.error(formatReadFailure(err)); process.exitCode=1; });
 }
