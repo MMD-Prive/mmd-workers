@@ -460,3 +460,18 @@ html,body{background:#0B0E10}
 #sigil-pay-v21 .sp21__qr{background:transparent}
 #sigil-pay-v21 [data-sp21-qr]{background:#fff;color-scheme:light;padding:10px;border-radius:12px}
 #sigil-pay-v21 .sp21__qr-fallback{background:#232729;color:#F3F0E8}
+
+/* Verify reference: obsidian, ivory, warm brass and quiet borders. */
+#sigil-pay-v21{--sp21-bg:#0c1114;--sp21-panel:#151615;--sp21-panel-strong:#22231f;--sp21-gold:#d3b685;--sp21-line-strong:#a88f66;background:var(--sp21-bg)}
+#sigil-pay-v21 :is(.sp21__summary,.sp21__card,.sp21__state,.sp21__after-card){background:var(--sp21-panel);border-color:var(--sp21-line);box-shadow:none}
+#sigil-pay-v21 :is(.sp21__panel,.sp21__method,.sp21__model,.sp21__preview,textarea,input:not([type=file])){background:var(--sp21-panel-strong);color:var(--sp21-text)}
+#sigil-pay-v21 .sp21__method[aria-selected=true]{background:#332c21;border-color:var(--sp21-gold)}
+#sigil-pay-v21 :is(.sp21__btn--primary,.sp21__btn--gold){background:#c6a16a;color:#141719!important;border-color:var(--sp21-gold)}
+#sigil-pay-v21 :is(.sp21__btn,.sp21__method){min-height:44px}
+#sigil-pay-v21 :is(.sp21__body,.sp21__fact dt,.sp21__fact dd,.sp21__consent,.sp21__submit-status,.sp21__method-copy small,.sp21__upload small){font-size:13px;line-height:1.5}
+#sigil-pay-v21 .sp21__verify-banner{position:relative;isolation:isolate;overflow:hidden;display:flex;align-items:end;min-height:96px;height:clamp(96px,21vw,146px);margin-bottom:12px;border:1px solid var(--sp21-line);border-radius:12px;background:var(--sp21-panel)}
+#sigil-pay-v21 .sp21__verify-banner img{position:absolute;inset:0 0 0 auto;width:66%;height:100%;object-fit:cover;object-position:55% 25%;z-index:-2}
+#sigil-pay-v21 .sp21__verify-banner::after{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background:linear-gradient(90deg,#151615 25%,#151615ec 39%,transparent 78%)}
+#sigil-pay-v21 .sp21__verify-banner div{padding:12px 14px}
+#sigil-pay-v21 .sp21__verify-banner small{color:var(--sp21-gold);font-size:10px;letter-spacing:.1em}
+#sigil-pay-v21 .sp21__verify-banner p{font-size:clamp(21px,4vw,30px);font-weight:700;line-height:1.25;color:var(--sp21-text)}
