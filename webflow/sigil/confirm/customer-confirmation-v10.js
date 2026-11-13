@@ -421,7 +421,7 @@
     }
 
     function payUrl() {
-      const u = new URL("https://miniapp.line.me/2010830159-0n1O3ANK");
+      const u = new URL("/sigil/pay", location.origin);
       u.searchParams.set("t", token);
       const lang = str(new URL(location.href).searchParams.get("lang")).toLowerCase();
       if (["th", "en", "zh"].includes(lang)) u.searchParams.set("lang", lang);
@@ -563,7 +563,7 @@
         return;
       }
       let target;
-      try { target = payUrl(details); }
+      try { target = payUrl(); }
       catch (_) {
         status("ลิงก์ชำระเงินยังไม่พร้อม กรุณาติดต่อ MMD", true);
         return;
@@ -590,7 +590,7 @@
     E.retry.addEventListener("click", load);
     E.payCtaLink.addEventListener("click", startPayment);
     load();
-    // Return from LIFF or a proof review: always re-read server truth.
+    // Return from checkout or a proof review: always re-read server truth.
     window.addEventListener("focus", () => load());
     document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
     window.setInterval(() => { if (!document.hidden) load(); }, 25000);
