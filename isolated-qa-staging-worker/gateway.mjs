@@ -26,7 +26,7 @@ async function verifyLine(token, channel) {
   const response = await fetch("https://api.line.me/oauth2/v2.1/verify", {
     method: "POST",
     body: new URLSearchParams({ id_token: token, client_id: channel }),
-    redirect: "error",
+    redirect: "manual",
     signal: AbortSignal.timeout(5000),
   });
   if (!response.ok) return null;

@@ -100,10 +100,11 @@ test("real verifier sends only the ID token and QA audience to the fixed LINE en
   globalThis.fetch = async (url, options) => {
     assert.equal(url, "https://api.line.me/oauth2/v2.1/verify");
     assert.equal(options.method, "POST");
-    assert.equal(options.redirect, "error");
+    assert.equal(options.redirect, "manual");
     assert.deepEqual(Object.fromEntries(options.body), { id_token: "test", client_id: "12345" });
     calls++;
-    return Response.json({ aud: calls === 1 ? "another-channel" : "12345", sub: env.QA_LINE_SUBJECT,
+    if (calls === 1) return new Response(null, { status: 307, headers: { Location: "https://unrelated.invalid/" } });
+    return Response.json({ aud: "12345", sub: env.QA_LINE_SUBJECT,
       exp: Math.floor(Date.now() / 1000) + 60 });
   };
   try {
