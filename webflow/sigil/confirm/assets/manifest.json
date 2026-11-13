@@ -1,5 +1,57 @@
 {
   "webflowSiteId": "68f879d546d2f4e2ab186e90",
+  "currentDesign": {
+    "name": "Kenji and TarT confirmation artwork",
+    "briefDate": "2026-11-08",
+    "ownerReconfirmedOn": "2026-11-13",
+    "formats": {
+      "mobile": "9:16",
+      "desktop": "16:9"
+    },
+    "scenes": [
+      {
+        "id": "01",
+        "world": "Public",
+        "page": "Job Confirmation",
+        "character": "Kenji-04"
+      },
+      {
+        "id": "02",
+        "world": "Public",
+        "page": "Job Model",
+        "character": "TarT-04"
+      },
+      {
+        "id": "03",
+        "world": "Public",
+        "page": "Model Confirmation",
+        "character": null,
+        "artDirection": "Architecture only."
+      },
+      {
+        "id": "04",
+        "world": "Private",
+        "page": "Job Confirmation",
+        "character": "Kenji-SĪGIL"
+      },
+      {
+        "id": "05",
+        "world": "Private",
+        "page": "Job Model",
+        "character": "TarT-SĪGIL",
+        "designReference": "https://claude.ai/public/artifacts/9d785749-2775-44f9-9544-023721eb7260",
+        "webflowStagingPath": "/sigil/confirm/job-model-tart-sigil-staging"
+      },
+      {
+        "id": "06",
+        "world": "Private",
+        "page": "Model Confirmation",
+        "character": "TarT-SĪGIL",
+        "artDirection": "Use a smaller, quieter portrait than in scene 05."
+      }
+    ]
+  },
+  "assetsScope": "The assets array lists existing website references. The six scenes in currentDesign describe the latest artwork direction. Payment Confirmation uses a separate Kenji S07 asset.",
   "assets": [
     {
       "key": "customer-confirm-mobile",
