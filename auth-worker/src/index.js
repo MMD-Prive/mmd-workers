@@ -1,3 +1,4 @@
+import { currentPrivateAccess } from "../../sigil-booking-worker/src/current-private-access.js";
 // MMD / SIGIL Access Core
 // First-party passwordless auth for Webflow + Cloudflare Workers + Airtable.
 // Endpoints:
@@ -27,6 +28,7 @@ const TIER_RANK = {
   blackcard: 6,
 };
 
+const PRIVATE_BOOKING_QA_PATH = "/__internal/qa/private-booking";
 const MEMBER_STATUS_RESOLVER_PATH = "/__internal/member-status/resolve";
 const MEMBER_STATUS_RESOLVER_DIAGNOSTIC_PATH = "/__internal/member-status/diagnostic";
 const MEMBER_PROFILE_RESOLVER_PATH = "/__internal/member-profile/read";
@@ -67,6 +69,10 @@ export default {
 
       if (path === "/v1/auth/logout" && request.method === "POST") {
         return handleLogout(request, env);
+      }
+
+      if (path === PRIVATE_BOOKING_QA_PATH && request.method === "GET") {
+        return readPrivateBookingFixtures(request, env);
       }
 
       if (path === MEMBER_STATUS_RESOLVER_PATH && request.method === "POST") {
@@ -1524,3 +1530,25 @@ export const testInternals = {
   normalizeServiceWorkType,
   pointsLedgerDedupeKey,
 };
+
+async function readPrivateBookingFixtures(request, env) {
+  const reply = (body, status) => Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
+  if (env.AIRTABLE_BASE_ID !== "app_auth_staging_fixture" || !env.AIRTABLE_HTTP
+      || !isInternalMemberStatusResolverRequest(request, env)) return reply({}, 404);
+  const fixtures = [
+    ["current", "recStageCurrent01", "MMD-STAGING-CURRENT-01"],
+    ["returning", "recStageReturn01", "MMD-STAGING-RETURNING-01"],
+  ];
+  try {
+    const outcomes = await Promise.all(fixtures.map(async ([label, recordId, memberId]) => {
+      const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode("mmd-discovery-member-v1:" + memberId));
+      const viewerRef = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
+      const access = await currentPrivateAccess(request, env, recordId, viewerRef, { throwOnUnavailable: true });
+      const allowed = access.allowedFolders.length > 0 && access.snapshot.capability_state.active.includes("private_premium");
+      return [label, allowed ? "allow" : "deny"];
+    }));
+    return reply(Object.fromEntries(outcomes), 200);
+  } catch {
+    return reply({}, 503);
+  }
+}

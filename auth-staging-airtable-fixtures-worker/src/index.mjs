@@ -1,5 +1,7 @@
 const BASE_ID = "app_auth_staging_fixture";
 
+const ENTITLEMENT_ID = "recStagePrivate01";
+
 const FIXTURES = Object.freeze({
   current: {
     lineUserId: "U00000000000000000000000000000001",
@@ -36,6 +38,7 @@ function members(fixture) {
     fields: {
       line_id: fixture.lineUserId,
       member_id: fixture.memberId,
+      "MMD — Member Entitlements": fixture === FIXTURES.current ? [ENTITLEMENT_ID] : [],
       "Full Name (Display)": fixture.displayName,
       "Contact Email": fixture.email,
     },
@@ -113,6 +116,21 @@ export default {
     const table = decodeURIComponent(parts.slice(2).join("/"));
     const formula = url.searchParams.get("filterByFormula") || "";
     const fixture = fixtureFromFormula(formula);
+    if (table.startsWith("Members/")) {
+      const row = Object.values(FIXTURES).flatMap(members).find(item => "Members/" + item.id === table);
+      return row ? json(row) : json({ error: "fixture_missing" }, 404);
+    }
+    if (table === "MMD — Member Entitlements") {
+      if (formula !== 'OR(RECORD_ID()="' + ENTITLEMENT_ID + '")') return json({ error: "fixture_missing" }, 404);
+      return json({ records: [{ id: ENTITLEMENT_ID, fields: {
+        member: [members(FIXTURES.current)[0].id],
+        capability: "private_premium",
+        access_status: "active",
+        member_lifecycle_status: "active",
+        start_at: "2026-01-01T00:00:00Z",
+        expire_at: "2099-01-01T00:00:00Z",
+      } }] });
+    }
     let records;
     if (table === "Members") records = members(fixture);
     else if (table === "member_packages") records = packages(fixture);

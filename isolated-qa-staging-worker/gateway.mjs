@@ -117,6 +117,20 @@ export function createGateway(verify = verifyLine) {
           await store.delete("session/" + id);
           return json(200, { ok: true }, { "Set-Cookie": sessionCookie("", 0) });
         }
+        if (method === "GET" && pathname === "/qa/private-booking") {
+          try {
+            const result = await env.QA_AUTH.fetch("https://qa-auth.invalid/__internal/qa/private-booking", {
+              headers: { "x-mmd-member-resolver-secret": env.QA_AUTH_RESOLVER_SECRET },
+              redirect: "manual",
+            });
+            if (!result.ok) return json(503, {});
+            const { current, returning } = await result.json();
+            if (![current, returning].every(value => value === "allow" || value === "deny")) return json(503, {});
+            return json(200, { current, returning });
+          } catch {
+            return json(503, {});
+          }
+        }
         if (method === "GET" && pathname === "/qa/member") return await memberFixture(env);
         if (method === "GET" && pathname === "/qa/fixture/evidence") {
           return new Response(fixtureEvidence, { headers: { ...headers, "Content-Type": "text/plain; charset=utf-8",

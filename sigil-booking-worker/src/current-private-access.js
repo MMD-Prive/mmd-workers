@@ -70,7 +70,8 @@ export async function currentPrivateAccess(request, env, memberRecordId, verifie
 async function read(env, path, qs) {
   if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) throw new Error("private_access_unavailable");
   const encoded = path.split("/").map(encodeURIComponent).join("/");
-  const response = await fetch(`https://api.airtable.com/v0/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${encoded}${qs ? "?" + qs : ""}`, {
+  const readHttp = env.AIRTABLE_HTTP ? env.AIRTABLE_HTTP.fetch.bind(env.AIRTABLE_HTTP) : fetch;
+  const response = await readHttp(`https://api.airtable.com/v0/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${encoded}${qs ? "?" + qs : ""}`, {
     headers: { Authorization: `Bearer ${env.AIRTABLE_API_KEY}` }, signal: AbortSignal.timeout(5000),
   });
   if (!response.ok) throw new Error("private_access_unavailable");
