@@ -4,6 +4,7 @@ import { handleRelaxSpaPartner, isRelaxSpaPartnerRequest } from './relax-spa-par
 import { authorityRuntimeHealth, queueAuthorityEvent } from "../../shared/posthog-authority-events.mjs";
 type SecretName = "AIRTABLE_API_KEY" | "AUTH_SERVICE_PARTNERS_TO_TELEGRAM" | "TOKEN_SECRET" | "ADMIN_APPROVE_SECRET";
 type OptionalVarName =
+  | "PARTNER_QA_RECORD_ID"
   | "PUBLIC_SITE_URL"
   | "TELEGRAM_PUBLIC_MODEL_THREAD_ID"
   | "TELEGRAM_ADMIN_THREAD_ID";
@@ -1031,7 +1032,36 @@ async function handlePartnerApprove(request: Request, env: RuntimeEnv, ctx: Exec
     return errorResponse(request, env, "invalid_approval_request", "partner_record_id and a valid action are required.", 400, false);
   }
 
+  const silentTest = body.value.silent_test === true;
+  if (body.value.silent_test !== undefined && typeof body.value.silent_test !== "boolean") {
+    return errorResponse(request, env, "invalid_approval_request", "silent_test must be a boolean.", 400, false);
+  }
+  if (silentTest && !String(env.ADMIN_APPROVE_SECRET || "").trim()) {
+    return errorResponse(request, env, "admin_auth_unavailable", "Silent approval requires a dedicated admin credential.", 503, false);
+  }
+  if (silentTest && (action !== "recognized" || !/^rec[A-Za-z0-9]{14,24}$/.test(partnerRecordId) ||
+      partnerRecordId !== env.PARTNER_QA_RECORD_ID)) {
+    return errorResponse(request, env, "partner_test_scope_forbidden", "Silent approval is restricted to the configured test Partner.", 403, false);
+  }
   const existing = await getAirtableRecord(env, env.AIRTABLE_TABLE_MODEL_PARTNERS, partnerRecordId);
+  if (silentTest) {
+    const lineToken = readString(body.value, "id_token");
+    const subject = lineToken && lineToken.length <= 10000 ? await verifyPartnerLineSubject(lineToken) : null;
+    if (!subject) return errorResponse(request, env, "line_identity_invalid", "LINE verification failed.", 401, false);
+    const claims = await listAirtableRecords(env, "tbluoZ5JiRcoUP6WT", {
+      filterByFormula: `{line_user_id}='${escapeFormulaString(subject)}'`, maxRecords: 2,
+    });
+    const [claim] = claims;
+    const claimPartners = claim?.fields.fldaMlO1fRoazxfHg;
+    const partnerClaims = existing.fields.fldXs6VyfXIHxBMpQ;
+    if (claims.length !== 1 || !claim ||
+        fieldText(claim, "fld6PAywOhvDeelDJ") !== "verified_unlinked" ||
+        fieldText(claim, "fldGB7Raqm6O1NIhh") !== "published" ||
+        !Array.isArray(claimPartners) || claimPartners.length !== 1 || claimPartners[0] !== partnerRecordId ||
+        !Array.isArray(partnerClaims) || partnerClaims.length !== 1 || partnerClaims[0] !== claim.id) {
+      return errorResponse(request, env, "partner_test_claim_invalid", "Test Partner LINE claim requires review.", 409, false);
+    }
+  }
   const now = new Date().toISOString();
   const updateFields: AirtableFields = {
     [MODEL_PARTNERS.approvalStatus]: action
@@ -1045,6 +1075,19 @@ async function handlePartnerApprove(request: Request, env: RuntimeEnv, ctx: Exec
   let token = "";
   let termsUrl = "";
   let dashboardUrl = "";
+
+  if (silentTest) {
+    updateFields[MODEL_PARTNERS.status] = "Active";
+    updateFields[MODEL_PARTNERS.onboardedAt] = now;
+    updateFields[MODEL_PARTNERS.notesInternal] = appendNote(previousNotes, `[${now}] Silent test Partner recognition${note ? ": " + note : ""}`);
+    // Preserve the explicit null so an old token cannot regain access on activation.
+    const response = await airtableFetch(env, `${env.AIRTABLE_TABLE_MODEL_PARTNERS}/${encodeURIComponent(partnerRecordId)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ fields: { ...updateFields, [MODEL_PARTNERS.accessTokenHash]: null }, typecast: false }),
+    });
+    await parseAirtableRecord(response);
+    return json(request, env, { ok: true, partner_record_id: partnerRecordId, action });
+  }
 
   if (action === "recognized") {
     token = await generatePartnerToken(env, partnerRecordId);
@@ -4527,16 +4570,22 @@ const WEBFLOW_SIGIL_PARTNER_FORM_JS = `
 
 const PARTNER_LINE_DASHBOARD_ORIGIN = "https://sigil-partner-dashboard.pages.dev";
 
+async function verifyPartnerLineSubject(token: string): Promise<string | null> {
+  const response = await fetch("https://api.line.me/oauth2/v2.1/verify", { method: "POST", body: new URLSearchParams({ id_token: token, client_id: "2010864854" }) });
+  const identity = await response.json() as Record<string, unknown>;
+  if (!response.ok || identity.aud !== "2010864854" || identity.iss !== "https://access.line.me" || typeof identity.exp !== "number" || identity.exp * 1000 <= Date.now() || typeof identity.sub !== "string" || !/^U[a-f0-9]{32}$/i.test(identity.sub)) return null;
+  return identity.sub;
+}
+
 async function handlePartnerLineExchange(request: Request, env: RuntimeEnv): Promise<Response> {
   if (!["https://www.mmdbkk.com", "https://mmdbkk.com"].includes(request.headers.get("Origin") || "")) return errorResponse(request, env, "origin_not_allowed", "Open Partner LINE login.", 403, false);
   const body = await readJsonObject(request);
   if (!body.ok) return errorResponse(request, env, "invalid_json", body.error, 400, false);
   const token = readString(body.value, "id_token");
   if (!token || token.length > 10000) return errorResponse(request, env, "id_token_required", "Verify LINE first.", 401, false);
-  const response = await fetch("https://api.line.me/oauth2/v2.1/verify", { method: "POST", body: new URLSearchParams({ id_token: token, client_id: "2010864854" }) });
-  const identity = await response.json() as Record<string, unknown>;
-  if (!response.ok || identity.aud !== "2010864854" || identity.iss !== "https://access.line.me" || typeof identity.exp !== "number" || identity.exp * 1000 <= Date.now() || typeof identity.sub !== "string" || !/^U[a-f0-9]{32}$/i.test(identity.sub)) return errorResponse(request, env, "line_identity_invalid", "LINE verification failed.", 401, false);
-  const claims = await listAirtableRecords(env, "tbluoZ5JiRcoUP6WT", { filterByFormula: `{line_user_id}='${escapeFormulaString(identity.sub)}'`, maxRecords: 2 });
+  const lineSubject = await verifyPartnerLineSubject(token);
+  if (!lineSubject) return errorResponse(request, env, "line_identity_invalid", "LINE verification failed.", 401, false);
+  const claims = await listAirtableRecords(env, "tbluoZ5JiRcoUP6WT", { filterByFormula: `{line_user_id}='${escapeFormulaString(lineSubject)}'`, maxRecords: 2 });
   const claim = claims[0];
   if (!claim) return partnerLineReviewResponse(request, env, "partner_line_review_required", "claim_not_found");
   if (claims.length !== 1) return partnerLineReviewResponse(request, env, "partner_line_review_required", "claim_ambiguous");
