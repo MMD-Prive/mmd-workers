@@ -20,6 +20,7 @@ import { fetchKenjiCanonicalPublishedKnowledge } from "./kenji-canonical-knowled
 import { resolveKenjiLineContinuity, writeKenjiLineMatrixTurn } from "./kenji-line-continuity-runtime.mjs";
 import { aggregateKenjiLineTurn, prepareKenjiLineWebhookBatch } from "./kenji-line-turn-aggregation.mjs";
 import { CHECKPTS_INTAKE, isCheckptsShortcut } from "./checkpts-command.mjs";
+import { kenjiIntakeEventKey, trackKenjiLineIntake } from "./kenji-line-intake-receipt.mjs";
 import { readKenjiPerTakeover } from "./kenji-per-case.mjs";
 import { buildKenjiLineConversationHistory, recordDeliveredKenjiLineReply } from "./kenji-line-conversation-history.mjs";
 import { KENJI_CONTEXTUAL_SHADOW_INTERNALS } from "./kenji-line-contextual-understanding-shadow.mjs";
@@ -1771,6 +1772,36 @@ async function findExistingLineEvent(env = {}, eventId = "", inboxId = "", optio
   return Array.isArray(payload?.records) ? payload.records[0] || null : null;
 }
 
+// The operational lanes can return before legacy intake. Read only an
+// already persisted, unambiguous receipt for the exact event; never backfill.
+export async function findConfirmedOperationalIntake(env, event) {
+  const key = kenjiIntakeEventKey(event);
+  const apiKey = asString(env.AIRTABLE_API_KEY);
+  const baseId = asString(env.AIRTABLE_BASE_ID);
+  const table = getAirtableTable(env);
+  if (!/^[A-Za-z0-9_-]{1,155}$/.test(key) || !apiKey || !baseId || !table) return null;
+  const url = new URL(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(table)}`);
+  url.searchParams.set("filterByFormula", `AND({source}="line",{line_id}="${key}")`);
+  url.searchParams.set("maxRecords", "2");
+  for (const field of ["source", "line_id", "inbox_id"]) url.searchParams.append("fields[]", field);
+  try {
+    const response = await fetch(url, {
+      headers: { authorization: `Bearer ${apiKey}` },
+      redirect: "manual",
+      signal: AbortSignal.timeout(1500),
+    });
+    if (!response.ok) return null;
+    const { records } = await response.json();
+    if (!Array.isArray(records) || records.length !== 1) return null;
+    const [row] = records;
+    return row?.id && row.fields?.line_id === key && row.fields?.source === "line"
+      ? { id: row.id, inbox_id: row.fields.inbox_id }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function getLineOwnerTakeoverState(env = {}, lineUserId = "", continuity = {}, options = {}) {
   if (!options.skipPerCase) {
     const perCase = await readKenjiPerTakeover(env, lineUserId);
@@ -2146,21 +2177,22 @@ async function writeLineEventToConsoleInbox(env = {}, event = {}, profile = null
   }
 
   const existing = await findExistingLineEvent(env, eventId, inboxId, { signal: options.signal });
-  if (existing?.id) return { id: existing.id, deduped: true };
+  if (existing?.id) return { id: existing.id, deduped: true, inbox_id: existing.fields?.inbox_id };
 
+  const record = buildConsoleInboxRecord(event, profile, intent, metadata);
   const response = await fetch(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(table)}`, {
     method: "POST",
     headers: {
       authorization: `Bearer ${apiKey}`,
       "content-type": "application/json",
     },
-    body: JSON.stringify(buildConsoleInboxRecord(event, profile, intent, metadata)),
+    body: JSON.stringify(record),
     signal: options.signal,
   });
 
   if (!response.ok) return { skipped: true, reason: "airtable_write_failed", status: response.status, deduped: false };
   const payload = await response.json().catch(() => ({}));
-  return { id: payload?.id || "", deduped: false };
+  return { id: payload?.id || "", deduped: false, inbox_id: payload?.id ? record.fields.inbox_id : undefined };
 }
 
 async function writeLineCardCampaignEventToConsoleInbox(env = {}, event = {}, metadata = null) {
@@ -3103,7 +3135,11 @@ async function handleServiceBoundRefundReceipt(request, env) {
   });
 }
 
-async function syncLineEventAfterReply(env, event, intent, autoReplyEnabled, kenjiEnabled, metadata = null) {
+function syncLineEventAfterReply(env, event, intent, autoReplyEnabled, kenjiEnabled, metadata = null) {
+  return trackKenjiLineIntake(env, event, persistLineIntake(env, event, intent, autoReplyEnabled, kenjiEnabled, metadata));
+}
+
+async function persistLineIntake(env, event, intent, autoReplyEnabled, kenjiEnabled, metadata) {
   const lineUserId = getLineUserId({ event });
   const shouldFetchProfile = Boolean(autoReplyEnabled && lineUserId && event?.source?.type === "user" && asString(env.LINE_CHANNEL_ACCESS_TOKEN));
   const profilePromise = shouldFetchProfile ? fetchLineProfile(env, lineUserId) : Promise.resolve(null);

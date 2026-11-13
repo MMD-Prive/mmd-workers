@@ -202,7 +202,7 @@ test("missing, non-LINE, or unsafe Seed cards fall back deterministically", asyn
   }
 });
 
-test("AI Message Events telemetry stores decision metadata without duplicating customer PII", async () => {
+test("AI Message Events telemetry links confirmed intake without duplicating customer PII", async () => {
   let posted = null;
   await withFetch(async (url, init = {}) => {
     const target = String(url);
@@ -229,6 +229,11 @@ test("AI Message Events telemetry stores decision metadata without duplicating c
       },
       delivered: true,
       attempted: true,
+      deliveryStatus: 200,
+      intakeReceipts: new Map([
+        ["unrelated-message", Promise.resolve({ id: "rec-other", inbox_id: "line_other" })],
+        ["msg-telemetry", Promise.resolve({ id: "rec-intake", inbox_id: "line_existing-intake", deduped: true })],
+      ]),
     });
     assert.equal(result.id, "rec-telemetry");
   });
@@ -239,11 +244,34 @@ test("AI Message Events telemetry stores decision metadata without duplicating c
   assert.equal(posted.fields.selected_knowledge_ids, "kenji_seed_v1_route_02");
   assert.equal(posted.fields.response_mode, "auto_reply_sent");
   assert.equal(posted.fields.final_status, "sent");
+  assert.equal(posted.fields.linked_console_inbox_id, "line_existing-intake");
+  assert.equal(JSON.parse(posted.fields.payload_json).line_delivery_status, 200);
   assert.equal(posted.fields.handoff_required, false);
   assert.equal(posted.fields.source_path, "/male-massage/home");
   assert.equal(Object.hasOwn(posted.fields, "line_user_id"), false);
   assert.equal(Object.hasOwn(posted.fields, "contact_value"), false);
   assert.equal(Object.hasOwn(posted.fields, "user_message"), false);
+});
+
+test("delivery telemetry omits the link if intake failed, did not persist, or has no stable event ID", async () => {
+  const input = event("synthetic inbound", { message: { id: "msg-missing", type: "text", text: "synthetic inbound" } });
+  for (const [lineEvent, intakeReceipts] of [
+    [input, new Map([["msg-missing", Promise.resolve(null)]])],
+    [input, new Map([["msg-missing", Promise.resolve({ skipped: true })]])],
+    [input, new Map([["different-event", Promise.resolve({ id: "rec", inbox_id: "line_other" })]])],
+    [{ ...input, message: { type: "text" }, webhookEventId: undefined }, new Map()],
+  ]) {
+    let posted;
+    await withFetch(async (_url, init = {}) => {
+      if (init.method === "POST") posted = JSON.parse(init.body).fields;
+      return Response.json(init.method === "POST" ? { id: "rec-telemetry" } : { records: [] });
+    }, () => writeKenjiAiMessageEvent({
+      env: BASE_ENV, event: lineEvent, decision: { intent: "membership_status" },
+      attempted: true, delivered: false, deliveryStatus: 502, intakeReceipts,
+    }));
+    assert.equal(Object.hasOwn(posted, "linked_console_inbox_id"), false);
+    assert.equal(JSON.parse(posted.payload_json).line_delivery_status, 502);
+  }
 });
 
 test("synthetic production smoke selects Seed Pack metadata and never calls LINE delivery", async () => {
@@ -275,7 +303,8 @@ test("synthetic production smoke selects Seed Pack metadata and never calls LINE
   assert.equal(lineCalls, 0);
 });
 
-test("signed MMD LINE webhook sends one Seed Pack reply and writes telemetry", async () => {
+test("signed MMD LINE webhook sends one mocked reply before the deferred intake receipt resolves", async () => {
+  const { trackKenjiLineIntake } = await import("../src/kenji-line-intake-receipt.mjs");
   const lineEvent = event("อยากนวด recovery", {
     replyToken: "reply-live-test",
     message: { id: "msg-live-test", type: "text", text: "อยากนวด recovery" },
@@ -283,9 +312,13 @@ test("signed MMD LINE webhook sends one Seed Pack reply and writes telemetry", a
   const raw = JSON.stringify({ events: [lineEvent] });
   const signature = await createLineSignature(raw, BASE_ENV.LINE_CHANNEL_SECRET);
   const calls = { line: 0, telemetryPost: 0, shadow: 0 };
+  let finishIntake;
+  const intake = new Promise(resolve => { finishIntake = resolve; });
+  const background = [];
   const legacyWorker = {
-    fetch: async () => {
+    fetch: async (_request, shadowEnv) => {
       calls.shadow += 1;
+      trackKenjiLineIntake(shadowEnv, lineEvent, intake);
       return new Response(JSON.stringify({ ok: true, saved: [{ campaign_event: false }] }), { status: 200 });
     },
   };
@@ -304,28 +337,34 @@ test("signed MMD LINE webhook sends one Seed Pack reply and writes telemetry", a
     if (target.includes("tbljCYfYqfm8gBTPq")) {
       if (init.method === "POST") {
         calls.telemetryPost += 1;
+        assert.equal(JSON.parse(init.body).fields.linked_console_inbox_id, "line_confirmed-mock");
         return new Response(JSON.stringify({ id: "rec-ai-event" }), { status: 200, headers: { "content-type": "application/json" } });
       }
       return new Response(JSON.stringify({ records: [] }), { status: 200, headers: { "content-type": "application/json" } });
     }
     if (target.includes("api.line.me/v2/bot/message/reply")) {
       calls.line += 1;
+      finishIntake({ id: "rec-mock", inbox_id: "line_confirmed-mock" });
       const body = JSON.parse(init.body);
       assert.equal(body.replyToken, "reply-live-test");
       assert.match(body.messages[0].text, /MMS/);
       return new Response("{}", { status: 200 });
     }
     throw new Error(`unexpected fetch ${target}`);
-  }, () => handleKenjiSeedLineRequest(
-    new Request("https://www.mmdbkk.com/webhooks/line", {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-line-signature": signature },
-      body: raw,
-    }),
-    BASE_ENV,
-    null,
-    legacyWorker,
-  ));
+  }, async () => {
+    const result = await handleKenjiSeedLineRequest(
+      new Request("https://www.mmdbkk.com/webhooks/line", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-line-signature": signature },
+        body: raw,
+      }),
+      BASE_ENV,
+      { waitUntil: task => background.push(task) },
+      legacyWorker,
+    );
+    await Promise.all(background);
+    return result;
+  });
 
   const body = await response.json();
   assert.equal(response.status, 200);
