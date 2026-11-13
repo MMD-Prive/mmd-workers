@@ -3,15 +3,27 @@
 This preparation adds an observation workflow, not another release path. It
 does not enable `REVIEWED_RELEASE_POLICY`, choose a release window, upload a
 Worker version, promote a deployment, edit R2, or invoke a live send handler.
-Live posting continues unchanged. The existing paired runtime artifact and
-release gates remain unchanged.
+This observation workflow itself leaves live posting, the pinned runtime
+artifact and release gates unchanged. The release package may separately revise
+its reviewed candidate; this collector never selects or deploys that candidate.
 
-The connected API established a complete semantic inventory of 125 objects on
+A prior connected-API observation reported a semantic inventory of 125 objects on
 November 13, but parsed JSON and omitted object-response headers. Reserializing
 that data would not establish the original byte hashes or GET ETags. Eighteen
 historical promotion objects need exact observed hashes before a separate
 release policy can be reviewed. This workflow obtains those observations using
 the existing release credential without granting it new permissions.
+
+## Observed blocker (2026-11-13)
+
+The latest protected collection attempt,
+[run 43374087746](https://github.com/MMD-Prive/mmd-workers/actions/runs/43374087746),
+failed at `phase=R2_OBSERVATION operation=r2_list_get code=http_403` with its
+existing release credential. It does not supply current raw-state hashes or GET
+ETags. Do not substitute parsed semantic data or switch credentials/routes to
+bypass the denial. There is no pending approval in that failed attempt. Any
+permitted future retry must first have materially new, relevant access evidence;
+this source-review update neither retries collection nor enables release.
 
 ## Gates
 
