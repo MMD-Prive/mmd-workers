@@ -644,7 +644,9 @@ async function executeSlot(env, manifest, bucket, slot, now, deps, wallClock) {
         if (current.date !== date || !due(current, compcardSchedule(env)[slot])) throw problem("compcard_window_closed", false);
         if (plan.chat_ids[destination] !== manifest.destinations[destination]) throw problem("compcard_destination_approval_changed", false);
         // Stop excluded identities before assets; terminal receipts are handled by the journal.
-        if (modelSlot && !automaticModelAllowed(card.model_id)) throw problem("compcard_automatic_selection_excluded", false);
+        if (modelSlot) {
+          if (!automaticModelAllowed(card.model_id)) throw problem("compcard_automatic_selection_excluded", false);
+        }
         if (modelSlot && !privateAutomationAllowed(card)) throw problem("compcard_owner_private_automation_excluded", false);
         // Keep historical plans and terminal receipts intact, but do not complete
         // a legacy mirror after the owner changed future room routing.
