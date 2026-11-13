@@ -1,0 +1,132 @@
+name: Review or release combined model guards
+on:
+  pull_request:
+    paths:
+      - 'release/events-porto-ems16-exclusion/**'
+      - 'scripts/events-porto-ems16-*'
+      - 'scripts/events-rotation-release-transport*'
+      - 'scripts/admin-production-approval*'
+      - 'scripts/admin-production-validation*'
+      - 'scripts/admin-current-session-code-only.mjs'
+      - 'events-worker/src/compcard-*.js'
+      - 'events-worker/*compcard*.test.mjs'
+      - 'events-worker/ems16-private-automation.test.mjs'
+      - '.github/workflows/admin-production-approval.yml'
+      - '.github/workflows/deploy-events-porto-ems16-exclusion-code-only.yml'
+  workflow_dispatch:
+    inputs:
+      production_approved:
+        description: 'Explicit new combined-target owner authorization; not an environment approval receipt'
+        type: boolean
+        required: true
+        default: false
+      approval_ref:
+        description: 'Must match a future separately reviewed combined authorization in source; currently disabled'
+        type: string
+        required: true
+      approved_sha:
+        description: 'Exact executing reviewed main SHA, not the preparation base SHA'
+        type: string
+        required: true
+      expected_version:
+        description: 'Exact observed baseline version from the reviewed combined manifest'
+        type: string
+        required: true
+      expected_deployment:
+        description: 'Exact observed baseline deployment from the reviewed combined manifest'
+        type: string
+        required: true
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: ${{ github.event_name == 'workflow_dispatch' && 'deploy-events-worker-production' || format('events-combined-guard-contracts-{0}', github.ref) }}
+  cancel-in-progress: false
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Run source contracts even while production release is disabled
+        run: >-
+          node --test
+          release/events-porto-ems16-exclusion/candidate.test.mjs
+          scripts/events-porto-ems16-exclusion-release.test.mjs
+          scripts/events-porto-ems16-release-state.test.mjs
+          scripts/events-rotation-release-transport.test.mjs
+          scripts/admin-production-approval.test.mjs
+          scripts/admin-production-validation.test.mjs
+          events-worker/ems16-private-automation.test.mjs
+          events-worker/compcard-policy.test.mjs
+          events-worker/compcard-journal.test.mjs
+          events-worker/compcard-daily.test.mjs
+          events-worker/compcard-cadence.test.mjs
+          events-worker/compcard-intake.test.mjs
+  dispatch-readiness:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approved_sha == github.sha
+    needs: contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    # No protected environment and no production credential in this job.
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Stop before approval when reviewed policy or exact-head evidence is missing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRODUCTION_APPROVED: ${{ inputs.production_approved }}
+          APPROVAL_REF: ${{ inputs.approval_ref }}
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+          EXPECTED_VERSION: ${{ inputs.expected_version }}
+          EXPECTED_DEPLOYMENT: ${{ inputs.expected_deployment }}
+        run: node scripts/events-porto-ems16-exclusion-release.mjs --check-dispatch-readiness
+  production-approval:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approved_sha == github.sha
+    needs: [contracts, dispatch-readiness]
+    uses: ./.github/workflows/admin-production-approval.yml
+    with:
+      approval_ref: ${{ inputs.approval_ref }}
+      approved_sha: ${{ inputs.approved_sha }}
+      environment_name: mmd-production-mutation
+  release:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approved_sha == github.sha
+    needs: [contracts, dispatch-readiness, production-approval]
+    environment: mmd-production-mutation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Apply only reviewed combined guards with unchanged inherited configuration
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRODUCTION_APPROVED: ${{ inputs.production_approved }}
+          APPROVAL_REF: ${{ inputs.approval_ref }}
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+          EXPECTED_VERSION: ${{ inputs.expected_version }}
+          EXPECTED_DEPLOYMENT: ${{ inputs.expected_deployment }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node scripts/events-porto-ems16-exclusion-release.mjs --execute-approved
+      - name: Save sanitized combined release receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: events-porto-ems16-exclusion-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/events-porto-ems16-exclusion-release.json
+          if-no-files-found: ignore
+          retention-days: 90
