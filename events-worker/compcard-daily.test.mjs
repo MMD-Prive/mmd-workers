@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { seedSyntheticReview } from './history-review-fixture.mjs';
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -562,5 +563,94 @@ test("private-room legacy LINE captions stay frozen; pending delivery blocks and
     assert.equal(f.bucket.records.get(key).value, frozen);
     if (sent) assert.equal(f.bucket.records.get(receiptKey).value, beforeReceipt);
     else assert.equal(result.results[0].outcomes[0].status, 'blocked');
+  }
+});
+
+// Existing source is loaded with test-only internal exports. No deployed handler is called.
+const guardSourceURL = new URL('./src/compcard-daily.js', import.meta.url);
+const guardSource = readFileSync(guardSourceURL, 'utf8').replace(/from (["'])(\.\/[^"']+)\1/g,
+  (_match, quote, path) => `from ${quote}${new URL(path, guardSourceURL).href}${quote}`);
+const guardAPI = await import('data:text/javascript;base64,' + Buffer.from(guardSource +
+  '\nexport { executeSlot, jsonDigest, captionForLiveCard, destinationsForCategory };\n').toString('base64'));
+const guardCases = ['exclusive', 'premium', 'standard', 'travel', 'extreme'].flatMap(category =>
+  (category === 'standard' ? ['model', 'standard'] : ['model']).map(slot => ({ category, slot })));
+const guardTime = slot => at('2026-11-13', slot === 'standard' ? '20:00' : '16:30');
+function guardFixture(category, source, modelId = 'recHyQc4g70RTldS5') {
+  const card = { ...CARD, model_id: modelId, canonical_name: 'Changed canonical alias', display_name: 'Changed display alias', category,
+    ...(source ? { source, asset_key: 'hype-compcards/v1/intake/assets/synthetic-only.json' } : {}) };
+  const f = fixture({ cards: [card] });
+  f.env.HYPE_PROMOTION_ENABLED = 'false';
+  f.env.HYPE_STANDARD_ENABLED = 'true';
+  let assetReads = 0;
+  f.deps.asset = async () => { assetReads++; throw Error('Excluded identity must not read assets'); };
+  const get = f.bucket.get.bind(f.bucket);
+  f.bucket.get = async key => {
+    if (key.includes('/intake/assets/')) assetReads++;
+    return get(key);
+  };
+  return { ...f, card, assetReads: () => assetReads };
+}
+async function guardFreeze(f, slot, state) {
+  const now = guardTime(slot), date = '2026-11-13', card = f.card;
+  const destinations = guardAPI.destinationsForCategory(card.category); // Includes historical mirrored plans.
+  const plan = { schema: 'hype_compcard_plan_v1', date, slot, manifest_revision: f.manifest.revision, created_at: now,
+    card_id: card.id, model_id: card.model_id, category: card.category, file_id: card.file_id, sha256: card.sha256,
+    destinations, chat_ids: Object.fromEntries(destinations.map(d => [d, ROOM_IDS[d]])),
+    captions: Object.fromEntries(destinations.map(d => [d, guardAPI.captionForLiveCard(card, d, f.models[0])])),
+    ...(card.source === 'owner_drive_intake' ? { asset_key: card.asset_key } : {}) };
+  plan.digest = await guardAPI.jsonDigest(plan);
+  const planKey = `${COMPCARD_JOURNAL_ROOT}plans/${date}/${slot}.json`;
+  await f.bucket.put(planKey, JSON.stringify(plan));
+  const historyKey = `${COMPCARD_JOURNAL_ROOT}history/${card.model_id}.json`;
+  await f.bucket.put(historyKey, JSON.stringify({ model_id: card.model_id, category: card.category, date: '2026-10-29', status: 'sent' }));
+  const saved = [];
+  if (state) for (const destination of destinations) {
+    const record = { schema: 'hype_compcard_delivery_v1', date, slot, destination, model_id: card.model_id, card_id: card.id,
+      plan_digest: plan.digest, approved_sha256: card.sha256, expected_chat_id: ROOM_IDS[destination], status: state.status,
+      attempts: state.status === 'pending' ? 0 : 1, lease_until: state.active ? now + 60000 : 0, created_at: now - 1000,
+      receipt: state.status === 'sent' ? { message_id: 123, chat_id: ROOM_IDS[destination], approved_sha256: card.sha256 } : null,
+      ...(state.status === 'not_sent' ? { next_attempt_at: state.future ? now + 60000 : now - 1 } : {}) };
+    const key = `${COMPCARD_JOURNAL_ROOT}deliveries/${date}/${slot}/${destination}.json`;
+    await f.bucket.put(key, JSON.stringify(record)); saved.push({ key, value: f.bucket.records.get(key).value });
+  }
+  return { plan, planKey, planValue: f.bucket.records.get(planKey).value, historyKey, historyValue: f.bucket.records.get(historyKey).value, saved };
+}
+for (const { category, slot } of guardCases) {
+  test(`EMs23 ${category}/${slot}: fresh selection excludes aliases and intake without assets`, async () => {
+    for (const source of [undefined, 'owner_drive_intake']) {
+      const f = guardFixture(category, source), now = guardTime(slot);
+      const result = await guardAPI.executeSlot(f.env, f.manifest, f.bucket, slot, now, f.deps, () => now);
+      assert.equal(result.status, 'no_eligible_card');
+      assert.equal(f.assetReads(), 0); assert.deepEqual(f.sends, []);
+      assert.equal(f.bucket.read(`plans/2026-11-13/${slot}.json`), null);
+      assert.equal(f.models[0].fields.status, 'Active');
+    }
+  });
+  test(`EMs23 ${category}/${slot}: frozen plan rejects before asset retrieval and preserves terminal/lease evidence`, async () => {
+    const states = [null, { status: 'pending' }, { status: 'sent' }, { status: 'delivery_uncertain' },
+      { status: 'preparing', active: true }, { status: 'sending', active: true }, { status: 'sending' },
+      { status: 'not_sent', future: true }, { status: 'not_sent' }];
+    for (const source of [undefined, 'owner_drive_intake']) for (const state of states) {
+      const f = guardFixture(category, source), now = guardTime(slot), frozen = await guardFreeze(f, slot, state);
+      const result = await guardAPI.executeSlot(f.env, f.manifest, f.bucket, slot, now, f.deps, () => now);
+      assert.equal(f.assetReads(), 0); assert.deepEqual(f.sends, []);
+      const retained = state && (['sent', 'delivery_uncertain'].includes(state.status) || state.active || state.future);
+      if (retained) for (const saved of frozen.saved) assert.equal(f.bucket.records.get(saved.key).value, saved.value);
+      else if (state?.status === 'sending') assert.ok(result.outcomes.every(row => row.status === 'delivery_uncertain'));
+      else assert.ok(result.outcomes.every(row => row.status === 'blocked' && row.error === 'compcard_automatic_selection_excluded'));
+      assert.equal(f.bucket.records.get(frozen.planKey).value, frozen.planValue);
+      assert.equal(f.bucket.records.get(frozen.historyKey).value, frozen.historyValue);
+      assert.equal(f.env.HYPE_COMPCARD_ENABLED, 'true'); assert.equal(f.env.HYPE_PROMOTION_ENABLED, 'false');
+    }
+  });
+}
+test('existing Tinn and Porto canonical exclusions also stop frozen asset retrieval without expanding scope', async () => {
+  for (const id of ['recW0Whpu9maVjYF6', 'recnl4Fksh6pXEwA1']) for (const { category, slot } of guardCases) {
+    const f = guardFixture(category, undefined, id), now = guardTime(slot);
+    const frozen = await guardFreeze(f, slot, { status: 'pending' });
+    const result = await guardAPI.executeSlot(f.env, f.manifest, f.bucket, slot, now, f.deps, () => now);
+    assert.equal(f.assetReads(), 0); assert.deepEqual(f.sends, []);
+    assert.ok(result.outcomes.every(row => row.status === 'blocked' && row.error === 'compcard_automatic_selection_excluded'));
+    assert.equal(f.bucket.records.get(frozen.planKey).value, frozen.planValue);
   }
 });

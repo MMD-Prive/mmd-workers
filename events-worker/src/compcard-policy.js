@@ -50,7 +50,7 @@ export function destinationsForCategory(category) {
 // Owner excluded this identity from automatic promotion, not from the registry.
 // Keep the approved asset and historical plans/receipts intact.
 export function automaticModelAllowed(modelId) {
-  return modelId !== 'recW0Whpu9maVjYF6' && modelId !== 'recnl4Fksh6pXEwA1';
+  return modelId !== 'recW0Whpu9maVjYF6' && modelId !== 'recnl4Fksh6pXEwA1' && modelId !== 'recHyQc4g70RTldS5';
 }
 
 // Owner's private-work restriction follows the commercial category, not room visibility.

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { APPROVED_COMPCARD_MANIFEST } from './src/compcard-approved-manifest.js';
-import { destinationsForCategory, evaluateCard, buildCompcardCaption, chooseDailyCard } from './src/compcard-policy.js';
+import { automaticModelAllowed, privateAutomationAllowed, destinationsForCategory, evaluateCard, buildCompcardCaption, chooseDailyCard } from './src/compcard-policy.js';
 
 function card(category = 'premium', name = 'Example', id = 'recExampleModel01') {
   return { id: `file-${id}`, file_id: `file-${id}`, model_id: id, canonical_name: name, display_name: name, category, height_cm: 180, weight_kg: 72, caption_stats_allowed: true };
@@ -243,5 +243,36 @@ test('all daily model variants and approved promotion captions exclude the prohi
   }
   for (const promotion of APPROVED_COMPCARD_MANIFEST.promotions) {
     for (const caption of Object.values(promotion.captions)) assert.doesNotMatch(caption, /ทีม/);
+  }
+});
+
+
+test('EMs23 canonical identity is excluded from group automation across categories, aliases and dates', () => {
+  const modelId = 'recHyQc4g70RTldS5';
+  assert.equal(automaticModelAllowed(modelId), false);
+  for (const category of ['exclusive', 'premium', 'standard', 'travel', 'extreme']) {
+    for (const date of ['2026-11-13', '2026-11-20', '2027-02-14']) {
+      for (const source of [undefined, 'owner_drive_intake']) {
+        const c = { ...card(category, 'Changed display alias', modelId), source };
+        assert.equal(chooseDailyCard([c], [], date), null);
+        assert.equal(chooseDailyCard([c], [{ model_id: modelId, date: '2026-10-29', status: 'sent' }], date), null);
+      }
+    }
+  }
+  // The group-automation ban is separate from the canonical record/business eligibility.
+  const c = card('premium', 'EMs23 Faymn', modelId);
+  const recordBefore = record(c);
+  const saved = structuredClone(recordBefore);
+  assert.equal(evaluateCard(c, recordBefore).ok, true);
+  assert.deepEqual(recordBefore, saved);
+});
+
+test('adding EMs23 preserves independent Tinn, Porto and EMs16 scope', () => {
+  for (const id of ['recW0Whpu9maVjYF6', 'recnl4Fksh6pXEwA1']) assert.equal(automaticModelAllowed(id), false);
+  assert.equal(automaticModelAllowed('recbdC0waCS3qp452'), true);
+  assert.equal(automaticModelAllowed('recUnrelatedGuard01'), true);
+  for (const category of ['exclusive', 'premium', 'standard', 'travel', 'extreme']) {
+    assert.equal(privateAutomationAllowed(card(category, 'EMs16', 'recbdC0waCS3qp452')), ['travel', 'extreme'].includes(category));
+    assert.equal(privateAutomationAllowed(card(category, 'Control', 'recUnrelatedGuard01')), true);
   }
 });
