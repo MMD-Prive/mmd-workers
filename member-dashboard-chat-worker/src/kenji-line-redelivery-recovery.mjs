@@ -1,5 +1,6 @@
 import { isRetiredCheckptsCommand } from "./checkpts-command.mjs";
-import { createLineSignature, extractKenjiModelLookupQuery, inferLineIntent, LINE_CARD_ORDINARY_SUBJECTS, requestKenjiRuntimeStatus, resolveLineCardCampaignTrigger, verifyLineSignature } from "./index.js";
+import { kenjiIntakeEventKey } from "./kenji-line-intake-receipt.mjs";
+import { createLineSignature, extractKenjiModelLookupQuery, findConfirmedOperationalIntake, inferLineIntent, LINE_CARD_ORDINARY_SUBJECTS, requestKenjiRuntimeStatus, resolveLineCardCampaignTrigger, verifyLineSignature } from "./index.js";
 import { ownerContextTestAllowed, ownerContextTestRequested } from "./kenji-owner-context-test.mjs";
 import { restrictedReplyCategories, approvedCategoryReply, isExplicitCategoryCommand } from './kenji-reply-category-gate.mjs';
 import { approvedPublicQa } from './kenji-approved-public-qa.mjs';
@@ -209,8 +210,10 @@ function scheduleCanonicalCustomerMemory(ctx, env, events) {
   return work;
 }
 
-async function runOperationalTelemetry(env, operational) {
+export async function runOperationalTelemetry(env, operational) {
   if (!operational?.handled || !operational?.event || !operational?.decision) return null;
+  const key = kenjiIntakeEventKey(operational.event);
+  const intakeReceipts = new Map(key ? [[key, findConfirmedOperationalIntake(env, operational.event)]] : []);
   return writeKenjiAiMessageEvent({
     env,
     event: operational.event,
@@ -218,6 +221,7 @@ async function runOperationalTelemetry(env, operational) {
     delivered: operational.delivered === true,
     attempted: operational.attempted === true,
     deliveryStatus: operational.delivery_status,
+    intakeReceipts,
   }).catch(() => ({ skipped: true, reason: "lv5_operational_telemetry_runtime_error" }));
 }
 

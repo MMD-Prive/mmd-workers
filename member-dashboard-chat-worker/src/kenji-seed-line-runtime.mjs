@@ -6,6 +6,7 @@ import { isEmsAlbumQuestion, EMS_ALBUMS_URL } from "./my-mmd-ems-albums.mjs";
 import { richMenuNavigation, resolveRichMenuNavigation } from "./rich-menu-navigation-reply.mjs";
 import { isCheckptsShortcut, resolveCheckptsShortcut, richMenuConversationStart, resolveRichMenuConversation } from "./rich-menu-conversation.mjs";
 import { CHECKPTS_INTAKE, isRetiredCheckptsCommand } from "./checkpts-command.mjs";
+import { KENJI_LINE_INTAKE_RECEIPTS, confirmedKenjiInboxId } from "./kenji-line-intake-receipt.mjs";
 import { APPLY_PROFILE_IMAGES, isApplyProfileImage, markApplyProfileImage, lineIntakeCommand, lineIntakeTopic, readLineIntakeCatalog, resolveLineIntakeReply } from "./kenji-line-intake-commands.mjs";
 import { resolveKenjiLiveMemberContext } from "./kenji-live-member-truth-adapter.mjs";
 import { handleLineRightsCheck } from "./kenji-line-rights-check.mjs";
@@ -471,13 +472,13 @@ async function findAiEvent(env = {}, telemetryEventId = "") {
   }
 }
 
-export async function writeKenjiAiMessageEvent({ env = {}, event = {}, decision = {}, delivered = false, attempted = false, deliveryStatus = null } = {}) {
+export async function writeKenjiAiMessageEvent({ env = {}, event = {}, decision = {}, delivered = false, attempted = false, deliveryStatus = null, intakeReceipts = new Map() } = {}) {
   const apiKey = text(env.AIRTABLE_API_KEY);
   const baseId = text(env.AIRTABLE_BASE_ID);
   const table = aiEventsTable(env);
   if (!apiKey || !baseId || !table) return { skipped: true, reason: "airtable_env_missing" };
 
-  const sourceEventId = eventIdOf(event);
+  const inboxId = await confirmedKenjiInboxId(intakeReceipts, event);
   const telemetryEventId = kenjiTelemetryEventId(event);
   const existing = await findAiEvent(env, telemetryEventId);
   if (existing?.id) return { id: existing.id, event_id: telemetryEventId, deduped: true };
@@ -503,7 +504,7 @@ export async function writeKenjiAiMessageEvent({ env = {}, event = {}, decision 
     handoff_required: decision.handoff_required === true,
     handoff_reason: handoffReason,
     final_status: telemetryFinalStatus(decision, delivered, attempted),
-    linked_console_inbox_id: `line_${sourceEventId}`.slice(0, 160),
+    ...(inboxId ? { linked_console_inbox_id: inboxId } : {}),
     payload_json: JSON.stringify({
       telemetry_version: "kenji_seed_runtime_v1",
       reply_pack_version: text(decision.reply_pack_version),
@@ -579,14 +580,14 @@ async function sendReply(env = {}, replyToken = "", replyText = "", replyButton 
   }
 }
 
-async function runLegacyShadow(request, env, ctx, legacyWorker, rawBody, events = []) {
+async function runLegacyShadow(request, env, ctx, legacyWorker, rawBody, events, intakeReceipts) {
   if (!legacyWorker?.fetch) return null;
   const shadowRequest = new Request(request.url, {
     method: "POST",
     headers: new Headers(request.headers),
     body: rawBody,
   });
-  const shadowEnv = { ...env, LINE_AUTO_REPLY_ENABLED: "false", [CHECKPTS_INTAKE]: true };
+  const shadowEnv = { ...env, LINE_AUTO_REPLY_ENABLED: "false", [CHECKPTS_INTAKE]: true, [KENJI_LINE_INTAKE_RECEIPTS]: intakeReceipts };
   const profileImages = new Set();
   for (const event of events) {
     if (event?.message?.type !== "image") continue;
@@ -656,7 +657,8 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
   }
 
   const events = Array.isArray(body.events) ? body.events : [];
-  const legacyOutcome = await runLegacyShadow(request, env, ctx, legacyWorker, rawBody, events);
+  const intakeReceipts = new Map();
+  const legacyOutcome = await runLegacyShadow(request, env, ctx, legacyWorker, rawBody, events, intakeReceipts);
   if (!Array.isArray(legacyOutcome?.saved) || legacyOutcome.saved.length !== events.length) {
     return json({ ok: false, error: "line_intake_unavailable" }, 503);
   }
@@ -701,7 +703,9 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
         if (typeof ctx?.waitUntil === "function") ctx.waitUntil(alert);
         else await alert;
       }
-      await writeKenjiAiMessageEvent({env,event,...turn}).catch(()=>null);
+      const telemetry = writeKenjiAiMessageEvent({env,event,...turn,intakeReceipts}).catch(()=>null);
+      if (typeof ctx?.waitUntil === "function") ctx.waitUntil(telemetry);
+      else await telemetry;
       if (turn.delivered) await recordDeliveredKenjiLineReply({env,event,replyText:turn.decision.text}).catch(()=>null);
       saved.push({ok:true,type:event?.type,replied:turn.delivered,reply_source:turn.decision.reply_source});
       continue;
@@ -965,6 +969,7 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
         delivered,
         attempted: shouldReply,
         deliveryStatus: replyResult?.status ?? null,
+        intakeReceipts,
       }).catch(() => ({ skipped: true, reason: "telemetry_runtime_error" }));
       // The transcript records a reply only after LINE confirms delivery. It
       // never treats generated/suggested copy as customer-visible history.
