@@ -48,6 +48,8 @@ test('access revocation closes an open private editor and clears decrypted field
   q('[data-edit-model]').click();
   q('[name=private_note]').value='LOCAL UNSAVED SECRET';q('[data-general-note]').value='PRIVATE GENERAL';
   f.db.Partners[0].fields[apiModule.MODEL_PARTNERS.accessTokenHash]='revoked-fixture';
+  // Navigation may detach status UI before an outstanding request rejects.
+  q('[data-loading]').remove();
   w.dispatchEvent(new w.Event('focus'));
   await settle(()=>w.location.pathname==='/sigil/model/dashboard/partner-login');
   assert.equal(q('[data-model-dialog]').open,false);assert.equal(q('.pcr-shell').hidden,true);
