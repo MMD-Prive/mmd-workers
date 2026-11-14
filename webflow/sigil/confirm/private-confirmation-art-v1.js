@@ -6,6 +6,108 @@
   const style = document.createElement("style");
   style.id = "mmd-private-confirmation-art-v1";
   style.textContent = `
+    @font-face {
+      font-family: "SĪGIL Text";
+      src: url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a619dd598baf067153fd1cc_LINESeedSansTH_W_Rg.woff2") format("woff2");
+      font-style: normal;
+      font-weight: 400;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "SĪGIL Text";
+      src: url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a619dd4dc8d84b48cc84959_LINESeedSansTH_W_Bd.woff2") format("woff2");
+      font-style: normal;
+      font-weight: 700;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "SĪGIL Display";
+      src: url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/69c36cc4b622e6eacbd3a371_SukhumvitSet-Regular.woff2") format("woff2");
+      font-style: normal;
+      font-weight: 400;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "SĪGIL Display";
+      src: url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/69c36cc407bb841fc6877608_SukhumvitSet-SemiBold.woff2") format("woff2");
+      font-style: normal;
+      font-weight: 600;
+      font-display: swap;
+    }
+
+    html body #mmd-job-confirm-v16[data-work-lane="private_model"],
+    html[data-model-job-brand="private_model"] body #mmd-model-confirm-v15,
+    html body #mmd-payment-confirmation.atelier[data-atelier-world="private"] {
+      font-family: "SĪGIL Text", "LINE Seed Sans TH", sans-serif !important;
+      font-weight: 400 !important;
+      line-height: 1.65 !important;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+    html body #mmd-job-confirm-v16[data-work-lane="private_model"] :is(h1,h2,h3,p,span,strong,a,button,small),
+    html[data-model-job-brand="private_model"] body #mmd-model-confirm-v15 :is(h1,h2,h3,p,span,strong,a,button,small),
+    html body #mmd-payment-confirmation.atelier[data-atelier-world="private"] :is(h1,h2,h3,p,span,strong,a,button,small) {
+      font-family: "SĪGIL Text", "LINE Seed Sans TH", sans-serif !important;
+    }
+    html body #mmd-job-confirm-v16[data-work-lane="private_model"] :is(h1,h2,h3,.mjc16__model-name),
+    html[data-model-job-brand="private_model"] body #mmd-model-confirm-v15 :is(h1,h2,h3),
+    html body #mmd-payment-confirmation.atelier[data-atelier-world="private"] :is(h1,h2,h3) {
+      font-family: "SĪGIL Display", "Sukhumvitset", sans-serif !important;
+      font-weight: 600 !important;
+      letter-spacing: -.025em !important;
+      line-height: 1.28 !important;
+    }
+    html body #mmd-job-confirm-v16[data-work-lane="private_model"] .mjc16__intro h1,
+    html[data-model-job-brand="private_model"] body #mmd-model-confirm-v15 .mm15__intro h1,
+    html body #mmd-payment-confirmation.atelier[data-atelier-world="private"] :is(.atelier-hero-copy h1,.mpc-shell h1) {
+      font-size: clamp(31px, 3vw, 42px) !important;
+    }
+    html body #mmd-job-confirm-v16[data-work-lane="private_model"] .mjc16__model-name {
+      font-size: clamp(28px, 2.5vw, 34px) !important;
+      line-height: 1.2 !important;
+    }
+    html body #mmd-job-confirm-v16[data-work-lane="private_model"] :is(.mjc16__eyebrow,.mjc16__section-kicker),
+    html[data-model-job-brand="private_model"] body #mmd-model-confirm-v15 .mm15__intro::before,
+    html body #mmd-payment-confirmation.atelier[data-atelier-world="private"] :is(.atelier-eyebrow,.mpc-kicker) {
+      font-size: 11px !important;
+      font-weight: 700 !important;
+      letter-spacing: .13em !important;
+      line-height: 1.5 !important;
+    }
+    html body #mmd-job-confirm-v16[data-work-lane="private_model"] :is(.mjc16__rows,.mjc16__pricing,.mjc16__payment),
+    html[data-model-job-brand="private_model"] body #mmd-model-confirm-v15 :is(.mm15__rows,.mm15__card,.mm15__confirm),
+    html body #mmd-payment-confirmation.atelier[data-atelier-world="private"] :is(.mpc-lead,.mpc-summary,.mpc-status) {
+      font-size: 15px !important;
+      line-height: 1.65 !important;
+    }
+    html body #mmd-job-confirm-v16[data-work-lane="private_model"] :is(.mjc16__rows,.mjc16__pricing) :is(strong,b),
+    html[data-model-job-brand="private_model"] body #mmd-model-confirm-v15 .mm15__rows :is(strong,b),
+    html body #mmd-payment-confirmation.atelier[data-atelier-world="private"] .mpc-summary :is(strong,b) {
+      font-variant-numeric: tabular-nums;
+      font-feature-settings: "tnum" 1;
+      font-weight: 700 !important;
+    }
+    html body #mmd-job-confirm-v16[data-work-lane="private_model"] :is(.mjc16__paycta-btn,.mjc16__primary),
+    html[data-model-job-brand="private_model"] body #mmd-model-confirm-v15 .mm15__primary,
+    html body #mmd-payment-confirmation.atelier[data-atelier-world="private"] .mpc-btn {
+      font-size: 16px !important;
+      font-weight: 700 !important;
+      letter-spacing: 0 !important;
+      line-height: 1.35 !important;
+    }
+    @media (max-width: 600px) {
+      html body #mmd-job-confirm-v16[data-work-lane="private_model"] .mjc16__intro h1,
+      html[data-model-job-brand="private_model"] body #mmd-model-confirm-v15 .mm15__intro h1,
+      html body #mmd-payment-confirmation.atelier[data-atelier-world="private"] :is(.atelier-hero-copy h1,.mpc-shell h1) {
+        font-size: 30px !important;
+      }
+      html body #mmd-job-confirm-v16[data-work-lane="private_model"] :is(.mjc16__rows,.mjc16__pricing,.mjc16__payment),
+      html[data-model-job-brand="private_model"] body #mmd-model-confirm-v15 :is(.mm15__rows,.mm15__card,.mm15__confirm),
+      html body #mmd-payment-confirmation.atelier[data-atelier-world="private"] :is(.mpc-lead,.mpc-summary,.mpc-status) {
+        font-size: 14px !important;
+      }
+    }
+
     #mmd-payment-confirmation.atelier[data-atelier-world="private"] .atelier-picture {
       background: url("https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90/6af837071e8a2fdb6ccdba34_payment-confirmation-desktop.png") center top / cover no-repeat;
     }
