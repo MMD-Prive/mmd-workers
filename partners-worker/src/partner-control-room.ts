@@ -334,7 +334,7 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
     });state.vaultQueue=save;return save;
   }
 
-  function load() { return api("/v1/partner/dashboard").then(function(data){state.stale=false;hydrate(data);}).catch(function(error){state.stale=true;$("[data-loading]",root).textContent=state.data ? "อัปเดตไม่ได้ · ข้อมูลที่เห็นเป็นข้อมูลครั้งก่อน" : error.message;setFlash(error.message,"error");if(state.data){$$('[data-job-action],[data-edit-model],[data-model-link],[data-order-move]',root).forEach(function(b){b.disabled=true;});} }); }
+  function load() { return api("/v1/partner/dashboard").then(function(data){state.stale=false;hydrate(data);}).catch(function(error){if(state.authBlocked)return;state.stale=true;var loading=$("[data-loading]",root);if(loading)loading.textContent=state.data ? "อัปเดตไม่ได้ · ข้อมูลที่เห็นเป็นข้อมูลครั้งก่อน" : error.message;setFlash(error.message,"error");if(state.data){$$('[data-job-action],[data-edit-model],[data-model-link],[data-order-move]',root).forEach(function(b){b.disabled=true;});} }); }
 
   ${PARTNER_OPERATIONS_JS}
   ${PARTNER_LVMAX_JS}
