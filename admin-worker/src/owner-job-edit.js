@@ -1,4 +1,4 @@
-import { captainProposal } from './owner-job-edit-captain.js';
+import { CAPTAIN, captainProposal } from './owner-job-edit-captain.js';
 import { readCredentialBoundAdminActor } from './credential-bound-admin-session.js';
 import { renderOwnerJobEdit } from './owner-job-edit-page.js';
 import { readVerifiedPaymentBalance } from './verified-payment-balance.js';
@@ -116,6 +116,14 @@ export async function handleOwnerJobEdit(request,env){
     }
     if(path!==EDIT_API||!['GET','POST'].includes(request.method))return reply({ok:false,error:'method_not_allowed'},405);
     if(request.method==='GET'){
+      if(u.searchParams.get('preview')==='captain-receipt'){
+        if(actor.role!=='owner')return reply({ok:false,error:'forbidden'},403);
+        const balance=await readVerifiedPaymentBalance(env,CAPTAIN.session);
+        if(balance.verified_paid_thb!==CAPTAIN.received || balance.credit_applied_thb!==0 || balance.overpaid_amount_thb!==0){
+          return reply({ok:false,error:'receipt_requires_review'},409);
+        }
+        return reply({ok:true,received_thb:balance.verified_paid_thb});
+      }
       if(u.searchParams.get('list')==='1'){
         const q=(u.searchParams.get('q')||'').trim().slice(0,60);
         const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Bangkok'}).format(new Date());

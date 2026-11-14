@@ -1,8 +1,11 @@
+import { captainRoutes, captainSource } from './captain.mjs';
+import { allowAdminConsoleFrame } from '../.build/webflow/global/admin-console-views.mjs';
 import staging from '../.build/staging.mjs';
 import { readCredentialBoundAdminActor } from '../.build/admin-worker/src/credential-bound-admin-session.js';
 export { CreateJobFixtureRun } from './runtime.mjs';
 const origin = 'https://mmd-admin-console-3143-staging.malemodel-bkk.workers.dev';
 const fixtureRoutes = new Map([
+  ...captainRoutes,
   ['/v1/admin/models/sources', 'GET'],
   ['/internal/admin/jobs/create-job/preflight', 'POST'],
   ['/v1/admin/job/create', 'POST'],
@@ -26,7 +29,7 @@ export default {
     if (url.origin !== origin) return new Response(null, { status: 421 });
     const actor = await readCredentialBoundAdminActor(request, env);
     if (actor?.role !== 'owner') return new Response(null, { status: 403 });
-    if (request.method !== fixtureRoutes.get(url.pathname)) return new Response(null, { status: 405 });
+    if (![fixtureRoutes.get(url.pathname)].flat().includes(request.method)) return new Response(null, { status: 405 });
     if (request.method !== 'GET' && request.headers.get('Origin') !== origin) return new Response(null, { status: 403 });
     const run = /(?:^|;\s*)mmd_fixture_run=([a-f0-9-]{36})(?:;|$)/.exec(request.headers.get('Cookie') || '')?.[1];
     if (!run) return Response.json({ error: 'fixture_run_required' }, { status: 409 });
@@ -46,7 +49,7 @@ export default {
     }
     const headers = new Headers(response.headers);
     headers.set('Cache-Control', 'no-store');
-    headers.set('X-MMD-Staging-Source', '022cdf2bd5d05bab6382ab7c8f57ad07e05effd6');
-    return new Response(response.body, { status: response.status, headers });
+    headers.set('X-MMD-Staging-Source', captainRoutes.has(url.pathname) ? captainSource : '022cdf2bd5d05bab6382ab7c8f57ad07e05effd6');
+    return allowAdminConsoleFrame(request, new Response(response.body, { status: response.status, headers }));
   },
 };

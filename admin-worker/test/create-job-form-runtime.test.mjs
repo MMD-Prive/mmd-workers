@@ -5,17 +5,19 @@ import { handleCreateJobWorkerPage } from '../src/create-job-worker-page.js';
 import { run } from './fixtures/create-job-form-runtime.mjs';
 const CLIENT = 'recCLIENT00000001', MODEL = 'recMODEL000000001';
 const settle = async () => { for (let i=0;i<8;i++) await new Promise(resolve=>setImmediate(resolve)); };
-async function page({ create, preflight, privateBackend=false }={}) {
+async function page({ create, preflight, privateBackend=false, captainReceipt }={}) {
   const calls=[], errors=[];
+  const url='https://mmdbkk.com/internal/admin/jobs/create-job'+(captainReceipt?'?draft=captain-zero':'');
   let outcome;
   const html=await handleCreateJobWorkerPage(new Request('https://mmdbkk.com/internal/admin/jobs/create-job')).text();
-  const dom=new JSDOM(html,{url:'https://mmdbkk.com/internal/admin/jobs/create-job',runScripts:'dangerously',beforeParse(w){
+  const dom=new JSDOM(html,{url,runScripts:'dangerously',beforeParse(w){
     w.scrollTo=()=>{};
     w.addEventListener('error',e=>errors.push(e.error));
     w.fetch=async(path,opts={})=>{
       calls.push({path,body:opts.body?JSON.parse(opts.body):null});
-      if(path==='/v1/admin/clients/lineage-lookup')return Response.json({records:[{client_id:CLIENT,client_name:'Client',canonical_name:'Client',line_user_id:privateBackend?'U11111111111111111111111111111111':'U-client',lineage_source:'canonical_client'}]});
-      if(path.startsWith('/v1/admin/models/search?'))return Response.json({items:[{model_id:MODEL,model_name:'Mira',model_lookup_key:privateBackend?'private/standard/Mira':'public/travel/Mira',visibility:privateBackend?'private':'public',access_folder:privateBackend?'standard':'travel',availability_state:'unknown'}]});
+      if(path==='/v1/admin/jobs/edit?preview=captain-receipt')return captainReceipt();
+      if(path==='/v1/admin/clients/lineage-lookup')return Response.json({records:[{client_id:captainReceipt?'recavk9fpKRed8adm':CLIENT,client_name:'Client',canonical_name:'Client',line_user_id:privateBackend?'U11111111111111111111111111111111':'U-client',lineage_source:'canonical_client'}]});
+      if(path.startsWith('/v1/admin/models/search?'))return Response.json({items:[{model_id:captainReceipt?'rec25Xt7QODd763vI':MODEL,model_name:'Mira',model_lookup_key:privateBackend?'private/standard/Mira':'public/travel/Mira',visibility:privateBackend?'private':'public',access_folder:privateBackend?'standard':'travel',availability_state:'unknown'}]});
       if(path==='/internal/admin/jobs/create-job/preflight')return Response.json(await (preflight?.(calls.at(-1).body)||{ok:true,can_create:true,message:'Synthetic readiness passed'}));
       if(path==='/v1/admin/job/create'){
         if(create)return create(calls.at(-1).body);
@@ -37,7 +39,7 @@ async function page({ create, preflight, privateBackend=false }={}) {
     await click('next2');fill('mq','Synthetic');await click('ms');d.querySelector('#models .result').click();await click('next3');
     fill('date','2026-11-20');fill('time','19:00');fill('duration','120');fill('location','Synthetic fixture location');
     if(visibility==='public'){fill('duties','Synthetic event hosting');fill('customerCount','2');}
-    await click('next4');fill('amount','10000');fill('payout','7000');await click('next5');fill('brief','Synthetic model brief');fill('note','Synthetic internal note');await click('next6');
+    await click('next4');fill('amount',captainReceipt?'33000':'10000');fill('payout','7000');await click('next5');fill('brief','Synthetic model brief');fill('note','Synthetic internal note');await click('next6');
     assert.deepEqual(errors,[]);
     assert.equal(d.querySelector('.step:not(.hide)').dataset.step,'7');
   }
@@ -112,4 +114,15 @@ test('HTTP-200 failure and malformed successful response are never presented as 
   for(const response of [Response.json({ok:false,error:'invalid_input'}),new Response('not JSON',{status:200})]){
     const h=await page({create:()=>response});t.after(()=>h.dom.window.close());await h.completeNewForm();await h.click('create');assert.doesNotMatch(h.$('notice').textContent,/สร้างงานสำเร็จ/);assert.equal(h.d.querySelector('.payment-url'),null);
   }
+});
+
+test('Captain draft displays verified receipt and proposed balance without sending writes',async t=>{
+  const h=await page({privateBackend:true,captainReceipt:()=>Response.json({ok:true,received_thb:7500})});
+  t.after(()=>h.dom.window.close());
+  await h.completeNewForm({visibility:'private'});
+  assert.match(h.$('review').textContent,/33,000.*7,500.*25,500/);
+  assert.equal(h.$('create').disabled,true);
+  await h.$('create').onclick();
+  assert.equal(h.calls.filter(call=>call.path==='/v1/admin/jobs/edit?preview=captain-receipt'&&call.body===null).length,1);
+  assert.equal(h.calls.some(call=>/\/job\/create$|\/preflight$/.test(call.path)),false);
 });

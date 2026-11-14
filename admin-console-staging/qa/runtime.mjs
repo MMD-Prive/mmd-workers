@@ -1,3 +1,4 @@
+import { captainRoutes, handleCaptainFixture } from './captain.mjs';
 import { scope } from './context.mjs';
 import { setup } from '../.build/admin-worker/test/fixtures/create-job-form-runtime.mjs';
 import admin from '../.build/admin-worker/src/admin-login-hero-worker.js';
@@ -14,6 +15,7 @@ export class CreateJobFixtureRun {
     return result;
   }
   async handle(request) {
+    if (captainRoutes.has(new URL(request.url).pathname)) return handleCaptainFixture(request, this.state.storage);
     const snapshot = await this.state.storage.get('fixture');
     const fixture = setup({ privateJob: true });
     for (const [table, rows] of snapshot?.records || []) fixture.records.set(table, rows);

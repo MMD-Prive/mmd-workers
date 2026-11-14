@@ -10,6 +10,8 @@ on:
   pull_request:
     paths:
       - 'admin-console-staging/**'
+      - 'admin-worker/src/create-job-worker-page.js'
+      - 'admin-worker/src/owner-job-edit.js'
       - '.github/workflows/admin-console-staging-security-ci.yml'
 
 permissions:
@@ -48,5 +50,6 @@ jobs:
         run: |
           set -euo pipefail
           node admin-console-staging/qa/build.mjs
+          npm ci --ignore-scripts --no-audit --no-fund
           node --test admin-console-staging/qa/runtime.test.mjs
           test "$(sed -n 's/^workers_dev = //p' admin-console-staging/wrangler.qa.toml)" = false
