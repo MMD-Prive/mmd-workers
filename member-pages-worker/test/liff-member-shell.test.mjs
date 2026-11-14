@@ -218,7 +218,7 @@ describe("same-site /member/liff shell", () => {
 
   it("queues the canonical profile before supplemental status and history reads", async () => {
     const html = await (await shell("/member/liff?intent=status")).text();
-    const start = html.indexOf("async function readProfile(");
+    const start = html.indexOf("function setProfileRetry(");
     const end = html.indexOf("function requestId()", start);
     assert.ok(start > 0 && end > start);
     const calls = [];
@@ -226,6 +226,7 @@ describe("same-site /member/liff shell", () => {
     const result = await runInNewContext(html.slice(start, end) + "readProfile({ hydrate: false })", {
       CONFIG: { profileEndpoint: "/member/api/liff/profile" },
       profileGeneration: 0,
+      document: { getElementById() { return null; } },
       hideMemberProfile() {}, personalMainUI:{load(){},reset(){}},
       memberApiFetch(url) { calls.push(url); return Promise.resolve(Response.json({ ok: true, data })); },
       readQuickMembershipStatus() { calls.push("membership"); },
@@ -1454,11 +1455,11 @@ test('late welcome preserves a verified brand while startup remains neutral', as
 
 test('profile reads pass the dedicated Worker brand authority to rendering', async () => {
   const html=await(await shell('/member/liff?intent=status')).text();
-  const start=html.indexOf('async function readProfile('),end=html.indexOf('function requestId()',start);
+  const start=html.indexOf('function setProfileRetry('),end=html.indexOf('function requestId()',start);
   let received;
   const data={member_id:'recMemberA',brand_audience:'sigil'};
   await runInNewContext(html.slice(start,end)+'readProfile({hydrate:false})',{
-    CONFIG:{profileEndpoint:'/member/api/liff/profile'},profileGeneration:0,hideMemberProfile(){},personalMainUI:{load(){},reset(){}},
+    CONFIG:{profileEndpoint:'/member/api/liff/profile'},profileGeneration:0,document:{getElementById(){return null;}},hideMemberProfile(){},personalMainUI:{load(){},reset(){}},
     memberApiFetch:async()=>Response.json({ok:true,data},{headers:{'x-mmd-brand-authority':'canonical_member_account_v1'}}),
     renderProfile(...args){received=args;},renderCustomerContact(){},readQuickMembershipStatus(){},readOwnHistoryPreview(){},hydrateMemberHome(){},Promise
   });
