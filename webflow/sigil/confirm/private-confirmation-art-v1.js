@@ -111,6 +111,9 @@
     #mmd-payment-confirmation.atelier[data-atelier-world="private"] .atelier-picture {
       background: url("https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90/6af837071e8a2fdb6ccdba34_payment-confirmation-desktop.png") center top / cover no-repeat;
     }
+    #mmd-payment-confirmation.atelier[data-atelier-world="private"]::before {
+      content: none !important;
+    }
     #mmd-payment-confirmation.atelier[data-atelier-world="private"] .atelier-picture img {
       opacity: 0 !important;
     }
