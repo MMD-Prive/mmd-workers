@@ -338,7 +338,7 @@ test('held job release keeps the quoted deposit and both travel amounts', async 
   assert.equal(session.fldqYkGm9Vd3P366W, 600);
   assert.equal(h.records.get(PAYMENTS)[0].fields.fldvCSwrUW8OMAooS, 5400);
   const details = await readFixtureConfirmation(h, session);
-  assert.equal(details.pricing.deposit_basis_thb, privateFixture ? 20000 : 18000);
+  assert.equal(details.pricing.deposit_basis_thb, 18000);
   assert.equal(details.pricing.deposit_due_thb, 5400);
   assert.equal(details.payment.amount_due_thb, 5400);
   assert.equal(details.billing.total_thb, 19000);
