@@ -108,6 +108,12 @@
       }
     }
 
+    #mmd-payment-confirmation.atelier[data-atelier-world="private"]::before,
+    html body #mmd-job-confirm-v16.mmd-atelier[data-work-lane="private_model"]::before,
+    html[data-model-job-brand="private_model"] body #mmd-model-confirm-v15::before {
+      opacity: .65 !important;
+    }
+
     #mmd-payment-confirmation.atelier[data-atelier-world="private"]::before {
       content: "" !important;
       background-color: #0d0b0a !important;
