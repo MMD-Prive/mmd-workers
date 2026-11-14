@@ -7,10 +7,15 @@ import {pathToFileURL} from 'node:url';
 import {validateReleaseInputs,verifyPolicyCheckout,createPolicyTransport} from './care-back-november-policy-release.mjs';
 import {releaseHomeDelta,parseHomeManifest} from './my-mmd-home-delta-adapter.mjs';
 export async function homeMain(argv=process.argv.slice(2),env=process.env){
+ const receiptPath=resolve(env.RUNNER_TEMP||'/tmp','my-mmd-home-release-receipt.json');
+ const save=value=>writeFileSync(receiptPath,JSON.stringify(value),{mode:0o600});
+ const preflight=stage=>save({phase:'preflight',stage,upload:'not_started',promotion:'not_started'});
+ preflight('validate-inputs');
  assert.equal(argv.length,1);assert.ok(['--inspect','--execute-approved'].includes(argv[0]));
  const mode=argv[0].slice(2);
  // Reuse the existing identity/input validator without invoking a policy release.
  const input=validateReleaseInputs({...env,CARE_BACK_WORKER:'member-pages-worker'},mode);
+ preflight('validate-manifest');
  const manifestPath=resolve(env.PATCH_MANIFEST);
  const bytes=readFileSync(manifestPath);
  const manifest=parseHomeManifest(bytes,env.EXPECTED_MANIFEST_SHA256,'member-pages-worker');
@@ -21,11 +26,13 @@ export async function homeMain(argv=process.argv.slice(2),env=process.env){
   execFileSync('git',['merge-base','--is-ancestor',manifest.source_sha,env.APPROVED_SHA],{stdio:'ignore'});
   return {source_sha:manifest.source_sha,manifest_sha256:env.EXPECTED_MANIFEST_SHA256};
  };
+ preflight('verify-source-checkout');
  await sourceCheck();
+ preflight('release-contract');
  return releaseHomeDelta({...input,manifestBytes:bytes,expectedManifestHash:env.EXPECTED_MANIFEST_SHA256,
   expectedModuleHash:env.EXPECTED_MODULE_SHA256,expectedVersion:env.EXPECTED_VERSION,expectedDeployment:env.EXPECTED_DEPLOYMENT,
   sourceCheck,call:createPolicyTransport(env.CLOUDFLARE_API_TOKEN,'member-pages-worker',{allowWrites:mode==='execute-approved'}),
-  save:value=>writeFileSync(resolve(env.RUNNER_TEMP||'/tmp','my-mmd-home-release-receipt.json'),JSON.stringify(value),{mode:0o600}),
+  save,
  },env);
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){

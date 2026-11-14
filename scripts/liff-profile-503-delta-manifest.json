@@ -2,15 +2,15 @@
   "schema": "my_mmd_home_artifact_delta_v1",
   "worker": "member-pages-worker",
   "source_sha": "de0e236412c4b44289fa25ac934d83b024da13d4",
-  "baseline_version": "5585cd82-96d4-495f-aba0-99b49fb487a5",
-  "baseline_deployment": "ceb97887-5ee8-4caa-b1ca-2dfd5f83b864",
+  "baseline_version": "2992448f-259a-4978-8e59-087518939e4a",
+  "baseline_deployment": "4b5f9ffd-f2a6-4051-b436-a798d894dc38",
   "main_module": "model-console-live-entrypoint.js",
   "modules": [
     {
       "name": "model-console-live-entrypoint.js",
       "type": "esm",
-      "before_sha256": "f0a088e21d42f51175c5e1cc67efd5a60dd588cc02f01c758ee614f8abe4f8c7",
-      "after_sha256": "9a8d8844dc465731f4ca81b064da903e0841ad452c308426ab44b7a576af51b5",
+      "before_sha256": "7778e6bf8083abdf9acbbb9e47d347bfd99600d447424d801c6c5d93c3c643a9",
+      "after_sha256": "39572dcb63c525f087f23e4eeff83555ac5f37d32c42519afa350310d9270815",
       "patches": [
         {
           "id": "profile-retry-owner-baseline-shell",
