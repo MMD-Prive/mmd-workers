@@ -49,6 +49,69 @@
         background-position: 0 0, 0 0, center top !important;
       }
     }
+
+    #mmd-job-confirm-v16[data-work-lane="private_model"] .mjc16__brand::before,
+    html[data-model-job-brand="private_model"] #mmd-model-confirm-v15 .mm15__brand::before {
+      display: none !important;
+    }
+    #mmd-job-confirm-v16[data-work-lane="private_model"] .mjc16__brand img,
+    html[data-model-job-brand="private_model"] #mmd-model-confirm-v15 .mm15__brand img,
+    #mmd-payment-confirmation[data-atelier-world="private"] .mpc-brand img {
+      display: block !important;
+      width: 196px !important;
+      height: 98px !important;
+      max-width: none !important;
+      object-fit: contain !important;
+      margin: -22px -42px !important;
+      flex: none !important;
+    }
+    #mmd-payment-confirmation[data-atelier-world="private"] .mpc-brand strong {
+      display: none !important;
+    }
   `;
   (document.head || document.documentElement).appendChild(style);
+
+  const logo2027 = "https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90/6aec9538faadf68fb64e70eb_SIGIL%20Logo%202027.webp";
+  const previous = new WeakMap();
+  const brands = [
+    ["#mmd-job-confirm-v16 .mjc16__brand img", "#mmd-job-confirm-v16[data-work-lane='private_model']"],
+    ["#mmd-model-confirm-v15 .mm15__brand img", "html[data-model-job-brand='private_model']"],
+    ["#mmd-payment-confirmation .mpc-brand img", "#mmd-payment-confirmation[data-atelier-world='private']"]
+  ];
+  let queued = false;
+  function updateLogo() {
+    queued = false;
+    for (const [imageSelector, privateSelector] of brands) {
+      const isPrivate = !!document.querySelector(privateSelector);
+      document.querySelectorAll(imageSelector).forEach((img) => {
+        if (isPrivate) {
+          if (img.getAttribute("src") === logo2027) return;
+          previous.set(img, {src: img.getAttribute("src"), alt: img.getAttribute("alt")});
+          img.src = logo2027;
+          img.alt = "SĪGIL SYSTEM";
+        } else if (previous.has(img) && img.getAttribute("src") === logo2027) {
+          const original = previous.get(img);
+          if (original.src === null) img.removeAttribute("src");
+          else img.setAttribute("src", original.src);
+          if (original.alt === null) img.removeAttribute("alt");
+          else img.setAttribute("alt", original.alt);
+          previous.delete(img);
+        }
+      });
+    }
+  }
+  function queueUpdate() {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(updateLogo);
+  }
+  function observe() {
+    updateLogo();
+    new MutationObserver(queueUpdate).observe(document.documentElement, {
+      childList: true, subtree: true, attributes: true,
+      attributeFilter: ["data-work-lane", "data-model-job-brand", "data-atelier-world"]
+    });
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", observe, {once: true});
+  else observe();
 })();
