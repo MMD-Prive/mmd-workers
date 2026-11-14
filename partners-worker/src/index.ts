@@ -1,3 +1,4 @@
+import { handleAnnouncements, type CandidateSnapshot } from "./partner-announcements";
 import { travelEtaFromEvents } from "../../shared/model-travel-eta.mjs";
 import { customerSessionLifecycle } from "../../shared/model-travel-lifecycle.mjs";
 import { resolveModelSalesOffer } from "../../shared/model-sales-control-v1.mjs";
@@ -455,6 +456,7 @@ export default {
         return await handlePartnerVerify(request, runtimeEnv);
       }
 
+      if (/^\/v1\/partner\/(?:admin\/)?announcements(?:\/(?:detail|save|propose|decision|media|preferences))?$/.test(url.pathname)) return await handlePartnerAnnouncements(request, runtimeEnv);
       if (request.method === "GET" && url.pathname === "/v1/partner/jobs/detail") return await handlePartnerJobDetail(request, runtimeEnv);
       if (["GET", "POST"].includes(request.method) && url.pathname === "/v1/partner/roster-order") {
         return await handlePartnerRosterOrder(request, runtimeEnv);
@@ -4905,3 +4907,52 @@ if(typeof liff!=='undefined')void enter(false);
   </script>
 </body>
 </html>`;
+
+async function announcementCandidate(env: RuntimeEnv, partnerId: string, modelId: string, assetId: string): Promise<CandidateSnapshot> {
+  const deny = (message: string): never => { throw Object.assign(new Error(message), {status:403}); };
+  if (![partnerId, modelId, assetId].every(id => /^rec[A-Za-z0-9]{14,24}$/.test(id))) deny('รหัสนายแบบหรือรูปไม่ถูกต้อง');
+  const partner = await getAirtableRecord(env, env.AIRTABLE_TABLE_MODEL_PARTNERS, partnerId);
+  if (normalizeStatus(fieldText(partner, MODEL_PARTNERS.status)) !== 'active' || normalizeStatus(fieldText(partner, MODEL_PARTNERS.approvalStatus)) !== 'recognized') deny('บัญชี Partner ยังไม่มีสิทธิ์เสนอคน');
+  const referrals = await listLinkedRecordsForPartner(env, env.AIRTABLE_TABLE_MODEL_REFERRALS, MODEL_REFERRALS.partner, partner.id, fieldText(partner, MODEL_PARTNERS.partnerId) || '');
+  const active = referrals.some(row => fieldLinkIds(row, MODEL_REFERRALS.model).includes(modelId) && !['inactive','revoked','transferred','archived'].includes(normalizeStatus(fieldText(row, MODEL_REFERRALS.ownershipStatus))));
+  if (!active) deny('นายแบบนี้ไม่ได้อยู่ในสังกัดที่บัญชีนี้จัดการได้');
+  const [model, asset] = await Promise.all([
+    getAirtableRecord(env, env.AIRTABLE_TABLE_MODELS, modelId),
+    getAirtableRecord(env, env.AIRTABLE_TABLE_PARTNER_ASSETS, assetId)
+  ]);
+  if (!fieldLinkIds(asset, PARTNER_ASSETS.partner).includes(partnerId) || !fieldLinkIds(asset, PARTNER_ASSETS.model).includes(modelId) ||
+      !['image/jpeg','image/png','image/webp'].includes((fieldText(asset, PARTNER_ASSETS.fileType) || '')) ||
+      !['photo','comp_card','portfolio'].includes((fieldText(asset, PARTNER_ASSETS.fileCategory) || '')) ||
+      ['rejected','removed','deleted','revoked'].includes(normalizeStatus(fieldText(asset, PARTNER_ASSETS.reviewStatus))) ||
+      !(fieldText(asset, PARTNER_ASSETS.r2Key) || '').startsWith('partner-shared/')) deny('กรุณาเลือกรูปที่แชร์กับ MMD ของนายแบบคนนี้');
+  return { model_id:modelId, model_name:fieldText(model, MODELS.workingName) || fieldText(model, MODELS.nickname) || modelId, asset_id:assetId, asset_name:fieldText(asset, PARTNER_ASSETS.fileName) || 'รูปที่เสนอ' };
+}
+
+async function handlePartnerAnnouncements(request: Request, env: RuntimeEnv): Promise<Response> {
+  const url = new URL(request.url);
+  const owner = url.pathname.startsWith('/v1/partner/admin/');
+  let actor;
+  if (owner) {
+    const error = verifyAdminAuthority(request, env);
+    if (error) return error;
+    actor = {id:request.headers.get('x-mmd-owner-id') || 'owner-service', name:'MMD', owner:true};
+  } else {
+    const verified = await verifyPartnerTokenFromRequest(request, env);
+    if (!verified.ok) return verified.response;
+    actor = {id:verified.value.partnerRecord.id, name:fieldText(verified.value.partnerRecord, MODEL_PARTNERS.partnerName) || 'Partner', owner:false};
+  }
+  const bucket = (env as RuntimeEnv & { PARTNER_ASSETS?: R2Bucket }).PARTNER_ASSETS;
+  if (!bucket) return errorResponse(request, env, 'announcements_unavailable', 'กระดานประกาศยังโหลดไม่ได้', 503, true);
+  if (url.pathname.endsWith('/media')) {
+    if (!owner || request.method !== 'GET') return errorResponse(request, env, 'forbidden', 'ไม่มีสิทธิ์ดูรูปนี้', 403, false);
+    const id = url.searchParams.get('asset_id') || '';
+    if (!/^rec[A-Za-z0-9]{14,24}$/.test(id)) return errorResponse(request, env, 'invalid_asset', 'ไม่พบรูป', 404, false);
+    const asset = await getAirtableRecord(env, env.AIRTABLE_TABLE_PARTNER_ASSETS, id);
+    const key = (fieldText(asset, PARTNER_ASSETS.r2Key) || ''), type = (fieldText(asset, PARTNER_ASSETS.fileType) || '');
+    if (!key.startsWith('partner-shared/') || !['image/jpeg','image/png','image/webp'].includes(type) || ['removed','deleted','revoked'].includes(normalizeStatus(fieldText(asset, PARTNER_ASSETS.reviewStatus)))) return errorResponse(request, env, 'invalid_asset', 'ไม่พบรูป', 404, false);
+    const object = await bucket.get(key);
+    if (!object) return errorResponse(request, env, 'invalid_asset', 'ไม่พบรูป', 404, false);
+    return new Response(object.body, {headers:{'content-type':type,'cache-control':'no-store, private','x-content-type-options':'nosniff','referrer-policy':'no-referrer'}});
+  }
+  return handleAnnouncements(request, {bucket, actor, candidate:(partner, model, asset)=>announcementCandidate(env, partner, model, asset)});
+}

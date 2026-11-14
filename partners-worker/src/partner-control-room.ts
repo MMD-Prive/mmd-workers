@@ -1,3 +1,4 @@
+import { PARTNER_ANNOUNCEMENTS_JS, PARTNER_ANNOUNCEMENTS_CSS } from "./partner-announcements-ui";
 import { PARTNER_LVMAX_JS, PARTNER_LVMAX_CSS } from "./partner-lvmax";
 import { PARTNER_HERO_JS } from "./partner-dashboard-skin";
 import { PARTNER_OPERATIONS_JS, PARTNER_OPERATIONS_CSS } from "./partner-operations";
@@ -43,7 +44,7 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
         if (!response.ok || !payload.ok) {
           var code = payload.error && typeof payload.error === "object" ? payload.error.code : payload.error;
           var messages = {job_detail_changed:"รายละเอียดงานเปลี่ยน กรุณาโหลดข้อมูลล่าสุด",rate_required:"กรอกเรททั้งสองช่องก่อนส่ง",partner_model_scope_forbidden:"โมเดลนี้ไม่อยู่ในสังกัดที่บัญชีนี้จัดการได้",partner_session_scope_forbidden:"บัญชีนี้ไม่มีสิทธิ์ดูงานนี้",roster_order_conflict:"ลำดับถูกแก้จากอีกอุปกรณ์ กรุณาโหลดลำดับล่าสุดก่อนบันทึก",vault_conflict:"ข้อมูลถูกแก้จากอีกอุปกรณ์ กรุณาสำรองแล้วโหลด Vault ใหม่ก่อนบันทึก",vault_revision_required:"กรุณาโหลด Vault ใหม่ก่อนบันทึก",job_already_closed:"งานนี้สรุปผลแล้ว",explicit_share_required:"กรุณายืนยัน Share with MMD",official_verify_required:"งานอยู่ในขั้น Official Verify · ระบบจะเปิดการยืนยันเมื่อการตรวจเสร็จ",partner_confirmation_already_final:"คำตอบของงานนี้ถูกบันทึกแล้ว · รีเฟรชเพื่อดูสถานะล่าสุด",partner_not_active:"สถานะพาร์ทเนอร์กำลังอยู่ในขั้นตรวจสอบ",partner_not_recognized:"Partner Review ของ Boss Per กำลังดำเนินการ",telegram_connect_required:"เชื่อม Telegram เพื่อรับแจ้งงาน · Dashboard ใช้งานได้ตามปกติ",telegram_binding_conflict:"กรุณาติดต่อ MMD เพื่อตรวจสอบบัญชี Telegram"};
-          throw new Error(messages[code] || "กรุณาลองอีกครั้ง หรือติดต่อ MMD เพื่อตรวจสอบรายการ");
+          throw new Error((code === "announcement_error" && payload.error.message) || messages[code] || "กรุณาลองอีกครั้ง หรือติดต่อ MMD เพื่อตรวจสอบรายการ");
         }
         return payload;
       });
@@ -177,7 +178,7 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
     $(".pcr-shell", root).hidden = false;
     $("[data-loading]", root).textContent = "";
     $("[data-partner-name]", root).textContent = (data.partner && data.partner.name) || "SĪGIL Partner";
-    prepareMissionHome(); prepareLvHome(); renderMetrics(data); renderJobs(data); renderModels(data); renderEarnings(data); renderTelegram(data);
+    prepareMissionHome(); prepareLvHome(); prepareAnnouncementBoard(); renderMetrics(data); renderJobs(data); renderModels(data); renderEarnings(data); renderTelegram(data);
     bindDynamic(); renderOperations(data); renderLvAttention(data);
   }
 
@@ -343,6 +344,7 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
 
   ${PARTNER_OPERATIONS_JS}
   ${PARTNER_LVMAX_JS}
+  ${PARTNER_ANNOUNCEMENTS_JS}
 
   $$('[data-view]',root).forEach(function(button){button.onclick=function(){showView(button.dataset.view);};});
   $("[data-open-add]",root).onclick=function(){$("[data-add-dialog]",root).showModal();};
@@ -378,4 +380,5 @@ export const PARTNER_CONTROL_ROOM_CSS = String.raw`
 @media(max-width:520px){.pcr-metrics{grid-template-columns:1fr 1fr}.pcr-metrics article{padding:14px}.pcr-metrics strong{font-size:18px}.pcr-section{padding:14px;border-radius:20px}.pcr-job,.pcr-model{padding:14px}.pcr-model{grid-template-columns:66px minmax(0,1fr)}.pcr-model-copy>p{font-size:13px}.pcr-dialog{width:100%;max-height:100vh;height:100vh;border-radius:0}.pcr-form{padding:16px}}
 ${PARTNER_OPERATIONS_CSS}
 ${PARTNER_LVMAX_CSS}
+${PARTNER_ANNOUNCEMENTS_CSS}
 `;

@@ -1,8 +1,14 @@
+import { ANNOUNCEMENTS_OWNER_JS } from './partner-announcements-console.js';
 import { readCredentialBoundAdminActor } from './credential-bound-admin-session.js';
 import { readModelPayoutAdjustmentAudit } from './model-payout-adjustments.js';
 const PAGE='/internal/admin/partners';
 const ROOT='/v1/admin/partners/';
 const ROUTES={
+  'announcements':['GET','announcements'],
+  'announcement-detail':['GET','announcements/detail'],
+  'announcement-save':['POST','announcements/save'],
+  'announcement-decision':['POST','announcements/decision'],
+  'announcement-media':['GET','announcements/media'],
   'requests':['GET','model-changes'],
   'decision':['POST','model-changes/decision'],
   'agreements':['GET','working-systems'],
@@ -52,6 +58,9 @@ export async function handlePartnerOwnerConsole(request,env,ctx){
   // Fixed destinations only. No generic proxy or browser-owned admin identity.
   const target=new URL('https://partners-worker.internal/v1/partner/admin/'+route[1]);
   if(key==='asset-preview'){const id=url.searchParams.get('request_id')||'';if(!/^rec[A-Za-z0-9]{14,24}$/.test(id))return json({ok:false,error:'request_invalid'},400);target.searchParams.set('request_id',id);}
+  if (key === 'announcements' && url.searchParams.has('cursor')) target.searchParams.set('cursor', (url.searchParams.get('cursor') || '').slice(0,2048));
+  if (key === 'announcement-detail') target.searchParams.set('id', url.searchParams.get('id') || '');
+  if (key === 'announcement-media') target.searchParams.set('asset_id', url.searchParams.get('asset_id') || '');
   return env.PARTNERS_WORKER.fetch(new Request(target,{method:request.method,headers:{'content-type':'application/json','x-mmd-service-binding':'admin-worker','x-mmd-owner-id':String(actor.id),'x-mmd-owner-role':actor.role},body:request.method==='POST'?await request.text():undefined}));
 }
 async function partnerAdminRead(env,actor,path){
@@ -222,7 +231,7 @@ async function handlePartnerFinanceAudit(env,actor){
     rows,orphan_commissions:orphanCommissions
   });
 }
-const PAGE_HTML=String.raw`<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>SĪGIL · Partner Review</title><style>*{box-sizing:border-box}body{margin:0;background:#12100d;color:#eee7d8;font:16px/1.6 system-ui}main{max-width:1000px;margin:auto;padding:28px 20px}a{color:#e6bd72}h1{font-size:32px}nav{display:flex;gap:10px;flex-wrap:wrap}button,input,textarea,select{font:inherit;padding:10px;border:1px solid #59462c;border-radius:10px;background:#211b13;color:#fff}button{cursor:pointer;min-height:44px}button:disabled{opacity:.5}article{padding:20px;border:1px solid #463923;border-radius:18px;margin:16px 0}dl{display:grid;grid-template-columns:1fr 2fr;gap:8px;overflow-wrap:anywhere}dt{color:#cbb28b}dd{margin:0}textarea{width:100%;margin:14px 0}.actions{display:flex;gap:10px;flex-wrap:wrap}article img{display:block;max-width:100%;max-height:420px;margin:16px 0}input[type=checkbox]{width:auto}#status{position:sticky;top:0;background:#12100d;padding:12px}small{color:#cbb28b}label{display:grid;gap:6px;margin:12px 0}</style></head><body><main><a href="/internal/admin/dashboard">← MMD OS</a><small> · SĪGIL PARTNER</small><h1>Partner Review</h1><p>ตรวจข้อมูลที่ Partner เลือกแชร์ ข้อมูลใน Private Vault ไม่ปรากฏที่นี่</p><nav><button data-tab="finance-audit">Finance & Audit</button><button data-tab="requests">โปรไฟล์ / รูป / ประสานงาน</button><button data-tab="agreements">ข้อตกลง</button><button data-tab="settlements">ตรวจยอด / สร้างรายได้</button><button data-tab="ledger">รายได้ / จ่ายเงิน</button><a href="/internal/admin/kenji">Sales Control ใน Kenji → Models</a></nav><p id="status" role="status"></p><section id="content"></section></main><script>
+const PAGE_HTML=String.raw`<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>SĪGIL · Partner Review</title><style>*{box-sizing:border-box}body{margin:0;background:#12100d;color:#eee7d8;font:16px/1.6 system-ui}main{max-width:1000px;margin:auto;padding:28px 20px}a{color:#e6bd72}h1{font-size:32px}nav{display:flex;gap:10px;flex-wrap:wrap}button,input,textarea,select{font:inherit;padding:10px;border:1px solid #59462c;border-radius:10px;background:#211b13;color:#fff}button{cursor:pointer;min-height:44px}button:disabled{opacity:.5}article{padding:20px;border:1px solid #463923;border-radius:18px;margin:16px 0}dl{display:grid;grid-template-columns:1fr 2fr;gap:8px;overflow-wrap:anywhere}dt{color:#cbb28b}dd{margin:0}textarea{width:100%;margin:14px 0}.actions{display:flex;gap:10px;flex-wrap:wrap}article img{display:block;max-width:100%;max-height:420px;margin:16px 0}input[type=checkbox]{width:auto}#status{position:sticky;top:0;background:#12100d;padding:12px}small{color:#cbb28b}label{display:grid;gap:6px;margin:12px 0}</style></head><body><main><a href="/internal/admin/dashboard">← MMD OS</a><small> · SĪGIL PARTNER</small><h1>Partner Review</h1><p>ตรวจข้อมูลที่ Partner เลือกแชร์ ข้อมูลใน Private Vault ไม่ปรากฏที่นี่</p><nav><button data-tab="announcements">MMD Announcement</button><button data-tab="finance-audit">Finance & Audit</button><button data-tab="requests">โปรไฟล์ / รูป / ประสานงาน</button><button data-tab="agreements">ข้อตกลง</button><button data-tab="settlements">ตรวจยอด / สร้างรายได้</button><button data-tab="ledger">รายได้ / จ่ายเงิน</button><a href="/internal/admin/kenji">Sales Control ใน Kenji → Models</a></nav><p id="status" role="status"></p><section id="content"></section></main><script>
 (function(){
   var view='finance-audit',data=[],generation=0,blobs=[];
   var status=document.querySelector('#status'),content=document.querySelector('#content');
@@ -259,8 +268,10 @@ const PAGE_HTML=String.raw`<!doctype html><html lang="th"><head><meta charset="u
   async function preview(card,row,version){
     try {var response=await fetch('/v1/admin/partners/asset-preview?request_id='+encodeURIComponent(row.request_id),{credentials:'same-origin',cache:'no-store',referrerPolicy:'no-referrer'});if(!response.ok)throw Error('เปิดรูปสำหรับตรวจไม่สำเร็จ');var digest=response.headers.get('x-media-sha256'),blob=await response.blob();if(version!==generation)return;var image=document.createElement('img'),url=URL.createObjectURL(blob);blobs.push(url);image.alt='รูปที่ Partner ขอให้ตรวจ';image.onload=function(){card.dataset.reviewedSha256=digest;};image.src=url;card.querySelector('[data-preview]').replaceChildren(image);}catch(e){if(version===generation)card.querySelector('[data-preview]').textContent=e.message;}
   }
+  ${ANNOUNCEMENTS_OWNER_JS}
   async function load(){
     var version=++generation,currentView=view;status.textContent='กำลังโหลด';blobs.forEach(function(u){URL.revokeObjectURL(u);});blobs=[];
+    if(currentView==='announcements'){await loadAnnouncementsOwner(version,false);return;}
     try {var d=await api(currentView);if(version!==generation)return;if(currentView==='finance-audit'){data=d.rows||[];content.innerHTML=financeAuditView(d);status.textContent='Finance & Audit · '+data.length+' sessions';return;}data=d.requests||d.commissions||d.sessions||[];
       content.innerHTML=data.map(function(row,i){
         if(currentView==='settlements')return '<article data-index="'+i+'">'+settlementCard(row)+'</article>';

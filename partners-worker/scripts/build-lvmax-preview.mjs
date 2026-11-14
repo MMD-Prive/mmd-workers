@@ -12,15 +12,21 @@ const date=(days,hour)=>{const d=new Date();d.setUTCDate(d.getUTCDate()+days);d.
 const jobs=[0,1,2].map((i)=>({session_record_id:'recJOB'+String(i).repeat(14),model_record_id:ids[i],model_name:models[i].display_name,start_at:date(i+1,[18,14,10][i]),end_at:date(i+1,[20,16,12][i]),date:date(i+1,18),work_type:['งานถ่ายภาพ','งานอีเวนต์','งานแคมเปญ'][i],location:['ล็อบบี้สตูดิโอ A','จุดลงทะเบียนอาคาร B','ทางเข้าอาคาร C'][i],client_alias:'ลูกค้าตัวอย่าง',working_system:'co_partner',status:i===1?'pending':'confirmed',confirmation_allowed:i===1,partner_source_rate_thb:8000,notification_status:i===1?'pending_change':'sent'}));
 jobs.push({...jobs[0],session_record_id:'recOLD00000000000',start_at:date(-3,18),end_at:date(-3,20),status:'completed',confirmation_allowed:false});
 const data={ok:true,partner:{id:'partner-design-example',name:'MY PARTNER · ข้อมูลจำลอง',telegram_connected:false},models,jobs,model_changes:[],commissions:[],summary:{activeModels:4,upcomingJobs:3,pendingAmount:0,paidAmount:0},finance:{summary:{},rows:[],payout_profile:{}}};
+const announcements=[0,1,2].map(i=>({id:'announcement-fixture-'+i,revision:'fixture-'+i,title:['ถ่ายภาพแคมเปญ · ลุคเรียบมั่นใจ','เปิดตัวแบรนด์ · งานอีเวนต์','แฟชั่นสตูดิโอ · ทดลองลุค'][i],brief:'ข้อมูลตัวอย่างเพื่อออกแบบ · ตรวจบรีฟและข้อตกลงก่อนเสนอคนในสังกัด',category:['ถ่ายภาพ','อีเวนต์','แฟชั่น'][i],area:['กรุงเทพฯ · สาทร','กรุงเทพฯ · สุขุมวิท','กรุงเทพฯ · อารีย์'][i],requirements:'นายแบบที่มีทักษะตรงกับงาน · แจ้งสถานะคิวก่อนเสนอ',start_at:date(i+3,13),end_at:date(i+3,17),deadline:date(i+2,18),required_count:i+1,budget_min:8000+i*2000,budget_max:10000+i*2000,budget_basis:i===1?'total':'model_net',travel_terms:'ค่าเดินทางแยกตามข้อตกลงของงาน',partner_fee_terms:'ตรวจข้อตกลง Partner ก่อนยืนยัน ไม่รวมกับค่าตัวที่เสนอ',status:'open',created_at:new Date().toISOString(),updated_at:new Date().toISOString(),proposals:i===2?[{id:'proposal-fixture',model_id:ids[0],model_name:models[0].display_name,status:'more_information',rate:12000,availability:'checking',note:'ข้อมูลตัวอย่าง',decision_note:'ขอรูปปัจจุบันและยืนยันคิวเพิ่มเติม',updated_at:new Date().toISOString()}]:[]}));
 const mock=`<script>
 (function(){
 const data=${JSON.stringify(data).replace(/</g,'\\u003c')};
 let order={model_ids:[],revision:null};try{order=JSON.parse(localStorage.getItem('partner-lvmax-order-preview'))||order;}catch{}
 let vault=null;
+const announcements=${JSON.stringify(announcements).replace(/</g,'\\u003c')};
+let preferences={category:'',area:'',budget_min:null,enabled:false,seen_at:null},preferenceRevision=null;
 window.fetch=async function(input,options={}){
  const url=new URL(typeof input==='string'?input:input.url,location.href),path=url.pathname;
  const method=options.method||'GET';let body={};if(typeof options.body==='string'){try{body=JSON.parse(options.body);}catch{}}
  const ok=(value)=>Promise.resolve(new Response(JSON.stringify({ok:true,...value}),{status:200,headers:{'content-type':'application/json'}}));
+ if(path==='/v1/partner/announcements')return ok({announcements,next_cursor:null});
+ if(path==='/v1/partner/announcements/detail')return ok({announcement:announcements.find(a=>a.id===url.searchParams.get('id'))});
+ if(path==='/v1/partner/announcements/preferences'){if(method==='POST'){preferences={...body,seen_at:body.mark_read?new Date().toISOString():preferences.seen_at};preferenceRevision=String(Date.now());}return ok({preferences,revision:preferenceRevision});}
  if(path==='/v1/partner/dashboard')return ok(data);
  if(path==='/v1/partner/jobs/detail'){const job=data.jobs.find(j=>j.session_record_id===url.searchParams.get('session_record_id'));return ok({detail:{session_record_id:job.session_record_id,lifecycle:'en_route',updated_at:new Date().toISOString(),location:job.location,eta:{status:'active',arrival_at:new Date(Date.now()+25*60000).toISOString(),updated_at:new Date().toISOString(),server_now:new Date().toISOString()},reconfirm:{recorded_acknowledged_at:null},history_complete:false,communications_available:false,model_actions_allowed:false}});}
  if(path==='/v1/partner/roster-order'){
