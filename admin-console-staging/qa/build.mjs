@@ -18,14 +18,26 @@ source = readFileSync(stagingFile, 'utf8')
   .replace('[1, 2, 3, 4, 5, 6]', '[1, 2, 3, 4, 5]');
 source = source.replace('const matched = p.get("client_id") === clientId && p.get("q") === "Fixture Model" && (privateMatch || publicMatch);', 'const matched = p.get("q")?.toLowerCase().includes("fixture") && (!p.has("client_id") || privateMatch || publicMatch);');
 source = source.replace('display_name: "Fixture Model"', 'display_name: "Fixture Model", model_name: "Fixture Model", model_lookup_key: "private/standard/Mira", visibility: "private", access_folder: "standard", profile_photos: memberPhotos');
+const modelMatch = 'const matched = p.get("q")';
+source = source.replace(modelMatch, `if (privateMatch && p.get("client_id") === clientId && /^(zero|ems20)$/i.test(p.get("q") || "")) {
+      return Response.json({ ok: true, items: [{ model_id: "recZERO000000001", display_name: "EMs20–Zero", model_name: "EMs20–Zero", model_lookup_key: "private/standard/Zero", visibility: "private", access_folder: "standard" }] });
+    }
+    ` + modelMatch);
 writeFileSync(stagingFile, source);
+const draftPage = new URL('admin-worker/src/create-job-worker-page.js', new URL('../../', import.meta.url));
+writeFileSync(new URL('.build/admin-worker/src/create-job-worker-page.js', root),
+  readFileSync(draftPage, 'utf8')
+    .replaceAll('recavk9fpKRed8adm', 'recCLIENT00000001')
+    .replaceAll('rec25Xt7QODd763vI', 'recZERO000000001'));
 
 // Overlay only the reviewed editor and its fixture on the existing Create Job bundle.
 const captainPin = '9abc9915b1d5e9a348bf24d5fa9a7abca8a56f90';
 for (const path of ['admin-worker/src/owner-job-edit.js', 'admin-worker/src/owner-job-edit-page.js',
   'admin-worker/src/owner-job-edit-captain.js', 'admin-worker/src/owner-job-edit-coordinator.js',
   'admin-worker/src/verified-payment-balance.js', 'shared/session-balance-view.mjs']) {
-  const code = execFileSync('git', ['show', captainPin + ':' + path], {encoding:'utf8'});
+  const code = path.endsWith('/owner-job-edit.js')
+    ? readFileSync(new URL('../../' + path, import.meta.url), 'utf8')
+    : execFileSync('git', ['show', captainPin + ':' + path], {encoding:'utf8'});
   let fixtureCode = code.replaceAll('sess_mw4pp2cg_d5788ca38716eab1', 'sess_fixture_captain_zero');
   if (path.endsWith('/owner-job-edit-page.js')) {
     const initialSession = "get('session_id')||''";

@@ -64,7 +64,8 @@ export async function handleCaptainFixture(request, storage) {
     }
   } else {
     const session = url.searchParams.get('session_id');
-    if (url.pathname === '/v1/admin/jobs/edit' && session !== CAPTAIN.session) {
+    if (url.pathname === '/v1/admin/jobs/edit' && session !== CAPTAIN.session &&
+        !(url.searchParams.get('preview') === 'captain-receipt' && session === null)) {
       return new Response(null, { status: 403 });
     }
     if (url.pathname === '/internal/admin/jobs/edit' && session && session !== CAPTAIN.session) {
