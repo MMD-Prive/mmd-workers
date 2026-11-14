@@ -60,7 +60,6 @@ const PAYMENT_STAGES = new Set(["deposit", "final", "tips", "full", "membership"
 const PAYMENT_TYPES = new Set(["deposit", "final", "tips", "full"]);
 const CUSTOMER_DEPOSIT_PERCENT = 30;
 const CUSTOMER_DEPOSIT_ROUND_STEP_THB = 1;
-const CUSTOMER_DEPOSIT_MINIMUM_STEP_THB = 500;
 const DISCOUNT_KINDS = ["coupon", "discount", "promotion", "special_price"];
 const SESSION_NOTE_SNAPSHOT_MARKERS = new Set([
   "[MMD_JOB_HOLD_V1]",
@@ -78,8 +77,7 @@ export function computeFixedCustomerDeposit(serviceAmountThb) {
   const total = Number(serviceAmountThb);
   if (!Number.isFinite(total) || total <= 0) return 0;
   const raw = (total * CUSTOMER_DEPOSIT_PERCENT) / 100;
-  // Deposit is 30% of the post-discount service amount, rounded UP to the next 500 THB (never above the total).
-  return Math.min(total, Math.ceil(raw / CUSTOMER_DEPOSIT_MINIMUM_STEP_THB) * CUSTOMER_DEPOSIT_MINIMUM_STEP_THB);
+  return Math.min(total, Math.ceil(raw / CUSTOMER_DEPOSIT_ROUND_STEP_THB) * CUSTOMER_DEPOSIT_ROUND_STEP_THB);
 }
 
 export function isCanonicalConfirmLinkRequest(path, method) {
@@ -133,6 +131,7 @@ export async function handleCanonicalConfirmLink(request, env) {
     const discountMode = discountThb > 0 && pricingAdjustment === "discount" ? "amount" : "none";
     const discountKindRaw = clean(body.discount_kind).toLowerCase();
     const discountKind = discountMode === "amount" && DISCOUNT_KINDS.includes(discountKindRaw) ? discountKindRaw : null;
+    const discountReason = discountKind ? clean(body.discount_reason).slice(0, 120) : "";
     const payModelThb = optionalNonNegativeNumber(
       body.pay_model_thb ?? body.pay_model ?? body.model_pay_thb ?? body.model_pay,
       "pay_model_thb",
@@ -149,7 +148,13 @@ export async function handleCanonicalConfirmLink(request, env) {
     if (components && components.service_amount_thb !== serviceAmountThb) {
       throw httpError(400, "service_amount_component_mismatch");
     }
-    const minimumDepositThb = computeFixedCustomerDeposit(serviceAmountThb);
+    const privateModelDeposit = !components && paymentStage === "deposit" && body.deposit_policy === "private_model_v1";
+    const requestedPrivatePercent = privateModelDeposit ? Number(body.deposit_percent ?? 30) : null;
+    if (privateModelDeposit && (!Number.isInteger(requestedPrivatePercent) || requestedPrivatePercent < 20 || requestedPrivatePercent > 40 || requestedPrivatePercent % 5 !== 0)) {
+      throw httpError(400, "invalid_private_model_deposit_percent");
+    }
+    const depositBasisThb = privateModelDeposit ? serviceAmountThb + discountThb : serviceAmountThb;
+    const minimumDepositThb = Math.min(serviceAmountThb, privateModelDeposit ? Math.ceil(depositBasisThb * 20 / 100 / 500) * 500 : Math.ceil(serviceAmountThb * CUSTOMER_DEPOSIT_PERCENT / 100));
     let selectedDepositThb = minimumDepositThb;
     if (paymentStage === "deposit") {
       if (body.deposit_percent != null) {
@@ -158,16 +163,22 @@ export async function handleCanonicalConfirmLink(request, env) {
           throw httpError(400, "invalid_deposit_percent");
         }
         if (body.deposit_amount_thb == null) {
-          selectedDepositThb = Math.min(serviceAmountThb, Math.max(1, Math.ceil((serviceAmountThb * requestedPercent) / 100)));
+          selectedDepositThb = Math.min(serviceAmountThb, Math.max(1, Math.ceil((depositBasisThb * requestedPercent) / 100)));
+          if (!components) selectedDepositThb = Math.max(minimumDepositThb, selectedDepositThb);
         }
       }
       if (body.deposit_amount_thb != null) {
         selectedDepositThb = positiveNumber(body.deposit_amount_thb, "deposit_amount_thb");
       }
       if (selectedDepositThb > serviceAmountThb) throw httpError(400, "deposit_exceeds_service_amount");
+      if (privateModelDeposit) {
+        const computed = Math.min(serviceAmountThb, Math.ceil(depositBasisThb * requestedPrivatePercent / 100 / 500) * 500);
+        if (body.deposit_amount_thb != null && selectedDepositThb !== computed) throw httpError(400, "private_model_deposit_mismatch");
+        selectedDepositThb = computed;
+      }
     }
     const selectedDepositPercent = paymentStage === "deposit"
-      ? Number(((selectedDepositThb / serviceAmountThb) * 100).toFixed(2))
+      ? Number(((selectedDepositThb / depositBasisThb) * 100).toFixed(2))
       : null;
     const depositBelowMinimum = paymentStage === "deposit" && selectedDepositThb < minimumDepositThb;
     const depositShortfallThb = depositBelowMinimum ? Math.max(0, minimumDepositThb - selectedDepositThb) : 0;
@@ -181,9 +192,11 @@ export async function handleCanonicalConfirmLink(request, env) {
           discount_percent: null,
           discount_thb: discountMode === "amount" ? discountThb : 0,
           ...(discountKind ? { discount_kind: discountKind } : {}),
+          ...(discountReason ? { discount_reason: discountReason } : {}),
           net_price_thb: jobTotalThb,
-          deposit_basis_thb: serviceAmountThb,
-          deposit_minimum_percent: CUSTOMER_DEPOSIT_PERCENT,
+          deposit_basis_thb: depositBasisThb,
+          ...(privateModelDeposit ? { deposit_policy: "private_model_v1", deposit_requested_percent: requestedPrivatePercent } : {}),
+          deposit_minimum_percent: privateModelDeposit ? 20 : CUSTOMER_DEPOSIT_PERCENT,
           deposit_minimum_thb: minimumDepositThb,
           deposit_percent: selectedDepositPercent,
           deposit_due_thb: selectedDepositThb,
@@ -191,8 +204,8 @@ export async function handleCanonicalConfirmLink(request, env) {
           deposit_below_minimum: depositBelowMinimum,
           deposit_shortfall_thb: depositShortfallThb,
           balance_thb: selectedBalanceThb,
-          deposit_round_step_thb: CUSTOMER_DEPOSIT_ROUND_STEP_THB,
-          deposit_rounding: "ceil_to_baht",
+          deposit_round_step_thb: privateModelDeposit ? 500 : CUSTOMER_DEPOSIT_ROUND_STEP_THB,
+          deposit_rounding: privateModelDeposit ? "ceil_to_500_baht" : "ceil_to_baht",
         }
       : null;
     const holdMarker = held
@@ -328,7 +341,7 @@ export async function handleCanonicalConfirmLink(request, env) {
         `Type: <b>${escapeHtml(jobType)}</b>`,
         `Amount: <b>${Number(amountThb)} THB</b>`,
         paymentStage === "deposit" ? `Deposit received/expected: <b>${Number(selectedDepositThb)} THB</b> (${selectedDepositPercent}%)` : "",
-        depositBelowMinimum ? `⚠️ <b>UNDER 30% — OWNER REVIEW</b> · minimum ${Number(minimumDepositThb)} THB · short ${Number(depositShortfallThb)} THB` : "",
+        depositBelowMinimum ? `⚠️ <b>UNDER ${privateModelDeposit ? 20 : 30}% — OWNER REVIEW</b> · minimum ${Number(minimumDepositThb)} THB · short ${Number(depositShortfallThb)} THB` : "",
         payModelThb != null ? `Pay Model: <b>${Number(payModelThb)} THB</b>` : "",
       ].filter(Boolean).join("\n"));
     } catch (_) {}

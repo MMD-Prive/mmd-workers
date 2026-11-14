@@ -78,7 +78,7 @@ export async function handleCanonicalLinkedJobCreate(request, env, ctx, downstre
       body.partner_attribution = { ...body.partner_attribution, partner_record_id: chosenPartner.partner_record_id, partner_name: chosenPartner.partner_name };
       request = new Request(request, { body: JSON.stringify(body) });
     }
-  } catch (error) { return jsonLike(request, { ok: false, error: clean(error.message || "partner_selection_invalid") }, error.status || 503); }
+  } catch (error) { return jsonLike(request, { ok: false, creation_outcome: 'not_created', error: clean(error.message || "partner_selection_invalid") }, error.status || 503); }
 
   const response = await downstream.fetch(request, env, ctx);
   if (!response.ok) return response;
