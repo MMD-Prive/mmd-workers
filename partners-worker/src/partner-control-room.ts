@@ -27,6 +27,10 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
     state.vaultPin = ""; state.vaultSalt = null; state.vaultEnvelope = null;
     state.vaultReady = false; state.vaultConflict = true;
     $(".pcr-shell", root).hidden = true;
+    var board = $("[data-ann-home]",root);
+    if(board) board.remove();
+    var announcementDialog = $("[data-ann-dialog]",root);
+    if(announcementDialog) announcementDialog.replaceChildren();
     $$("dialog", root).forEach(function (dialog) { dialog.close(); });
     $$("form", root).forEach(function (form) { form.reset(); });
     $$('[data-vault-pin],[data-general-note],[data-private-travel],[name^="private_"]', root).forEach(function (field) { field.value = ""; });
@@ -173,12 +177,17 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
 
   function hydrate(data) {
     if (state.authBlocked) return;
-    if (!state.data) setFlash("");
+    var firstLoad = !state.data;
+    if (firstLoad) setFlash("");
     state.data = data;
     $(".pcr-shell", root).hidden = false;
     $("[data-loading]", root).textContent = "";
     $("[data-partner-name]", root).textContent = (data.partner && data.partner.name) || "SĪGIL Partner";
-    prepareMissionHome(); prepareLvHome(); prepareAnnouncementBoard(); renderMetrics(data); renderJobs(data); renderModels(data); renderEarnings(data); renderTelegram(data);
+    prepareMissionHome(); prepareLvHome();
+    $(".pcr-mission-roster",root).before($("[data-ann-home]",root));
+    if(firstLoad && ann.detail && $("[data-ann-dialog]",root).open) {
+      annRenderDetail($("[data-ann-body]",root),ann.detail);
+    } renderMetrics(data); renderJobs(data); renderModels(data); renderEarnings(data); renderTelegram(data);
     bindDynamic(); renderOperations(data); renderLvAttention(data);
   }
 
@@ -361,6 +370,7 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
   document.addEventListener("visibilitychange", refreshTelegram);
   $(".pcr-shell",root).hidden=true;
   setFlash("กำลังโหลดข้อมูล Partner…");
+  prepareAnnouncementBoard();
   load();
   loadRosterOrder();
   loadVaultEnvelope().catch(function(){setFlash("Private Vault พร้อมให้ลองเปิดอีกครั้ง ตารางงานยังใช้งานได้","error");});
