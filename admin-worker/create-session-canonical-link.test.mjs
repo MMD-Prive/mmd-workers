@@ -1,3 +1,4 @@
+import { readModelSources } from './src/create-job-drive-discovery.js';
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -151,12 +152,14 @@ test("explicit Partner selection persists canonical Partner+Model linkage for th
   const original=globalThis.fetch, mock=makeFetch();const partnerId="recjegeHuesDmm7QP";
   globalThis.fetch=async(input,init={})=>{
     const url=urlString(input);
+    if(tableFrom(url)==="tblrmSsCZxJSCQR9n") return json({records:[{id:"recREFERRAL000001",fields:{Model:[MODEL_ID],Partner:[partnerId],"Ownership Status":"verified"}}]});
     if(tableFrom(url)==="tbl1ksDlsTiiGEHWe") return json({id:partnerId,fields:{fldXb55aiAjNPOUWc:"partner_kendo",fldpJWfASq7PfkMgC:"Kendo",fldajmg66pf2ifGPu:"Active",fldwRzdtIoPbHKr7n:"recognized"}});
     if(tableFrom(url)===ENV.AIRTABLE_TABLE_SESSIONS && recordFrom(url)===SESSION_RECORD_ID && (init.method || "GET")==="GET") return json({id:SESSION_RECORD_ID,fields:{}});
     return mock.fetch(input,init);
   };
   try {
     const body=linkedBody({model_source_choice:"partner",partner_attribution:{partner_record_id:partnerId,partner_name:"spoof",partner_type:"bridge"}});
+    body.partner_attribution.source_revision = (await readModelSources(ENV, MODEL_ID)).items[0].source_revision;
     let capture=0;
     const env={...ENV,PARTNERS_WORKER:{fetch:async()=>{capture++;return json({ok:true,partner_managed:true});}}};
     const response=await handleCanonicalLinkedJobCreate(request(body),env,{}, {fetch:async req=>{const posted=await req.json();assert.equal(posted.partner_attribution.partner_name,"Kendo");return json({ok:true,session_id:"sess_001"});}});
