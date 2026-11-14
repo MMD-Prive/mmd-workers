@@ -66,7 +66,7 @@ function resetJob(){
   $('search').value='';$('reason').value='';$('confirm').close();sync();
 }
 async function load(){
-  if(saveLocked)return;
+  if(saveLocked||voidBusy)return;
   const id=$('session').value.trim();
   selectVoidSession(id);
   resetJob();clearRetry();$('message').textContent='';
@@ -111,7 +111,7 @@ async function findJobs(){
   try{
     const d=await api(t,'/v1/admin/jobs/edit?list=1&q='+encodeURIComponent(query));
     if(!current(t)||$('jobQuery').value!==query)return;
-    for(const j of d.jobs){const b=document.createElement('button');b.type='button';b.className='result';b.textContent=j.date+' · '+j.client+' · '+j.model+' · '+fmt(j.amount);b.onclick=()=>{if(saveLocked||!current(t)||$('jobQuery').value!==query)return;$('session').value=j.session_id;load();};$('jobList').append(b);}
+    for(const j of d.jobs){const b=document.createElement('button');b.type='button';b.className='result';b.textContent=j.date+' · '+j.client+' · '+j.model+' · '+fmt(j.amount);b.onclick=()=>{if(saveLocked||voidBusy||!current(t)||$('jobQuery').value!==query)return;$('session').value=j.session_id;load();};$('jobList').append(b);}
     if(!d.jobs.length)$('jobList').textContent='ไม่พบงานที่กำลังจะมาถึง';
   }catch(e){if(current(t)){$('message').textContent=readError(e);offerRetry(findJobs);}}
   finally{finish(t);}
@@ -177,6 +177,7 @@ function savedVoid(){
   return body;
 }
 function syncVoid(){
+  $('session').readOnly = voidBusy;
   const pendingVoid = savedVoid();
   $('reviewVoid').disabled = voidBusy || Boolean(pendingVoid);
   $('submitVoid').disabled = voidBusy;
@@ -204,26 +205,35 @@ async function sendVoid(recover){
   if(voidBusy)return;
   const body = recover ? savedVoid() : voidDraft;
   if(!body || $('session').value.trim() !== voidId || (!recover && savedVoid()))return;
+  // Everything below belongs to the session that started this request.
+  const target = body.session_id, targetKey = 'mmd:cancel:'+target;
+  const onTarget = () => voidId === target;
+  const say = text => { if(onTarget())$('voidStatus').textContent=text; };
   voidBusy=true;
   try{
-    if(!recover)sessionStorage.setItem(voidKey,JSON.stringify(body));
+    if(!recover)sessionStorage.setItem(targetKey,JSON.stringify(body));
     syncVoid();
     const {status,data} = await voidRequest('/v1/admin/job/void',{...body,recover});
     if(data.ok){
-      sessionStorage.removeItem(voidKey);
-      $('voidStatus').textContent='ยกเลิกงานแล้ว';
-      $('cancelJob').hidden=true;
-      $('editor').hidden=true;
+      sessionStorage.removeItem(targetKey);
+      // The success text must live outside #cancelJob, which is hidden right after.
+      $('message').textContent='ยกเลิกงานแล้ว · '+target;
+      if(onTarget()){
+        $('voidStatus').textContent='ยกเลิกงานแล้ว';
+        $('cancelJob').hidden=true;
+      }
+      // Hide only the form that belongs to the cancelled job, never another job's.
+      if(job && job.session_id === target)$('editor').hidden=true;
     }else if(recover && status===404 && data.error==='void_receipt_not_found'){
-      sessionStorage.removeItem(voidKey);
-      $('voidStatus').textContent='ไม่พบรายการเดิม กรุณาตรวจทานข้อมูลล่าสุดและยืนยันใหม่';
+      sessionStorage.removeItem(targetKey);
+      say('ไม่พบรายการเดิม กรุณาตรวจทานข้อมูลล่าสุดและยืนยันใหม่');
     }else if(!recover && (status===400 || status===403 || data.error==='job_changed_reload')){
-      sessionStorage.removeItem(voidKey);
-      $('voidStatus').textContent='ยกเลิกไม่ได้ กรุณาตรวจข้อมูลล่าสุด';
+      sessionStorage.removeItem(targetKey);
+      say('ยกเลิกไม่ได้ กรุณาตรวจข้อมูลล่าสุด');
     }else{
-      $('voidStatus').textContent='ยังยืนยันผลไม่ได้ กดตรวจผลการยกเลิก';
+      say('ยังยืนยันผลไม่ได้ กดตรวจผลการยกเลิก');
     }
-  }catch{$('voidStatus').textContent='ยังยืนยันผลไม่ได้ กดตรวจผลการยกเลิก';}
+  }catch{say('ยังยืนยันผลไม่ได้ กดตรวจผลการยกเลิก');}
   finally{voidDraft=null;voidBusy=false;$('voidDialog').close();syncVoid();}
 }
 $('backVoid').onclick=()=>$('voidDialog').close();
