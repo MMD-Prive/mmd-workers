@@ -6,7 +6,8 @@ export function renderOwnerJobEdit(){return `<!doctype html><html lang="th"><hea
 <section><h2>ยอดถึงตัวน้อง</h2><div class="grid"><label>PN<input id="modelBase" type="number" min="0.01" step="0.01" required></label><label>ค่าเดินทางน้อง<input id="modelTravel" type="number" min="0" step="0.01" required></label></div><div id="modelAddons"></div></section>
 <section class="summary"><div>ยอดลูกค้า <b id="total"></b></div><div>ยอดถึงตัวน้อง <b id="payout"></b></div><div>เงินรับที่ยืนยันแล้ว (ไม่รวมเครดิต) <span id="paid"></span></div><div>คงเหลือ <b id="remaining"></b></div></section>
 <label>เหตุผลที่แก้ไข<input id="reason" minlength="3" maxlength="300" required></label><p class="muted">หลังแก้ไข ลูกค้าและน้องต้องอ่านรายละเอียดและยืนยันใหม่ การบันทึกจะไม่ส่งข้อความให้อัตโนมัติ</p><button id="review">ตรวจทานการแก้ไข</button></form><section id="historyBox" hidden><details><summary>ประวัติการแก้ไข</summary><div id="history"></div></details></section>
-<dialog id="confirm"><h2>ตรวจทานก่อนบันทึก</h2><p id="confirmText"></p><div class="actions"><button id="back" type="button">กลับไปแก้</button><button id="save" type="button">บันทึกการแก้ไข</button></div></dialog></main><script>
+<dialog id="confirm"><h2>ตรวจทานก่อนบันทึก</h2><p id="confirmText"></p><div class="actions"><button id="back" type="button">กลับไปแก้</button><button id="save" type="button">บันทึกการแก้ไข</button></div></dialog><section id="cancelJob" hidden><button type="button" id="reviewVoid">ตรวจทานเพื่อยกเลิกงาน</button><button type="button" id="recoverVoid" hidden>ตรวจผลการยกเลิก</button><p id="voidStatus" role="status"></p></section>
+<dialog id="voidDialog"><h2>ยืนยันยกเลิกงาน</h2><p id="voidSummary"></p><button type="button" id="backVoid">กลับ</button><button type="button" id="submitVoid">ยืนยันยกเลิกงาน</button></dialog></main><script>
 (function(){
 'use strict';
 const $=id=>document.getElementById(id);
@@ -65,8 +66,9 @@ function resetJob(){
   $('search').value='';$('reason').value='';$('confirm').close();sync();
 }
 async function load(){
-  if(saveLocked)return;
+  if(saveLocked||voidBusy)return;
   const id=$('session').value.trim();
+  selectVoidSession(id);
   resetJob();clearRetry();$('message').textContent='';
   const t=start('job');
   try{
@@ -109,7 +111,7 @@ async function findJobs(){
   try{
     const d=await api(t,'/v1/admin/jobs/edit?list=1&q='+encodeURIComponent(query));
     if(!current(t)||$('jobQuery').value!==query)return;
-    for(const j of d.jobs){const b=document.createElement('button');b.type='button';b.className='result';b.textContent=j.date+' · '+j.client+' · '+j.model+' · '+fmt(j.amount);b.onclick=()=>{if(saveLocked||!current(t)||$('jobQuery').value!==query)return;$('session').value=j.session_id;load();};$('jobList').append(b);}
+    for(const j of d.jobs){const b=document.createElement('button');b.type='button';b.className='result';b.textContent=j.date+' · '+j.client+' · '+j.model+' · '+fmt(j.amount);b.onclick=()=>{if(saveLocked||voidBusy||!current(t)||$('jobQuery').value!==query)return;$('session').value=j.session_id;load();};$('jobList').append(b);}
     if(!d.jobs.length)$('jobList').textContent='ไม่พบงานที่กำลังจะมาถึง';
   }catch(e){if(current(t)){$('message').textContent=readError(e);offerRetry(findJobs);}}
   finally{finish(t);}
@@ -149,7 +151,7 @@ async function save(){
 $('retry').onclick=()=>{if(!foreground()&&retryAction)retryAction();};
 $('findJobs').onclick=findJobs;
 $('lookup').onsubmit=e=>{e.preventDefault();load();};
-$('session').oninput=()=>{if(!saveLocked){resetJob();clearRetry();$('message').textContent='';}};
+$('session').oninput=()=>{if(!saveLocked&&!voidBusy){selectVoidSession($('session').value.trim());resetJob();clearRetry();$('message').textContent='';}};
 $('jobQuery').oninput=()=>{if(!saveLocked){cancel('list');$('jobList').replaceChildren();clearRetry();}};
 $('search').oninput=()=>{if(!saveLocked){cancel('models');$('results').replaceChildren();clearRetry();}};
 $('editor').oninput=()=>{if(!saveLocked&&job){pending=null;totals();sync();}};
@@ -163,6 +165,93 @@ $('editor').onsubmit=e=>{
 $('back').onclick=()=>$('confirm').close();$('save').onclick=save;
 window.addEventListener('beforeunload',e=>{if(saveLocked){e.preventDefault();e.returnValue='';}});
 $('session').value=new URLSearchParams(location.search).get('session_id')||'';
+let voidId = '';
+let voidKey = '';
+let voidDraft;
+let voidBusy = false;
+function savedVoid(){
+  const raw = globalThis.sessionStorage?.getItem(voidKey);
+  if(!raw)return null;
+  const body = JSON.parse(raw);
+  if(body.session_id !== voidId || !/^[a-f0-9]{64}$/.test(body.revision))throw Error('ข้อมูลตรวจผลไม่ครบ');
+  return body;
+}
+function syncVoid(){
+  $('session').readOnly = voidBusy;
+  const pendingVoid = savedVoid();
+  $('reviewVoid').disabled = voidBusy || Boolean(pendingVoid);
+  $('submitVoid').disabled = voidBusy;
+  $('recoverVoid').hidden = !pendingVoid;
+  $('recoverVoid').disabled = voidBusy;
+}
+async function voidRequest(url, body){
+  const response = await fetch(url,{credentials:'same-origin',cache:'no-store',signal:AbortSignal.timeout(15000),
+    ...(body ? {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)} : {})});
+  return {status:response.status,data:await response.json()};
+}
+$('reviewVoid').onclick = async () => {
+  if(voidBusy || savedVoid() || $('session').value.trim() !== voidId)return;
+  voidBusy = true;syncVoid();
+  try{
+    const {data} = await voidRequest('/v1/admin/jobs/edit?session_id='+encodeURIComponent(voidId));
+    if(!data.ok || data.job?.session_id !== voidId || !/^[a-f0-9]{64}$/.test(data.revision))throw Error();
+    voidDraft = {session_id:voidId,revision:data.revision,confirm:true};
+    $('voidSummary').textContent = [voidId,data.job.date,data.job.model_name].filter(Boolean).join(' · ');
+    $('voidDialog').showModal();
+  }catch{$('voidStatus').textContent='อ่านข้อมูลล่าสุดไม่ได้ กรุณาลองใหม่';}
+  finally{voidBusy=false;syncVoid();}
+};
+async function sendVoid(recover){
+  if(voidBusy)return;
+  const body = recover ? savedVoid() : voidDraft;
+  if(!body || $('session').value.trim() !== voidId || (!recover && savedVoid()))return;
+  // Everything below belongs to the session that started this request.
+  const target = body.session_id, targetKey = 'mmd:cancel:'+target;
+  const onTarget = () => voidId === target;
+  const say = text => { if(onTarget())$('voidStatus').textContent=text; };
+  voidBusy=true;
+  try{
+    if(!recover)sessionStorage.setItem(targetKey,JSON.stringify(body));
+    syncVoid();
+    const {status,data} = await voidRequest('/v1/admin/job/void',{...body,recover});
+    if(data.ok){
+      sessionStorage.removeItem(targetKey);
+      // The success text must live outside #cancelJob, which is hidden right after.
+      $('message').textContent='ยกเลิกงานแล้ว · '+target;
+      if(onTarget()){
+        $('voidStatus').textContent='ยกเลิกงานแล้ว';
+        $('cancelJob').hidden=true;
+      }
+      // Hide only the form that belongs to the cancelled job, never another job's.
+      if(job && job.session_id === target)$('editor').hidden=true;
+    }else if(recover && status===404 && data.error==='void_receipt_not_found'){
+      sessionStorage.removeItem(targetKey);
+      say('ไม่พบรายการเดิม กรุณาตรวจทานข้อมูลล่าสุดและยืนยันใหม่');
+    }else if(!recover && (status===400 || status===403 || data.error==='job_changed_reload')){
+      sessionStorage.removeItem(targetKey);
+      say('ยกเลิกไม่ได้ กรุณาตรวจข้อมูลล่าสุด');
+    }else{
+      say('ยังยืนยันผลไม่ได้ กดตรวจผลการยกเลิก');
+    }
+  }catch{say('ยังยืนยันผลไม่ได้ กดตรวจผลการยกเลิก');}
+  finally{voidDraft=null;voidBusy=false;$('voidDialog').close();syncVoid();}
+}
+$('backVoid').onclick=()=>$('voidDialog').close();
+$('submitVoid').onclick=()=>sendVoid(false);
+$('recoverVoid').onclick=()=>sendVoid(true);
+function selectVoidSession(id){
+  if(voidBusy)return;
+  if(id !== voidId){
+    voidDraft = null;
+    if($('voidDialog').open)$('voidDialog').close();
+    $('voidStatus').textContent='';
+  }
+  voidId=id;
+  voidKey='mmd:cancel:'+id;
+  $('cancelJob').hidden=!/^sess_[A-Za-z0-9_-]{1,180}$/.test(id);
+  if(!$('cancelJob').hidden)syncVoid();
+}
+selectVoidSession($('session').value.trim());
 if($('session').value)load();else findJobs();
 })();
 </script></body></html>`;}
