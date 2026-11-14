@@ -1,0 +1,17 @@
+name = "mmd-admin-console-3143-staging"
+main = ".build/qa-bundle.mjs"
+compatibility_date = "2026-11-08"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = false
+preview_urls = false
+
+[secrets]
+required = ["ADMIN_LOGIN_CREDENTIAL", "ADMIN_SESSION_SECRET"]
+
+[[durable_objects.bindings]]
+name = "CREATE_JOB_FIXTURE_RUNS"
+class_name = "CreateJobFixtureRun"
+
+[[migrations]]
+tag = "create-job-fixture-v1"
+new_sqlite_classes = ["CreateJobFixtureRun"]
