@@ -49,7 +49,21 @@ export async function readCredentialBoundAdminActor(request, env = {}) {
   return null;
 }
 
-async function verifyCredentialBoundAdminToken(token, request, env = {}) {
+// Presentation only: an expired token must still have a valid signature,
+// scope and host. Never grant access using this result.
+export async function readCredentialBoundAdminLoginReason(request, env = {}) {
+  const tokens = readCookieValues(request.headers.get("Cookie") || "", COOKIE_NAME);
+  let expired = false;
+  for (const token of tokens) {
+    const actor = await verifyCredentialBoundAdminToken(token, request, env, true);
+    if (!actor) continue;
+    if (actor.exp > Date.now()) return "";
+    expired = true;
+  }
+  return expired ? "session_expired" : "session_required";
+}
+
+async function verifyCredentialBoundAdminToken(token, request, env = {}, inspectExpired = false) {
   const [payloadPart, signature] = clean(token).split(".");
   if (!payloadPart || !signature) return null;
 
@@ -68,7 +82,7 @@ async function verifyCredentialBoundAdminToken(token, request, env = {}) {
     if (!actor.id || !actor.role || !actor.nonce || typeof actor.nonce !== "string") return null;
     if (!ALLOWED_ORIGINS.has(actor.host) || actor.host !== sessionHost(new URL(request.url).origin)) return null;
     if (!Number.isFinite(actor.iat) || !Number.isFinite(actor.exp)) return null;
-    if (actor.iat > now || actor.exp <= now || actor.exp - actor.iat > TTL_MS) return null;
+    if (actor.iat > now || (!inspectExpired && actor.exp <= now) || actor.exp - actor.iat > TTL_MS) return null;
     return actor;
   } catch {
     return null;

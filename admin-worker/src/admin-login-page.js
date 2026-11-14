@@ -27,6 +27,23 @@ const LINE_SEED_THAI_EXTRABOLD =
   "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a619dd5cdf166a1e9e45b98_LINESeedSansTH_W_XBd.woff2";
 
 const MMS_PARTNER_PATH = "/internal/admin/mms";
+const STAGING_ORIGIN = "https://mmd-admin-console-3143-staging.malemodel-bkk.workers.dev";
+const LOGIN_NOTICES = {
+  session_expired: "เซสชันหมดอายุแล้ว กรุณาเข้าสู่ระบบอีกครั้งด้วยรหัสเดิม",
+  session_required: "กรุณาเข้าสู่ระบบอีกครั้ง หากเซสชันหมดอายุ ไม่จำเป็นต้องเปลี่ยนรหัส",
+};
+
+function loginEnvironment(request) {
+  const url = new URL(request.url);
+  const production = [ADMIN_CANONICAL_ORIGIN, "https://www.mmdbkk.com"].includes(url.origin);
+  return {
+    name: production ? "Production" : url.origin === STAGING_ORIGIN ? "Staging" : "Preview",
+    description: production ? "ระบบจริง" : url.origin === STAGING_ORIGIN ? "ระบบทดสอบ" : "สภาพแวดล้อมอื่น · ตรวจสอบที่อยู่ก่อนเข้าสู่ระบบ",
+    origin: production ? ADMIN_CANONICAL_ORIGIN : url.origin,
+    host: url.host,
+  };
+}
+
 const CSP = [
   "default-src 'self'",
   "script-src 'unsafe-inline' 'self'",
@@ -41,9 +58,11 @@ const CSP = [
 
 export function renderApprovedAdminLogin(
   request,
-  { status = 200, error = "", next = "/internal/admin/console" } = {},
+  { status = 200, error = "", next = "/internal/admin/console", reason = "" } = {},
 ) {
-  const headers = loginHeaders();
+  const environment = loginEnvironment(request);
+  const notice = Object.hasOwn(LOGIN_NOTICES, reason) ? LOGIN_NOTICES[reason] : "";
+  const headers = loginHeaders(environment);
   if (String(request?.method || "GET").toUpperCase() === "HEAD") {
     return new Response(null, { status, headers });
   }
@@ -57,8 +76,8 @@ export function renderApprovedAdminLogin(
   <meta name="robots" content="noindex,nofollow,noarchive">
   <meta name="theme-color" content="#050403">
   <script>(()=>{if(location.protocol==='https:'&&location.hostname==='www.mmdbkk.com'){const path=(location.pathname.replace(/\\/+$/,'')||'/');if(path==='/internal/admin/login'){const canonical=new URL(location.href);canonical.hostname='mmdbkk.com';location.replace(canonical.toString());}}})();</script>
-  <title>MMD Privé · Internal Login</title>
-  <link rel="canonical" href="${ADMIN_CANONICAL_ORIGIN}/internal/admin/login">
+  <title>MMD Privé · ${environment.name} · Internal Login</title>
+  <link rel="canonical" href="${escapeAttribute(environment.origin)}/internal/admin/login">
   <link rel="icon" type="image/webp" href="${APPROVED_ADMIN_LOGIN_FAVICON}">
   <link rel="apple-touch-icon" href="${APPROVED_ADMIN_LOGIN_APPLE_TOUCH_ICON}">
   <style>
@@ -84,7 +103,8 @@ export function renderApprovedAdminLogin(
     form{display:grid;gap:8px}label{display:grid;gap:5px;color:rgba(255,255,255,.76);font-size:8.5px;font-weight:800;letter-spacing:.27em;text-transform:uppercase}.field{display:grid;grid-template-columns:1fr auto;border:1px solid rgba(255,255,255,.25);border-radius:5px;overflow:hidden;background:rgba(5,5,5,.31);transition:border-color .18s ease,box-shadow .18s ease}.field:focus-within{border-color:rgba(232,191,101,.69);box-shadow:0 0 0 3px rgba(232,191,101,.07)}.partner-panel .field:focus-within{border-color:rgba(49,180,100,.72);box-shadow:0 0 0 3px rgba(0,55,4,.2)}input{width:100%;min-height:43px;border:0;background:transparent;color:#fff;padding:0 13px;outline:0;font:700 12px/1.35 "LINE Seed Sans TH",sans-serif}.toggle{min-width:61px;border:0;border-left:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.018);color:#fff;font:800 8.5px/1.4 "LINE Seed Sans TH",sans-serif;cursor:pointer}.go{min-height:49px;margin-top:0;border:1px solid rgba(255,220,151,.62);border-radius:4px;background:linear-gradient(108deg,#9d6327 0%,#dfa854 22%,#f2c876 48%,#f7d792 63%,#ae6e2b 100%);color:#171006;-webkit-text-fill-color:#171006;font:800 11px/1.4 "LINE Seed Sans TH",sans-serif;letter-spacing:.14em;text-transform:uppercase;cursor:pointer;box-shadow:0 13px 24px rgba(0,0,0,.24);transition:transform .18s ease,filter .18s ease}.go:after{content:"  →"}.go:hover{transform:translateY(-1px);filter:brightness(1.04)}.go:disabled,.toggle:disabled{opacity:.54;cursor:wait;transform:none}.message{min-height:14px;margin:-1px 0 0;color:var(--soft);font-size:9px;line-height:1.4}.message.is-error{color:var(--danger)}.message.is-ok{color:var(--ok)}.privacy{margin:0;color:rgba(255,255,255,.32);font-size:8.5px;line-height:1.4}.links{display:flex;gap:12px;flex-wrap:wrap;margin-top:6px}.linkbtn{padding:0;border:0;background:transparent;color:rgba(209,232,215,.68);font:700 9px/1.4 "LINE Seed Sans TH",sans-serif;text-decoration:underline;text-underline-offset:3px;cursor:pointer}.subpanel{margin-top:9px;padding-top:9px;border-top:1px solid rgba(255,255,255,.1)}.recovery{display:none;margin-top:8px;border:1px solid rgba(72,155,97,.34);border-radius:8px;background:rgba(0,55,4,.2);padding:9px}.recovery.is-visible{display:block}.recovery b{font-size:10px;font-weight:800}.recovery code{display:block;margin-top:6px;padding:8px;border-radius:6px;background:rgba(0,0,0,.35);word-break:break-all;color:#effff2;font-size:10px}.recovery p{margin:5px 0 0;color:var(--muted);font-size:9px;line-height:1.45}
     .credit{margin-top:11px;padding-top:9px;border-top:1px solid rgba(255,255,255,.055);color:rgba(255,255,255,.31);font-size:8.5px;line-height:1.45}.credit b{color:rgba(255,225,169,.58);font-weight:800}.credit .thai-credit{display:inline;margin-left:4px;color:rgba(255,255,255,.29)}
     .sigil-corner{position:fixed;z-index:2;top:24px;right:30px;width:32px;height:32px;object-fit:contain;opacity:.86;filter:sepia(.34) saturate(1.18)}.side-mantra{position:fixed;z-index:2;right:30px;bottom:118px;display:grid;gap:7px;color:rgba(222,180,104,.58);font-size:7.5px;font-weight:800;letter-spacing:.31em;text-transform:uppercase;text-align:right}.secure{position:fixed;z-index:2;right:30px;bottom:22px;color:rgba(224,185,112,.7);font-size:7.5px;font-weight:800;letter-spacing:.29em;text-transform:uppercase}
-    .visual{display:none}.visual:before{content:"";display:block;background:url("${APPROVED_ADMIN_LOGIN_PRIVACY_BG}") center/cover no-repeat;}.visual-logo{object-fit:contain;}.compat-marker{display:none!important}#adminCredential[data-mask="true"]{-webkit-text-security:disc}
+    .visual{display:none}.visual:before{content:"";display:block;background:url("${APPROVED_ADMIN_LOGIN_PRIVACY_BG}") center/cover no-repeat;}.visual-logo{object-fit:contain;}.compat-marker{display:none!important}
+    .login-environment{margin:0 0 10px;font-size:11px;line-height:1.5;color:var(--muted);overflow-wrap:anywhere}.login-environment strong{color:var(--gold-hi)}.login-environment[data-environment="Staging"] strong{color:#bfe4c8}.login-environment small{display:block;font-size:10px}.login-notice{margin:0 0 8px;font-size:12px;line-height:1.5;color:var(--gold-hi)}
     @media(max-width:1180px){.stage{padding-left:26px;padding-right:26px}.access-card{width:min(560px,55vw);min-width:470px}.title{font-size:44px;white-space:normal}.duo-wrap{right:-3vw;width:53vw}.side-mantra{display:none}.sigil-corner,.secure{right:20px}}
     @media(min-width:901px) and (max-height:760px){.stage{padding-top:10px;padding-bottom:10px}.access-card{max-height:calc(100svh - 20px);padding:18px 28px}.kicker{margin-bottom:6px}.title{font-size:40px}.lead{margin:6px 0 8px;font-size:12.5px}.rule{margin-bottom:8px}.managed-label{margin-bottom:5px}.lane{min-height:78px;padding:8px 11px}.lane-brand{height:33px}.lane-brand .mmd-brand{width:88px;max-height:34px}.lane-brand .mms-brand{width:38px;height:34px}.lane b{font-size:12.5px}.lane small{font-size:8.5px}.account-note{margin:4px 0 7px;font-size:8.5px}.panel-head{margin-bottom:5px}.panel-head span{font-size:8.4px}form{gap:6px}label{gap:4px;font-size:8px}input{min-height:38px}.go{min-height:43px}.message{min-height:11px}.links{margin-top:4px}.credit{margin-top:7px;padding-top:6px;font-size:7.8px}}
     @media(max-width:900px){
@@ -424,6 +444,7 @@ export function renderApprovedAdminLogin(
     <article class="access-card">
       <span class="compat-marker" aria-hidden="true">INVITE ONLY · SECURE SESSION</span>
       <p class="kicker">BACK OFFICE ACCESS</p>
+      <p class="login-environment" data-environment="${environment.name}"><strong>${environment.name} · ${environment.description}</strong><small>${escapeHtml(environment.host)}</small></p>
       <h1 class="title">Enter your Back Office</h1>
       <p class="lead">กรุณาเลือกบัญชีที่ท่านต้องการเข้าถึง</p>
       <div class="rule" aria-hidden="true"></div>
@@ -445,11 +466,15 @@ export function renderApprovedAdminLogin(
       <section class="panel" data-panel="owner">
         <div class="panel-head"><strong>MMD Privé · SIGIL System</strong><br><span>Owner / Internal Admin access</span></div>
         <div class="scope"><span>Approved access</span><span>Secure session</span><span>Private route</span></div>
-        <form method="post" action="${ADMIN_LOGIN_SESSION_PATH}" id="ownerLoginForm" autocomplete="off">
+        <form method="post" action="${ADMIN_LOGIN_SESSION_PATH}" id="ownerLoginForm" autocomplete="on">
+          <input type="hidden" name="action" value="owner_login">
+          <input type="hidden" name="username" autocomplete="username" value="Owner · ${environment.name}">
           <input id="adminNext" type="hidden" name="next" value="${escapeAttribute(next)}">
-          <label for="adminCredential">Access Code
-            <span class="field"><input id="adminCredential" type="text" required readonly autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" inputmode="text" data-mask="true" data-1p-ignore="true" data-lpignore="true" data-bwignore="true" data-form-type="other"><button class="toggle" type="button" data-toggle="adminCredential" aria-pressed="false">SHOW</button></span>
+          ${notice && !error ? `<p class="login-notice" id="sessionNotice" role="status">${notice}</p>` : ""}
+          <label for="adminCredential">Owner Password · ${environment.name}
+            <span class="field"><input id="adminCredential" type="password" name="credential" required autocomplete="current-password" autocapitalize="none" autocorrect="off" spellcheck="false" aria-describedby="ownerPasswordHint ownerMessage"><button class="toggle" type="button" data-toggle="adminCredential" aria-label="แสดงรหัสผ่าน" aria-pressed="false">SHOW</button></span>
           </label>
+          <p class="privacy" id="ownerPasswordHint">ใช้รหัส Owner ของ ${environment.name} บนโดเมนนี้ · บันทึกใน Password Manager ได้</p>
           <p class="message${error ? " is-error" : ""}" id="ownerMessage" role="${error ? "alert" : "status"}">${error ? escapeHtml(error) : `Next: ${escapeHtml(next)}`}</p>
           <button class="go" type="submit">Enter Back Office</button>
           <p class="privacy">Secure HttpOnly session · SIGIL System internal route</p>
@@ -505,13 +530,13 @@ export function renderApprovedAdminLogin(
   const panels=[...document.querySelectorAll('[data-panel]')];
   function setLane(name){document.body.dataset.activeLane=name;lanes.forEach(b=>{const on=b.dataset.lane===name;b.classList.toggle('is-active',on);b.setAttribute('aria-selected',String(on));});panels.forEach(p=>p.hidden=p.dataset.panel!==name);}
   lanes.forEach(b=>b.addEventListener('click',()=>setLane(b.dataset.lane)));setLane(initial);
-  document.querySelectorAll('[data-toggle]').forEach(button=>button.addEventListener('click',()=>{const input=document.getElementById(button.dataset.toggle);if(!input)return;const owner=input.id==='adminCredential';const showing=button.getAttribute('aria-pressed')==='true';button.setAttribute('aria-pressed',String(!showing));button.textContent=showing?'SHOW':'HIDE';if(owner){if(showing)input.setAttribute('data-mask','true');else input.removeAttribute('data-mask');}else input.type=showing?'password':'text';input.focus();}));
-  const ownerInput=document.getElementById('adminCredential');if(ownerInput){ownerInput.value='';ownerInput.readOnly=false;}
+  document.querySelectorAll('[data-toggle]').forEach(button=>button.addEventListener('click',()=>{const input=document.getElementById(button.dataset.toggle);if(!input)return;const showing=input.type==='text';button.setAttribute('aria-pressed',String(!showing));button.setAttribute('aria-label',showing?'แสดงรหัสผ่าน':'ซ่อนรหัสผ่าน');button.textContent=showing?'SHOW':'HIDE';input.type=showing?'password':'text';input.focus();}));
+  const ownerInput=document.getElementById('adminCredential');
   document.querySelectorAll('[data-open]').forEach(button=>button.addEventListener('click',()=>{const name=button.dataset.open;document.querySelectorAll('[data-subpanel]').forEach(p=>p.hidden=p.dataset.subpanel!==name);document.getElementById('recoveryBox').classList.remove('is-visible');}));
   async function postForm(form){const body=new URLSearchParams(new FormData(form));const response=await fetch(sessionPath,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8','X-MMD-Login-Fetch':'1'},credentials:'same-origin',redirect:'follow',cache:'no-store',body:body.toString()});let payload={};try{payload=await response.clone().json();}catch{}return {response,payload};}
   function setMessage(el,text,type=''){el.classList.remove('is-error','is-ok');if(type)el.classList.add(type);el.setAttribute('role',type==='is-error'?'alert':'status');el.textContent=text;}
   function genericError(status){if(status===429)return 'ลองใหม่อีกครั้งในภายหลัง';if(status>=500)return 'พื้นที่หลังบ้านยังไม่พร้อม ลองใหม่อีกครั้ง';return 'ข้อมูลเข้าสู่ระบบไม่ถูกต้อง หรือยังไม่ได้รับอนุมัติ';}
-  const ownerForm=document.getElementById('ownerLoginForm');ownerForm?.addEventListener('submit',async e=>{e.preventDefault();const message=document.getElementById('ownerMessage');const submit=ownerForm.querySelector('.go');const input=ownerInput;const credential=input.value.trim();if(!credential){ownerInput.focus();return;}submit.disabled=true;setMessage(message,'Checking access…');try{const body=new URLSearchParams();body.set('action','owner_login');body.set('credential',credential);body.set('next',document.getElementById('adminNext').value||'/internal/admin/console');const response=await fetch(sessionPath,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8','X-MMD-Login-Fetch':'1'},credentials:'same-origin',redirect:'follow',cache:'no-store',body:body.toString()});let payload={};try{payload=await response.clone().json();}catch{}if(response.ok&&response.redirected){location.assign(response.url);return;}if(response.ok&&payload.ok){location.assign(payload.next||'/internal/admin/console');return;}setMessage(message,genericError(response.status),'is-error');}catch{setMessage(message,'ติดต่อระบบไม่ได้ ลอง refresh แล้วกดใหม่อีกครั้ง','is-error');}finally{submit.disabled=false;ownerInput.focus();}});
+  const ownerForm=document.getElementById('ownerLoginForm');ownerForm?.addEventListener('submit',async e=>{e.preventDefault();const message=document.getElementById('ownerMessage');const submit=ownerForm.querySelector('.go');const input=ownerInput;const credential=input.value.trim();if(!credential){ownerInput.focus();return;}submit.disabled=true;setMessage(message,'Checking access…');try{const body=new URLSearchParams();body.set('action','owner_login');body.set('credential',credential);body.set('next',document.getElementById('adminNext').value||'/internal/admin/console');const response=await fetch(sessionPath,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8','X-MMD-Login-Fetch':'1'},credentials:'same-origin',redirect:'follow',cache:'no-store',body:body.toString()});let payload={};try{payload=await response.clone().json();}catch{}if(response.ok&&response.redirected){location.assign(response.url);return;}if(response.ok&&payload.ok){location.assign(payload.next||'/internal/admin/console');return;}const notice=document.getElementById('sessionNotice');if(notice)notice.hidden=true;setMessage(message,response.status===401?'รหัส Owner ไม่ถูกต้องสำหรับ ${environment.name} กรุณาตรวจรหัสที่บันทึกไว้':genericError(response.status),'is-error');}catch{setMessage(message,'ติดต่อระบบไม่ได้ ลอง refresh แล้วกดใหม่อีกครั้ง','is-error');}finally{submit.disabled=false;ownerInput.focus();}});
   const partnerForm=document.getElementById('partnerLoginForm');partnerForm?.addEventListener('submit',async e=>{e.preventDefault();const message=document.getElementById('partnerMessage');const submit=partnerForm.querySelector('.go');submit.disabled=true;setMessage(message,'Checking access…');try{const {response,payload}=await postForm(partnerForm);if(response.ok&&payload.ok){location.assign(payload.next||'${MMS_PARTNER_PATH}');return;}setMessage(message,genericError(response.status),'is-error');}catch{setMessage(message,'ติดต่อระบบไม่ได้ ลองใหม่อีกครั้ง','is-error');}finally{submit.disabled=false;}});
   function showRecovery(code){const box=document.getElementById('recoveryBox');document.getElementById('recoveryCode').textContent=code||'';box.classList.toggle('is-visible',Boolean(code));}
   const signupForm=document.getElementById('partnerSignupForm');signupForm?.addEventListener('submit',async e=>{e.preventDefault();const message=document.getElementById('signupMessage');const submit=signupForm.querySelector('.go');submit.disabled=true;showRecovery('');setMessage(message,'Creating account…');try{const {response,payload}=await postForm(signupForm);if(response.ok&&payload.ok){setMessage(message,'สร้างบัญชี Partner แล้ว ใช้ Username และ Password นี้เข้าสู่ระบบได้เลย','is-ok');showRecovery(payload.recovery_code);return;}setMessage(message,response.status===409?'บัญชีนี้เปิดใช้งานแล้ว หรือไม่สามารถเปิดซ้ำได้':genericError(response.status),'is-error');}catch{setMessage(message,'ติดต่อระบบไม่ได้ ลองใหม่อีกครั้ง','is-error');}finally{submit.disabled=false;}});
@@ -521,14 +546,14 @@ export function renderApprovedAdminLogin(
   return new Response(html, { status, headers });
 }
 
-function loginHeaders() {
+function loginHeaders(environment) {
   return {
     "content-type": "text/html; charset=utf-8",
     "cache-control": "no-store, private, max-age=0",
-    "x-mmd-admin-origin": ADMIN_CANONICAL_ORIGIN,
+    "x-mmd-admin-origin": environment.origin,
     "content-security-policy": CSP,
     "x-mmd-admin-login": APPROVED_ADMIN_LOGIN_PAGE_ID,
-    "x-mmd-login-ui": "browser-fetch-v5",
+    "x-mmd-login-ui": "owner-environment-v6",
     "x-mmd-page": APPROVED_ADMIN_LOGIN_PAGE_ID,
     "x-mmd-route-owner": "admin-worker",
   };

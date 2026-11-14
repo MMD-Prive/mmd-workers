@@ -72,8 +72,8 @@ test("GET login renders a safe deterministic browser login form", async () => {
   assert.match(response.headers.get("cache-control") || "", /no-store/);
   assert.match(response.headers.get("content-security-policy") || "", /form-action 'self'/);
   assert.match(response.headers.get("content-security-policy") || "", /connect-src 'self'/);
-  assert.equal(response.headers.get("x-mmd-login-ui"), "browser-fetch-v5");
-  assert.match(html, /<title>MMD Privé · Internal Login<\/title>/);
+  assert.equal(response.headers.get("x-mmd-login-ui"), "owner-environment-v6");
+  assert.match(html, /<title>MMD Privé · Production · Internal Login<\/title>/);
   assert.match(html, /data-mmd-page="admin-login-approved-hero"/);
   assert.match(html, /data-lane="owner"/);
   assert.match(html, /data-lane="partner"/);
@@ -83,13 +83,11 @@ test("GET login renders a safe deterministic browser login form", async () => {
   assert.match(html, /data-initial-lane="owner"/);
   assert.match(html, /method="post"/);
   assert.match(html, /action="\/internal\/admin\/login\/session"/);
-  assert.doesNotMatch(html, /id="adminCredential"[^>]*name="credential"/);
+  assert.match(html, /id="adminCredential"[^>]*name="credential"/);
   assert.match(html, /body\.set\('credential',credential\)/);
   assert.match(html, /name="next" value="\/internal\/admin\/kenji"/);
-  assert.match(html, /id="adminCredential" type="text" required readonly/);
-  assert.match(html, /id="adminCredential"[^>]*data-mask="true"/);
-  assert.match(html, /#adminCredential\[data-mask="true"\]\{-webkit-text-security:disc\}/);
-  assert.doesNotMatch(html, /id="adminCredential"[^>]*type="password"/);
+  assert.match(html, /id="adminCredential" type="password" name="credential" required/);
+  assert.match(html, /id="adminCredential"[^>]*autocomplete="current-password"/);
   assert.doesNotMatch(html, /MMD Admin Sign In/);
   assert.doesNotMatch(html, /admin-worker\.malemodel-bkk\.workers\.dev/);
   assert.doesNotMatch(html, /mmdprive\.webflow\.io\/internal\/admin\/login/);

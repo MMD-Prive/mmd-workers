@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import worker from "./.build/staging.mjs";
+import { createCredentialBoundAdminSession } from "./.build/admin-worker/src/credential-bound-admin-session.js";
 
 const origin = "https://mmd-admin-console-3143-staging.malemodel-bkk.workers.dev";
 const env = { ADMIN_LOGIN_CREDENTIAL: "local-owner-test", ADMIN_SESSION_SECRET: "local-session-test" };
@@ -77,4 +78,33 @@ test("staging only accepts its own Owner session, serves the original form, and 
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("built staging login contains the shared UX and keeps its own canonical origin", async () => {
+  const result = await worker.fetch(new Request(origin + "/internal/admin/login"), env, {});
+  assert.equal(result.status, 200);
+  const html = await result.text();
+  assert.match(html, /data-environment="Staging"/);
+  assert.match(html, /Owner Password · Staging/);
+  assert.match(html, /id="adminCredential" type="password" name="credential" required autocomplete="current-password"/);
+  assert.match(html, /name="username" autocomplete="username" value="Owner · Staging"/);
+  assert.equal(result.headers.get("x-mmd-admin-origin"), origin);
+  assert.ok(html.includes(`rel="canonical" href="${origin}/internal/admin/login"`));
+});
+
+test("built staging detects expiry without accepting the expired session or extending it", async () => {
+  const realNow = Date.now;
+  const issuedAt = realNow() - 9 * 60 * 60 * 1000;
+  let token;
+  try {
+    Date.now = () => issuedAt;
+    token = await createCredentialBoundAdminSession(new Request(origin), { id: "per", role: "owner" }, env);
+  } finally { Date.now = realNow; }
+  const headers = { Cookie: `mmd_admin_gate_v1=${token}` };
+  const result = await worker.fetch(new Request(origin + "/internal/admin/login", { headers }), env, {});
+  assert.match(await result.text(), /เซสชันหมดอายุแล้ว กรุณาเข้าสู่ระบบอีกครั้งด้วยรหัสเดิม/);
+  assert.equal(result.headers.get("set-cookie"), null);
+  const denied = await worker.fetch(new Request(origin + "/internal/admin/console", { headers }), env, {});
+  assert.equal(denied.status, 303);
+  assert.equal(new URL(denied.headers.get("location")).origin, origin);
 });

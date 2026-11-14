@@ -41,8 +41,8 @@ test("admin login preserves the canonical secure form contract", async () => {
   const html = await response.text();
 
   assert.match(html, new RegExp(`form method="post" action="${ADMIN_LOGIN_SESSION_PATH.replaceAll("/", "\\/")}"`));
-  assert.match(html, /id="adminCredential" type="text" required readonly/);
-  assert.doesNotMatch(html, /id="adminCredential"[^>]*name="credential"/);
+  assert.match(html, /id="adminCredential" type="password" name="credential" required/);
+  assert.match(html, /id="adminCredential"[^>]*name="credential"/);
   assert.match(html, /name="next" value="\/internal\/admin\/control-room\?tab=queue"/);
   assert.match(response.headers.get("cache-control") || "", /no-store/);
   assert.match(response.headers.get("content-security-policy") || "", /img-src https:\/\/cdn\.prod\.website-files\.com/);

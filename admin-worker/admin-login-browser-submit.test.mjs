@@ -14,26 +14,14 @@ function render() {
   );
 }
 
-test("admin login exposes one browser-neutral masked credential field", async () => {
+test("admin login exposes a standard password-manager form without clearing autofill", async () => {
   const html = await (await render()).text();
-
-  assert.match(html, /<form[^>]*id="ownerLoginForm"[^>]*autocomplete="off"/);
-  assert.match(html, /id="adminCredential" type="text" required readonly autocomplete="off"/);
-  assert.match(html, /id="adminCredential"[^>]*data-mask="true"/);
-  assert.match(html, /data-1p-ignore="true"/);
-  assert.match(html, /data-lpignore="true"/);
-  assert.match(html, /data-bwignore="true"/);
-  assert.match(html, /data-form-type="other"/);
-  assert.match(
-    html,
-    /id="partnerPassword"[^>]*type="password"[^>]*autocomplete="current-password"/,
-  );
-  assert.doesNotMatch(
-    html,
-    /id="adminCredential"[^>]*autocomplete="current-password"/,
-  );
-  assert.doesNotMatch(html, /id="adminCredential"[^>]*name="credential"/);
-  assert.doesNotMatch(html, /id="adminCredential"[^>]*type="password"/);
+  assert.match(html, /<form[^>]*id="ownerLoginForm"[^>]*autocomplete="on"/);
+  assert.match(html, /name="username" autocomplete="username" value="Owner · Production"/);
+  assert.match(html, /id="adminCredential" type="password" name="credential" required autocomplete="current-password"/);
+  assert.doesNotMatch(html, /data-1p-ignore|data-lpignore|data-bwignore|data-mask|ownerInput\.value=/);
+  assert.doesNotMatch(html, /id="adminCredential"[^>]*readonly/);
+  assert.match(html, /id="partnerPassword"[^>]*type="password"[^>]*autocomplete="current-password"/);
 });
 
 test("admin login canonicalizes www browser traffic to the apex admin origin before submit", async () => {
@@ -42,7 +30,7 @@ test("admin login canonicalizes www browser traffic to the apex admin origin bef
 
   assert.equal(ADMIN_CANONICAL_ORIGIN, "https://mmdbkk.com");
   assert.equal(response.headers.get("x-mmd-admin-origin"), ADMIN_CANONICAL_ORIGIN);
-  assert.equal(response.headers.get("x-mmd-login-ui"), "browser-fetch-v5");
+  assert.equal(response.headers.get("x-mmd-login-ui"), "owner-environment-v6");
   assert.match(html, /location\.hostname==='www\.mmdbkk\.com'/);
   assert.match(html, /canonical\.hostname='mmdbkk\.com'/);
   assert.match(html, /location\.replace\(canonical\.toString\(\)\)/);
@@ -73,7 +61,7 @@ test("admin login preserves secure server-side flow and exposes the Image A prod
 
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("cache-control"), "no-store, private, max-age=0");
-  assert.equal(response.headers.get("x-mmd-login-ui"), "browser-fetch-v5");
+  assert.equal(response.headers.get("x-mmd-login-ui"), "owner-environment-v6");
   assert.equal(response.headers.get("x-mmd-admin-origin"), "https://mmdbkk.com");
   assert.match(response.headers.get("content-security-policy") || "", /connect-src 'self'/);
   assert.match(html, /name="next" value="\/internal\/admin\/control-room"/);
