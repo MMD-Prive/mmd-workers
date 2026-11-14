@@ -44,3 +44,9 @@ jobs:
           node --test admin-console-staging/preflight.test.mjs
           git show "$PIN:admin-worker/src/create-job-worker-page.js" > "$RUNNER_TEMP/create-job-pinned.js"
           cmp "$RUNNER_TEMP/create-job-pinned.js" admin-console-staging/.build/admin-worker/src/create-job-worker-page.js
+      - name: Build Model Partner adapter and test isolated payment fixtures
+        run: |
+          set -euo pipefail
+          node admin-console-staging/qa/build.mjs
+          node --test admin-console-staging/qa/runtime.test.mjs
+          test "$(sed -n 's/^workers_dev = //p' admin-console-staging/wrangler.qa.toml)" = false

@@ -1,3 +1,4 @@
+import { buildCaptainEdit, verifyCaptainEvidence } from './owner-job-edit-captain.js';
 import { at, loadJob, revision, buildEdit, reply, S, J } from './owner-job-edit.js';
 
 // A per-session durable journal serializes this editor's writes. Other lifecycle
@@ -26,7 +27,7 @@ export class JobEditJournal {
       const data=await loadJob(this.env,body.session_id);
       if(await revision(data)!==body.revision)return reply({ok:false,error:'job_changed_reload'},409);
       const model=await at(this.env,'models',{id:body.model_id,fields:['fldShiT60bmCxFxRu','fld0maFkh4NHpsPxA','fldRcAE3bL8dKmURH']});
-      const atTime=new Date().toISOString(),plan=buildEdit(data,body,model,actor,atTime);
+      const atTime=new Date().toISOString(),plan=body.amendment==='captain-zero'?await buildCaptainEdit(this.env,data,body,model,actor,atTime):buildEdit(data,body,model,actor,atTime);
       journal={hash:bodyHash,body,actor,at:atTime,data,plan};
       // Persist recovery and full before-image before making any external write.
       await this.storage.put('pending',journal);
@@ -42,15 +43,18 @@ export class JobEditJournal {
     const beforeSession=await revision(current.session)===await revision(data.session);
     const afterJob=matches(current.job,plan.jobPatch),afterSession=matches(current.session,plan.sessionPatch);
     if(!((beforeJob||afterJob)&&(beforeSession||afterSession)))return reply({ok:false,error:'edit_conflict_requires_review'},409);
+    if(plan.captainEvidence)await verifyCaptainEvidence(this.env,current,plan.captainEvidence);
     if(!afterJob)await at(this.env,'jobs',{id:data.job.id,patch:plan.jobPatch});
     current=await loadJob(this.env,body.session_id);
     if(!unchangedSettlement(current))return reply({ok:false,error:'edit_settlement_changed_review_required'},409);
     if(!matches(current.job,plan.jobPatch)||(!matches(current.session,plan.sessionPatch)&&await revision(current.session)!==await revision(data.session)))return reply({ok:false,error:'edit_conflict_requires_review'},409);
+    if(plan.captainEvidence)await verifyCaptainEvidence(this.env,current,plan.captainEvidence);
     if(!matches(current.session,plan.sessionPatch))await at(this.env,'sessions',{id:data.session.id,patch:plan.sessionPatch});
     const final=await loadJob(this.env,body.session_id);
+    if(plan.captainEvidence)await verifyCaptainEvidence(this.env,final,plan.captainEvidence);
     if(!unchangedSettlement(final))return reply({ok:false,error:'edit_settlement_changed_review_required'},409);
     if(!matches(final.job,plan.jobPatch)||!matches(final.session,plan.sessionPatch))return reply({ok:false,error:'edit_recovery_required'},503);
-    const result={ok:true,session_id:body.session_id,amount:plan.amount,payout:plan.payout,paid:plan.paid,remaining:plan.remaining,notification_sent:false,payment_verification_changed:false};
+    const result={ok:true,session_id:body.session_id,amount:plan.amount,payout:plan.payout,paid:plan.paid,remaining:plan.remaining,notification_sent:false,payment_verification_changed:false,payment_intent_created:false,...(plan.captainEvidence?{partner_cost:23000}: {})};
     const summary=d=>({model_id:d.session.fields[S.model]?.[0],model_name:d.session.fields[S.name],amount:d.session.fields[S.amount],payout:d.session.fields[S.payout]});
     await this.storage.put({['audit:'+journal.at+':'+body.request_id]:{...journal,before:summary(data),after:summary(final)},['done:'+body.request_id]:{hash:bodyHash,result}});
     await this.storage.delete('pending');

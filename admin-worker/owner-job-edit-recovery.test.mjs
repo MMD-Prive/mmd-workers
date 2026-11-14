@@ -177,3 +177,37 @@ test('unreadable or expired-session responses release loading and offer a retry'
     assert.equal(h.$('retry').hidden,false);assert.doesNotMatch(h.$('message').textContent,/bad JSON/);
   }
 });
+
+test('Captain amendment uses existing editor: preview, Back, fresh review and exact-request retry',async()=>{
+  const sid='sess_mw4pp2cg_d5788ca38716eab1';const writes=[];let attempts=0;
+  const h=harness((url,opts)=>{
+    if(opts.method==='POST'){
+      writes.push(opts.body);
+      if(++attempts===1)return new Promise(()=>{});
+      return response({ok:true,amount:33000,partner_cost:23000,payout:null,paid:7500,remaining:25500});
+    }
+    if(url.includes('amendment=captain-zero'))return response({ok:true,revision:'fixture-revision',proposal:{
+      amendment:'captain-zero',model_id:'fixture-ems20',model_name:'EMs20 - Zero',partner_name:'Kendo',
+      customer_total:33000,partner_cost:23000,received:7500,remaining:25500,evidence_revision:'fixture-proof',remark:'No new collection'}});
+    if(url.includes('history='))return history();
+    const d=fixture();d.job.session_id=sid;d.job.blocked='pricing_review_required';return response(d);
+  },{session:sid});
+  await flush();assert.equal(h.$('captainAmend').hidden,false);
+  h.$('captainAmend').click();await flush();
+  assert.equal(h.$('confirm').open,true);assert.match(h.$('confirmText').textContent,/25,500/);assert.match(h.$('confirmText').textContent,/Kendo/);
+  h.$('back').click();assert.equal(h.$('confirm').open,false);assert.equal(writes.length,0);
+  h.$('captainAmend').click();await flush();h.$('save').click();await flush();h.deadline();await flush();
+  h.$('retry').click();await flush();assert.equal(writes.length,2);assert.equal(writes[0],writes[1]);
+  const b=JSON.parse(writes[0]);assert.equal(b.amendment,'captain-zero');assert.equal(b.customer_total,undefined);assert.equal(b.evidence_revision,'fixture-proof');
+  assert.match(h.$('message').textContent,/ต้นทุนรวม Kendo 23,000/);assert.match(h.$('message').textContent,/25,500/);
+});
+
+test('Captain preview refuses unreadable source without exposing Save or writing',async()=>{
+  const h=harness((url,opts)=>{
+    assert.notEqual(opts.method,'POST');
+    if(url.includes('amendment='))return {ok:false,json:async()=>({ok:false,error:'amendment_evidence_unavailable'})};
+    const d=fixture();d.job.blocked='pricing_review_required';return response(d);
+  },{session:'sess_mw4pp2cg_d5788ca38716eab1'});
+  await flush();h.$('captainAmend').click();await flush();
+  assert.equal(h.$('confirm').open,false);assert.equal(h.$('save').disabled,true);assert.match(h.$('message').textContent,/อ่านความสัมพันธ์/);
+});
