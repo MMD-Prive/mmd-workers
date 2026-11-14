@@ -190,3 +190,17 @@ test('LV Max reorders linked models through the real API and keeps ranking separ
  assert.equal(q('[name=display_name]').closest('[data-editor-group]').hidden,true);
  assert.match(q('.lv-editor-note').textContent,/สถานะเดิมยังมีผล/);assert.deepEqual(errors,[]);
 });
+
+test('job detail reads ETA without model impersonation, wrong-place request retains current state',async t=>{
+ const {q,f,errors}=await ui(t,{seed:f=>{f.db.Sessions[0].fields[apiModule.SESSION_FIELDS.lifecycle]='en_route';f.db.Jobs=[{id:'recJOB00000000001',fields:{session_id:'session_fixture',events_json:JSON.stringify([{event:'eta_update',ts:new Date().toISOString(),eta_minutes:25}])}}];}});
+ q('[data-load-job-detail]').click();await settle(()=>q('[data-live-job]').textContent.includes('กำลังเดินทาง'));
+ assert.match(q('[data-live-job]').textContent,/คาดว่าจะถึงอีกประมาณ/);assert.match(q('[data-live-job]').textContent,/ประวัติการติดต่อยังไม่ครบ/);
+ q('[data-coordinate="wrong_place"]').click();assert.equal(q('[data-view-panel="console"]').hidden,false);assert.match(q('[data-console-form]').elements.message.value,/ตรวจหมุดล่าสุด/);assert.equal(q('[data-console-form]').elements.share_with_mmd.checked,false);
+ assert.equal(f.db.Sessions[0].fields[apiModule.SESSION_FIELDS.lifecycle],'en_route');assert.equal(f.messages.length,0);assert.equal(f.writes.length,0);assert.deepEqual(errors,[]);
+});
+test('sales editor separates work lane from customer audience and retains input on rejection',async t=>{
+ const {q,f,errors}=await ui(t);q('[data-edit-model="visibility"]').click();
+ const form=q('[data-model-form]');form.elements.offer_type.value='vip';form.elements.partner_source_rate_thb.value='';form.elements.customer_sell_rate_thb.value='9000';form.elements.share_with_mmd.checked=true;q('[name=audience_scope]').checked=true;
+ q('[data-save-sales]').click();await settle(()=>!q('[data-save-sales]').disabled);
+ assert.equal(form.elements.offer_type.value,'vip');assert.equal(form.elements.customer_sell_rate_thb.value,'9000');assert.match(q('[data-dialog-feedback]').textContent,/กรอกเรท/);assert.equal(f.db.Rules.length,0);assert.deepEqual(errors,[]);
+});

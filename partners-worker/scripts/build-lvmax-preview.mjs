@@ -18,10 +18,11 @@ const data=${JSON.stringify(data).replace(/</g,'\\u003c')};
 let order={model_ids:[],revision:null};try{order=JSON.parse(localStorage.getItem('partner-lvmax-order-preview'))||order;}catch{}
 let vault=null;
 window.fetch=async function(input,options={}){
- const path=new URL(typeof input==='string'?input:input.url,location.href).pathname;
+ const url=new URL(typeof input==='string'?input:input.url,location.href),path=url.pathname;
  const method=options.method||'GET';let body={};if(typeof options.body==='string'){try{body=JSON.parse(options.body);}catch{}}
  const ok=(value)=>Promise.resolve(new Response(JSON.stringify({ok:true,...value}),{status:200,headers:{'content-type':'application/json'}}));
  if(path==='/v1/partner/dashboard')return ok(data);
+ if(path==='/v1/partner/jobs/detail'){const job=data.jobs.find(j=>j.session_record_id===url.searchParams.get('session_record_id'));return ok({detail:{session_record_id:job.session_record_id,lifecycle:'en_route',updated_at:new Date().toISOString(),location:job.location,eta:{status:'active',arrival_at:new Date(Date.now()+25*60000).toISOString(),updated_at:new Date().toISOString(),server_now:new Date().toISOString()},reconfirm:{recorded_acknowledged_at:null},history_complete:false,communications_available:false,model_actions_allowed:false}});}
  if(path==='/v1/partner/roster-order'){
   if(method==='POST'){if(body.revision!==order.revision)return new Response(JSON.stringify({ok:false,error:'roster_order_conflict'}),{status:409});order={model_ids:body.model_ids,revision:String(Date.now())};try{localStorage.setItem('partner-lvmax-order-preview',JSON.stringify(order));}catch{}}
   return ok(order);

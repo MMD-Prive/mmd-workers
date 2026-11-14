@@ -38,11 +38,11 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
     var joiner = path.indexOf("?") === -1 ? "?" : "&";
     return fetch(path + joiner + "t=" + encodeURIComponent(token), Object.assign({}, options || {}, {referrerPolicy:"no-referrer",cache:"no-store",credentials:"omit"})).then(function (response) {
       return response.json().catch(function () { return {}; }).then(function (payload) {
-        if (response.status === 401) blockPartnerAccess();
+        if (response.status === 401 || (response.status === 403 && ["partner_not_active","partner_not_recognized"].includes(payload.error&&payload.error.code))) blockPartnerAccess();
         if (state.authBlocked) throw new Error(signInMessage);
         if (!response.ok || !payload.ok) {
           var code = payload.error && typeof payload.error === "object" ? payload.error.code : payload.error;
-          var messages = {roster_order_conflict:"ลำดับถูกแก้จากอีกอุปกรณ์ กรุณาโหลดลำดับล่าสุดก่อนบันทึก",vault_conflict:"ข้อมูลถูกแก้จากอีกอุปกรณ์ กรุณาสำรองแล้วโหลด Vault ใหม่ก่อนบันทึก",vault_revision_required:"กรุณาโหลด Vault ใหม่ก่อนบันทึก",job_already_closed:"งานนี้สรุปผลแล้ว",explicit_share_required:"กรุณายืนยัน Share with MMD",official_verify_required:"งานอยู่ในขั้น Official Verify · ระบบจะเปิดการยืนยันเมื่อการตรวจเสร็จ",partner_confirmation_already_final:"คำตอบของงานนี้ถูกบันทึกแล้ว · รีเฟรชเพื่อดูสถานะล่าสุด",partner_not_active:"สถานะพาร์ทเนอร์กำลังอยู่ในขั้นตรวจสอบ",partner_not_recognized:"Partner Review ของ Boss Per กำลังดำเนินการ",telegram_connect_required:"เชื่อม Telegram เพื่อรับแจ้งงาน · Dashboard ใช้งานได้ตามปกติ",telegram_binding_conflict:"กรุณาติดต่อ MMD เพื่อตรวจสอบบัญชี Telegram"};
+          var messages = {job_detail_changed:"รายละเอียดงานเปลี่ยน กรุณาโหลดข้อมูลล่าสุด",rate_required:"กรอกเรททั้งสองช่องก่อนส่ง",partner_model_scope_forbidden:"โมเดลนี้ไม่อยู่ในสังกัดที่บัญชีนี้จัดการได้",partner_session_scope_forbidden:"บัญชีนี้ไม่มีสิทธิ์ดูงานนี้",roster_order_conflict:"ลำดับถูกแก้จากอีกอุปกรณ์ กรุณาโหลดลำดับล่าสุดก่อนบันทึก",vault_conflict:"ข้อมูลถูกแก้จากอีกอุปกรณ์ กรุณาสำรองแล้วโหลด Vault ใหม่ก่อนบันทึก",vault_revision_required:"กรุณาโหลด Vault ใหม่ก่อนบันทึก",job_already_closed:"งานนี้สรุปผลแล้ว",explicit_share_required:"กรุณายืนยัน Share with MMD",official_verify_required:"งานอยู่ในขั้น Official Verify · ระบบจะเปิดการยืนยันเมื่อการตรวจเสร็จ",partner_confirmation_already_final:"คำตอบของงานนี้ถูกบันทึกแล้ว · รีเฟรชเพื่อดูสถานะล่าสุด",partner_not_active:"สถานะพาร์ทเนอร์กำลังอยู่ในขั้นตรวจสอบ",partner_not_recognized:"Partner Review ของ Boss Per กำลังดำเนินการ",telegram_connect_required:"เชื่อม Telegram เพื่อรับแจ้งงาน · Dashboard ใช้งานได้ตามปกติ",telegram_binding_conflict:"กรุณาติดต่อ MMD เพื่อตรวจสอบบัญชี Telegram"};
           throw new Error(messages[code] || "กรุณาลองอีกครั้ง หรือติดต่อ MMD เพื่อตรวจสอบรายการ");
         }
         return payload;
@@ -111,7 +111,7 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
       '<div class="pcr-job-main"><div><span class="pcr-status">' + esc(job.status || "pending") + '</span><h3>' + esc(job.model_name) + '</h3></div><strong>' + dateTime(job.start_at || job.date) + '</strong></div>' +
       changeAlert +
       '<dl><div><dt>งาน</dt><dd>' + esc(job.work_type || job.work_lane || "MMD assignment") + '</dd></div>' + budgetRow + travelRow + '<div><dt>สถานที่</dt><dd>' + esc(job.location) + locationNote + '</dd></div><div><dt>ลูกค้า</dt><dd>' + esc(job.client_alias) + '</dd></div>' + profitRows + '</dl>' +
-      actions +
+      actions + '<div class="lv-live-job"><button type="button" class="ghost" data-load-job-detail>ดูสถานะหน้างาน / ETA</button><div data-live-job role="status"></div><details class="lv-history"><summary>ต้องการให้ช่วยประสานงาน</summary><div class="pcr-actions"><button type="button" class="ghost" data-coordinate="issue">ติดปัญหา</button><button type="button" class="ghost" data-coordinate="wrong_place">ไปผิดจุด</button><button type="button" class="ghost" data-coordinate="cancel">ขอพิจารณายกเลิก</button></div></details></div>' +
       '<label class="pcr-private-field"><span>Private travel note · Partner-only encrypted</span><textarea data-private-travel placeholder="เช่น เดินทางถึงกรุงเทพฯ วันที่…" ' + (state.vault ? "" : "disabled") + '>' + esc(note) + '</textarea></label>' +
       '</article>';
   }
@@ -255,6 +255,7 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
     form.elements.partner_source_rate_thb.value = proposal.partner_source_rate_thb || "";
     form.elements.customer_sell_rate_thb.value = proposal.customer_sell_rate_thb || "";
     form.elements.sales_visibility.value = proposal.sales_visibility || "off";
+    form.elements.offer_type.value=proposal.offer_type||"default";
     var audiences = proposal.audience_scope || [];
     $$('[name="audience_scope"]', form).forEach(function (input) { input.checked = audiences.indexOf(input.value) !== -1; });
     form.elements.private_note.value = state.vault && state.vault.model_notes ? (state.vault.model_notes[modelId] || "") : "";
@@ -271,18 +272,21 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
   function submitProfile(event) {
     event.preventDefault(); var form = event.currentTarget;
     if (!form.elements.share_with_mmd.checked) return setFlash("ยืนยัน Share with MMD เพื่อดำเนินการกับข้อมูลโปรไฟล์ชุดนี้","error");
-    var button = form.querySelector('[data-save-profile]'); button.disabled = true;
+    var button = form.querySelector('[data-save-profile]'); if(button.disabled)return; button.disabled = true;
     api("/v1/partner/models/change", { method:"POST", headers:{"content-type":"application/json","Idempotency-Key":uid("profile_")}, body:JSON.stringify(profilePayload(form,"update_profile")) }).then(function () {
       if (state.vault) { state.vault.model_notes[state.model.model_record_id] = form.elements.private_note.value; return saveVault(); }
     }).then(function () { setFlash("บันทึกโปรไฟล์และส่งให้ MMD ตรวจแล้ว","success"); $("[data-model-dialog]",root).close(); return load(); }).catch(function (error) { setFlash(error.message,"error"); }).finally(function () { button.disabled=false; });
   }
 
+  var pendingSubmissionKeys=new Map();
+  function stableSubmissionKey(path,payload){var identity=path+JSON.stringify(payload);if(!pendingSubmissionKeys.has(identity))pendingSubmissionKeys.set(identity,uid("request_"));return pendingSubmissionKeys.get(identity);}
   function submitSales() {
     var button=$("[data-save-sales]",root);if(button.disabled)return;
     var form = $("[data-model-form]",root); if(!form.elements.share_with_mmd.checked)return setFlash("กรุณายืนยัน Share with MMD","error"); var audiences = $$('[name="audience_scope"]:checked',form).map(function (input) { return input.value; });
     if (!audiences.length) return setFlash("เลือกกลุ่มลูกค้าที่ต้องการให้มองเห็นอย่างน้อยหนึ่งกลุ่ม","error");
     button.disabled=true;
-    api("/v1/partner/sales/proposal", { method:"POST", headers:{"content-type":"application/json","Idempotency-Key":uid("sales_")}, body:JSON.stringify({model_record_id:state.model.model_record_id,partner_source_rate_thb:form.elements.partner_source_rate_thb.value,customer_sell_rate_thb:form.elements.customer_sell_rate_thb.value,sales_visibility:form.elements.sales_visibility.value,audience_scope:audiences,share_with_mmd:true,schedule_type:form.elements.schedule_type.value,effective_from_at:bangkokIso(form.elements.effective_from_at.value),effective_until_at:bangkokIso(form.elements.effective_until_at.value),change_reason:"Partner Dashboard control-room proposal"}) }).then(function () { setFlash("ส่ง Sales Control ให้ Boss Per ตรวจแล้ว","success"); return load(); }).catch(function (error) { setFlash(error.message,"error"); }).finally(function(){button.disabled=false;});
+    var payload={model_record_id:state.model.model_record_id,offer_type:form.elements.offer_type.value,partner_source_rate_thb:form.elements.partner_source_rate_thb.value,customer_sell_rate_thb:form.elements.customer_sell_rate_thb.value,sales_visibility:form.elements.sales_visibility.value,audience_scope:audiences,share_with_mmd:true,schedule_type:form.elements.schedule_type.value,effective_from_at:bangkokIso(form.elements.effective_from_at.value),effective_until_at:bangkokIso(form.elements.effective_until_at.value),change_reason:"Partner Dashboard control-room proposal"};
+    api("/v1/partner/sales/proposal", { method:"POST", headers:{"content-type":"application/json","Idempotency-Key":stableSubmissionKey("sales",payload)}, body:JSON.stringify(payload) }).then(function () { setFlash("ส่ง Sales Control ให้ Boss Per ตรวจแล้ว","success"); return load(); }).catch(function (error) { setFlash(error.message,"error"); }).finally(function(){button.disabled=false;});
   }
 
   function uploadModelFile() {
@@ -349,7 +353,7 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
   $("[data-add-form]",root).onsubmit=addModel;
   $("[data-unlock-vault]",root).onclick=unlockVault;
   $("[data-save-vault]",root).onclick=function(){saveVault().catch(function(error){setFlash(error.message,"error");});};
-  function refreshTelegram(){if(state.data && !state.data.partner.telegram_connected && !document.hidden)load();}
+  function refreshTelegram(){if(state.data && !state.authBlocked && !document.hidden)load();}
   window.addEventListener("focus", refreshTelegram);
   document.addEventListener("visibilitychange", refreshTelegram);
   $(".pcr-shell",root).hidden=true;
