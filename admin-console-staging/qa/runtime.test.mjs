@@ -162,3 +162,47 @@ test('Owner Captain adapter frames the editor and persists exactly one amendment
  assert.equal(result.sessions_model,'EMs20 - Zero');
  assert.deepEqual([result.received,result.remaining,result.receipt_count,result.audit_count,result.payment_issue_attempts],[7500,25500,1,1,0]);
 });
+
+test('built Owner Create Job renders the Captain receipt in the Zero/Kendo review', async t => {
+ const {JSDOM}=await import('jsdom');
+ const origin='https://mmd-admin-console-3143-staging.malemodel-bkk.workers.dev';
+ const store=new Map();
+ const object=new CreateJobFixtureRun({storage:{get:async k=>structuredClone(store.get(k)),put:async(k,v)=>store.set(k,structuredClone(v))}});
+ const env={ADMIN_LOGIN_CREDENTIAL:'qa-owner',ADMIN_SESSION_SECRET:'qa-session',CREATE_JOB_FIXTURE_RUNS:{idFromName:v=>v,get:()=>object}};
+ const send=(path,options={})=>gateway.fetch(new Request(origin+path,options),env,{});
+ const login=await send('/internal/admin/login/session',{method:'POST',headers:{Origin:origin,'Content-Type':'application/x-www-form-urlencoded','X-MMD-Login-Fetch':'1'},body:new URLSearchParams({action:'owner_login',credential:'qa-owner',next:'/internal/admin/console'})});
+ const owner=login.headers.get('set-cookie').split(';')[0];
+ const consolePage=await send('/internal/admin/console',{headers:{Cookie:owner}});
+ const cookie=owner+'; '+consolePage.headers.get('set-cookie').split(';')[0];
+ const path='/internal/admin/jobs/create-job?draft=captain-zero';
+ const html=await (await send(path,{headers:{Cookie:cookie}})).text();
+ const writes=[];
+ const dom=new JSDOM(html,{url:origin+path,runScripts:'dangerously',beforeParse(w){
+   w.scrollTo=()=>{};
+   w.fetch=(p,o={})=>{
+     if(o.method==='POST' && p!=='/v1/admin/clients/lineage-lookup') writes.push(p);
+     return send(p,{...o,headers:{...o.headers,Cookie:cookie,Origin:origin}});
+   };
+ }});
+ t.after(()=>dom.window.close());
+ const $=id=>dom.window.document.getElementById(id);
+ const fill=(id,value)=>{$(id).value=value;$(id).dispatchEvent(new dom.window.Event('change',{bubbles:true}));};
+ const click=async id=>{await $(id).onclick();};
+ fill('cq','Fixture');await click('cs');
+ dom.window.document.querySelector('#clients .result').click();
+ await click('next1');
+ dom.window.document.querySelector('input[name="visibility"][value="private"]').click();
+ fill('ptype','pn');fill('folder','standard');fill('orientation','gay');
+ await click('next2');fill('mq','Zero');await click('ms');
+ dom.window.document.querySelector('#models .result').click();await click('next3');
+ fill('date','2026-11-20');fill('time','19:00');fill('duration','120');fill('location','Fixture location');
+ await click('next4');fill('amount','33000');await click('next5');await click('next6');
+ for(let i=0;i<30&&!$('review').textContent.includes('25,500');i++)await new Promise(r=>setImmediate(r));
+ assert.match($('review').textContent,/Zero.*Kendo.*ไม่มีส่วนลด.*33,000.*7,500.*25,500/);
+ assert.equal($('create').disabled,true);
+ await $('create').onclick();
+ assert.deepEqual(writes,[]);
+ const evidence=await (await send('/qa/captain/evidence',{headers:{Cookie:cookie}})).json();
+ assert.deepEqual(evidence.writes,[]);
+ assert.equal(evidence.payment_issue_attempts,0);
+});
