@@ -56,7 +56,7 @@ import {
   handlePublicModelApplicationReviewRequest,
   isPublicModelApplicationReviewRequest,
 } from "./public-model-application-review.js";
-import { createCredentialBoundAdminSession, getCredentialBoundAdminLoginCredential, readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
+import { createCredentialBoundAdminSession, getCredentialBoundAdminLoginCredential, readCredentialBoundAdminActor, readCredentialBoundAdminLoginReason } from "./credential-bound-admin-session.js";
 import { activateMmsPartner, authenticateMmsPartner, recoverMmsPartner } from "./mms-partner-auth-store.js";
 import { PAYMENT_ISSUER_DIAGNOSTIC_PATH, handlePaymentIssuerDiagnostic } from "./payment-issuer-diagnostic.js";
 import { MODEL_MEDIA_E2E_SMOKE_PATH, handleModelMediaE2ESmoke } from "./model-media-e2e-smoke.js";
@@ -417,7 +417,7 @@ function normalizePath(pathname) {
 export async function applyCredentialBoundAdminGate(request, env, path, method) {
   if (isGateBypassedAdminPath(path, method)) return { request };
   if (path === ADMIN_LOGIN_PAGE_PATH || path === SIGIL_ADMIN_LOGIN_PAGE_PATH) {
-    if (method === "GET" || method === "HEAD") return { response: renderLoginGate(request, env) };
+    if (method === "GET" || method === "HEAD") return { response: await renderLoginGate(request, env) };
   }
 
   if (!isBrowserAdminPath(path)) return { request };
@@ -486,11 +486,11 @@ function isApiAdminPath(path) {
   return path.startsWith("/v1/admin") || path.startsWith("/studio/api") || path.includes("/api/");
 }
 
-function renderLoginGate(request, env) {
+async function renderLoginGate(request, env) {
   const url = new URL(request.url);
   return renderAdminLogin(request, {
     next: url.searchParams.get("next") || "",
-    error: url.searchParams.get("error") || "",
+    reason: await readCredentialBoundAdminLoginReason(request, env),
   });
 }
 
