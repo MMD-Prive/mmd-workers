@@ -17,7 +17,7 @@ export const PARTNER_LVMAX_JS = String.raw`
       if(finished.test(j.lifecycle_status)||finished.test(j.status)){history.push(j);return;}
       if(!Number.isFinite(start)){unknown.push(j);return;}
       if(/^\d{4}-\d{2}-\d{2}$/.test(when)?when>=day:start>=now){upcoming.push(j);return;}
-      if((Number.isFinite(end)&&end>now)||/^(traveling|arrived|in_progress|working)$/.test(j.status)){current.push(j);return;}
+      if((Number.isFinite(end)&&end>now)||/^(en_route|nearby|traveling|arrived|met_customer|work_started|in_progress|working|work_finished|separated)$/.test(j.lifecycle_status)){current.push(j);return;}
       history.push(j);
     });
     function ordered(rows){return rows.slice().sort(function(a,b){return Date.parse(a.start_at||a.date)-Date.parse(b.start_at||b.date);}).map(jobCard).join('');}
@@ -33,15 +33,17 @@ export const PARTNER_LVMAX_JS = String.raw`
   function lvModelCard(m){
     var approved=m.sales_control&&m.sales_control.approved_policy,proposal=m.sales_control&&m.sales_control.proposal;
     var active=m.roster_active!==false,visible=approved&&approved.sales_visibility==='on';
+    var laneRates=(m.sales_control&&m.sales_control.lane_policies||[]).map(function(x){return '<span>'+esc(x.lane.toUpperCase())+' <b>'+esc(x.policy?money(x.policy.partner_source_rate_thb):'ยังไม่มีเรทเฉพาะ')+'</b></span>';}).join('');
     var readiness=[];if(!(m.profile_summary||m.skills_summary||m.sales_copy))readiness.push('ข้อมูลแนะนำ');if(!approved)readiness.push('เรทที่อนุมัติ');
     var activeModels=lvModels(state.data).filter(function(x){return x.roster_active!==false;}),rank=activeModels.findIndex(function(x){return x.model_record_id===m.model_record_id;});
     var cover=state.modelCoverUrls&&state.modelCoverUrls[m.model_record_id]||m.image_url;
     var image=cover?'<img src="'+esc(cover)+'" alt="" loading="lazy" referrerpolicy="no-referrer">':'<span>'+esc(String(m.display_name||'M').slice(0,1))+'</span>';
     return '<article class="pcr-model lv-model" data-model="'+esc(m.model_record_id)+'">'+
-      '<div class="pcr-model-image">'+image+'</div><div class="pcr-model-copy"><div class="pcr-model-title"><div><span class="lv-rank">'+(active?'NO. '+String(rank+1).padStart(2,'0'):'ประวัติ')+'</span><h3>'+esc(m.display_name)+'</h3></div><button type="button" class="lv-visibility '+(visible?'is-on':'')+'" data-edit-model="visibility" aria-label="ขอเปลี่ยนการมองเห็น '+esc(m.display_name)+'"><span aria-hidden="true" class="lv-toggle"></span><span>'+(!approved?'รอตรวจ':visible?'ON ตามตาราง':'OFF')+'</span></button></div>'+
+      '<div class="pcr-model-image">'+image+'</div><div class="pcr-model-copy"><div class="pcr-model-title"><div><span class="lv-rank">'+(active?'NO. '+String(rank+1).padStart(2,'0'):'ประวัติ')+'</span><h3>'+esc(m.display_name)+'</h3></div><button type="button" class="lv-visibility '+(visible?'is-on':'')+'" data-edit-model="visibility" aria-label="ขอเปลี่ยนการมองเห็น '+esc(m.display_name)+'"><span aria-hidden="true" class="lv-toggle"></span><span>'+(!approved?'รอตรวจ':visible?'ON ตามเงื่อนไข':'OFF')+' · ขอเปลี่ยน</span></button></div>'+
       '<p class="lv-model-summary">'+esc(m.sales_copy||m.profile_summary||m.skills_summary||'ยังไม่มีข้อมูลแนะนำ')+'</p>'+
       '<div class="lv-model-facts"><span>'+esc(m.height_cm==null?'—':m.height_cm)+' cm · '+esc(m.weight_kg==null?'—':m.weight_kg)+' kg</span><span>'+esc(({available:'พร้อมรับงาน',busy:'ติดคิว',away:'อยู่นอกพื้นที่',off:'พักรับงาน'})[m.availability_status]||m.availability_status||'ยังไม่ระบุความพร้อม')+'</span></div>'+
       '<div class="lv-rates"><span>เรทถึงตัว <b>'+esc(approved?money(approved.partner_source_rate_thb):'ยังไม่ยืนยัน')+'</b></span><span>เรทขาย <b>'+esc(approved?money(approved.customer_sell_rate_thb):'ยังไม่ยืนยัน')+'</b></span></div>'+
+      (laneRates?'<div class="lv-rates">'+laneRates+'</div><small>เรทถึงตัวตามประเภทงาน · ใช้ตามกลุ่มลูกค้าและตารางที่อนุมัติ</small>':'')+
       (proposal&&/^(review|pending_review)$/i.test(proposal.status)?'<p class="lv-pending">มีข้อเสนอเรท / การมองเห็นรอตรวจ</p>':'')+
       (readiness.length?'<p class="lv-readiness">ยังไม่ครบ: '+esc(readiness.join(' · '))+'</p>':'')+
       '<div class="pcr-quick-actions"><button type="button" data-edit-model>แก้โปรไฟล์ / เรท</button><button type="button" class="ghost" data-edit-model="photo">อัปโหลดรูปใหม่</button></div>'+
@@ -66,7 +68,47 @@ export const PARTNER_LVMAX_JS = String.raw`
     lvOrderBusy=true;$$('[data-order-move]',root).forEach(function(b){b.disabled=true;});
     api('/v1/partner/roster-order',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({revision:lvRevision,model_ids:ids})}).then(function(p){lvOrder=p.model_ids;lvRevision=p.revision;setFlash('บันทึกลำดับนายแบบใน MY PARTNER แล้ว','success');}).catch(function(e){lvOrderReady=false;setFlash(e.message+' · กดลองโหลดลำดับอีกครั้ง','error');}).finally(function(){lvOrderBusy=false;if(state.authBlocked)return;renderModels(state.data);bindDynamic();filterRoster();var focus=$('[data-home-models] [data-model="'+id+'"] [data-order-move="'+button.dataset.orderMove+'"]',root);if(focus&&!focus.disabled)focus.focus();});
   }
+  var lvEtaTimer=null;
+  var lvLifecycleLabels={pending_confirmation:'รอยืนยันงาน',confirmed:'ยืนยันงานแล้ว',preparing:'เตรียมตัว',en_route:'กำลังเดินทาง',nearby:'ใกล้ถึงจุดนัด',arrived:'ถึงจุดนัดแล้ว',met_customer:'พบลูกค้าแล้ว',final_payment_pending:'รอตรวจชำระของลูกค้า',final_payment_confirmed:'ระบบยืนยันชำระครบ',work_started:'เริ่มงานแล้ว',in_progress:'กำลังทำงาน',work_finished:'งานเสร็จ',separated:'แยกย้าย',completed:'ปิดงานแล้ว',cancelled:'ยกเลิกงาน',checking:'ยังยืนยันสถานะไม่ได้'};
+  function lvCoordinate(id,kind){
+    var form=$('[data-console-form]',root);
+    state.consoleDrafts=state.consoleDrafts||{};
+    var previous=form.elements.session_record_id.value;
+    state.consoleDrafts[previous]=form.elements.message.value;
+    form.elements.message.value=state.consoleDrafts[id]||'';
+    showView('console');
+    var menu=$('[data-view="console"]',root);if(menu&&menu.parentElement.matches('details'))menu.parentElement.open=true;
+    form.elements.session_record_id.value=id;
+    // Keep an existing draft. Submission still requires the existing explicit share control.
+    var prefix=({issue:'ขอประสานงาน: ',wrong_place:'แจ้งไปผิดจุด — ขอให้ตรวจหมุดล่าสุดและทางเข้าสถานที่: ',cancel:'ขอพิจารณายกเลิกงาน (ยังไม่ใช่การยกเลิกที่ยืนยันแล้ว): '})[kind]||'';
+    if(!form.elements.message.value.startsWith(prefix))form.elements.message.value=prefix+form.elements.message.value;
+    form.elements.share_with_mmd.checked=false;form.elements.message.focus();
+  }
+  function lvLoadDetail(button){
+    if(button.disabled||state.stale||state.authBlocked)return;
+    var id=button.closest('[data-job]').dataset.job,host=button.parentElement.querySelector('[data-live-job]');
+    button.disabled=true;host.textContent='กำลังตรวจข้อมูลล่าสุด…';
+    api('/v1/partner/jobs/detail?session_record_id='+encodeURIComponent(id)).then(function(p){
+      var d=p.detail,r=d.reconfirm||{},eta=d.eta||{},travel=/^(en_route|nearby)$/.test(d.lifecycle);
+      var etaCopy=eta.status==='active'&&travel?'<p data-eta-countdown data-arrival="'+esc(eta.arrival_at)+'" data-server-now="'+esc(eta.server_now)+'" data-read-at="'+Date.now()+'"></p>': '<p>'+ (eta.status==='expired'?'ETA เดิมผ่านแล้ว · รออัปเดต':!travel?'ETA จะแสดงระหว่างเดินทาง':'ยังไม่มีข้อมูลเวลาเดินทางที่ยืนยันได้')+'</p>';
+      host.innerHTML='<div class="lv-live-heading"><b>'+esc(lvLifecycleLabels[d.lifecycle]||'ยังยืนยันสถานะไม่ได้')+'</b><small>ตรวจข้อมูล '+dateTime(d.updated_at)+'</small></div>'+etaCopy+
+        (eta.updated_at?'<small>ETA อัปเดต '+dateTime(eta.updated_at)+'</small>':'')+
+        '<p>'+esc(d.location||'รอยืนยันจุดนัด')+'</p>'+(d.map_url?'<a class="mmdp-btn ghost" href="'+esc(d.map_url)+'" target="_blank" rel="noopener noreferrer">เปิดหมุดจุดนัด</a>':'')+
+        '<details class="lv-history"><summary>การรับทราบก่อนวันงาน</summary>'+(r.recorded_acknowledged_at?'<p>ระบบบันทึกการรับทราบ '+dateTime(r.recorded_acknowledged_at)+'</p><small>ยังไม่ยืนยันว่าเป็นรายละเอียดฉบับล่าสุด</small>':'<p>ยังไม่มีเวลารับทราบที่ยืนยันได้</p>')+
+        (r.scheduled_at?'<p>กำหนดแจ้ง '+dateTime(r.scheduled_at)+'<br>กำหนดส่งให้เปอร์ตรวจหากยังไม่รับทราบ '+dateTime(r.owner_review_at)+'</p><small>กำหนดการนี้ไม่ใช่หลักฐานว่าส่งแจ้งเตือนแล้ว</small>':'')+'</details>'+
+        '<p class="lv-incomplete">ประวัติการติดต่อยังไม่ครบ · ยังไม่รวม LINE, Telegram, จำนวนรูปและสาย</p>';
+      lvTickEta();
+    }).catch(function(e){if(state.authBlocked)return;host.textContent='อัปเดตไม่ได้ · '+e.message;}).finally(function(){button.disabled=false;button.textContent='อัปเดตสถานะหน้างาน';});
+  }
+  function lvTickEta(){
+    $$('[data-eta-countdown]',root).forEach(function(el){var now=Date.parse(el.dataset.serverNow)+(Date.now()-Number(el.dataset.readAt)),left=Date.parse(el.dataset.arrival)-now;
+      el.textContent=Number.isFinite(left)&&left>0?'คาดว่าจะถึงอีกประมาณ '+Math.ceil(left/60000)+' นาที · ตาม ETA ที่แจ้ง':'ETA เดิมผ่านแล้ว · รออัปเดต';
+    });
+  }
   function bindLvActions(){
+    if(!lvEtaTimer)lvEtaTimer=setInterval(lvTickEta,30000);
+    $$('[data-load-job-detail]',root).forEach(function(b){b.onclick=function(){lvLoadDetail(b);};});
+    $$('[data-coordinate]',root).forEach(function(b){b.onclick=function(){lvCoordinate(b.closest('[data-job]').dataset.job,b.dataset.coordinate);};});
     $$('[data-order-move]',root).forEach(function(b){b.onclick=function(){moveLvModel(b);};});
   }
   function renderLvAttention(data){
@@ -238,4 +280,8 @@ body[data-mmd-partner-page="partner-dashboard"] [data-partner-control-room] .lv-
 body[data-mmd-partner-page="partner-dashboard"] [data-partner-control-room] .lv-model .pcr-model-title{flex-wrap:wrap}
 @media(prefers-reduced-motion:no-preference){body[data-mmd-partner-page="partner-dashboard"] [data-partner-control-room] button{transition:background .15s ease,color .15s ease}body[data-mmd-partner-page="partner-dashboard"] .lv-job[open] .lv-job-detail{animation:lv-reveal .16s ease-out}@keyframes lv-reveal{from{opacity:.5;transform:translateY(-3px)}to{opacity:1;transform:translateY(0)}}}
 @media(prefers-reduced-motion:reduce){body[data-mmd-partner-page="partner-dashboard"] *,body[data-mmd-partner-page="partner-dashboard"] *:before{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+
+.lv-live-job{margin-top:18px;padding-top:16px;border-top:1px solid #ded1bf}
+.lv-live-heading{display:flex;flex-direction:column;gap:4px;margin-top:14px}.lv-live-heading small,.lv-incomplete{color:#685a4c;font-size:13px}
+[data-live-job] p{margin:12px 0}[data-live-job] a{display:inline-flex;text-decoration:none}
 `;
