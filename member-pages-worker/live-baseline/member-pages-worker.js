@@ -15113,6 +15113,28 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
     if (!silent) show("\u0E01\u0E23\u0E38\u0E13\u0E32\u0E40\u0E1B\u0E34\u0E14 MY MMD \u0E2D\u0E35\u0E01\u0E04\u0E23\u0E31\u0E49\u0E07\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13\u0E04\u0E23\u0E31\u0E1A");
   }
 
+  function setProfileRetry(visible) {
+    let notice = document.getElementById("member-profile-retry");
+    if (!visible) { notice?.remove(); return; }
+    if (notice) return;
+    notice = document.createElement("div");
+    notice.id = "member-profile-retry";
+    const message = document.createElement("p");
+    message.setAttribute("role", "status");
+    message.textContent = "ตอนนี้โหลดโปรไฟล์ไม่ได้ครับ ลองอีกครั้งได้โดยไม่ต้องยืนยัน LINE ใหม่";
+    const retry = document.createElement("button");
+    retry.type = "button";
+    retry.textContent = "ลองโหลดโปรไฟล์อีกครั้ง";
+    retry.addEventListener("click", async () => {
+      if (retry.disabled) return;
+      retry.disabled = true;
+      try { await readProfile({ silent: true }); }
+      finally { retry.disabled = false; }
+    });
+    notice.append(message, retry);
+    appStatus?.before(notice);
+  }
+
   async function readProfile({ hydrate = true, silent = false } = {}) {
     const generation = ++profileGeneration;
     // Do not leave the prior Client's details visible while a new session is checked.
@@ -15123,8 +15145,10 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
       if (generation !== profileGeneration) return null;
       if (!response.ok || !payload || payload.ok !== true) {
         clearMemberProfile({ silent });
+        setProfileRetry(response.status === 503);
         return null;
       }
+      setProfileRetry(false);
       renderProfile(payload.data || {}, response.headers.get("x-mmd-member-display-authority") || "", response.headers.get("x-mmd-brand-authority") || "");
       renderCustomerContact(payload.data || {});
       void personalMainUI.load();
