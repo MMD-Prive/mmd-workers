@@ -27,6 +27,21 @@ async function ui(t,{expired=false,system=null,seed=null}={}){
   const q=s=>w.document.querySelector(s);
   return {f,w,q,errors};
 }
+test('announcement detail submits only current roster image and retains values on revision conflict',async t=>{
+ const {q,w,f,errors}=await ui(t);
+ const input={id:'ann-ui-fixture-000001',revision:null,title:'ประกาศ QA',brief:'ข้อมูลจำลอง',category:'ถ่ายภาพ',area:'กรุงเทพฯ',requirements:'นายแบบ',start_at:new Date(Date.now()+86400000*4).toISOString(),end_at:new Date(Date.now()+86400000*4+7200000).toISOString(),deadline:new Date(Date.now()+86400000).toISOString(),required_count:1,budget_min:5000,budget_max:8000,budget_basis:'model_net',travel_terms:'ตามข้อตกลง',partner_fee_terms:'แยกจากค่าตัว',private_details:'PRIVATE SECRET',status:'open',audience:'all_active',partner_ids:[]};
+ const response=await f.call('/v1/partner/admin/announcements/save',{owner:true,body:input});assert.equal(response.status,200);let row=(await response.json()).announcement;
+ const A=apiModule.PARTNER_ASSETS,asset='recIIIIIIIIIIIIII';f.db.Assets.push({id:asset,fields:{[A.partner]:[f.db.Partners[0].id],[A.model]:[MODEL],[A.fileType]:'image/jpeg',[A.fileName]:'current.jpg',[A.fileCategory]:'photo',[A.reviewStatus]:'pending_review',[A.r2Key]:'partner-shared/fixture/current.jpg'}});
+ await settle(()=>!q('[data-ann-all]').disabled);q('[data-ann-all]').click();q('[data-ann-refresh]').click();await settle(()=>q('[data-ann-list] [data-ann-detail]'));q('[data-ann-list] [data-ann-detail]').click();await settle(()=>q('[data-ann-propose]'));
+ assert.equal(q('[data-ann-body]').textContent.includes('PRIVATE SECRET'),false);
+ const form=q('[data-ann-propose]');form.elements.model_id.value=MODEL;form.elements.model_id.dispatchEvent(new w.Event('change'));await settle(()=>form.elements.asset_id.querySelector('option[value="'+asset+'"]'));
+ form.elements.asset_id.value=asset;form.elements.rate.value='6000';form.elements.note.value='รักษาข้อมูลที่กรอก';form.elements.photo_current.checked=true;form.elements.share_with_mmd.checked=true;
+ const changed=await f.call('/v1/partner/admin/announcements/save',{owner:true,body:{...input,revision:row.revision,brief:'รายละเอียดเปลี่ยน'}});assert.equal(changed.status,200);
+ form.dispatchEvent(new w.Event('submit',{cancelable:true}));await settle(()=>q('[data-ann-send-status]').textContent.includes('รายละเอียดเปลี่ยน'));assert.equal(form.elements.note.value,'รักษาข้อมูลที่กรอก');assert.equal(form.elements.rate.value,'6000');
+ q('[data-ann-latest]').click();await settle(()=>q('[data-ann-updated]'));assert.match(q('[data-ann-updated]').textContent,/รายละเอียดเปลี่ยน/);q('[data-ann-updated] button').click();
+ form.dispatchEvent(new w.Event('submit',{cancelable:true}));await settle(()=>q('[data-ann-feedback]').textContent.includes('ระบบบันทึกข้อเสนอแล้ว'));
+ row=(await (await f.call('/v1/partner/announcements/detail?id='+input.id)).json()).announcement;assert.equal(row.proposals.length,1);assert.equal(row.proposals[0].note,'รักษาข้อมูลที่กรอก');assert.equal(f.messages.length,0);assert.deepEqual(errors,[]);
+});
 test('dashboard without token redirects directly to canonical LINE login and renders no fallback page',async t=>{
   const f=await fixture();t.after(f.restore);
   const response=await pageWorker.fetch(new Request('https://www.mmdbkk.com/partner/dashboard'),f.env,{});
@@ -170,7 +185,8 @@ test('LV Max keeps upcoming work first after calendar hydration and collapses pa
  assert.ok(q('[data-jobs] > .lv-job'));
  assert.ok(q('[data-jobs] > .lv-history [data-job="recZZZZZZZZZZZZZZ"]'));
  assert.equal(q('[data-jobs] > .lv-history').open,false);
- assert.equal(q('.pcr-mission-roster').previousElementSibling.contains(q('[data-jobs]')),true);
+ assert.equal(q('.pcr-mission-roster').previousElementSibling,q('[data-ann-home]'));
+ assert.equal(q('[data-ann-home]').previousElementSibling.contains(q('[data-jobs]')),true);
  assert.equal(q('.lv-private').open,false);assert.deepEqual(errors,[]);
 });
 test('LV Max reorders linked models through the real API and keeps ranking separate from visibility',async t=>{
