@@ -280,13 +280,14 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
 
   var pendingSubmissionKeys=new Map();
   function stableSubmissionKey(path,payload){var identity=path+JSON.stringify(payload);if(!pendingSubmissionKeys.has(identity))pendingSubmissionKeys.set(identity,uid("request_"));return pendingSubmissionKeys.get(identity);}
+  function completedSubmission(path,payload){pendingSubmissionKeys.delete(path+JSON.stringify(payload));}
   function submitSales() {
     var button=$("[data-save-sales]",root);if(button.disabled)return;
     var form = $("[data-model-form]",root); if(!form.elements.share_with_mmd.checked)return setFlash("กรุณายืนยัน Share with MMD","error"); var audiences = $$('[name="audience_scope"]:checked',form).map(function (input) { return input.value; });
     if (!audiences.length) return setFlash("เลือกกลุ่มลูกค้าที่ต้องการให้มองเห็นอย่างน้อยหนึ่งกลุ่ม","error");
     button.disabled=true;
     var payload={model_record_id:state.model.model_record_id,offer_type:form.elements.offer_type.value,partner_source_rate_thb:form.elements.partner_source_rate_thb.value,customer_sell_rate_thb:form.elements.customer_sell_rate_thb.value,sales_visibility:form.elements.sales_visibility.value,audience_scope:audiences,share_with_mmd:true,schedule_type:form.elements.schedule_type.value,effective_from_at:bangkokIso(form.elements.effective_from_at.value),effective_until_at:bangkokIso(form.elements.effective_until_at.value),change_reason:"Partner Dashboard control-room proposal"};
-    api("/v1/partner/sales/proposal", { method:"POST", headers:{"content-type":"application/json","Idempotency-Key":stableSubmissionKey("sales",payload)}, body:JSON.stringify(payload) }).then(function () { setFlash("ส่ง Sales Control ให้ Boss Per ตรวจแล้ว","success"); return load(); }).catch(function (error) { setFlash(error.message,"error"); }).finally(function(){button.disabled=false;});
+    api("/v1/partner/sales/proposal", { method:"POST", headers:{"content-type":"application/json","Idempotency-Key":stableSubmissionKey("sales",payload)}, body:JSON.stringify(payload) }).then(function () { completedSubmission("sales",payload); setFlash("ส่ง Sales Control ให้ Boss Per ตรวจแล้ว","success"); return load(); }).catch(function (error) { setFlash(error.message,"error"); }).finally(function(){button.disabled=false;});
   }
 
   function uploadModelFile() {

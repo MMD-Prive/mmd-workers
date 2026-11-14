@@ -204,3 +204,10 @@ test('sales editor separates work lane from customer audience and retains input 
  q('[data-save-sales]').click();await settle(()=>!q('[data-save-sales]').disabled);
  assert.equal(form.elements.offer_type.value,'vip');assert.equal(form.elements.customer_sell_rate_thb.value,'9000');assert.match(q('[data-dialog-feedback]').textContent,/กรอกเรท/);assert.equal(f.db.Rules.length,0);assert.deepEqual(errors,[]);
 });
+test('retry keeps its request key only until a confirmed successful submission',async t=>{
+ const {q,w,errors}=await ui(t);q('[data-edit-model="visibility"]').click();const form=q('[data-model-form]');
+ form.elements.partner_source_rate_thb.value='6000';form.elements.customer_sell_rate_thb.value='9000';form.elements.share_with_mmd.checked=true;q('[name=audience_scope]').checked=true;
+ const original=w.fetch,keys=[];w.fetch=(path,opts={})=>{if(path.startsWith('/v1/partner/sales/proposal')){keys.push(opts.headers['Idempotency-Key']);if(keys.length===1)return Promise.resolve(Response.json({ok:false},{status:503}));}return original(path,opts);};
+ for(let i=0;i<3;i++){q('[data-save-sales]').click();await settle(()=>!q('[data-save-sales]').disabled);}
+ assert.equal(keys[0],keys[1]);assert.notEqual(keys[1],keys[2]);assert.deepEqual(errors,[]);
+});
