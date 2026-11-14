@@ -9,12 +9,11 @@ const job=workflow.slice(workflow.indexOf('  my-mmd-home-release:'));
 const evaluate=new Function('github','inputs','return '+job.match(/^    if: (.+)$/m)[1]);
 const sha='a'.repeat(40),github={event_name:'workflow_dispatch',ref:'refs/heads/main',sha};
 const inputs={execution_mode:'my-mmd-home-delta',production_approved:true,approval_ref:'fixture',approved_sha:sha,expected_version:'fixture',expected_deployment:'fixture',patch_manifest:'fixture',expected_manifest_sha256:'fixture',expected_module_sha256:'fixture'};
-test('entry lane manifest and workflow pin agree with merged #3070 source',()=>{
+test('historical entry lane manifest preserves merged #3070 source',()=>{
  const raw=readFileSync(new URL('./my-mmd-home-delta-manifest.json',import.meta.url));
  assert.equal(sha256(raw),'33cd6afb79303e4149622f92f209586f7f06532c012fcec428bff4bae3db3b0b');
  const manifest=parseHomeManifest(raw,sha256(raw),'member-pages-worker');
  assert.equal(manifest.source_sha,'625164e20d8713aaf26db7fcb43bbb1d7befe084');
- assert.equal(manifest.source_sha,job.match(/APPROVED_SOURCE_SHA: ([a-f0-9]{40})/)[1]);
  assert.equal(manifest.baseline_version,'60b85c46-0d3b-4988-8bb0-60165085d6e1');
  assert.equal(manifest.baseline_deployment,'f6f79e0a-440a-4f7f-8b12-176c7ff4fc1a');
  assert.equal(manifest.modules.length,1);assert.equal(manifest.modules[0].patches.length,1);
@@ -30,6 +29,25 @@ test('entry lane manifest and workflow pin agree with merged #3070 source',()=>{
  assert.match(reader,/redirect: "manual"/);assert.match(reader,/!response.ok/);
  const shell=readFileSync(new URL('../member-pages-worker/src/liff-member-shell.js',import.meta.url),'utf8');
  assert(shell.includes('memberApiFetch("/api/member/app/updates?limit=10"'));
+});
+test('profile retry manifest pins #3204 and both LIFF shells on the reviewed active artifact',()=>{
+ const raw=readFileSync(new URL('./liff-profile-503-delta-manifest.json',import.meta.url));
+ const hash='0feeeddd9364906307866491669a57c296fb59b706cc71721fa5158ee1804219';
+ const manifest=parseHomeManifest(raw,hash,'member-pages-worker');
+ assert.equal(manifest.source_sha,'de0e236412c4b44289fa25ac934d83b024da13d4');
+ assert.equal(manifest.source_sha,job.match(/APPROVED_SOURCE_SHA: ([a-f0-9]{40})/)[1]);
+ assert.equal(manifest.baseline_version,'5585cd82-96d4-495f-aba0-99b49fb487a5');
+ assert.equal(manifest.baseline_deployment,'ceb97887-5ee8-4caa-b1ca-2dfd5f83b864');
+ assert.equal(manifest.modules.length,1);
+ assert.equal(manifest.modules[0].before_sha256,'f0a088e21d42f51175c5e1cc67efd5a60dd588cc02f01c758ee614f8abe4f8c7');
+ assert.equal(manifest.modules[0].after_sha256,'9a8d8844dc465731f4ca81b064da903e0841ad452c308426ab44b7a576af51b5');
+ assert.deepEqual(manifest.modules[0].patches.map(p=>p.id),['profile-retry-owner-baseline-shell','profile-retry-imported-shell']);
+ for(const p of manifest.modules[0].patches) {
+  const a=p.before.indexOf('  async function readProfile(');
+  assert.ok(a>=0);
+  assert.equal(p.after.slice(0,a),p.before.slice(0,a));
+  assert.match(p.after,/setProfileRetry\(response.status === 503\)/);
+ }
 });
 test('Home release is manual, protected and rejects incomplete input',()=>{
  assert.equal(evaluate(github,inputs),true);
