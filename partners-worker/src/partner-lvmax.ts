@@ -8,7 +8,7 @@ export const PARTNER_LVMAX_JS = String.raw`
     var dateLabel = valid ? date.toLocaleDateString('th-TH',{day:'numeric',month:'short',timeZone:'Asia/Bangkok'}) : 'รอยืนยันวัน';
     var timeLabel = valid && !/^\d{4}-\d{2}-\d{2}$/.test(when) ? date.toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Bangkok'}) : 'รอยืนยันเวลา';
     var conflicts = conflictFor(job);
-    return '<details class="lv-job"><summary><span class="lv-job-date"><b>'+esc(dateLabel)+'</b><span>'+esc(timeLabel)+'</span></span><span class="lv-job-info"><strong>'+esc(job.model_name || 'รอยืนยันนายแบบ')+'</strong><span>'+esc(job.work_type || job.work_lane || 'รายละเอียดงาน')+'</span><span>'+esc(job.location || 'รอยืนยันจุดนัด')+'</span></span><span class="lv-job-state">'+esc(label(job.status))+'<span aria-hidden="true">↗</span></span></summary><div class="lv-job-detail">'+(conflicts.length?'<p class="pcr-collision">คิวชน '+conflicts.length+' รายการ · ตรวจตารางก่อนยืนยัน</p>':'')+detailedJobCard(job)+'</div></details>';
+    return '<details class="lv-job"><summary><span class="lv-job-date"><b>'+esc(dateLabel)+'</b><span>'+esc(timeLabel)+'</span></span><span class="lv-job-info"><strong>'+esc(job.model_name || 'รอยืนยันนายแบบ')+'</strong><span>'+esc(job.work_type || job.work_lane || 'รายละเอียดงาน')+'</span></span><span class="lv-job-location">'+esc(job.location || 'รอยืนยันจุดนัด')+'</span><span class="lv-job-state">'+esc(label(job.status))+'<span aria-hidden="true">↗</span></span></summary><div class="lv-job-detail">'+(conflicts.length?'<p class="pcr-collision">คิวชน '+conflicts.length+' รายการ · ตรวจตารางก่อนยืนยัน</p>':'')+detailedJobCard(job)+'</div></details>';
   }
   function renderMissionJobs(jobs) {
     var now=Date.now(),day=dayKey(new Date()),finished=/^(declined|cancelled|canceled|completed|closed|expired|void)$/i;
@@ -39,15 +39,16 @@ export const PARTNER_LVMAX_JS = String.raw`
     var cover=state.modelCoverUrls&&state.modelCoverUrls[m.model_record_id]||m.image_url;
     var image=cover?'<img src="'+esc(cover)+'" alt="" loading="lazy" referrerpolicy="no-referrer">':'<span>'+esc(String(m.display_name||'M').slice(0,1))+'</span>';
     return '<article class="pcr-model lv-model" data-model="'+esc(m.model_record_id)+'">'+
-      '<div class="pcr-model-image">'+image+'</div><div class="pcr-model-copy"><div class="pcr-model-title"><div><span class="lv-rank">'+(active?'NO. '+String(rank+1).padStart(2,'0'):'ประวัติ')+'</span><h3>'+esc(m.display_name)+'</h3></div><button type="button" class="lv-visibility '+(visible?'is-on':'')+'" data-edit-model="visibility" aria-label="ขอเปลี่ยนการมองเห็น '+esc(m.display_name)+'"><span aria-hidden="true" class="lv-toggle"></span><span>'+(!approved?'รอตรวจ':visible?'ON ตามเงื่อนไข':'OFF')+' · ขอเปลี่ยน</span></button></div>'+
+      '<div class="pcr-model-image">'+image+'</div><div class="pcr-model-copy"><div class="lv-model-identity"><div class="pcr-model-title"><div><span class="lv-rank">'+(active?'NO. '+String(rank+1).padStart(2,'0'):'ประวัติ')+'</span><h3>'+esc(m.display_name)+'</h3></div></div>'+
       '<p class="lv-model-summary">'+esc(m.sales_copy||m.profile_summary||m.skills_summary||'ยังไม่มีข้อมูลแนะนำ')+'</p>'+
       '<div class="lv-model-facts"><span>'+esc(m.height_cm==null?'—':m.height_cm)+' cm · '+esc(m.weight_kg==null?'—':m.weight_kg)+' kg</span><span>'+esc(({available:'พร้อมรับงาน',busy:'ติดคิว',away:'อยู่นอกพื้นที่',off:'พักรับงาน'})[m.availability_status]||m.availability_status||'ยังไม่ระบุความพร้อม')+'</span></div>'+
+      (readiness.length?'<p class="lv-readiness">ยังไม่ครบ: '+esc(readiness.join(' · '))+'</p>':'')+'</div><div class="lv-model-commercial">'+
       '<div class="lv-rates"><span>เรทถึงตัว <b>'+esc(approved?money(approved.partner_source_rate_thb):'ยังไม่ยืนยัน')+'</b></span><span>เรทขาย <b>'+esc(approved?money(approved.customer_sell_rate_thb):'ยังไม่ยืนยัน')+'</b></span></div>'+
       (laneRates?'<div class="lv-rates">'+laneRates+'</div><small>เรทถึงตัวตามประเภทงาน · ใช้ตามกลุ่มลูกค้าและตารางที่อนุมัติ</small>':'')+
       (proposal&&/^(review|pending_review)$/i.test(proposal.status)?'<p class="lv-pending">มีข้อเสนอเรท / การมองเห็นรอตรวจ</p>':'')+
-      (readiness.length?'<p class="lv-readiness">ยังไม่ครบ: '+esc(readiness.join(' · '))+'</p>':'')+
-      '<div class="pcr-quick-actions"><button type="button" data-edit-model>แก้โปรไฟล์ / เรท</button><button type="button" class="ghost" data-edit-model="photo">อัปโหลดรูปใหม่</button></div>'+
-      (lvSortMode&&active?'<div class="lv-order-controls"><button type="button" data-order-move="top" '+(rank===0||lvOrderBusy||!lvOrderReady?'disabled':'')+'>วางบนสุด</button><button type="button" data-order-move="up" aria-label="เลื่อน '+esc(m.display_name)+' ขึ้น" '+(rank===0||lvOrderBusy||!lvOrderReady?'disabled':'')+'>↑</button><button type="button" data-order-move="down" aria-label="เลื่อน '+esc(m.display_name)+' ลง" '+(rank===activeModels.length-1||lvOrderBusy||!lvOrderReady?'disabled':'')+'>↓</button></div>':'')+'</div></article>';
+      '<button type="button" class="lv-visibility '+(visible?'is-on':'')+'" data-edit-model="visibility" aria-label="ขอเปลี่ยนการมองเห็น '+esc(m.display_name)+'"><span aria-hidden="true" class="lv-toggle"></span><span>'+(!approved?'รอตรวจ':visible?'ON ตามเงื่อนไข':'OFF')+' · ขอเปลี่ยน</span></button></div>'+
+      '<div class="lv-model-actions"><div class="pcr-quick-actions"><button type="button" data-edit-model>แก้โปรไฟล์ / เรท</button><button type="button" class="ghost" data-edit-model="photo">อัปโหลดรูปใหม่</button></div>'+
+      (lvSortMode&&active?'<div class="lv-order-controls"><button type="button" data-order-move="top" '+(rank===0||lvOrderBusy||!lvOrderReady?'disabled':'')+'>วางบนสุด</button><button type="button" data-order-move="up" aria-label="เลื่อน '+esc(m.display_name)+' ขึ้น" '+(rank===0||lvOrderBusy||!lvOrderReady?'disabled':'')+'>↑</button><button type="button" data-order-move="down" aria-label="เลื่อน '+esc(m.display_name)+' ลง" '+(rank===activeModels.length-1||lvOrderBusy||!lvOrderReady?'disabled':'')+'>↓</button></div>':'')+'</div></div></article>';
   }
   function renderLvModels(data){
     var markup=lvModels(data).map(modelCard).join('');
@@ -153,6 +154,10 @@ export const PARTNER_LVMAX_JS = String.raw`
     $('[data-lv-refresh]',root).onclick=function(event){var b=event.currentTarget;b.disabled=true;load().finally(function(){b.disabled=false;});};
     var nav=$('.pcr-side',root),more=document.createElement('details');more.className='lv-more';more.innerHTML='<summary>เพิ่มเติม</summary>';
     $$('[data-view]',nav).forEach(function(b){if(!['home','models','earnings'].includes(b.dataset.view))more.append(b);});nav.append(more);
+    // Desktop exposes the workspace modules; mobile keeps the same routes in a compact menu.
+    var wideNav=window.matchMedia('(min-width: 961px)');
+    function syncNav(){more.open=wideNav.matches;}
+    syncNav();wideNav.addEventListener('change',syncNav);
     $('[data-view="home"]',nav).textContent='Our Mission';$('[data-view="models"]',nav).textContent='MY CO MODELS';$('[data-view="earnings"]',nav).textContent='รายได้';
     var privacy=$('.pcr-privacy',root),privacyDetails=document.createElement('details');privacyDetails.className='lv-privacy-details';privacyDetails.innerHTML='<summary>ความเป็นส่วนตัวและการแชร์ข้อมูล</summary>';privacy.before(privacyDetails);privacyDetails.append(privacy);home.append(privacyDetails);
   }
@@ -160,14 +165,15 @@ export const PARTNER_LVMAX_JS = String.raw`
 
 export const PARTNER_LVMAX_CSS = String.raw`
 body[data-mmd-partner-page="partner-dashboard"]{--mmdp-ivory:#30241c;--mmdp-copy:#47392d;--mmdp-muted:#685a4c;--mmdp-gold:#705335;--mmdp-gold-2:#705335;--mmdp-ink:#fffdf8;--mmdp-line:#ded1bf;--pcr-line:#ded1bf;--pcr-copy:#30241c;--pcr-bg:#f7f2ea;--pcr-panel:#fffdf8;background:#f7f2ea;color:#30241c}
-body[data-mmd-partner-page="partner-dashboard"] .mmd-partner-system{max-width:1280px;padding:16px 18px 40px}
+body[data-mmd-partner-page="partner-dashboard"] .mmd-partner-system{max-width:1560px;padding:28px 40px 48px}
 body[data-mmd-partner-page="partner-dashboard"] .mmdp-nav{margin-bottom:22px;border-color:#ded1bf;padding-bottom:16px}
 body[data-mmd-partner-page="partner-dashboard"] .mmdp-brand b{color:#30241c;font-size:20px;letter-spacing:.12em}
 body[data-mmd-partner-page="partner-dashboard"] .mmdp-brand span{color:#685a4c}
 body[data-mmd-partner-page="partner-dashboard"] .mmdp-nav a{color:#47392d}
 body[data-mmd-partner-page="partner-dashboard"] [data-partner-control-room] {font-size:16px;line-height:1.6}
-body[data-mmd-partner-page="partner-dashboard"] .pcr-shell{gap:28px}
-body[data-mmd-partner-page="partner-dashboard"] .pcr-side{gap:6px;align-items:start;overflow:visible;border:0;z-index:20;position:relative}
+body[data-mmd-partner-page="partner-dashboard"] .pcr-shell{grid-template-columns:188px minmax(0,1fr);gap:40px}
+body[data-mmd-partner-page="partner-dashboard"] .pcr-main{max-width:none;min-width:0}
+body[data-mmd-partner-page="partner-dashboard"] .pcr-side{display:flex;flex-direction:column;gap:6px;align-items:stretch;align-self:start;overflow:visible;border:0;z-index:20;position:sticky;top:24px;padding:0;max-height:calc(100dvh - 48px);overflow-y:auto}
 body[data-mmd-partner-page="partner-dashboard"] .pcr-side button{font:500 14px/1.4 Anuphan,system-ui,sans-serif;background:transparent;color:#685a4c;border:0;box-shadow:none;white-space:normal}
 body[data-mmd-partner-page="partner-dashboard"] .pcr-side button[aria-current="page"]{background:#30241c;color:#fff9ef;box-shadow:none}
 body[data-mmd-partner-page="partner-dashboard"] .pcr-side small{color:#685a4c;font-size:10px;letter-spacing:.16em}
@@ -194,7 +200,7 @@ body[data-mmd-partner-page="partner-dashboard"] [data-partner-control-room] :is(
 body[data-mmd-partner-page="partner-dashboard"] [data-partner-control-room] :is(.pcr-top p,.pcr-model-copy p,.pcr-toolbar label,.pcr-form label>span,.pcr-telegram span){color:#685a4c}
 body[data-mmd-partner-page="partner-dashboard"] .pcr-jobs{gap:10px}
 body[data-mmd-partner-page="partner-dashboard"] .lv-job{border:1px solid #ded1bf;background:#fffdf8;border-radius:12px;overflow:hidden}
-body[data-mmd-partner-page="partner-dashboard"] .lv-job>summary{display:grid;grid-template-columns:70px minmax(0,1fr) auto;gap:18px;align-items:center;padding:18px;cursor:pointer;list-style:none;min-height:44px}
+body[data-mmd-partner-page="partner-dashboard"] .lv-job>summary{display:grid;grid-template-columns:78px minmax(0,1.1fr) minmax(0,1fr) minmax(100px,.65fr);gap:22px;align-items:center;padding:20px;cursor:pointer;list-style:none;min-height:44px}
 body[data-mmd-partner-page="partner-dashboard"] summary::-webkit-details-marker{display:none}
 body[data-mmd-partner-page="partner-dashboard"] .lv-job:first-of-type{border-color:#ab947c;background:#f1e6d6}
 body[data-mmd-partner-page="partner-dashboard"] .lv-job-date{border-right:1px solid #ded1bf;padding-right:14px;display:grid;gap:4px;color:#705335;font-variant-numeric:tabular-nums}
@@ -203,7 +209,8 @@ body[data-mmd-partner-page="partner-dashboard"] .lv-job-date>span{font-size:14px
 body[data-mmd-partner-page="partner-dashboard"] .lv-job-info{display:grid;min-width:0;gap:3px}
 body[data-mmd-partner-page="partner-dashboard"] .lv-job-info strong{font-size:18px;font-weight:600;color:#30241c}
 body[data-mmd-partner-page="partner-dashboard"] .lv-job-info>span{font-size:14px;color:#685a4c;overflow-wrap:anywhere}
-body[data-mmd-partner-page="partner-dashboard"] .lv-job-state{display:flex;align-items:center;gap:12px;font-size:12px;color:#705335}
+body[data-mmd-partner-page="partner-dashboard"] .lv-job-location{font-size:15px;color:#685a4c;min-width:0;overflow-wrap:anywhere}
+body[data-mmd-partner-page="partner-dashboard"] .lv-job-state{display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:14px;color:#705335}
 body[data-mmd-partner-page="partner-dashboard"] .lv-job-state>span{font-size:23px}
 body[data-mmd-partner-page="partner-dashboard"] .lv-job-detail{border-top:1px solid #ded1bf;padding:10px}
 body[data-mmd-partner-page="partner-dashboard"] .lv-job-detail .pcr-job{border:0;background:transparent;padding:10px}
@@ -225,18 +232,22 @@ body[data-mmd-partner-page="partner-dashboard"] .lv-roster-tools input{width:100
 body[data-mmd-partner-page="partner-dashboard"] .lv-roster-tools p{width:100%;margin:0;font-size:12px;color:#685a4c}
 body[data-mmd-partner-page="partner-dashboard"] .lv-roster-tools [data-lv-order-reload]{font-size:12px}
 body[data-mmd-partner-page="partner-dashboard"] .lv-count{font-size:13px;border:1px solid #ded1bf;border-radius:20px;padding:3px 8px;vertical-align:middle;letter-spacing:0}
-body[data-mmd-partner-page="partner-dashboard"] [data-partner-control-room] .lv-model{grid-template-columns:76px minmax(0,1fr);padding:18px;gap:18px;border-radius:0;border-width:0 0 1px;background:transparent}
+body[data-mmd-partner-page="partner-dashboard"] [data-partner-control-room] .lv-model{grid-template-columns:84px minmax(0,1fr);padding:22px 0;gap:22px;border-radius:0;border-width:0 0 1px;background:transparent;align-items:start}
+body[data-mmd-partner-page="partner-dashboard"] .lv-model .pcr-model-copy{display:grid;grid-template-columns:minmax(0,1fr) minmax(180px,.85fr) minmax(160px,.7fr);gap:24px;align-items:start}
+body[data-mmd-partner-page="partner-dashboard"] .lv-model .pcr-model-copy>div{min-width:0}
+body[data-mmd-partner-page="partner-dashboard"] .lv-model-actions .pcr-quick-actions{display:grid;grid-template-columns:minmax(0,1fr);margin:0}
+body[data-mmd-partner-page="partner-dashboard"] .lv-model-commercial>small{display:block;font-size:12px;line-height:1.6;color:#685a4c}
 body[data-mmd-partner-page="partner-dashboard"] [data-partner-control-room] .pcr-models{gap:0;border-top:1px solid #ded1bf;grid-template-columns:minmax(0,1fr)}
-body[data-mmd-partner-page="partner-dashboard"] [data-partner-control-room] .pcr-model-image{height:100px;min-height:0;border-radius:9px;aspect-ratio:3/4;background:#ecdfcd;color:#705335;font-size:30px}
+body[data-mmd-partner-page="partner-dashboard"] [data-partner-control-room] .pcr-model-image{height:112px;min-height:0;border-radius:9px;aspect-ratio:3/4;background:#ecdfcd;color:#705335;font-size:30px}
 body[data-mmd-partner-page="partner-dashboard"] .pcr-model-image img{object-position:50% 15%}
 body[data-mmd-partner-page="partner-dashboard"] .lv-rank{font-size:10px;letter-spacing:.14em;color:#705335}
 body[data-mmd-partner-page="partner-dashboard"] .lv-model h3{font-size:21px;margin:1px 0}
 body[data-mmd-partner-page="partner-dashboard"] .lv-model-summary{font-size:14px;line-height:1.6;margin:6px 0;overflow-wrap:anywhere}
 body[data-mmd-partner-page="partner-dashboard"] .lv-model-facts{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:12px;color:#685a4c;margin:6px 0}
-body[data-mmd-partner-page="partner-dashboard"] .lv-rates{display:flex;flex-wrap:wrap;gap:8px 24px;font-size:13px;margin:10px 0;color:#685a4c}
+body[data-mmd-partner-page="partner-dashboard"] .lv-rates{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 16px;font-size:14px;margin:0 0 10px;color:#685a4c}
 body[data-mmd-partner-page="partner-dashboard"] .lv-rates b{display:block;color:#30241c;font-weight:500}
-body[data-mmd-partner-page="partner-dashboard"] [data-partner-control-room] .lv-visibility{background:transparent;border:0;color:#685a4c;padding:0 0 0 6px;display:flex;align-items:center;gap:7px;font-size:11px;min-width:44px;flex-shrink:0}
-body[data-mmd-partner-page="partner-dashboard"] .lv-toggle{display:block;width:30px;height:18px;border-radius:12px;background:#b4a38e;padding:3px;box-sizing:border-box}
+body[data-mmd-partner-page="partner-dashboard"] [data-partner-control-room] .lv-visibility{background:transparent;border:0;color:#685a4c;padding:6px 0;display:flex;align-items:center;gap:7px;font-size:13px;min-width:44px;flex-shrink:0;text-align:left}
+body[data-mmd-partner-page="partner-dashboard"] .lv-toggle{display:block;width:30px;height:18px;border-radius:12px;background:#b4a38e;padding:3px;box-sizing:border-box;flex-shrink:0}
 body[data-mmd-partner-page="partner-dashboard"] .lv-toggle:before{content:'';display:block;width:12px;height:12px;background:#fffdf8;border-radius:50%}
 body[data-mmd-partner-page="partner-dashboard"] .is-on .lv-toggle{background:#556a52}
 body[data-mmd-partner-page="partner-dashboard"] .is-on .lv-toggle:before{transform:translateX(12px)}
@@ -244,9 +255,10 @@ body[data-mmd-partner-page="partner-dashboard"] [data-partner-control-room] .lv-
 body[data-mmd-partner-page="partner-dashboard"] .lv-order-controls{display:flex;gap:8px;margin-top:12px}
 body[data-mmd-partner-page="partner-dashboard"] .lv-order-controls button{min-width:44px}
 body[data-mmd-partner-page="partner-dashboard"] .lv-pending-model{display:flex;justify-content:space-between;gap:12px;padding:20px 0;border-bottom:1px solid #ded1bf;color:#685a4c}
-body[data-mmd-partner-page="partner-dashboard"] .lv-more{position:relative;flex:1}
+body[data-mmd-partner-page="partner-dashboard"] .lv-more{position:relative;flex:1;width:100%;border-top:1px solid #ded1bf;margin-top:14px;padding-top:12px}
+body[data-mmd-partner-page="partner-dashboard"] .lv-more>summary{display:none}
 body[data-mmd-partner-page="partner-dashboard"] .lv-more>summary{padding:10px 12px;min-height:44px;box-sizing:border-box;cursor:pointer;font-size:14px;list-style:none}
-body[data-mmd-partner-page="partner-dashboard"] .lv-more[open]{background:#fffdf8;box-shadow:0 12px 30px #30241c10;border-radius:9px}
+body[data-mmd-partner-page="partner-dashboard"] .lv-more[open]{background:transparent;box-shadow:none;border-radius:9px}
 body[data-mmd-partner-page="partner-dashboard"] .lv-more button{display:block;width:100%;text-align:left}
 body[data-mmd-partner-page="partner-dashboard"] .pcr-flash{top:8px;background:#fffdf8;color:#30241c;border-color:#bda78e;box-shadow:0 6px 20px #30241c12}
 body[data-mmd-partner-page="partner-dashboard"] .pcr-flash[data-tone=error]{background:#fff3ee;color:#733c29;border-color:#ac7052}
@@ -254,6 +266,9 @@ body[data-mmd-partner-page="partner-dashboard"] [data-partner-control-room] :is(
 body[data-mmd-partner-page="partner-dashboard"] .pcr-dialog::backdrop{background:#30241c80;backdrop-filter:blur(4px)}
 body[data-mmd-partner-page="partner-dashboard"] [data-partner-control-room] .pcr-dialog{max-height:90dvh;width:min(760px,calc(100% - 24px));height:auto;padding:0;border-radius:14px}
 body[data-mmd-partner-page="partner-dashboard"] .pcr-dialog .pcr-form{padding:20px}
+body[data-mmd-partner-page="partner-dashboard"] :is(.pcr-form,[data-console-form]){min-width:0;grid-template-columns:minmax(0,1fr)}
+body[data-mmd-partner-page="partner-dashboard"] :is(.pcr-form,[data-console-form]) :is(label,fieldset,select,textarea,input){min-width:0}
+body[data-mmd-partner-page="partner-dashboard"] :is(.pcr-form,[data-console-form]) select{width:100%}
 body[data-mmd-partner-page="partner-dashboard"] .pcr-dialog fieldset{border-color:#ded1bf}
 body[data-mmd-partner-page="partner-dashboard"] :is(.pcr-telegram,.pcr-privacy){background:#f1e6d6;border-color:#ded1bf;color:#493521}
 body[data-mmd-partner-page="partner-dashboard"] .pcr-privacy :is(b,p),body[data-mmd-partner-page="partner-dashboard"] .pcr-telegram :is(b,small){color:#493521}
@@ -271,10 +286,71 @@ body[data-mmd-partner-page="partner-dashboard"] [data-partner-control-room] .pcr
 body[data-mmd-partner-page="partner-dashboard"] [data-partner-control-room] [data-view-panel="home"]>.pcr-section{background:transparent;border:0;padding:0}
 body[data-mmd-partner-page="partner-dashboard"] .pcr-quick-actions button{flex:0 1 auto}
 body[data-mmd-partner-page="partner-dashboard"] .pcr-dashboard-links{color:#685a4c}
-@media(min-width:860px){body[data-mmd-partner-page="partner-dashboard"] .mmd-partner-system{padding:28px 36px 48px}body[data-mmd-partner-page="partner-dashboard"] .pcr-side{position:sticky;top:24px;max-width:184px}body[data-mmd-partner-page="partner-dashboard"] .pcr-shell{grid-template-columns:184px minmax(0,1fr);gap:48px}body[data-mmd-partner-page="partner-dashboard"] .pcr-main{max-width:860px}body[data-mmd-partner-page="partner-dashboard"] .lv-more{width:100%;border-top:1px solid #ded1bf;margin-top:18px;padding-top:12px}body[data-mmd-partner-page="partner-dashboard"] .pcr-photo-hero{padding-top:8px}}
-@media(max-width:600px){body[data-mmd-partner-page="partner-dashboard"] .pcr-side{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,3.8em),1fr));padding:0;margin:0 0 24px;gap:4px}body[data-mmd-partner-page="partner-dashboard"] .pcr-side button{font-size:11px;padding:8px 5px;min-width:0}body[data-mmd-partner-page="partner-dashboard"] .lv-more>summary{font-size:12px;padding:10px 6px;text-align:center}body[data-mmd-partner-page="partner-dashboard"] .lv-more[open]{position:absolute;right:0;top:0;width:170px;z-index:35;padding:0 8px 8px}body[data-mmd-partner-page="partner-dashboard"] .pcr-top{flex-wrap:wrap}body[data-mmd-partner-page="partner-dashboard"] .pcr-top h2{font-size:17px}body[data-mmd-partner-page="partner-dashboard"] .lv-job>summary{grid-template-columns:60px minmax(0,1fr);gap:12px;padding:14px}body[data-mmd-partner-page="partner-dashboard"] .lv-job-state{grid-column:2;justify-content:space-between;margin-top:0}body[data-mmd-partner-page="partner-dashboard"] [data-partner-control-room] .lv-model{padding:18px 0;grid-template-columns:56px minmax(0,1fr);gap:12px}body[data-mmd-partner-page="partner-dashboard"] [data-partner-control-room] .pcr-model-image{height:76px}body[data-mmd-partner-page="partner-dashboard"] .lv-model h3{font-size:19px}body[data-mmd-partner-page="partner-dashboard"] .lv-model .pcr-model-title{flex-wrap:wrap;gap:4px}body[data-mmd-partner-page="partner-dashboard"] .lv-visibility{min-height:44px}body[data-mmd-partner-page="partner-dashboard"] .pcr-quick-actions{gap:6px}body[data-mmd-partner-page="partner-dashboard"] [data-partner-control-room] .pcr-quick-actions button{font-size:12px;padding:8px 10px}body[data-mmd-partner-page="partner-dashboard"] .pcr-mission-roster h3{font-size:20px}body[data-mmd-partner-page="partner-dashboard"] [data-partner-control-room] [data-lv-sort]{font-size:12px;padding:8px 10px}}
+/* Desktop is the primary workspace; smaller screens retain the same account and actions. */
+body[data-mmd-partner-page="partner-dashboard"] .pcr-side button{width:100%;text-align:left}
+body[data-mmd-partner-page="partner-dashboard"] .pcr-side small{display:block;margin:6px 12px 12px}
 body[data-mmd-partner-page="partner-dashboard"] .mmd-partner-canon-footer{background:#f7f2ea;color:#685a4c;min-height:60px;padding:20px max(18px,env(safe-area-inset-left)) max(20px,env(safe-area-inset-bottom));border-top:1px solid #ded1bf}
-@media(max-width:600px){body[data-mmd-partner-page="partner-dashboard"] [data-partner-control-room] .pcr-side button{font-size:11px;line-height:1.3;padding:8px 3px;min-height:44px}body[data-mmd-partner-page="partner-dashboard"] .pcr-side{margin-bottom:12px}body[data-mmd-partner-page="partner-dashboard"] .pcr-photo-hero{margin-bottom:18px}body[data-mmd-partner-page="partner-dashboard"] .pcr-hero-copy p{display:none}body[data-mmd-partner-page="partner-dashboard"] .pcr-hero-copy h1{font-size:32px}body[data-mmd-partner-page="partner-dashboard"] .pcr-hero-copy span{font-size:13px;margin-top:8px}body[data-mmd-partner-page="partner-dashboard"] .pcr-top .mmdp-eyebrow{display:none}body[data-mmd-partner-page="partner-dashboard"] .lv-job>summary{grid-template-columns:68px minmax(0,1fr)}body[data-mmd-partner-page="partner-dashboard"] .lv-job-date{padding-right:8px}body[data-mmd-partner-page="partner-dashboard"] .lv-job-date b{font-size:14px}body[data-mmd-partner-page="partner-dashboard"] .mmdp-nav{margin-bottom:14px;padding-bottom:12px}body[data-mmd-partner-page="partner-dashboard"] .pcr-top h2{font-size:16px}body[data-mmd-partner-page="partner-dashboard"] [data-partner-control-room] [data-lv-refresh]{font-size:12px;padding:8px}body[data-mmd-partner-page="partner-dashboard"] .lv-attention{font-size:13px;margin:10px 0}body[data-mmd-partner-page="partner-dashboard"] .lv-job-info strong{font-size:16px}}
+@media(max-width:1200px){
+ body[data-mmd-partner-page="partner-dashboard"] .mmd-partner-system{padding:24px 28px 40px}
+ body[data-mmd-partner-page="partner-dashboard"] .pcr-shell{grid-template-columns:168px minmax(0,1fr);gap:28px}
+ body[data-mmd-partner-page="partner-dashboard"] .lv-model .pcr-model-copy{grid-template-columns:minmax(0,1fr) minmax(170px,.8fr);gap:14px 22px}
+ body[data-mmd-partner-page="partner-dashboard"] .lv-model-actions{grid-column:1/-1}
+ body[data-mmd-partner-page="partner-dashboard"] .lv-model-actions .pcr-quick-actions{grid-template-columns:repeat(2,minmax(0,1fr))}
+ body[data-mmd-partner-page="partner-dashboard"] .lv-job>summary{grid-template-columns:72px minmax(0,1fr) minmax(110px,.55fr);gap:8px 18px}
+ body[data-mmd-partner-page="partner-dashboard"] .lv-job-date{grid-row:1/3}
+ body[data-mmd-partner-page="partner-dashboard"] .lv-job-location{grid-column:2}
+ body[data-mmd-partner-page="partner-dashboard"] .lv-job-state{grid-column:3;grid-row:1/3}
+}
+@media(max-width:960px){
+ body[data-mmd-partner-page="partner-dashboard"] .pcr-shell{grid-template-columns:minmax(0,1fr);gap:20px}
+ body[data-mmd-partner-page="partner-dashboard"] .pcr-side{position:relative;top:auto;max-height:none;overflow:visible;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;padding:0;margin:0}
+ body[data-mmd-partner-page="partner-dashboard"] .pcr-side small{display:none}
+ body[data-mmd-partner-page="partner-dashboard"] [data-partner-control-room] .pcr-side button{text-align:center;margin:0;min-width:0;font-size:14px}
+ body[data-mmd-partner-page="partner-dashboard"] .lv-more{margin:0;padding:0;border:0;min-width:0}
+ body[data-mmd-partner-page="partner-dashboard"] .lv-more>summary{display:block;text-align:center;min-height:44px}
+ body[data-mmd-partner-page="partner-dashboard"] .lv-more[open]{grid-column:1/-1;background:#fffdf8;border:1px solid #ded1bf;padding:4px 8px 8px}
+ body[data-mmd-partner-page="partner-dashboard"] [data-partner-control-room] .lv-more[open] button{display:inline-block;width:50%;text-align:left;vertical-align:top;padding:12px}
+ body[data-mmd-partner-page="partner-dashboard"] .pcr-photo-hero{margin-bottom:22px}
+}
+@media(max-width:600px){
+ body[data-mmd-partner-page="partner-dashboard"] .mmd-partner-system{padding:16px max(16px,env(safe-area-inset-right)) max(28px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
+ body[data-mmd-partner-page="partner-dashboard"] .mmdp-nav{margin-bottom:18px;padding-bottom:14px}
+ body[data-mmd-partner-page="partner-dashboard"] .pcr-side{grid-template-columns:repeat(auto-fit,minmax(min(100%,8em),1fr))}
+ body[data-mmd-partner-page="partner-dashboard"] .pcr-shell{gap:22px}
+ body[data-mmd-partner-page="partner-dashboard"] .pcr-hero-copy p{display:none}
+ body[data-mmd-partner-page="partner-dashboard"] .pcr-hero-copy h1{font-size:32px}
+ body[data-mmd-partner-page="partner-dashboard"] .pcr-hero-copy span{font-size:15px;margin-top:8px}
+ body[data-mmd-partner-page="partner-dashboard"] .pcr-top{flex-wrap:wrap}
+ body[data-mmd-partner-page="partner-dashboard"] .pcr-top h2{font-size:18px}
+ body[data-mmd-partner-page="partner-dashboard"] .pcr-top .mmdp-eyebrow{display:none}
+ body[data-mmd-partner-page="partner-dashboard"] .lv-job>summary{grid-template-columns:64px minmax(0,1fr);gap:6px 12px;padding:16px 12px}
+ body[data-mmd-partner-page="partner-dashboard"] .lv-job-date{grid-row:1/3;padding-right:8px;align-self:start}
+ body[data-mmd-partner-page="partner-dashboard"] .lv-job-date b{font-size:15px}
+ body[data-mmd-partner-page="partner-dashboard"] .lv-job-info strong{font-size:17px}
+ body[data-mmd-partner-page="partner-dashboard"] .lv-job-location{font-size:15px;grid-column:2;grid-row:2}
+ body[data-mmd-partner-page="partner-dashboard"] .lv-job-state{grid-column:2;grid-row:3;font-size:14px}
+ body[data-mmd-partner-page="partner-dashboard"] .lv-job-detail{padding:6px}
+ body[data-mmd-partner-page="partner-dashboard"] .lv-job-detail .pcr-job{padding:6px}
+ body[data-mmd-partner-page="partner-dashboard"] .lv-job-detail .pcr-job dl{grid-template-columns:minmax(0,1fr)}
+ body[data-mmd-partner-page="partner-dashboard"] .lv-job-detail .pcr-actions{display:grid;grid-template-columns:minmax(0,1fr)}
+ body[data-mmd-partner-page="partner-dashboard"] [data-partner-control-room] .lv-model{grid-template-columns:64px minmax(0,1fr);gap:14px;padding:22px 0}
+ body[data-mmd-partner-page="partner-dashboard"] .lv-model .pcr-model-copy{display:contents}
+ body[data-mmd-partner-page="partner-dashboard"] .lv-model-identity{grid-column:2;grid-row:1}
+ body[data-mmd-partner-page="partner-dashboard"] .lv-model-commercial,body[data-mmd-partner-page="partner-dashboard"] .lv-model-actions{grid-column:1/-1}
+ body[data-mmd-partner-page="partner-dashboard"] .lv-model-commercial{border-top:1px solid #ded1bf;padding-top:12px}
+ body[data-mmd-partner-page="partner-dashboard"] [data-partner-control-room] .pcr-model-image{height:86px;grid-column:1;grid-row:1}
+ body[data-mmd-partner-page="partner-dashboard"] .lv-model h3{font-size:20px}
+ body[data-mmd-partner-page="partner-dashboard"] .lv-model-facts{font-size:14px}
+ body[data-mmd-partner-page="partner-dashboard"] .lv-rates{font-size:15px}
+ body[data-mmd-partner-page="partner-dashboard"] .lv-model-actions .pcr-quick-actions{gap:8px}
+ body[data-mmd-partner-page="partner-dashboard"] [data-partner-control-room] .pcr-quick-actions button{font-size:14px;padding:10px 8px}
+ body[data-mmd-partner-page="partner-dashboard"] .pcr-mission-roster h3{font-size:21px}
+ body[data-mmd-partner-page="partner-dashboard"] [data-partner-control-room] .pcr-section-head{flex-wrap:wrap}
+ body[data-mmd-partner-page="partner-dashboard"] [data-partner-control-room] .pcr-dialog{width:calc(100% - 16px);max-height:calc(100dvh - 24px);margin:auto;padding-bottom:env(safe-area-inset-bottom)}
+ body[data-mmd-partner-page="partner-dashboard"] .pcr-dialog .pcr-form{padding:14px}
+ body[data-mmd-partner-page="partner-dashboard"] .lv-editor-tabs{padding:12px 14px 0}
+ body[data-mmd-partner-page="partner-dashboard"] .pcr-form-grid{grid-template-columns:minmax(0,1fr)}
+}
 body[data-mmd-partner-page="partner-dashboard"] [data-partner-control-room] :is(button,summary,h1,h2,h3,span,p){overflow-wrap:anywhere}
 body[data-mmd-partner-page="partner-dashboard"] [data-partner-control-room] .lv-job-state,body[data-mmd-partner-page="partner-dashboard"] [data-partner-control-room] .lv-visibility{min-width:0;flex-wrap:wrap}
 body[data-mmd-partner-page="partner-dashboard"] [data-partner-control-room] .lv-model .pcr-model-title{flex-wrap:wrap}
