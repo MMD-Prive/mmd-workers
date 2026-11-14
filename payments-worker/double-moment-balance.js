@@ -22,8 +22,9 @@ export async function creditActorRequest(env,identity,action,extra={}){
  const r=await ns.get(ns.idFromName(identity.client_record_id)).fetch(new Request('https://double-moment-coordinator.internal/run',{method:'POST',headers:{'content-type':'application/json','x-internal-token':token},body:JSON.stringify({...identity,...extra,action})}));
  const d=await r.json().catch(()=>null);if(!r.ok||d?.ok!==true)throw creditError(/^[a-zA-Z0-9_]+$/.test(d?.error||'')?d.error:'credit_authority_unavailable',[400,403,409,422].includes(r.status)?r.status:503);return d;
 }
-export async function readSessionCreditBalance(env,session){
+export async function readSessionCreditBalance(env,session,onStage){
  const identity=sessionCreditIdentity(session);
+ onStage?.("credit_coordinator");
  const d=env.DOUBLE_MOMENT_CREDIT_READER?await env.DOUBLE_MOMENT_CREDIT_READER(session):await creditActorRequest(env,identity,'credit-balance');
  if(d?.ok!==true||d.session_id!==identity.session_id||d.client_record_id!==identity.client_record_id||d.job_id!==identity.job_id||typeof d.paid_credit_thb!=='number'||typeof d.bonus_credit_thb!=='number'||![d.paid_credit_thb,d.bonus_credit_thb].every(n=>Number.isInteger(n)&&n>=0)||![0,10000].includes(d.paid_credit_thb)||d.bonus_credit_thb!==(d.paid_credit_thb?3500:0))throw creditError('credit_authority_unavailable');
  return d;
