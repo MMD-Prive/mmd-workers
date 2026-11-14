@@ -1,10 +1,11 @@
+import { PARTNER_LVMAX_CSS } from "./partner-lvmax";
 // Presentation only. Images are approved public Webflow artwork, never Partner data.
 const asset = "https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90/";
 const office = "https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90/6aea58fa8ca310d316ca7b55_partner-dashboard-desk-v2.webp";
 const yuki = "https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90/6aea58fb450ec5777c79beeb_partner-yuki-welcome-v2.webp";
 const portrait = "https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90/6aea58fbbe3ee27ff0c03c32_partner-yuki-conversation-v2.webp";
 export const PARTNER_HERO_VIEWS = {
-  home: { title: "Home & Jobs", image: yuki, position: "72% 15%", index: "01" },
+  home: { title: "Our Mission", image: yuki, position: "72% 15%", index: "01" },
   models: { title: "Models", image: portrait, position: "70% 12%", index: "02" },
   agreements: { title: "Agreements", image: "https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90/6aea58fb45e7c10203fa8a9b_partner-guide-folio-v2.webp", position: "center", index: "03" },
   earnings: { title: "Earnings", image: "https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90/6aea58f9905e0772fb71e5fd_partner-apply-folio-v2.webp", position: "center", index: "04" },
@@ -160,4 +161,5 @@ body[data-mmd-partner-page="partner-dashboard"] .pcr-photo-hero{min-height:286px
 body[data-mmd-partner-page="partner-dashboard"] .pcr-hero-rail,body[data-mmd-partner-page="partner-dashboard"] .pcr-hero-foot{margin:0 30px}
 body[data-mmd-partner-page="partner-dashboard"] .pcr-hero-copy{padding:50px 32px 29px}
 }
+${PARTNER_LVMAX_CSS}
 `;

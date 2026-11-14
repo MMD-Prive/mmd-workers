@@ -8,8 +8,9 @@ import {fixture,MODEL,apiModule} from './helpers/partner-fixture.mjs';
 const bundle=await build({entryPoints:[new URL('../src/public-index.ts',import.meta.url).pathname],bundle:true,write:false,format:'esm'});
 const {default:pageWorker}=await import('data:text/javascript;base64,'+Buffer.from(bundle.outputFiles[0].text).toString('base64'));
 async function settle(check){for(let n=0;n<100;n++){if(check())return;await new Promise(r=>setTimeout(r,20));}assert.ok(check(),'UI operation did not settle');}
-async function ui(t,{expired=false,system=null}={}){
+async function ui(t,{expired=false,system=null,seed=null}={}){
   const f=await fixture();
+  if(seed)seed(f);
   if(system)f.db.Sessions[0].fields[apiModule.SESSION_FIELDS.referralSnapshotJson]=JSON.stringify({contract:'partner_agreement_v1',system});
   if(expired)f.db.Partners[0].fields[apiModule.MODEL_PARTNERS.accessTokenHash]='invalidated-fixture';
   const w=new Window({url:'https://www.mmdbkk.com/partner/dashboard?t='+encodeURIComponent(f.token),settings:{enableJavaScriptEvaluation:true,disableCSSFileLoading:true,disableJavaScriptFileLoading:true,disableIframePageLoading:true}});
@@ -156,4 +157,34 @@ test('failed encrypted save blocks queued overwrites and preserves the unsaved n
  const original=f.env.PARTNER_ASSETS.put;let attempts=0;f.env.PARTNER_ASSETS.put=async()=>{attempts++;return null;};
  q('[data-general-note]').value='UNSAVED LOCAL NOTE';q('[data-save-vault]').click();q('[data-save-vault]').click();await settle(()=>attempts===1&&q('[data-flash]').textContent.includes('อีกอุปกรณ์'));
  assert.equal(attempts,1);assert.equal(q('[data-general-note]').value,'UNSAVED LOCAL NOTE');assert.equal(f.objects.size,0);f.env.PARTNER_ASSETS.put=original;assert.deepEqual(errors,[]);
+});
+
+test('LV Max keeps upcoming work first after calendar hydration and collapses past jobs',async t=>{
+ const {q,w,errors}=await ui(t,{seed(f){
+  const fields=apiModule.SESSION_FIELDS,original=f.db.Sessions[0];
+  original.fields[fields.startTime]='2099-01-02T03:00:00Z';original.fields[fields.endTime]='2099-01-02T05:00:00Z';
+  f.db.Sessions.push({id:'recZZZZZZZZZZZZZZ',fields:{...original.fields,[fields.sessionId]:'past_fixture',[fields.startTime]:'2020-01-01T03:00:00Z',[fields.endTime]:'2020-01-01T05:00:00Z'}});
+ }});
+ assert.ok(q('[data-jobs] > .lv-job'));
+ assert.ok(q('[data-jobs] > .lv-history [data-job="recZZZZZZZZZZZZZZ"]'));
+ assert.equal(q('[data-jobs] > .lv-history').open,false);
+ assert.equal(q('.pcr-mission-roster').previousElementSibling.contains(q('[data-jobs]')),true);
+ assert.equal(q('.lv-private').open,false);assert.deepEqual(errors,[]);
+});
+test('LV Max reorders linked models through the real API and keeps ranking separate from visibility',async t=>{
+ const other='recNNNNNNNNNNNNNN';
+ const {q,w,f,errors}=await ui(t,{seed(f){
+  f.db.Models.push({id:other,fields:{...f.db.Models[0].fields,[apiModule.MODELS.workingName]:'Second Model'}});
+  f.db.Referrals.push({id:'recEEEEEEEEEEEEEE',fields:{...f.db.Referrals[0].fields,[apiModule.MODEL_REFERRALS.model]:[other]}});
+ }});
+ q('[data-lv-sort]').click();
+ const selector='[data-home-models] [data-model="'+other+'"] [data-order-move="top"]';
+ await settle(()=>q(selector)&&!q(selector).disabled);q(selector).click();
+ await settle(()=>q('[data-home-models] [data-model]').dataset.model===other);
+ const persisted=await(await f.call('/v1/partner/roster-order')).json();assert.deepEqual(persisted.model_ids,[other,MODEL]);
+ assert.deepEqual(f.messages,[]);assert.deepEqual(f.writes,[]);
+ q('[data-home-models] [data-edit-model="visibility"]').click();
+ assert.equal(q('[name=sales_visibility]').closest('[data-editor-group]').hidden,false);
+ assert.equal(q('[name=display_name]').closest('[data-editor-group]').hidden,true);
+ assert.match(q('.lv-editor-note').textContent,/สถานะเดิมยังมีผล/);assert.deepEqual(errors,[]);
 });
