@@ -1,3 +1,4 @@
+import { captainProposal } from './owner-job-edit-captain.js';
 import { readCredentialBoundAdminActor } from './credential-bound-admin-session.js';
 import { renderOwnerJobEdit } from './owner-job-edit-page.js';
 import { readVerifiedPaymentBalance } from './verified-payment-balance.js';
@@ -5,10 +6,10 @@ import { sessionBalanceView } from '../../shared/session-balance-view.mjs';
 
 export const EDIT_PAGE = '/internal/admin/jobs/edit';
 export const EDIT_API = '/v1/admin/jobs/edit';
-export const S = Object.freeze({id:'fldLTq2kZbyRv22IA', model:'fldrXQAyOMPCvbOaY', name:'flddVz6eoWRHrzIQr', assigned:'fldJNvoNRc3s5IgiV', client:'fldMvnQ0BzDfHUYjT', date:'fldpnqoIsUMfN7y3c', start:'fldBeG0FkWwa8kgnp', end:'fldiDSz0wW9Ct9I3P', location:'fldIiRpaxoafjTkFt', map:'fldoUDQ8sH93idPx0', amount:'fldhwC79ndbnEXSZz', payout:'fldlTO5aNfqUmlNWm', deposit:'fldooTlKtkY8VJy7L', received:'fldAdtXEaedGdfOKc', due:'fldvJowquu8RrsOMc', travel:'fld703jI4zQ0CYMHh', modelTravel:'fldqYkGm9Vd3P366W', note:'fldEcDkF7CH9VixWM', notes:'fldwl9Gs5tYlXG5ls', status:'fldmwuvOaiCFdzzRa', state:'fld57fhdWqIcOy4Jp', stateAt:'fldFJI1Leni6wvzR4', ack:'fldFgkHXivIAThfDz', ackIp:'fldSte6x9NnNJyF5s', customerAck:'fldJSS5GNN7quJwa8', customerAckIp:'fldTzhupkA2laZDkF', ready:'fldEBdh1jmSPsj3zd', reconfirmAck:'fldMtFsIZicREiCzG', reconfirm:'fldIvBZDv6541YZR8', source:'fldxyZ7S3tjF8chGR', partner:'fld0jkscGAtyX7i2J', locked:'fldYgTgfGDpFQsKvZ'});
+export const S = Object.freeze({id:'fldLTq2kZbyRv22IA', model:'fldrXQAyOMPCvbOaY', name:'flddVz6eoWRHrzIQr', assigned:'fldJNvoNRc3s5IgiV', client:'fldMvnQ0BzDfHUYjT', date:'fldpnqoIsUMfN7y3c', start:'fldBeG0FkWwa8kgnp', end:'fldiDSz0wW9Ct9I3P', location:'fldIiRpaxoafjTkFt', map:'fldoUDQ8sH93idPx0', amount:'fldhwC79ndbnEXSZz', payout:'fldlTO5aNfqUmlNWm', deposit:'fldooTlKtkY8VJy7L', received:'fldAdtXEaedGdfOKc', due:'fldvJowquu8RrsOMc', travel:'fld703jI4zQ0CYMHh', modelTravel:'fldqYkGm9Vd3P366W', note:'fldEcDkF7CH9VixWM', notes:'fldwl9Gs5tYlXG5ls', status:'fldmwuvOaiCFdzzRa', state:'fld57fhdWqIcOy4Jp', stateAt:'fldFJI1Leni6wvzR4', ack:'fldFgkHXivIAThfDz', ackIp:'fldSte6x9NnNJyF5s', customerAck:'fldJSS5GNN7quJwa8', customerAckIp:'fldTzhupkA2laZDkF', ready:'fldEBdh1jmSPsj3zd', reconfirmAck:'fldMtFsIZicREiCzG', reconfirm:'fldIvBZDv6541YZR8', source:'fldxyZ7S3tjF8chGR', partner:'fld0jkscGAtyX7i2J', locked:'fldYgTgfGDpFQsKvZ', paymentRef:'fldojgjSQLaO0uQLX', customerLink:'fldi9ZdoiUXzSv1rI', modelLink:'fld0mFma9J9yfEaKb'});
 export const J = Object.freeze({id:'fldTR8yO6xv40HjOX', model:'fldscPK15ejBw0BAH', name:'fldA0qyACFQA2AqhB', amount:'fldSspHLxJPQOg7wA', note:'fldAvaj1azv3lAavo', location:'fldXxOmiDiefa2Sdk', travel:'fld4IeVVICmQBv5Kr', modelTravel:'fldv4s9r1hHH2Ohse'});
 const M = {name:'fldShiT60bmCxFxRu', nickname:'fld0maFkh4NHpsPxA', status:'fldRcAE3bL8dKmURH', folder:'fldcWVb2LDRxrQDmT'};
-const tables={sessions:'tblC98mKWbzmPuNzX', jobs:'tbl0jxIjN8QYwGABX', models:'tblI4B0bI446vp9GX'};
+const tables={sessions:'tblC98mKWbzmPuNzX', jobs:'tbl0jxIjN8QYwGABX', models:'tblI4B0bI446vp9GX',payments:'tblWGGJJOx5eBvBZJ'};
 const origins=new Set(['https://mmdbkk.com','https://www.mmdbkk.com']);
 export const name = v => String(v?.name ?? v ?? '').trim();
 const fail=(code,status=409)=>{throw Object.assign(Error(code),{status});};
@@ -127,6 +128,10 @@ export async function handleOwnerJobEdit(request,env){
         return env.JOB_EDIT_COORDINATOR.getByName(id).fetch(new Request('https://job-edit.internal/history'));
       }
       const data=await loadJob(env,id);
+      if(u.searchParams.get('amendment')==='captain-zero'){
+        if(actor.role!=='owner')return reply({ok:false,error:'forbidden'},403);
+        return reply({ok:true,proposal:await captainProposal(env,data),revision:await revision(data)});
+      }
       return reply({ok:true,job:projectJob(data),revision:await revision(data)});
     }
     if(request.headers.get('origin')!==u.origin)return reply({ok:false,error:'forbidden_origin'},403);
@@ -138,7 +143,7 @@ export async function handleOwnerJobEdit(request,env){
     if(!edited.ok)return edited;
     let reportStatus='unavailable';
     try{
-      if(env.PAYMENTS_WORKER?.fetch&&env.AUTH_SERVICE_ADMIN_TO_PAYMENTS){
+      if(body.amendment!=='captain-zero'&&env.PAYMENTS_WORKER?.fetch&&env.AUTH_SERVICE_ADMIN_TO_PAYMENTS){
         const r=await env.PAYMENTS_WORKER.fetch(new Request('https://payments.internal/v1/internal/payments/report',{method:'POST',headers:{'content-type':'application/json','x-internal-token':env.AUTH_SERVICE_ADMIN_TO_PAYMENTS},body:JSON.stringify({session_id:body.session_id}),signal:AbortSignal.timeout(12000)}));
         const data=await r.json();if(r.ok&&data.ok===true&&data.authority==='payments-worker'){sessionBalanceView(data.balance,body.session_id);reportStatus='verified';}
       }
