@@ -3,6 +3,7 @@ import { searchApprovedDriveModelCandidates, materializeApprovedDriveModel } fro
 
 const SEARCH = '/v1/admin/models/search';
 const SELECT = '/v1/admin/models/drive-select';
+const SOURCES = '/v1/admin/models/sources';
 const PARTNERS = '/v1/admin/partners/lookup';
 const clean = (value,max=240) => String(value ?? '').trim().slice(0,max);
 const rec = value => /^rec[A-Za-z0-9]{14,24}$/.test(value || '');
@@ -21,7 +22,7 @@ function modelPhotos(fields={}) {
 const json = (body,status=200) => Response.json(body,{status,headers:{'cache-control':'private, no-store','referrer-policy':'no-referrer'}});
 export function isCreateJobDriveDiscoveryRequest(request) {
   const url = new URL(request.url), path = url.pathname.replace(/\/+$/,'');
-  return path === SELECT || path === PARTNERS || path === SEARCH && url.searchParams.get('discovery') === 'drive';
+  return path === SELECT || path === SOURCES || path === PARTNERS || path === SEARCH && url.searchParams.get('discovery') === 'drive';
 }
 export async function handleCreateJobDriveDiscovery(request,env) {
   const actor = await readCredentialBoundAdminActor(request,env);
@@ -49,6 +50,13 @@ export async function handleCreateJobDriveDiscovery(request,env) {
     if (!result.ok) return json({ok:false,error:driveSearchErrorCode(result)},503);
     return json({ok:true,source:'drive',airtable_deferred:true,items:result.items.map(item=>({model_id:'',model_name:item.working_name,model_lookup_key:item.model_lookup_key,drive_folder_id:item.drive_folder_id,drive_folder_url:item.drive_folder_url,folder_path:item.folder_path,folder_name:item.folder_name,source:'drive',source_kind:null,partner_name:null,partner_record_id:null,materialized:false,status:'Drive',orientation:item.lane}))});
   }
+  if (path === SOURCES) {
+    if (actor.role !== 'owner') return json({ok:false,error:'owner_required'},403);
+    const modelId = url.searchParams.get('model_record_id');
+    if (!rec(modelId)) return json({ok:false,error:'canonical_model_record_invalid'},400);
+    try { return json({ok:true,...await readModelSources(env, modelId)}); }
+    catch { return json({ok:false,status:'unavailable',error:'model_sources_unavailable'},503); }
+  }
   if (path === PARTNERS) {
     try { return json({ok:true,available:true,items:await listWorkingPartners(env,clean(url.searchParams.get('q'),120))}); }
     catch { return json({ok:false,error:'partner_lookup_unavailable'},503); }
@@ -56,10 +64,10 @@ export async function handleCreateJobDriveDiscovery(request,env) {
   return json({ok:false,error:'not_found'},404);
 }
 const P = {id:'fldXb55aiAjNPOUWc',name:'fldpJWfASq7PfkMgC',status:'fldajmg66pf2ifGPu',approval:'fldwRzdtIoPbHKr7n'};
-async function airtable(env,path,params) {
+async function airtable(env,path,params,{fieldIds=true}={}) {
   if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) throw Error('not_configured');
   const url = new URL(`https://api.airtable.com/v0/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${path}`);
-  url.searchParams.set('returnFieldsByFieldId','true');
+  if (fieldIds) url.searchParams.set('returnFieldsByFieldId','true');
   for (const [key,value] of params || []) url.searchParams.append(key,value);
   const response = await fetch(url,{headers:{Authorization:`Bearer ${env.AIRTABLE_API_KEY}`},signal:AbortSignal.timeout(10000)});
   if (!response.ok) throw Error('partner_lookup_failed');
@@ -82,6 +90,47 @@ export async function listWorkingPartners(env,q='') {
   }
   throw Error('partner_directory_incomplete');
 }
+export async function readModelSources(env, modelId) {
+  const table = encodeURIComponent(env.AIRTABLE_TABLE_MODEL_REFERRALS || 'tblrmSsCZxJSCQR9n');
+  const linkedIds = value => Array.isArray(value)
+    ? value.map(link => typeof link === 'string' ? link : link?.id)
+    : [];
+  const partnerIds = new Set();
+  const evidence = [];
+  const ended = new Set(['inactive', 'revoked', 'transferred', 'archived']);
+  let uncertain = false;
+  let offset = '';
+  for (let page = 0; page < 10; page++) {
+    const data = await airtable(env, table, offset ? [['offset', offset]] : [], {fieldIds:false});
+    if (!Array.isArray(data.records)) throw Error('model_sources_unavailable');
+    for (const row of data.records) {
+      const fields = row.fields || {};
+      if (!linkedIds(fields.Model).includes(modelId)) continue;
+      evidence.push({id:row.id,fields});
+      const status = clean(fields['Ownership Status']).toLowerCase();
+      if (ended.has(status)) continue;
+      const ids = linkedIds(fields.Partner);
+      if (status !== 'verified' || ids.length !== 1 || !rec(ids[0])) {
+        uncertain = true;
+        continue;
+      }
+      partnerIds.add(ids[0]);
+    }
+    offset = data.offset || '';
+    if (offset) continue;
+    if (uncertain || partnerIds.size > 1) return {status:'review_required',items:[]};
+    if (!partnerIds.size) return {status:'unknown',items:[]};
+    const [id] = partnerIds;
+    const row = await airtable(env, `${partnerTable(env)}/${encodeURIComponent(id)}`);
+    const partner = partnerOption(row);
+    if (!partner || row.id !== id) return {status:'review_required',items:[]};
+    const bytes=new TextEncoder().encode(JSON.stringify({modelId,evidence,partner:row}));
+    const revision=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join('');
+    return {status:'verified',items:[{...partner,relationship_status:'verified',source_revision:revision}]};
+  }
+  throw Error('model_sources_unavailable');
+}
+
 export async function resolveChosenJobPartner(env,body) {
   const choice=body.model_source_choice;
   if (choice !== 'direct' && choice !== 'partner') return null; // legacy creates unchanged
@@ -91,8 +140,13 @@ export async function resolveChosenJobPartner(env,body) {
   }
   const id=clean(body.partner_attribution?.partner_record_id);
   if (!rec(id)) throw Object.assign(Error('partner_record_required'),{status:400});
-  const row=await airtable(env,`${partnerTable(env)}/${encodeURIComponent(id)}`);
-  const option=partnerOption(row);
-  if (!option) throw Object.assign(Error('partner_not_active_recognized'),{status:409});
-  return {source_kind:'partner',...option};
+  const modelId=clean(body.model?.model_id || body.model_record_id);
+  if (!rec(modelId)) throw Object.assign(Error('canonical_model_record_required'),{status:400});
+  const sources=await readModelSources(env,modelId);
+  if (sources.status !== 'verified' || !sources.items.some(item=>item.partner_record_id===id)) {
+    throw Object.assign(Error('model_partner_relationship_not_verified'),{status:409});
+  }
+  const option=sources.items.find(item=>item.partner_record_id===id);
+  if (!body.partner_attribution?.source_revision || body.partner_attribution.source_revision!==option.source_revision) throw Object.assign(Error('model_partner_source_changed'),{status:409});
+  return {source_kind:'partner',...option,model_record_id:modelId};
 }
