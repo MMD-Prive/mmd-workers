@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import {readVerifiedPaymentBalance} from "../admin-worker/src/verified-payment-balance.js";
 import {
   FINAL_PAYMENT_ACTIVATE_PATH,
   FINAL_PAYMENT_STATUS_PATH,
@@ -283,3 +284,43 @@ test('unknown job lane cannot bypass the new coordinator through the legacy cach
   const response = await handleFinalPaymentFlow(request(FINAL_PAYMENT_ACTIVATE_PATH), h.env);
   assert.equal(response.status, 503); assert.equal(h.sessionPatches.length, 0);
 });
+
+for (const [stage, code] of [
+  ["payment_ledger", "balance_ledger_unavailable"],
+  ["credit_session_validation", "credit_session_identity_unconfirmed"],
+  ["credit_coordinator", "unclassified"],
+]) {
+  test(`balance diagnostics correlate ${stage} without exposing raw values`, async (t) => {
+    const h = harness();
+    const logs = t.mock.method(console, "warn", () => {});
+    const coordinator = t.mock.fn(async () => Response.json({error: "private_upstream_detail"}, {status: 503}));
+    h.env.AUTH_SERVICE_MEMBER_TO_PAYMENTS = "fixture-secret";
+    h.env.DOUBLE_MOMENT_COORDINATOR = {idFromName: (name) => name, get: () => ({fetch: coordinator})};
+    if (stage === "credit_coordinator") {
+      Object.assign(h.sessionById.fields, {Client: ["rec00000000000000"], job_id: "fixture_job"});
+    }
+    const fetchFixture = h.env.AIRTABLE_HTTP.fetch;
+    h.env.AIRTABLE_HTTP.fetch = (req) => {
+      assert.equal(req.method, "GET");
+      if (stage === "payment_ledger" && new URL(req.url).pathname.endsWith("/payments")) {
+        return Response.json({unexpected: "private_ledger_detail"});
+      }
+      return fetchFixture(req);
+    };
+    let forwardedId;
+    h.env.PAYMENTS_WORKER = {fetch(req) {
+      forwardedId = req.headers.get("x-request-id");
+      return handleFinalPaymentFlow(req, h.env);
+    }};
+    await assert.rejects(readVerifiedPaymentBalance(h.env, "sess_final_flow"),
+      {message: "verified_balance_unavailable", status: 503});
+    assert.match(forwardedId, /^[a-f0-9-]{36}$/);
+    assert.deepEqual(logs.mock.calls.map((call) => JSON.parse(call.arguments[0])), [
+      {event: "verified_balance_read_failed", stage, status: 503, code, request_id: forwardedId},
+      {event: "verified_payment_balance_failed", request_id: forwardedId, status: 503},
+    ]);
+    assert.equal(coordinator.mock.callCount(), stage === "credit_coordinator" ? 1 : 0);
+    assert.equal(h.paymentCreates, 0);
+    assert.deepEqual(h.sessionPatches, []);
+  });
+}
