@@ -135,21 +135,9 @@ async function handleCurrentSessionWithReconfirm(request, env, ctx, downstream) 
   const found = await findSessionBySessionId(env, sessionId);
   if (!found.ok || !found.record) return response;
 
-  let record = found.record;
-  let reconfirm = reconfirmFromFields(env, record.fields || {}, Date.now());
-
-  // Lazy repair for sessions created before the create-route reconfirm hook.
-  if (!reconfirm && isReconfirmLifecycleState(session.normalized_state || session.state)) {
-    const jobDate = sessionJobDate(env, record.fields || {});
-    const schedule = buildReconfirmSchedule(jobDate);
-    if (schedule) {
-      const persisted = await persistReconfirmSchedule(env, sessionId, schedule, record);
-      if (persisted.ok) {
-        record = persisted.record;
-        reconfirm = reconfirmFromFields(env, record.fields || {}, Date.now());
-      }
-    }
-  }
+  // GET projects persisted metadata only. Creation, explicit acknowledgement
+  // and the enabled sweep own schedule writes, including legacy backfill.
+  const reconfirm = reconfirmFromFields(env, found.record.fields || {}, Date.now());
 
   if (!reconfirm) return response;
 
