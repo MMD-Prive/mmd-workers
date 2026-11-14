@@ -124,6 +124,7 @@ export default {
         requireInternalToken(req, env, {
           allowServiceSecrets: path === "/telegram/internal/send"
             ? [
+                "AUTH_SERVICE_ADMIN_TO_TELEGRAM",
                 "AUTH_SERVICE_BOOKING_TO_TELEGRAM",
                 "AUTH_SERVICE_EVENTS_TO_TELEGRAM",
                 "AUTH_SERVICE_STUDIO_TO_TELEGRAM",
