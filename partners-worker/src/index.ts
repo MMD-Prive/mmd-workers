@@ -453,6 +453,9 @@ export default {
         return await handlePartnerVerify(request, runtimeEnv);
       }
 
+      if (["GET", "POST"].includes(request.method) && url.pathname === "/v1/partner/roster-order") {
+        return await handlePartnerRosterOrder(request, runtimeEnv);
+      }
       if (request.method === "GET" && url.pathname === "/v1/partner/dashboard") {
         return await handlePartnerDashboard(request, runtimeEnv);
       }
@@ -3003,6 +3006,43 @@ async function handlePartnerModelLink(request: Request, env: RuntimeEnv): Promis
   const res = json(request, env, { ok: true, model_confirmation_url: payload.model_confirmation_url, pay_model_thb: payload.pay_model_thb, expires_at: payload.expires_at });
   res.headers.set("Cache-Control", "no-store, private");
   return res;
+}
+
+// Personal display ordering only. It never changes customer ranking or visibility.
+async function handlePartnerRosterOrder(request: Request, env: RuntimeEnv): Promise<Response> {
+  const verified = await verifyPartnerTokenFromRequest(request, env);
+  if (!verified.ok) return verified.response;
+  const bucket = (env as RuntimeEnv & { PARTNER_ASSETS?: R2Bucket }).PARTNER_ASSETS;
+  if (!bucket) return errorResponse(request, env, "roster_order_unavailable", "Ordering is unavailable.", 503, true);
+  const partner = verified.value.partnerRecord;
+  const referrals = await listLinkedRecordsForPartner(env, env.AIRTABLE_TABLE_MODEL_REFERRALS, MODEL_REFERRALS.partner, partner.id, fieldText(partner, MODEL_PARTNERS.partnerId) || "");
+  const allowed = new Set(referrals.filter(r => !["inactive", "revoked", "transferred", "archived"].includes(normalizeStatus(fieldText(r, MODEL_REFERRALS.ownershipStatus)))).flatMap(r => fieldLinkIds(r, MODEL_REFERRALS.model)));
+  const key = `partner-roster-order/v1/${(await sha256Hex(partner.id)).slice(0, 40)}.json`;
+  if (request.method === "GET") {
+    const stored = await bucket.get(key);
+    const value = stored ? parseJson(await stored.text()) : null;
+    const ids = isRecord(value) && Array.isArray(value.model_ids) ? value.model_ids.filter(id => typeof id === "string" && allowed.has(id)) : [];
+    const response = json(request, env, { ok: true, model_ids: ids, revision: stored?.etag || null });
+    response.headers.set("Cache-Control", "no-store, private");
+    return response;
+  }
+  const body = await readJsonObject(request);
+  if (!body.ok) return errorResponse(request, env, "invalid_json", "Invalid order.", 400, false);
+  const ids = body.value.model_ids;
+  if (!Array.isArray(ids) || ids.length > 1000 || ids.some(id => typeof id !== "string") || new Set(ids).size !== ids.length)
+    return errorResponse(request, env, "roster_order_invalid", "Order must contain unique model IDs.", 400, false);
+  if (ids.some(id => !allowed.has(String(id)))) return errorResponse(request, env, "partner_model_scope_forbidden", "Model is outside the active roster.", 403, false);
+  if (!Object.hasOwn(body.value, "revision") || (body.value.revision !== null && typeof body.value.revision !== "string"))
+    return errorResponse(request, env, "roster_order_conflict", "Reload the order first.", 409, false);
+  const revision = readString(body.value, "revision");
+  const saved = await bucket.put(key, JSON.stringify({ model_ids: ids, updated_at: new Date().toISOString() }), {
+    onlyIf: revision ? { etagMatches: revision } : { etagDoesNotMatch: "*" },
+    httpMetadata: { contentType: "application/json" }, customMetadata: { scope: "partner_roster_order", version: "1" }
+  });
+  if (!saved) return errorResponse(request, env, "roster_order_conflict", "Order changed on another device. Reload first.", 409, false);
+  const response = json(request, env, { ok: true, model_ids: ids, revision: saved.etag });
+  response.headers.set("Cache-Control", "no-store, private");
+  return response;
 }
 
 async function handlePartnerPrivateVaultGet(request: Request, env: RuntimeEnv): Promise<Response> {

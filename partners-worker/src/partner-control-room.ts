@@ -1,3 +1,4 @@
+import { PARTNER_LVMAX_JS, PARTNER_LVMAX_CSS } from "./partner-lvmax";
 import { PARTNER_HERO_JS } from "./partner-dashboard-skin";
 import { PARTNER_OPERATIONS_JS, PARTNER_OPERATIONS_CSS } from "./partner-operations";
 
@@ -13,7 +14,7 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
   var $ = function (selector, parent) { return (parent || document).querySelector(selector); };
   var $$ = function (selector, parent) { return Array.prototype.slice.call((parent || document).querySelectorAll(selector)); };
   var esc = function (value) { return String(value == null ? "" : value).replace(/[&<>\"']/g, function (c) { return ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"})[c]; }); };
-  var money = function (value) { return Number(value || 0).toLocaleString("th-TH") + " THB"; };
+  var money = function (value) { return value == null || value === "" || !Number.isFinite(Number(value)) ? "ยังไม่ยืนยันยอด" : Number(value).toLocaleString("th-TH") + " THB"; };
   var dateTime = function (value) { if (!value) return "—"; var d = new Date(value); return isNaN(d.getTime()) ? esc(value) : d.toLocaleString("th-TH", { dateStyle:"medium", timeStyle:"short", timeZone:"Asia/Bangkok" }); };
   var uid = function (prefix) { var bytes = new Uint8Array(10); crypto.getRandomValues(bytes); return prefix + Array.prototype.map.call(bytes, function (b) { return b.toString(16).padStart(2,"0"); }).join(""); };
   var signInMessage = "เข้าสู่ระบบด้วย LINE อีกครั้งเพื่อเปิดพื้นที่พาร์ทเนอร์";
@@ -41,7 +42,7 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
         if (state.authBlocked) throw new Error(signInMessage);
         if (!response.ok || !payload.ok) {
           var code = payload.error && typeof payload.error === "object" ? payload.error.code : payload.error;
-          var messages = {vault_conflict:"ข้อมูลถูกแก้จากอีกอุปกรณ์ กรุณาสำรองแล้วโหลด Vault ใหม่ก่อนบันทึก",vault_revision_required:"กรุณาโหลด Vault ใหม่ก่อนบันทึก",job_already_closed:"งานนี้สรุปผลแล้ว",explicit_share_required:"กรุณายืนยัน Share with MMD",official_verify_required:"งานอยู่ในขั้น Official Verify · ระบบจะเปิดการยืนยันเมื่อการตรวจเสร็จ",partner_confirmation_already_final:"คำตอบของงานนี้ถูกบันทึกแล้ว · รีเฟรชเพื่อดูสถานะล่าสุด",partner_not_active:"สถานะพาร์ทเนอร์กำลังอยู่ในขั้นตรวจสอบ",partner_not_recognized:"Partner Review ของ Boss Per กำลังดำเนินการ",telegram_connect_required:"เชื่อม Telegram เพื่อรับแจ้งงาน · Dashboard ใช้งานได้ตามปกติ",telegram_binding_conflict:"กรุณาติดต่อ MMD เพื่อตรวจสอบบัญชี Telegram"};
+          var messages = {roster_order_conflict:"ลำดับถูกแก้จากอีกอุปกรณ์ กรุณาโหลดลำดับล่าสุดก่อนบันทึก",vault_conflict:"ข้อมูลถูกแก้จากอีกอุปกรณ์ กรุณาสำรองแล้วโหลด Vault ใหม่ก่อนบันทึก",vault_revision_required:"กรุณาโหลด Vault ใหม่ก่อนบันทึก",job_already_closed:"งานนี้สรุปผลแล้ว",explicit_share_required:"กรุณายืนยัน Share with MMD",official_verify_required:"งานอยู่ในขั้น Official Verify · ระบบจะเปิดการยืนยันเมื่อการตรวจเสร็จ",partner_confirmation_already_final:"คำตอบของงานนี้ถูกบันทึกแล้ว · รีเฟรชเพื่อดูสถานะล่าสุด",partner_not_active:"สถานะพาร์ทเนอร์กำลังอยู่ในขั้นตรวจสอบ",partner_not_recognized:"Partner Review ของ Boss Per กำลังดำเนินการ",telegram_connect_required:"เชื่อม Telegram เพื่อรับแจ้งงาน · Dashboard ใช้งานได้ตามปกติ",telegram_binding_conflict:"กรุณาติดต่อ MMD เพื่อตรวจสอบบัญชี Telegram"};
           throw new Error(messages[code] || "กรุณาลองอีกครั้ง หรือติดต่อ MMD เพื่อตรวจสอบรายการ");
         }
         return payload;
@@ -56,6 +57,8 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
     flash.textContent = message || "";
     flash.dataset.tone = tone || "neutral";
     flash.hidden = !message;
+    var dialog = $('dialog[open]',root);
+    if(dialog){var feedback=$('[data-dialog-feedback]',dialog);if(!feedback){feedback=document.createElement('p');feedback.dataset.dialogFeedback='';feedback.setAttribute('role','status');feedback.className='lv-dialog-feedback';$('.pcr-dialog-head',dialog).after(feedback);}feedback.textContent=message||'';feedback.hidden=!message;}
   }
 
   ${PARTNER_HERO_JS}
@@ -78,7 +81,7 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
     ].map(function (item) { return '<article><span>' + esc(item[0]) + '</span><strong>' + esc(item[1]) + '</strong></article>'; }).join("");
   }
 
-  function jobCard(job) {
+  function detailedJobCard(job) {
     var note = state.vault && state.vault.travel_notes ? (state.vault.travel_notes[job.session_record_id] || "") : "";
     var finalLabel = job.status === "confirmed" ? "ยืนยันงานแล้ว" : job.status === "declined" ? "บันทึกการปฏิเสธแล้ว" : "";
     var modelLink = job.status === "confirmed"
@@ -113,43 +116,10 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
       '</article>';
   }
 
-  function renderJobs(data) {
-    var now = Date.now();
-    var day = new Intl.DateTimeFormat("sv-SE", { timeZone:"Asia/Bangkok" }).format(new Date(now));
-    var jobs = (data.jobs || []).map(function (job) {
-      var when = job.start_at || job.date || "";
-      var dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(when);
-      return { job:job, sort:Date.parse(when), upcoming: dateOnly ? when >= day : Date.parse(when) >= now };
-    });
-    var finished = /^(declined|cancelled|canceled|completed|closed|expired)$/i;
-    var upcoming = jobs.filter(function (item) { return item.upcoming && !finished.test(item.job.status); }).sort(function (a,b) { return a.sort-b.sort; });
-    var earlier = jobs.filter(function (item) { return upcoming.indexOf(item) < 0; });
-    var target = $("[data-jobs]", root);
-    target.innerHTML = (upcoming.length ? upcoming.map(function (item) { return jobCard(item.job); }).join("") : '<div class="pcr-empty">ยังไม่มีงานที่กำลังจะมาถึง</div>') +
-      (earlier.length ? '<details class="pcr-mission-extra"><summary>งานอื่นและประวัติ</summary>' + earlier.map(function (item) { return jobCard(item.job); }).join("") + '</details>' : '');
-  }
+  function renderJobs(data) { renderMissionJobs(data.jobs || []); }
 
-  function modelCard(model) {
-    var image = model.image_url ? '<img src="' + esc(model.image_url) + '" alt="">' : '<span>' + esc(String(model.display_name || "M").slice(0,1)) + '</span>';
-    var proposal = model.sales_control && model.sales_control.proposal ? model.sales_control.proposal : null;
-    var approved = model.sales_control && model.sales_control.approved_policy;
-    var visibility = approved ? approved.sales_visibility : "off";
-    return '<article class="pcr-model" data-model="' + esc(model.model_record_id) + '">' +
-      '<div class="pcr-model-image">' + image + '</div><div class="pcr-model-copy"><div class="pcr-model-title"><div><h3>' + esc(model.display_name) + '</h3><p>' + esc(model.height_cm || "—") + ' cm · ' + esc(model.weight_kg || "—") + ' kg</p></div><span class="pcr-switch is-' + esc(visibility) + '">' + (approved ? (visibility === "on" ? "ON · ตามตารางที่อนุมัติ" : "OFF · ตามตารางที่อนุมัติ") : "กำลังตรวจเรทและ Visibility") + '</span></div>' +
-      '<p>' + esc(model.sales_copy || model.profile_summary || model.skills_summary || "เพิ่มข้อความแนะนำตัวเพื่อใช้ในโปรไฟล์") + '</p>' +
-      '<div class="pcr-meta"><span>' + esc(model.referral_status) + '</span><span>' + esc(model.availability_status) + '</span>' + (model.profile_request_status ? '<span>Profile: ' + esc(model.profile_request_status) + '</span>' : '') + '</div>' +
-      (proposal ? '<p>เรทถึงตัว '+esc(money(proposal.partner_source_rate_thb))+' · เรทขายที่เสนอ '+esc(money(proposal.customer_sell_rate_thb))+' · '+esc(proposal.status)+'</p>' : '') + '<div class="pcr-quick-actions"><button type="button" data-edit-model>แก้โปรไฟล์ / เรท</button><button type="button" class="ghost" data-edit-model="photo">อัปโหลดรูปใหม่</button><button type="button" class="ghost" data-edit-model="visibility">ขอเปลี่ยน Visibility</button></div></div></article>';
-  }
-
-  function renderModels(data) {
-    var targets = $$("[data-models],[data-home-models]", root);
-    var models = data.models || [];
-    var pending = (data.model_changes || []).filter(function (item) { return item.action === "add_model" && item.status === "review"; });
-    var markup = models.map(modelCard).join("") + pending.map(function (item) {
-      return '<article class="pcr-model pending"><div class="pcr-model-image"><span>+</span></div><div class="pcr-model-copy"><h3>' + esc(item.payload.display_name || "New model") + '</h3><p>MMD Review กำลังดำเนินการ</p><div class="pcr-meta"><span>Review</span></div></div></article>';
-    }).join("") || '<div class="pcr-empty">Model ที่เชื่อมกับ Partner จะปรากฏที่นี่</div>';
-    targets.forEach(function (target) { target.innerHTML = markup; });
-  }
+  function modelCard(model) { return lvModelCard(model); }
+  function renderModels(data) { renderLvModels(data); }
 
   function renderEarnings(data) {
     var finance = data.finance || {};
@@ -159,10 +129,10 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
     var rows = finance.rows || data.commissions || [];
     var payout = '<article class="pcr-finance-card"><div><small>PAYOUT PROFILE</small><h3>' + esc(profile.configured ? (profile.method || "Configured") : "เพิ่มช่องทางรับเงินเพื่อเตรียม Payout") + '</h3><p>' + esc(profile.configured ? ((profile.account_name || "—") + " · " + (profile.account_ref_masked || "—")) : "ข้อมูลนี้เป็นข้อมูลที่ Partner เลือกแชร์กับ MMD เพื่อการจ่ายเงินเท่านั้น") + '</p></div><span class="pcr-finance-state">' + (profile.configured ? "READY" : "SETUP") + '</span></article>';
     var cards = '<div class="pcr-finance-metrics">' + [
-      ["รอดำเนินการ", summary.pending_amount || 0],
-      ["อนุมัติแล้ว", summary.approved_amount || 0],
-      ["พักการจ่าย", summary.held_amount || 0],
-      ["จ่ายแล้ว", summary.paid_amount || 0]
+      ["รอดำเนินการ", summary.pending_amount],
+      ["อนุมัติแล้ว", summary.approved_amount],
+      ["พักการจ่าย", summary.held_amount],
+      ["จ่ายแล้ว", summary.paid_amount]
     ].map(function(item){return '<article><span>'+esc(item[0])+'</span><strong>'+esc(money(item[1]))+'</strong></article>';}).join("") + '</div>';
     var warning = reconciliation.required ? '<div class="pcr-finance-warning" role="status"><b>มีรายการเก่าที่ต้อง Reconcile ก่อนรวมยอด</b><p>พบ Commission ID ซ้ำ ' + esc((reconciliation.duplicate_commission_ids || []).join(", ")) + ' · ระบบกันรายการเหล่านี้ออกจากยอดรวมเพื่อป้องกันการนับหรือจ่ายซ้ำ</p></div>' : '';
     var table = rows.length ? '<div class="pcr-table"><table><thead><tr><th>Job</th><th>Model</th><th>System</th><th>Commission</th><th>Payout</th><th>Timeline</th></tr></thead><tbody>' + rows.map(function (row) {
@@ -207,14 +177,15 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
     $(".pcr-shell", root).hidden = false;
     $("[data-loading]", root).textContent = "";
     $("[data-partner-name]", root).textContent = (data.partner && data.partner.name) || "SĪGIL Partner";
-    prepareMissionHome(); renderMetrics(data); renderJobs(data); renderModels(data); renderEarnings(data); renderTelegram(data);
-    bindDynamic(); renderOperations(data);
+    prepareMissionHome(); prepareLvHome(); renderMetrics(data); renderJobs(data); renderModels(data); renderEarnings(data); renderTelegram(data);
+    bindDynamic(); renderOperations(data); renderLvAttention(data);
   }
 
   function bindDynamic() {
-    $$('[data-edit-model]', root).forEach(function (button) { button.onclick = function () { openModelEditor(button.closest('[data-model]').dataset.model); var form = $("[data-model-form]",root); if (button.dataset.editModel === "photo") form.elements.model_file.focus(); if (button.dataset.editModel === "visibility") form.elements.sales_visibility.focus(); }; });
+    $$('[data-edit-model]', root).forEach(function (button) { button.onclick = function () { openModelEditor(button.closest('[data-model]').dataset.model); setLvEditorMode(button.dataset.editModel === "photo" ? "media" : button.dataset.editModel === "visibility" ? "sales" : "profile"); var form = $("[data-model-form]",root); if (button.dataset.editModel === "photo") form.elements.model_file.focus(); if (button.dataset.editModel === "visibility") form.elements.sales_visibility.focus(); }; });
     $$('[data-job-action]', root).forEach(function (button) { button.onclick = function () { submitJobAction(button); }; });
     $$('[data-model-link]', root).forEach(function (button) { button.onclick = function () { issueModelLink(button); }; });
+    bindLvActions();
     var connect = $("[data-connect-telegram]", root);
     if (connect) connect.onclick = connectTelegram;
     $$('[data-private-travel]', root).forEach(function (field) { field.onchange = function () { if (!state.vault) return; var id = field.closest('[data-job]').dataset.job; state.vault.travel_notes[id] = field.value; saveVault().catch(function(error){setFlash(error.message,"error");}); }; });
@@ -280,7 +251,7 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
     form.elements.sales_copy.value = model.sales_copy || "";
     var urls = model.portfolio_urls || [];
     form.elements.portfolio_url_1.value = urls[0] || ""; form.elements.portfolio_url_2.value = urls[1] || ""; form.elements.portfolio_url_3.value = urls[2] || "";
-    var proposal = model.sales_control && model.sales_control.proposal ? model.sales_control.proposal : {};
+    var proposal = model.sales_control && (model.sales_control.proposal || model.sales_control.approved_policy) || {};
     form.elements.partner_source_rate_thb.value = proposal.partner_source_rate_thb || "";
     form.elements.customer_sell_rate_thb.value = proposal.customer_sell_rate_thb || "";
     form.elements.sales_visibility.value = proposal.sales_visibility || "off";
@@ -289,6 +260,7 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
     form.elements.private_note.value = state.vault && state.vault.model_notes ? (state.vault.model_notes[modelId] || "") : "";
     form.elements.private_note.disabled = !state.vault;
     openOperationsModel(model, form);
+    setLvEditorMode("profile");
     dialog.showModal();
   }
 
@@ -306,17 +278,21 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
   }
 
   function submitSales() {
+    var button=$("[data-save-sales]",root);if(button.disabled)return;
     var form = $("[data-model-form]",root); if(!form.elements.share_with_mmd.checked)return setFlash("กรุณายืนยัน Share with MMD","error"); var audiences = $$('[name="audience_scope"]:checked',form).map(function (input) { return input.value; });
     if (!audiences.length) return setFlash("เลือกกลุ่มลูกค้าที่ต้องการให้มองเห็นอย่างน้อยหนึ่งกลุ่ม","error");
-    api("/v1/partner/sales/proposal", { method:"POST", headers:{"content-type":"application/json","Idempotency-Key":uid("sales_")}, body:JSON.stringify({model_record_id:state.model.model_record_id,partner_source_rate_thb:form.elements.partner_source_rate_thb.value,customer_sell_rate_thb:form.elements.customer_sell_rate_thb.value,sales_visibility:form.elements.sales_visibility.value,audience_scope:audiences,share_with_mmd:true,schedule_type:form.elements.schedule_type.value,effective_from_at:bangkokIso(form.elements.effective_from_at.value),effective_until_at:bangkokIso(form.elements.effective_until_at.value),change_reason:"Partner Dashboard control-room proposal"}) }).then(function () { setFlash("ส่ง Sales Control ให้ Boss Per ตรวจแล้ว","success"); return load(); }).catch(function (error) { setFlash(error.message,"error"); });
+    button.disabled=true;
+    api("/v1/partner/sales/proposal", { method:"POST", headers:{"content-type":"application/json","Idempotency-Key":uid("sales_")}, body:JSON.stringify({model_record_id:state.model.model_record_id,partner_source_rate_thb:form.elements.partner_source_rate_thb.value,customer_sell_rate_thb:form.elements.customer_sell_rate_thb.value,sales_visibility:form.elements.sales_visibility.value,audience_scope:audiences,share_with_mmd:true,schedule_type:form.elements.schedule_type.value,effective_from_at:bangkokIso(form.elements.effective_from_at.value),effective_until_at:bangkokIso(form.elements.effective_until_at.value),change_reason:"Partner Dashboard control-room proposal"}) }).then(function () { setFlash("ส่ง Sales Control ให้ Boss Per ตรวจแล้ว","success"); return load(); }).catch(function (error) { setFlash(error.message,"error"); }).finally(function(){button.disabled=false;});
   }
 
   function uploadModelFile() {
+    var button=$("[data-upload-model]",root);if(button.disabled)return;
     var form = $("[data-model-form]",root); var file = form.elements.model_file.files[0];
     if (!file) return setFlash("เลือกไฟล์เพื่ออัปโหลด","error");
     if (!form.elements.share_with_mmd.checked) return setFlash("ยืนยัน Share with MMD เพื่อส่งไฟล์โปรไฟล์","error");
     var data = new FormData(); data.append("model_record_id",state.model.model_record_id); data.append("share_with_mmd","true"); data.append("file_category","photo"); data.append("file",file);
-    api("/v1/partner/models/upload", {method:"POST",body:data}).then(function () { setFlash("อัปโหลดแล้วและรอ MMD ตรวจ","success"); form.elements.model_file.value="";loadAssets(state.model.model_record_id); }).catch(function (error) { setFlash(error.message,"error"); });
+    button.disabled=true;
+    api("/v1/partner/models/upload", {method:"POST",body:data}).then(function () { setFlash("อัปโหลดแล้วและรอ MMD ตรวจ","success"); form.elements.model_file.value="";loadAssets(state.model.model_record_id); }).catch(function (error) { setFlash(error.message,"error"); }).finally(function(){button.disabled=false;});
   }
 
   function removeModel() {
@@ -358,9 +334,10 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
     });state.vaultQueue=save;return save;
   }
 
-  function load() { return api("/v1/partner/dashboard").then(hydrate).catch(function(error){$("[data-loading]",root).textContent=error.message;setFlash(error.message,"error");}); }
+  function load() { return api("/v1/partner/dashboard").then(function(data){state.stale=false;hydrate(data);}).catch(function(error){state.stale=true;$("[data-loading]",root).textContent=state.data ? "อัปเดตไม่ได้ · ข้อมูลที่เห็นเป็นข้อมูลครั้งก่อน" : error.message;setFlash(error.message,"error");if(state.data){$$('[data-job-action],[data-edit-model],[data-model-link],[data-order-move]',root).forEach(function(b){b.disabled=true;});} }); }
 
   ${PARTNER_OPERATIONS_JS}
+  ${PARTNER_LVMAX_JS}
 
   $$('[data-view]',root).forEach(function(button){button.onclick=function(){showView(button.dataset.view);};});
   $("[data-open-add]",root).onclick=function(){$("[data-add-dialog]",root).showModal();};
@@ -378,6 +355,7 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
   $(".pcr-shell",root).hidden=true;
   setFlash("กำลังโหลดข้อมูล Partner…");
   load();
+  loadRosterOrder();
   loadVaultEnvelope().catch(function(){setFlash("Private Vault พร้อมให้ลองเปิดอีกครั้ง ตารางงานยังใช้งานได้","error");});
 })();
 `;
@@ -394,4 +372,5 @@ export const PARTNER_CONTROL_ROOM_CSS = String.raw`
 @media(max-width:860px){.pcr-shell{display:block}.pcr-side{position:sticky;top:0;z-index:25;display:flex;gap:5px;overflow:auto;margin:0 -16px 16px;border-radius:0;padding:9px 16px}.pcr-side small{display:none}.pcr-side button{width:auto;white-space:nowrap;padding:0 12px}.pcr-top{align-items:flex-start;flex-direction:column}.pcr-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.pcr-job dl{grid-template-columns:1fr}.pcr-model{grid-template-columns:84px minmax(0,1fr)}.pcr-model-image{border-radius:13px}.pcr-form-grid{grid-template-columns:1fr}.pcr-form .wide,.pcr-form fieldset{grid-column:auto}.pcr-form-actions .danger{margin-left:0}}
 @media(max-width:520px){.pcr-metrics{grid-template-columns:1fr 1fr}.pcr-metrics article{padding:14px}.pcr-metrics strong{font-size:18px}.pcr-section{padding:14px;border-radius:20px}.pcr-job,.pcr-model{padding:14px}.pcr-model{grid-template-columns:66px minmax(0,1fr)}.pcr-model-copy>p{font-size:13px}.pcr-dialog{width:100%;max-height:100vh;height:100vh;border-radius:0}.pcr-form{padding:16px}}
 ${PARTNER_OPERATIONS_CSS}
+${PARTNER_LVMAX_CSS}
 `;
