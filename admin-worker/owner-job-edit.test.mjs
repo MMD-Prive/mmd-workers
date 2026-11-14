@@ -70,3 +70,27 @@ test('active worker routes the owner editor API and rejects partners before Airt
  const r=await worker.fetch(await authReq(h.env),h.env,{});assert.equal(r.status,200);assert.equal((await r.json()).job.model_name,'Film IT');
  const denied=await worker.fetch(await authReq(h.env,{role:'mms_partner'}),h.env,{});assert.equal(denied.status,403);assert.equal(h.calls.length,0);
 });
+
+
+test('reopen wins and cancel with the pre-reopen revision cannot write', async () => {
+  const { handleAdminJobVoidRequest } = await import('./src/admin-job-void.js');
+  const h = setup();
+  const oldRevision = await revision(h.data);
+  const reopened = await h.coordinator.fetch(post({...body(), revision: oldRevision}));
+  assert.equal(reopened.status, 200);
+  assert.equal(h.data.session.fields[S.state], 'offered');
+  const restarted = new JobEditJournal(h.storage, h.env);
+  h.env.JOB_EDIT_COORDINATOR = {getByName: id => {
+    assert.equal(id, sid);
+    return restarted;
+  }};
+  const result = await handleAdminJobVoidRequest(new Request('https://mmdbkk.com/v1/admin/job/void', {
+    method: 'POST',
+    headers: {origin: 'https://mmdbkk.com'},
+    body: JSON.stringify({session_id: sid, confirm: true, revision: oldRevision}),
+  }), h.env, actor);
+  assert.equal(result.status, 409);
+  assert.equal((await result.json()).error, 'job_changed_reload');
+  assert.deepEqual(h.calls, ['job', 'session']);
+  assert.equal(h.memory.has('void:pending'), false);
+});
