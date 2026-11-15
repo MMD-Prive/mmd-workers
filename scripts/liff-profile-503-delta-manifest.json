@@ -7,6 +7,13 @@
   "main_module": "model-console-live-entrypoint.js",
   "modules": [
     {
+      "name": "app-branding-module.mjs",
+      "type": "esm",
+      "before_sha256": "76c2130c17a40f459b3697262f4a2cc86de0c3ecf2cee631e22a17128533ad60",
+      "after_sha256": "76c2130c17a40f459b3697262f4a2cc86de0c3ecf2cee631e22a17128533ad60",
+      "patches": []
+    },
+    {
       "name": "model-console-live-entrypoint.js",
       "type": "esm",
       "before_sha256": "7778e6bf8083abdf9acbbb9e47d347bfd99600d447424d801c6c5d93c3c643a9",
