@@ -3,6 +3,10 @@ on:
   pull_request:
     paths:
       - 'partners-worker/**'
+      - 'shared/co-model-*'
+      - 'admin-worker/src/co-model-partner-read.js'
+      - 'admin-worker/src/owner-job-edit.js'
+      - 'admin-worker/src/admin-login-hero-worker.js'
       - "shared/model-sales-control-v1.mjs"
       - "shared/model-sales-control-v1.d.mts"
       - 'admin-worker/src/partner-owner-console.js'
@@ -30,3 +34,5 @@ jobs:
       - run: npm run typecheck && npm test
         working-directory: partners-worker
       - run: node --test admin-worker/partner-owner-console.test.mjs admin-worker/model-payout-adjustments.test.mjs admin-worker/create-session-canonical-link.test.mjs admin-worker/job-create-contract-partner-settlement.test.mjs admin-worker/sigil-jobs-partner-snapshot.test.mjs
+      - name: MY CO MODEL read-only evidence contracts
+        run: node --test shared/co-model-readonly.test.mjs shared/co-model-evidence.test.mjs

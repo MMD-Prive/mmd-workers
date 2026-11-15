@@ -1,3 +1,5 @@
+import { readCoModelEvidence } from '../../shared/co-model-evidence.mjs';
+import { coModelView, renderCoModel } from '../../shared/co-model-readonly.mjs';
 import { captainProposal } from './owner-job-edit-captain.js';
 import { readCredentialBoundAdminActor } from './credential-bound-admin-session.js';
 import { renderOwnerJobEdit } from './owner-job-edit-page.js';
@@ -106,6 +108,21 @@ export async function handleOwnerJobEdit(request,env){
   if(!actor)return path===EDIT_PAGE?Response.redirect(new URL('/internal/admin/login?next='+encodeURIComponent(u.pathname+u.search),u),302):reply({ok:false,error:'unauthorized'},401);
   if(!['owner','admin'].includes(actor.role)||!origins.has(u.origin))return reply({ok:false,error:'forbidden'},403);
   try{
+    if(u.searchParams.get('view')==='co-model') {
+      if(actor.role!=='owner')return reply({ok:false,error:'forbidden'},403);
+      if(!['GET','HEAD'].includes(request.method))return reply({ok:false,error:'method_not_allowed'},405);
+      const id=u.searchParams.get('session_id');
+      if(!validSession(id))return reply({ok:false,error:'invalid_session'},400);
+      // No ledger, coordinator mutation, or payment link reads on this surface.
+      const result=await at(env,'sessions',{formula:`{${S.id}}="${id}"`,fields:[S.id,S.name,S.state]});
+      if(result.offset||result.records?.length!==1||result.records[0].fields[S.id]!==id)return reply({ok:false,error:'co_model_unavailable'},503);
+      const f=result.records[0].fields;
+      const evidence=await readCoModelEvidence(env,{role:'owner',sessionId:id,recordId:result.records[0].id,authorize:async()=>{const current=await readCredentialBoundAdminActor(request,env);if(current?.role!=='owner')fail('forbidden',403);}});
+      const view=coModelView({evidence,role:'owner',sessionId:id,modelName:name(f[S.name]),lifecycle:name(f[S.state])});
+      if(path===EDIT_API)return reply({ok:true,co_model:view});
+      if(path!==EDIT_PAGE)return reply({ok:false,error:'not_found'},404);
+      return new Response(request.method==='HEAD'?null:'<!doctype html><html lang="th"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MY CO MODEL · Owner</title><style>body{margin:0;background:#111;color:#eee;font:16px system-ui;line-height:1.6}main{max-width:720px;margin:auto;padding:24px}a{color:#d8bd85}section{margin-top:20px;padding:20px;border:1px solid #444;border-radius:16px}h2{font-size:20px}li{margin-bottom:12px}</style><body><main><a href="/internal/admin/console?view=edit-job&amp;session_id='+encodeURIComponent(id)+'">กลับงานเดิมใน Console</a>'+renderCoModel(view)+'</main></body></html>',{headers:{'content-type':'text/html; charset=utf-8','cache-control':'no-store, private','referrer-policy':'no-referrer','content-security-policy':"default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'self'; base-uri 'none'; form-action 'none'"}});
+    }
     if(path===EDIT_PAGE&&['GET','HEAD'].includes(request.method))return new Response(request.method==='HEAD'?null:renderOwnerJobEdit(),{headers:{'content-type':'text/html; charset=utf-8','cache-control':'no-store, private','referrer-policy':'no-referrer','x-robots-tag':'noindex, nofollow','content-security-policy':"default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"}});
     if(path===EDIT_API+'/models'&&request.method==='GET'){
       const q=(u.searchParams.get('q')||'').trim();if(q.length<2||q.length>60)return reply({ok:true,models:[]});
