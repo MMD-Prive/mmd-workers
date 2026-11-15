@@ -46,7 +46,7 @@ export default {
     }
     const headers = new Headers(response.headers);
     headers.set('Cache-Control', 'no-store');
-    headers.set('X-MMD-Staging-Source', '022cdf2bd5d05bab6382ab7c8f57ad07e05effd6');
+    headers.set('X-MMD-Staging-Source', 'a748a4d9a99f2614b8cc177aa0dafc37584daee2');
     return new Response(response.body, { status: response.status, headers });
   },
 };

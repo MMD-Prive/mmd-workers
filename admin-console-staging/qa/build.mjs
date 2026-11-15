@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 const root = new URL('../', import.meta.url);
 let build = readFileSync(new URL('build.mjs', root), 'utf8');
-build = build.replace('217a23730c4c70a7f2cb68e550bf7a74227ae424', '022cdf2bd5d05bab6382ab7c8f57ad07e05effd6');
+build = build.replace('217a23730c4c70a7f2cb68e550bf7a74227ae424', 'a748a4d9a99f2614b8cc177aa0dafc37584daee2');
 writeFileSync(new URL('build-qa-generated.mjs', root), build);
 try { execFileSync(process.execPath, [new URL('build-qa-generated.mjs', root).pathname], { stdio: 'inherit' }); }
 finally { unlinkSync(new URL('build-qa-generated.mjs', root)); }
@@ -12,7 +12,7 @@ source = source.replace("'rec' + String(++serial).padStart(14, '0')", "'rec' + c
 writeFileSync(fixture, source);
 const stagingFile = new URL('.build/staging.mjs', root);
 source = readFileSync(stagingFile, 'utf8')
-  .replaceAll('217a23730c4c70a7f2cb68e550bf7a74227ae424', '022cdf2bd5d05bab6382ab7c8f57ad07e05effd6')
+  .replaceAll('217a23730c4c70a7f2cb68e550bf7a74227ae424', 'a748a4d9a99f2614b8cc177aa0dafc37584daee2')
   .replaceAll('recFixtureClient001', 'recCLIENT00000001')
   .replaceAll('recFixtureModel001', 'recMODEL000000001')
   .replace('[1, 2, 3, 4, 5, 6]', '[1, 2, 3, 4, 5]');
