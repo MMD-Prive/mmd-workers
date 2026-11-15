@@ -1,4 +1,5 @@
 import live from '../live-baseline/member-pages-worker.js';
+import {withReferenceWorker} from './liff-request-reference.js';
 import {handleDoubleMomentCheckout,isDoubleMomentCheckoutRequest} from './double-moment-checkout.js';
 import {handleMemberClientCredits,isMemberClientCreditsRequest} from './member-app-client-credits.js';
 import {handleMemberAppSessionApi} from './member-app-session.js';
@@ -24,6 +25,7 @@ export default {
     if(path==='/api/member/app/session/travel'||path==='/api/member/app/session/travel/photo') {
       return handleMemberAppSessionApi(request,env,readMemberAppSession);
     }
-    return applyConsolePresentation(request,await live.fetch(request,env,ctx));
+    return withReferenceWorker(request,env,ctx,async scopedEnv =>
+      applyConsolePresentation(request,await live.fetch(request,scopedEnv,ctx)));
   },
 };

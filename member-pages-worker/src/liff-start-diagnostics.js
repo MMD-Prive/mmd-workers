@@ -1,9 +1,9 @@
 // Fixed vocabulary only. Never accepts identity, credentials, URLs or error text.
 // Persistence is deliberately independent of whole-Worker console collection.
-export function createStartDiagnostics({ emit = value => console.info(value), now = Date.now, kv, ctx } = {}) {
+export function createStartDiagnostics({ emit = value => console.info(value), now = Date.now, kv, ctx, requestRef } = {}) {
   const stages = new Set(['verify_token', 'resolve_member', 'pending_identity', 'issue_session', 'persist_gateway', 'save_session', 'remembered_login', 'safe_view']);
   const started = now();
-  const ref = crypto.randomUUID();
+  const ref = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestRef || '') ? requestRef : crypto.randomUUID();
   let sequence = 0;
   const elapsed = at => Math.min(300000, Math.max(0, Math.round(now() - at)));
   const log = (stage, outcome, duration_ms, status) => {

@@ -2,6 +2,11 @@ name: My MMD privacy-safe flow diagnostics
 on:
   pull_request:
     paths:
+      - 'member-pages-worker/src/liff-request-reference.js'
+      - 'member-pages-worker/src/model-console-live-entrypoint.js'
+      - 'member-pages-worker/test/liff-request-reference.test.mjs'
+      - 'scripts/liff-reference-local-candidate.mjs'
+      - 'scripts/liff-reference-candidate-smoke.mjs'
       - 'member-pages-worker/src/liff-start-diagnostics.js'
       - 'member-pages-worker/src/liff-flow-diagnostics.js'
       - 'member-pages-worker/src/liff-client-runtime-diagnostic.js'
@@ -35,6 +40,7 @@ jobs:
       - name: Focused privacy, lifecycle and unchanged auth contracts
         run: >-
           node --experimental-global-webcrypto --test
+          member-pages-worker/test/liff-request-reference.test.mjs
           member-pages-worker/test/liff-flow-diagnostics.test.mjs
           member-pages-worker/test/liff-start-persistence.test.mjs
           member-pages-worker/test/liff-loader-diagnostics.test.mjs

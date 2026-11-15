@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
+import {createReferenceFetch} from '../src/liff-request-reference.js';
 const source = readFileSync(new URL("../src/liff-member-shell.js", import.meta.url), "utf8");
 const start = source.indexOf("  function memberApiFetch(");
 const end = source.indexOf("  function hideMemberProfile()", start);
@@ -22,6 +23,7 @@ function setup(membership, profileResponse) {
     safeDate: value => value || "", shortDate: value => value,
     hideMemberProfile() {}, clearMemberProfile() {}, membershipStatus: value => value, renderProfile() {}, renderCustomerContact() {}, hydrateMemberHome: async () => {},
   });
+  context.referenceFetch=createReferenceFetch((...args)=>context.fetch(...args));
   vm.runInContext(functions, context);
   return { nodes, calls, context };
 }

@@ -2,6 +2,7 @@ import { createHypeLoaderMotion, createEntryPercentMotion, installApprovedEntryL
 import assert from "node:assert/strict";
 import { describe, it, test } from "node:test";
 import { runInNewContext } from "node:vm";
+import { createReferenceFetch } from "../src/liff-request-reference.js";
 
 import worker from "../src/index.js";
 import { handleCareBackLiffOrchestrator } from "../src/care-back-liff-orchestrator.js";
@@ -342,7 +343,8 @@ describe("same-site /member/liff shell", () => {
       try { dashboardBody.close(); } catch {}
       releaseMission(Response.json({}));
     });
-    const homeReady = runInNewContext("let memberApiChain = Promise.resolve();\n" + queue + mission + home + "hydrateDigitalHome({})", {
+    const homeReady = runInNewContext("const referenceFetch=createReferenceFetch(fetch);let memberApiChain = Promise.resolve();\n" + queue + mission + home + "hydrateDigitalHome({})", {
+      createReferenceFetch,
       document: { getElementById(id) {
         if (!nodes.has(id)) nodes.set(id, { hidden:false, textContent:"" });
         return nodes.get(id);
@@ -553,7 +555,7 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /credits: readCreditWallet/);
     assert.match(html, /history: readCanonicalHistory/);
     assert.match(html, /"my-requests": readCustomerRequests/);
-    assert.match(html, /async function readProfile\(\{ hydrate = true, silent = false \} = \{\}\)/);
+    assert.match(html, /async function readProfile\(\{ hydrate = true, silent = false, diagnosticRetry = false \} = \{\}\)/);
     assert.match(html, /if \(hydrate\) await hydrateMemberHome\(\)/);
     assert.doesNotMatch(html, /await readCouponWallet\(\);\s*await readCreditWallet\(\);/);
     assert.match(html, /recoveryPayload\?\.history_recovery\?\.state/);
@@ -658,7 +660,7 @@ describe("same-site /member/liff shell", () => {
       active -= 1;
       return url;
     };
-    const { memberApiFetch } = runInNewContext("let memberApiChain = Promise.resolve();\n" + html.slice(start, end) + "\n({ memberApiFetch });", { fetch: fakeFetch, setTimeout, clearTimeout, AbortController, Response, Uint8Array });
+    const { memberApiFetch } = runInNewContext("let memberApiChain = Promise.resolve();\n" + html.slice(start, end) + "\n({ memberApiFetch });", { referenceFetch:createReferenceFetch(fakeFetch), fetch: fakeFetch, setTimeout, clearTimeout, AbortController, Response, Uint8Array });
     const results = await Promise.allSettled([memberApiFetch("a"), memberApiFetch("fail"), memberApiFetch("c")]);
     assert.equal(maxActive, 1);
     assert.deepEqual(order, ["a", "fail", "c"]);

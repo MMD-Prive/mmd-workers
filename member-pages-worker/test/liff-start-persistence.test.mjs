@@ -65,9 +65,15 @@ test('start dispatcher forwards context without changing failure response or log
     }), {LIFF_IDENTITY_KV:f.kv}, f.ctx);
     assert.equal(response.status,503);
     await f.drain();
-    assert.equal(f.writes.length,1);
-    assert.equal(f.writes[0].row.stage,'request');
-    assert.equal(f.writes[0].row.status,503);
+    assert.equal(f.writes.length,3);
+    const timing=f.writes.filter(x=>x.row.event==='liff_start_timing');
+    const references=f.writes.filter(x=>x.row.event==='liff_request_reference');
+    assert.equal(timing.length,1);
+    assert.equal(timing[0].row.stage,'request');
+    assert.equal(timing[0].row.status,503);
+    assert.deepEqual(references.map(x=>x.row.outcome),['begin','complete']);
+    assert(references.every(x=>x.row.request_ref===timing[0].row.ref));
+    assert.equal(response.headers.get('x-mmd-diag-request'),timing[0].row.ref);
     assert(!JSON.stringify(f.writes).includes('private'));
   } finally {console.info = old;}
 });
