@@ -12,6 +12,27 @@ const job=workflow.slice(workflow.indexOf('  my-mmd-home-release:'));
 const evaluate=new Function('github','inputs','return '+job.match(/^    if: (.+)$/m)[1]);
 const sha='a'.repeat(40),github={event_name:'workflow_dispatch',ref:'refs/heads/main',sha};
 const inputs={execution_mode:'my-mmd-home-delta',production_approved:true,approval_ref:'fixture',approved_sha:sha,expected_version:'fixture',expected_deployment:'fixture',patch_manifest:'fixture',expected_manifest_sha256:'fixture',expected_module_sha256:'fixture'};
+test('reference release pins the merged #3219 source and unchanged companion to the existing Owner gate',()=>{
+ const raw=readFileSync(new URL('./liff-reference-3219-delta-manifest.json',import.meta.url));
+ const manifest=parseHomeManifest(raw,'6a6f7b1ff7208df61f7b15f8a22be995297f5d1c1409195000359bc25724d55f','member-pages-worker');
+ assert.equal(manifest.source_sha,'b7dec7a7213bdce8c7f2a369f2a2304d6dd9466f');
+ assert.equal(manifest.source_sha,job.match(/APPROVED_SOURCE_SHA: ([a-f0-9]{40})/)[1]);
+ assert.equal(manifest.baseline_version,'0e415d37-1823-4914-940a-4b3853b262a6');
+ assert.equal(manifest.baseline_deployment,'455961e8-a71e-4efe-ab29-c252987f431e');
+ assert.equal(manifest.modules.length,2);
+ const entry=manifest.modules.find(m=>m.name===manifest.main_module);
+ const branding=manifest.modules.find(m=>m.name==='app-branding-module.mjs');
+ assert.equal(entry.before_sha256,'39572dcb63c525f087f23e4eeff83555ac5f37d32c42519afa350310d9270815');
+ assert.equal(entry.after_sha256,'4164694e5b482ad0e1186a933da50c1041fa60941992f9c6104f3913114b4bcb');
+ assert.equal(branding.before_sha256,'76c2130c17a40f459b3697262f4a2cc86de0c3ecf2cee631e22a17128533ad60');
+ assert.equal(branding.after_sha256,branding.before_sha256);assert.deepEqual(branding.patches,[]);
+ const after=entry.patches.map(p=>p.after).join('\n');
+ assert.match(after,/withReferenceWorker\(request, env, ctx/);
+ assert.match(after,/requestRef:env\[SERVER_REFERENCE\]/);
+ assert.equal(after.split('const referenceFetch = (${createReferenceFetch.toString()})').length-1,2);
+ assert.match(job,/environment: member-pages-code-only-owner/);
+ assert.match(job,/if: always\(\)/);
+});
 test('historical entry lane manifest preserves merged #3070 source',()=>{
  const raw=readFileSync(new URL('./my-mmd-home-delta-manifest.json',import.meta.url));
  assert.equal(sha256(raw),'33cd6afb79303e4149622f92f209586f7f06532c012fcec428bff4bae3db3b0b');
@@ -38,7 +59,6 @@ test('profile retry manifest pins #3204 and both LIFF shells on the reviewed act
  const hash='433e7cf395eb9fdea10f98c30dfb657edf6401e1b2f89e842f047fdf434f4694';
  const manifest=parseHomeManifest(raw,hash,'member-pages-worker');
  assert.equal(manifest.source_sha,'de0e236412c4b44289fa25ac934d83b024da13d4');
- assert.equal(manifest.source_sha,job.match(/APPROVED_SOURCE_SHA: ([a-f0-9]{40})/)[1]);
  assert.equal(manifest.baseline_version,'2992448f-259a-4978-8e59-087518939e4a');
  assert.equal(manifest.baseline_deployment,'4b5f9ffd-f2a6-4051-b436-a798d894dc38');
  assert.equal(manifest.modules.length,2);

@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - scripts/my-mmd-home-delta-*
+      - scripts/liff-reference-*
       - scripts/care-back-november-policy-release.mjs
       - scripts/member-pages-owner-approval.test.mjs
       - .github/workflows/deploy-member-pages-worker-code-only.yml
