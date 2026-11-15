@@ -1,3 +1,5 @@
+import { fetchPartnerCoModel, CO_MODEL_SCOPE_PATH } from '../../shared/co-model-service.mjs';
+import { coModelView, renderCoModel } from '../../shared/co-model-readonly.mjs';
 import { handleAnnouncements, type CandidateSnapshot } from "./partner-announcements";
 import { travelEtaFromEvents } from "../../shared/model-travel-eta.mjs";
 import { customerSessionLifecycle } from "../../shared/model-travel-lifecycle.mjs";
@@ -437,6 +439,7 @@ export default {
         }
         return new Response(request.method === "HEAD" ? null : PARTNER_LINE_LOGIN, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff", "X-Frame-Options": "DENY" } });
       }
+      if (url.pathname === CO_MODEL_SCOPE_PATH) return await handleCoModelScope(request,runtimeEnv);
       if (request.method === "POST" && url.pathname === "/v1/partner/upload") {
         return await handlePartnerUpload(request, runtimeEnv);
       }
@@ -2943,6 +2946,10 @@ async function handlePartnerJobDetail(request: Request, env: RuntimeEnv): Promis
   const fresh = await getAirtableRecord(env, table, recordId);
   const signature = (row: AirtableRecord) => JSON.stringify([SESSION_FIELDS.partnerIdSnapshot, SESSION_FIELDS.sessionId, SESSION_FIELDS.canonicalModel, SESSION_FIELDS.lifecycle, SESSION_FIELDS.startTime, SESSION_FIELDS.locationName, SESSION_FIELDS.customerAckAt].map(key => row.fields[key]));
   if (signature(session) !== signature(fresh)) return errorResponse(request, env, "job_detail_changed", "Job changed; reload current details.", 409, true);
+  const evidence = await fetchPartnerCoModel(env,{token:verified.value.token,recordId,sessionId});
+  const finalAuth=await verifyPartnerTokenFromRequest(request,env);
+  const finalSession=await getAirtableRecord(env,table,recordId);
+  if(!finalAuth.ok || signature(finalSession)!==signature(fresh))return errorResponse(request,env,"co_model_scope_changed","Reload current job scope.",403,false);
   const job = normalizePartnerSession(fresh);
   const lifecycle = customerSessionLifecycle({model_session_state: fresh.fields[SESSION_FIELDS.lifecycle], "Session Status": fresh.fields[SESSION_FIELDS.status]});
   const validTimestamp = (value: unknown) => typeof value === "string" && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString() : null;
@@ -2958,6 +2965,7 @@ async function handlePartnerJobDetail(request: Request, env: RuntimeEnv): Promis
     location: job.location, location_status: job.location_status, map_url: mapUrl, eta,
     reconfirm: {recorded_acknowledged_at: acknowledgedAt, latest_revision_verified: false, scheduled_at: priorDay ? priorDay + "T12:00:00+07:00" : null, owner_review_at: priorDay ? priorDay + "T19:00:00+07:00" : null, delivery_verified: false},
     history_complete: false, communications_available: false,
+    co_model_html: renderCoModel(coModelView({evidence,role:"partner", sessionId, modelName:job.model_name, lifecycle, partnerId, actorPartnerId:partnerId})),
     // Payment and payout stay on their independently verified projections.
     model_actions_allowed: false
   }});
@@ -4955,4 +4963,23 @@ async function handlePartnerAnnouncements(request: Request, env: RuntimeEnv): Pr
     return new Response(object.body, {headers:{'content-type':type,'cache-control':'no-store, private','x-content-type-options':'nosniff','referrer-policy':'no-referrer'}});
   }
   return handleAnnouncements(request, {bucket, actor, candidate:(partner, model, asset)=>announcementCandidate(env, partner, model, asset)});
+}
+
+// Admin calls this authority with the original token; caller-provided role/Partner ID is ignored.
+async function handleCoModelScope(request:Request,env:RuntimeEnv):Promise<Response>{
+ const u=new URL(request.url);
+ if(u.hostname!=="partners-worker.internal")return new Response(null,{status:403});
+ if(request.method!=="GET")return new Response(null,{status:405});
+ const token=request.headers.get("x-mmd-partner-token")||"";
+ if(!token||token.length>4096)return new Response(null,{status:401});
+ const verified=await verifyPartnerToken(request,env,token);
+ if(!verified.ok)return verified.response;
+ const recordId=u.searchParams.get("session_record_id")||"",sessionId=u.searchParams.get("session_id")||"";
+ if(!/^rec[A-Za-z0-9]{14,24}$/.test(recordId)||!sessionId||[...u.searchParams.keys()].some(k=>!["session_record_id","session_id"].includes(k)))return new Response(null,{status:400});
+ const table=String((env as RuntimeEnv & {AIRTABLE_TABLE_SESSIONS?:string}).AIRTABLE_TABLE_SESSIONS||"tblC98mKWbzmPuNzX");
+ const row=await getAirtableRecord(env,table,recordId);
+ const partnerId=fieldText(verified.value.partnerRecord,MODEL_PARTNERS.partnerId);
+ if(!partnerId||fieldText(row,SESSION_FIELDS.partnerIdSnapshot)!==partnerId||fieldText(row,SESSION_FIELDS.sessionId)!==sessionId)return new Response(null,{status:403});
+ const scope_revision=await sha256Hex(JSON.stringify([verified.value.partnerRecord.id,verified.value.tokenHash,row.id,row.fields]));
+ return Response.json({ok:true,session_record_id:recordId,session_id:sessionId,scope_revision},{headers:{"cache-control":"no-store, private"}});
 }

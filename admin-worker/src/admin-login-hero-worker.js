@@ -1,3 +1,5 @@
+import { handlePartnerCoModelRead } from './co-model-partner-read.js';
+import { CO_MODEL_PATH } from '../../shared/co-model-service.mjs';
 import { allowAdminConsoleFrame } from "../../webflow/global/admin-console-views.mjs";
 import { isSocialMediaRequest, handleSocialMedia } from "./social-media.js";
 import { ADMIN_CONSOLE_PATH, renderAdminConsolePage } from "./admin-console-page.js";
@@ -292,6 +294,8 @@ const adminLoginHeroWorker = {
   },
   async fetch(request, env, ctx) {
     const runtimeEnv = modelMoneyRuntimeEnv(env);
+    // Read-only RPC must return before the generic contact backfill scheduler.
+    if (new URL(request.url).pathname === CO_MODEL_PATH) return handlePartnerCoModelRead(request, runtimeEnv);
     const consolePath = new URL(request.url).pathname.replace(/\/+$/g, "") || "/";
     const isConsoleHome = consolePath === "/internal/admin" && ["GET", "HEAD"].includes(request.method.toUpperCase());
     if (consolePath === ADMIN_CONSOLE_PATH || isConsoleHome) {

@@ -114,7 +114,7 @@ async function findJobs(){
   try{
     const d=await api(t,'/v1/admin/jobs/edit?list=1&q='+encodeURIComponent(query));
     if(!current(t)||$('jobQuery').value!==query)return;
-    for(const j of d.jobs){const b=document.createElement('button');b.type='button';b.className='result';b.textContent=j.date+' · '+j.client+' · '+j.model+' · '+fmt(j.amount);b.onclick=()=>{if(saveLocked||voidBusy||!current(t)||$('jobQuery').value!==query)return;$('session').value=j.session_id;load();};$('jobList').append(b);}
+    for(const j of d.jobs){const b=document.createElement('button');b.type='button';b.className='result';b.textContent=j.date+' · '+j.client+' · '+j.model+' · '+fmt(j.amount);b.onclick=()=>{if(saveLocked||voidBusy||!current(t)||$('jobQuery').value!==query)return;$('session').value=j.session_id;load();};$('jobList').append(b);const co=document.createElement('a');co.textContent='MY CO MODEL · อ่านอย่างเดียว';co.href='/internal/admin/console?view=edit-job&tool_view=co-model&session_id='+encodeURIComponent(j.session_id);co.target='_top';$('jobList').append(co);}
     if(!d.jobs.length)$('jobList').textContent='ไม่พบงานที่กำลังจะมาถึง';
   }catch(e){if(current(t)){$('message').textContent=readError(e);offerRetry(findJobs);}}
   finally{finish(t);}

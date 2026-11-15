@@ -9,7 +9,7 @@ test('job detail shows only authorized lifecycle and real ETA; never sends or wr
  const f=await setup(t);f.db.Sessions[0].fields[S.lifecycle]='en_route';
  f.db.Jobs=[{id:'recJOB00000000001',fields:{session_id:'session_fixture',events_json:JSON.stringify([{event:'eta_update',ts:new Date().toISOString(),eta_minutes:30,private_note:'HIDDEN CHAT'}])}}];
  const r=await f.call(path),p=await r.json();assert.equal(r.status,200);assert.equal(p.detail.lifecycle,'en_route');assert.equal(p.detail.eta.status,'active');assert.equal(p.detail.model_actions_allowed,false);assert.equal(p.detail.history_complete,false);
- assert.equal(p.detail.location_status,'pending_customer_confirmation');assert.doesNotMatch(JSON.stringify(p),/PRIVATE EXACT ADDRESS|HIDDEN CHAT|fixture-only|PRIVATE CLIENT/);assert.equal(f.writes.length,0);assert.equal(f.messages.length,0);
+ assert.equal(p.detail.location_status,'pending_customer_confirmation');assert.doesNotMatch(JSON.stringify(p),/PRIVATE EXACT ADDRESS|HIDDEN CHAT|fixture-only|PRIVATE CLIENT/);assert.match(p.detail.co_model_html,/MY CO MODEL/);assert.match(p.detail.co_model_html,/ยังยืนยันไม่ได้/);assert.doesNotMatch(p.detail.co_model_html,/PRIVATE CLIENT|HIDDEN CHAT/);assert.equal(f.writes.length,0);assert.equal(f.messages.length,0);
 });
 test('foreign jobs are forbidden and missing travel history is not zero or arrived',async t=>{
  const f=await setup(t);let r=await f.call(path),p=await r.json();assert.equal(p.detail.eta.status,'missing');assert.equal(p.detail.lifecycle,'checking');

@@ -103,7 +103,10 @@ test('job-list results from a previous query cannot replace the current list',as
   const h=harness(url=>url.endsWith('q=')?old.promise:response({ok:true,jobs:[{session_id:'sess_B',date:'2026-10-29',client:'Client B',model:'B',amount:10000}]}),{session:''});
   h.input('jobQuery','B');h.$('findJobs').click();await flush();
   old.resolve(response({ok:true,jobs:[{session_id:'sess_A',client:'Client A'}]}));await flush();
-  assert.equal(h.$('jobList').children.length,1);assert.match(h.$('jobList').children[0].textContent,/Client B/);
+  const jobs=h.$('jobList').children.filter(el=>el.tagName==='button');
+  assert.equal(jobs.length,1);assert.match(jobs[0].textContent,/Client B/);
+  const links=h.$('jobList').children.filter(el=>el.tagName==='a');
+  assert.equal(links.length,1);assert.match(links[0].href,/session_id=sess_B$/);assert.equal(links[0].target,'_top');
 });
 
 test('save timeout retains exact request and locks changes until identical retry succeeds',async()=>{
