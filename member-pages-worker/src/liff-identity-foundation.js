@@ -12,6 +12,7 @@ import { fulfillmentStateFromOrder, publicMmdShopFulfillment, readMmdShopFulfill
 import { publicMmdShopReservation, readMmdShopReservation } from "../../shared/mmd-shop-stock-reservation.mjs";
 import { approvedLineChannelIds } from "./line-channel-audiences.js";
 import { createStartDiagnostics } from "./liff-start-diagnostics.js";
+import { withRequestReference } from "./liff-request-reference.js";
 
 const WORKER = "member-pages-worker";
 const VERSION = "20260828-care-back-benefits-wallet";
@@ -181,7 +182,7 @@ export default {
       } else if (LOGOUT_PATHS.has(path)) {
         response = await handleLogout(request, env);
       } else if (START_PATHS.has(path)) {
-        response = await handleStart(request, env, ctx);
+        response = await withRequestReference(request, env, ctx, 'start', ref => handleStart(request, env, ctx, ref));
       } else if (INTENT_PATHS.has(path)) {
         response = await handleIntent(request, env);
       } else if (AUDIENCE_PATHS.has(path)) {
@@ -193,7 +194,7 @@ export default {
       } else if (STATUS_PATHS.has(path)) {
         response = await handleStatus(request, env);
       } else if (PROFILE_PATHS.has(path)) {
-        response = await handleMemberProfile(request, env);
+        response = await withRequestReference(request, env, ctx, 'profile', () => handleMemberProfile(request, env));
       } else if (MEMBERSHIP_ROUTE_PATHS.has(path)) {
         response = await handleMembershipRoute(request, env);
       } else if (CARE_BACK_CLAIM_PATHS.has(path)) {
@@ -550,8 +551,8 @@ function forwardMmsResponse(upstream, cookies = []) {
   return json(payload, status, { cookies });
 }
 
-export async function handleStart(request, env = {}, ctx) {
-  const diagnostic = createStartDiagnostics({kv: env.LIFF_IDENTITY_KV, ctx});
+export async function handleStart(request, env = {}, ctx, requestRef) {
+  const diagnostic = createStartDiagnostics({kv: env.LIFF_IDENTITY_KV, ctx, requestRef});
   const aborted = () => diagnostic.disconnected();
   request.signal.addEventListener('abort', aborted, {once:true});
   if (request.signal.aborted) aborted();

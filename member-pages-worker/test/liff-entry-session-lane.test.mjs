@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
 import {test} from 'node:test';
+import {createReferenceFetch} from '../src/liff-request-reference.js';
 const source=readFileSync(process.env.MMD_ENTRY_SOURCE || new URL('../src/liff-member-shell.js',import.meta.url),'utf8');
 const section=(from,to)=>source.slice(source.indexOf(from),source.indexOf(to,source.indexOf(from)));
 const lane=section('  function memberApiFetch(', '  async function readOwnHistoryPreview(');
@@ -9,6 +10,7 @@ const welcome=section('  async function readWelcomeContext(', '  async function 
 const preflight=section('  async function preflightWelcomeIdentity(', '  async function resolveInitialWelcomeContext(');
 function context(fetch,extra={}) {
  const ctx={fetch,AbortController,Response,Uint8Array,setTimeout,clearTimeout,CONFIG:{welcomeContextEndpoint:'/member/api/liff/welcome-context',startEndpoint:'/member/api/liff/start',liffId:'synthetic',intent:'status'},applyWorldTheme(){},...extra};
+ ctx.referenceFetch=createReferenceFetch(fetch);
  runInNewContext('let memberApiChain=Promise.resolve();let preflightVerifiedSession=false;let existingProfilePromise;'+lane+welcome+preflight,ctx);
  return ctx;
 }

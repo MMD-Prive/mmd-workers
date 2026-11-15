@@ -8,6 +8,7 @@ import { MY_MMD_SIGIL_PRIVATE_CSS } from "./liff-sigil-private-theme.js";
 import { customerGraphic, customerIcon, CUSTOMER_GRAPHICS_CSS } from "./liff-customer-graphics.js";
 import { createCustomerProgress, renderCustomerProgress } from "./liff-customer-progress.js";
 import { createFlowDiagnosticSender } from "./liff-flow-diagnostics.js";
+import { createReferenceFetch } from "./liff-request-reference.js";
 import { loadDoubleMomentCard } from "./liff-promotion-client.js";
 import { MY_MMD_LOVABLE_DESIGN_CSS, MY_MMD_PUBLIC_BLEND_CSS, MY_MMD_VERIFICATION_CSS } from "./liff-lovable-design.js";
 import { MY_MMD_LIFF_COMPACT_V4_CSS } from "./liff-member-compact-v4-style.js";
@@ -487,6 +488,7 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
   const entryLoading = (${installApprovedEntryLoading.toString()})(${createHypeLoaderMotion.toString()}, ${createEntryPercentMotion.toString()});
   const renderLoadingProgress = ${renderCustomerProgress.toString()};
   const flowDiagnostic = (${createFlowDiagnosticSender.toString()})(window.fetch.bind(window));
+  const referenceFetch = (${createReferenceFetch.toString()})(window.fetch.bind(window));
   const loaderVisibility = new Map();
   const customerLoading = (${createCustomerProgress.toString()})({ diagnostic:flowDiagnostic, render: (panel, state) => {
     renderLoadingProgress(panel, state); entryLoading.update(state);
@@ -1077,7 +1079,7 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
       const timer = setTimeout(() => controller.abort(), deadlineMs);
       try {
         if (controller.signal.aborted) throw new Error("member_request_aborted");
-        const response = await fetch(url, { ...init, signal: controller.signal });
+        const response = await referenceFetch(url, { ...init, signal: controller.signal });
         const reader = response.body?.getReader();
         if (!reader) return response;
         const chunks = []; let size = 0;
@@ -1233,19 +1235,19 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
     retry.addEventListener("click", async () => {
       if (retry.disabled) return;
       retry.disabled = true;
-      try { await readProfile({ silent: true }); }
+      try { await readProfile({ silent: true, diagnosticRetry: true }); }
       finally { retry.disabled = false; }
     });
     notice.append(message, retry);
     appStatus?.before(notice);
   }
 
-  async function readProfile({ hydrate = true, silent = false } = {}) {
+  async function readProfile({ hydrate = true, silent = false, diagnosticRetry = false } = {}) {
     const generation = ++profileGeneration;
     // Do not leave the prior Client's details visible while a new session is checked.
     hideMemberProfile();
     try {
-      const response = await memberApiFetch(CONFIG.profileEndpoint, { method: "GET", credentials: "same-origin", headers: { "accept": "application/json" } });
+      const response = await memberApiFetch(CONFIG.profileEndpoint, { method: "GET", credentials: "same-origin", diagnosticRetry, headers: { "accept": "application/json" } });
       const payload = await response.json().catch(() => null);
       if (generation !== profileGeneration) return null;
       if (!response.ok || !payload || payload.ok !== true) {
