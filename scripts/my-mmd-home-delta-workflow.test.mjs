@@ -6,7 +6,7 @@ import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {homeMain} from './my-mmd-home-delta-cli.mjs';
 import {parseHomeManifest} from './my-mmd-home-delta-adapter.mjs';
-import {sha256} from './care-back-november-policy-release.mjs';
+import {sha256,buildPolicyModules} from './care-back-november-policy-release.mjs';
 const workflow=readFileSync(new URL('../.github/workflows/deploy-member-pages-worker-code-only.yml',import.meta.url),'utf8');
 const job=workflow.slice(workflow.indexOf('  my-mmd-home-release:'));
 const evaluate=new Function('github','inputs','return '+job.match(/^    if: (.+)$/m)[1]);
@@ -35,22 +35,45 @@ test('historical entry lane manifest preserves merged #3070 source',()=>{
 });
 test('profile retry manifest pins #3204 and both LIFF shells on the reviewed active artifact',()=>{
  const raw=readFileSync(new URL('./liff-profile-503-delta-manifest.json',import.meta.url));
- const hash='59a8cc673dc3eccc4dd8b550a769921b6013dc9669dd86ae76433c6e006c8190';
+ const hash='433e7cf395eb9fdea10f98c30dfb657edf6401e1b2f89e842f047fdf434f4694';
  const manifest=parseHomeManifest(raw,hash,'member-pages-worker');
  assert.equal(manifest.source_sha,'de0e236412c4b44289fa25ac934d83b024da13d4');
  assert.equal(manifest.source_sha,job.match(/APPROVED_SOURCE_SHA: ([a-f0-9]{40})/)[1]);
  assert.equal(manifest.baseline_version,'2992448f-259a-4978-8e59-087518939e4a');
  assert.equal(manifest.baseline_deployment,'4b5f9ffd-f2a6-4051-b436-a798d894dc38');
- assert.equal(manifest.modules.length,1);
- assert.equal(manifest.modules[0].before_sha256,'7778e6bf8083abdf9acbbb9e47d347bfd99600d447424d801c6c5d93c3c643a9');
- assert.equal(manifest.modules[0].after_sha256,'39572dcb63c525f087f23e4eeff83555ac5f37d32c42519afa350310d9270815');
- assert.deepEqual(manifest.modules[0].patches.map(p=>p.id),['profile-retry-owner-baseline-shell','profile-retry-imported-shell']);
- for(const p of manifest.modules[0].patches) {
+ assert.equal(manifest.modules.length,2);
+ const entry=manifest.modules.find(m=>m.name===manifest.main_module);
+ const branding=manifest.modules.find(m=>m.name==='app-branding-module.mjs');
+ assert.deepEqual(branding,{name:'app-branding-module.mjs',type:'esm',
+  before_sha256:'76c2130c17a40f459b3697262f4a2cc86de0c3ecf2cee631e22a17128533ad60',
+  after_sha256:'76c2130c17a40f459b3697262f4a2cc86de0c3ecf2cee631e22a17128533ad60',patches:[]});
+ assert.equal(entry.before_sha256,'7778e6bf8083abdf9acbbb9e47d347bfd99600d447424d801c6c5d93c3c643a9');
+ assert.equal(entry.after_sha256,'39572dcb63c525f087f23e4eeff83555ac5f37d32c42519afa350310d9270815');
+ assert.deepEqual(entry.patches.map(p=>p.id),['profile-retry-owner-baseline-shell','profile-retry-imported-shell']);
+ for(const p of entry.patches) {
   const a=p.before.indexOf('  async function readProfile(');
   assert.ok(a>=0);
   assert.equal(p.after.slice(0,a),p.before.slice(0,a));
   assert.match(p.after,/setProfileRetry\(response.status === 503\)/);
  }
+});
+test('two-module Home delta preserves companion bytes and rejects inventory or companion drift',()=>{
+ const before='export default "before";',after='export default "after";',branding='export const branding="synthetic";';
+ const module=(name,code)=>({name,content_base64:Buffer.from(code).toString('base64')});
+ const manifest={baseline_version:'synthetic',main_module:'entry.mjs',modules:[
+  {name:'entry.mjs',before_sha256:sha256(before),after_sha256:sha256(after),patches:[
+   {before,after,before_sha256:sha256(before),after_sha256:sha256(after)}]},
+  {name:'app-branding-module.mjs',before_sha256:sha256(branding),after_sha256:sha256(branding),patches:[]},
+ ]};
+ const artifact={id:manifest.baseline_version,main_module:manifest.main_module,
+  modules:[module('app-branding-module.mjs',branding),module('entry.mjs',before)]};
+ assert.throws(()=>buildPolicyModules(artifact,{...manifest,modules:manifest.modules.slice(0,1)}),/artifact module inventory drift/);
+ const candidate=buildPolicyModules(artifact,manifest);
+ assert.deepEqual(candidate.find(m=>m.name==='app-branding-module.mjs').bytes,Buffer.from(branding));
+ assert.equal(candidate.find(m=>m.name==='entry.mjs').bytes.toString(),after);
+ assert.throws(()=>buildPolicyModules({...artifact,modules:artifact.modules.slice(1)},manifest),/artifact module inventory drift/);
+ assert.throws(()=>buildPolicyModules({...artifact,modules:[...artifact.modules,module('extra.mjs','extra')]},manifest),/artifact module inventory drift/);
+ assert.throws(()=>buildPolicyModules({...artifact,modules:[module('app-branding-module.mjs','changed'),artifact.modules[1]]},manifest),/artifact module bytes drift/);
 });
 test('Home release is manual, protected and rejects incomplete input',()=>{
  assert.equal(evaluate(github,inputs),true);
@@ -75,7 +98,7 @@ test('CLI records sanitized receipts for input, manifest and checkout failures',
   GITHUB_TRIGGERING_ACTOR:'mmdprive',GITHUB_RUN_ATTEMPT:'1',GITHUB_RUN_ID:'1',
   GITHUB_SHA:'f'.repeat(40),APPROVED_SHA:'f'.repeat(40),APPROVED_SOURCE_SHA:data.source_sha,
   EXPECTED_VERSION:data.baseline_version,EXPECTED_DEPLOYMENT:data.baseline_deployment,
-  EXPECTED_MODULE_SHA256:data.modules[0].before_sha256,EXPECTED_MANIFEST_SHA256:sha256(bytes),
+  EXPECTED_MODULE_SHA256:data.modules.find(m=>m.name===data.main_module).before_sha256,EXPECTED_MANIFEST_SHA256:sha256(bytes),
   PATCH_MANIFEST:manifest,GH_TOKEN:'synthetic-do-not-log'};
  const network=t.mock.method(globalThis,'fetch',()=>{throw Error('unexpected network');});
  for(const [args,overrides,stage] of [
