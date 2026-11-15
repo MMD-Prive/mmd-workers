@@ -386,7 +386,7 @@ async function findSession(env, sessionId) {
 
 async function sendTelegram(env, payload) {
   const url = clean(env.TELEGRAM_INTERNAL_SEND_URL, 1200);
-  const token = clean(env.INTERNAL_TOKEN, 5000);
+  const token = clean(env.AUTH_SERVICE_ADMIN_TO_TELEGRAM, 5000);
   if (!url || !token) return { ok: false, status: "not_configured" };
   const response = await fetch(url, {
     method: "POST",

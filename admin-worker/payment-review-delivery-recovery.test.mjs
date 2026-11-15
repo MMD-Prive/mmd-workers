@@ -18,6 +18,7 @@ function fixture() {
     AIRTABLE_BASE_ID: "app-test", AIRTABLE_API_KEY: "test",
     AIRTABLE_TABLE_PAYMENT_PROOFS: "Proofs", AIRTABLE_TABLE_PAYMENTS: "Payments", AIRTABLE_TABLE_SESSIONS: "Sessions", AIRTABLE_TABLE_ACCESS_LOG: "Audit",
     AUTH_SERVICE_ADMIN_TO_PAYMENTS: "test", TELEGRAM_INTERNAL_SEND_URL: "https://telegram.example/internal/send", INTERNAL_TOKEN: "test",
+    AUTH_SERVICE_ADMIN_TO_TELEGRAM: "admin-telegram-test",
     LINE_SLIP_EVIDENCE: memoryR2(),
     PAYMENTS_WORKER: { async fetch(request) {
       settlements++;

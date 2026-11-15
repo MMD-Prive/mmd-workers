@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { dispatchApprovedJobLinks, drainApprovedJobLinkNotifications } from "./src/payment-approved-job-link-dispatch.js";
 import { memoryR2 } from "../shared/test/payment-memory-r2.mjs";
+import telegramWorker from "../telegram-worker/src/access-runtime.js";
 
 const SESSION_FIELDS = {
   sessionId: "fldLTq2kZbyRv22IA",
@@ -37,6 +38,7 @@ function envFor(record, {
     AIRTABLE_TABLE_SESSIONS: "tblC98mKWbzmPuNzX",
     TELEGRAM_INTERNAL_SEND_URL: "https://telegram.example/internal/send",
     INTERNAL_TOKEN: "internal-test",
+    AUTH_SERVICE_ADMIN_TO_TELEGRAM: "admin-telegram-test",
     TELEGRAM_CHAT_ID: "-1003546439681",
     TG_THREAD_PAYMENTS_CONFIRM: "22",
     LINE_CHANNEL_ACCESS_TOKEN: "line-token",
@@ -132,7 +134,9 @@ test("deposit approval sends each confirmation URL to the correct verified LINE 
     assert.match(modelTelegram.body.text, /miniapp\.line\.me\/2010864854-N34SgCqq/);
     assert.match(modelTelegram.body.text, /return_to=.*job-model/);
     assert.doesNotMatch(modelTelegram.body.text, /job-confirmation\?t=member-secret/);
-    assert.equal(telegram.headers.get("x-internal-token"), "internal-test");
+    for (const call of telegramCalls) {
+      assert.equal(call.headers.get("x-internal-token"), "admin-telegram-test");
+    }
     assert.equal(telegram.body.message_thread_id, 22);
     assert.match(telegram.body.text, /ชำระเงินผ่านแล้ว · 2 ลิงก์พร้อมใช้/);
     assert.match(telegram.body.text, /ลิงก์ลูกค้า/);
@@ -148,6 +152,98 @@ test("deposit approval sends each confirmation URL to the correct verified LINE 
     globalThis.fetch = original;
   }
 });
+
+for (const credential of [undefined, "", "   "]) {
+  test(`missing Admin service credential (${JSON.stringify(credential)}) never falls back to other tokens`, async (t) => {
+    const env = {
+      ...envFor(sessionRecord()),
+      AUTH_SERVICE_ADMIN_TO_TELEGRAM: credential,
+      INTERNAL_API_TOKEN: "unrelated-api-token",
+      AUTH_SERVICE_STUDIO_TO_TELEGRAM: "unrelated-studio-token",
+    };
+    const urls = [];
+    t.mock.method(globalThis, "fetch", async (input, init) => {
+      const request = input instanceof Request && !init ? input : new Request(input, init);
+      urls.push(request.url);
+      return Response.json({ ok: true });
+    });
+    const result = await dispatchApprovedJobLinks(env, {
+      session_id: "sess_approved_1", payment_stage: "deposit", payment_ref: "pay_auth_fixture",
+    });
+    assert.equal(result.dispatched, false);
+    assert.equal(result.telegram_status, "not_configured");
+    assert.equal(result.customer_telegram_status, "not_configured");
+    assert.equal(result.model_telegram_status, "not_configured");
+    assert.equal(result.customer_line_sent, true);
+    assert.equal(result.model_line_sent, true);
+    assert.deepEqual(urls, Array(2).fill("https://api.line.me/v2/bot/message/push"));
+  });
+}
+
+for (const scenario of ["matched", "mismatched", "provider_forbidden"]) {
+  test(`Admin dispatch through Telegram entrypoint: ${scenario}`, async (t) => {
+    const env = {
+      ...envFor(sessionRecord()),
+      TELEGRAM_INTERNAL_SEND_URL: "https://telegram.example/telegram/internal/send",
+      LINE_SLIP_EVIDENCE: memoryR2(),
+    };
+    const receiverEnv = {
+      AUTH_SERVICE_ADMIN_TO_TELEGRAM: scenario === "mismatched" ? "different-admin-token" : "admin-telegram-test",
+      INTERNAL_API_TOKEN: "unrelated-api-token",
+      INTERNAL_TOKEN: env.INTERNAL_TOKEN,
+      TELEGRAM_BOT_TOKEN: "fixture-bot",
+    };
+    const internalStatuses = [];
+    const providerCalls = [];
+    const unexpectedCalls = [];
+    t.mock.method(globalThis, "fetch", async (input, init) => {
+      const request = input instanceof Request && !init ? input : new Request(input, init);
+      if (request.url === env.TELEGRAM_INTERNAL_SEND_URL) {
+        assert.equal(request.headers.get("x-internal-token"), "admin-telegram-test");
+        const response = await telegramWorker.fetch(request, receiverEnv);
+        internalStatuses.push(response.status);
+        return response;
+      }
+      if (request.url === "https://api.line.me/v2/bot/message/push") return Response.json({ ok: true });
+      if (request.url === "https://api.telegram.org/botfixture-bot/sendMessage") {
+        providerCalls.push(await request.json());
+        return scenario === "provider_forbidden"
+          ? Response.json({ ok: false, error_code: 403, description: "fixture forbidden" }, { status: 403 })
+          : Response.json({ ok: true, result: { message_id: providerCalls.length } });
+      }
+      unexpectedCalls.push(request.url);
+      throw new Error("unexpected fixture request");
+    });
+    const input = { session_id: "sess_approved_1", payment_stage: "deposit", payment_ref: "pay_auth_fixture" };
+    const result = await dispatchApprovedJobLinks(env, input);
+    const successful = scenario === "matched";
+    const expectedStatus = successful ? 200 : scenario === "mismatched" ? 403 : 500;
+    assert.deepEqual(unexpectedCalls, []);
+    assert.deepEqual(internalStatuses, Array(3).fill(expectedStatus));
+    assert.equal(result.telegram_status, expectedStatus);
+    assert.equal(result.dispatched, successful);
+    assert.equal(result.customer_telegram_sent, successful);
+    assert.equal(result.model_telegram_sent, successful);
+    assert.equal(result.retry_queued, !successful);
+    assert.equal(providerCalls.length, scenario === "mismatched" ? 0 : 3);
+    if (successful) {
+      const customer = providerCalls.find((call) => call.chat_id === "111111111");
+      const model = providerCalls.find((call) => call.chat_id === "222222222");
+      const ops = providerCalls.find((call) => call.chat_id === env.TELEGRAM_CHAT_ID);
+      assert.match(customer.text, /return_to=.*job-confirmation/);
+      assert.doesNotMatch(customer.text, /job-model/);
+      assert.match(model.text, /return_to=.*job-model/);
+      assert.doesNotMatch(model.text, /job-confirmation/);
+      assert.match(ops.text, /job-confirmation/);
+      assert.match(ops.text, /job-model/);
+      assert.equal(ops.message_thread_id, 22);
+      assert.equal(result.delivery_status, "delivered");
+      assert.equal((await dispatchApprovedJobLinks(env, input)).delivery_status, "delivered");
+      assert.equal(providerCalls.length, 3, "a delivered fixture is not sent again");
+      assert.equal(internalStatuses.length, 3);
+    }
+  });
+}
 
 test("non-initial payment stage never re-releases job URLs", async () => {
   const original = globalThis.fetch;
