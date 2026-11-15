@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { telegramRoutePatterns } from "../scripts/telegram-workflow-operations.mjs";
 
 const root = new URL("../", import.meta.url);
 const source = async (path) => readFile(new URL(path, root), "utf8");
@@ -114,8 +115,10 @@ test("Phase 1 production smoke fails closed if the retired front gate regains an
 
 test("Telegram core routes remain exact and canonical", async () => {
   const config = await source("telegram-worker/wrangler.toml");
-  const workflow = await source(".github/workflows/deploy-telegram-worker.yml");
-  for (const marker of [
+  const deploy = await source(".github/workflows/deploy-telegram-worker.yml");
+  const routes = await source(".github/workflows/sync-telegram-worker-routes.yml");
+  const maintenance = await source(".github/workflows/telegram-worker-maintenance.yml");
+  const expected = [
     "mmdbkk.com/telegram/webhook",
     "www.mmdbkk.com/telegram/webhook",
     "mmdbkk.com/v1/webhook",
@@ -126,10 +129,54 @@ test("Telegram core routes remain exact and canonical", async () => {
     "www.mmdbkk.com/v1/internal/send",
     "mmdbkk.com/v1/send",
     "www.mmdbkk.com/v1/send",
-  ]) assert.ok(config.includes(marker), marker);
-  assert.match(workflow, /Sync canonical Telegram routes/);
-  assert.match(workflow, /Repair Telegram webhook to canonical route/);
-  assert.match(workflow, /Smoke canonical Telegram auth boundaries/);
+  ];
+  for (const marker of expected) assert.ok(config.includes(`pattern = "${marker}"\n`), marker);
+  assert.equal((config.match(/^\[\[routes\]\]$/gm) || []).length, expected.length);
+  assert.deepEqual([...telegramRoutePatterns].sort(), [...expected].sort());
+  assert.match(routes, /run: node scripts\/telegram-workflow-operations.mjs sync-routes/);
+  assert.match(routes, /APPROVED_MISSING_PATTERNS: \$\{\{ inputs.approved_missing_patterns \}\}/);
+  assert.match(maintenance, /if: inputs.operation == 'webhook'/);
+  assert.match(maintenance, /run: node scripts\/telegram-workflow-operations.mjs webhook/);
+  for (const workflow of [deploy, routes, maintenance]) {
+    assert.match(workflow, /uses: \.\/\.github\/workflows\/admin-production-approval.yml/);
+    assert.match(workflow, /needs: \[production-approval\]/);
+    assert.match(workflow, /inputs.approved_sha == github.sha/);
+    assert.doesNotMatch(workflow.split("\njobs:")[0], /^  (push|workflow_run|schedule):/m);
+  }
+  assert.doesNotMatch(deploy, /telegram-workflow-operations|ensure-canonical|setChatMenuButton|premium-room|topics\/smoke/);
+});
+
+test("Telegram auth boundaries remain closed without production smoke requests", async (t) => {
+  const { default: worker } = await import("../telegram-worker/src/access-runtime.js");
+  const network = t.mock.method(globalThis, "fetch", async () => Response.json({ success: false }, { status: 403 }));
+  const env = { INTERNAL_API_TOKEN: "fixture-internal", TELEGRAM_WEBHOOK_SECRET_TOKEN: "fixture-webhook" };
+  for (const path of ["/telegram/internal/send", "/v1/internal/send", "/v1/send", "/telegram/internal/webhook/ensure-canonical"]) {
+    for (const authorization of [undefined, "Bearer fixture-invalid"]) {
+      const response = await worker.fetch(new Request(`https://telegram.example${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...(authorization ? { authorization } : {}) },
+        body: JSON.stringify({ chat_id: "123456789", text: "fixture", confirm: "ENSURE_CANONICAL_TELEGRAM_WEBHOOK_V1" }),
+      }), env);
+      assert.equal(response.status, 403, path);
+      assert.equal((await response.json()).error, "internal_token_required", path);
+    }
+  }
+  for (const path of ["/telegram/webhook", "/v1/webhook"]) {
+    for (const secret of [undefined, "fixture-invalid"]) {
+      const response = await worker.fetch(new Request(`https://telegram.example${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...(secret ? { "X-Telegram-Bot-Api-Secret-Token": secret } : {}) },
+        body: JSON.stringify({ update_id: 1 }),
+      }), env);
+      assert.equal(response.status, 401, path);
+    }
+  }
+  // The repair endpoint verifies a supplied bearer with Cloudflare before denying it.
+  assert.equal(network.mock.callCount(), 1);
+  const [url, options] = network.mock.calls[0].arguments;
+  assert.equal(new URL(url).hostname, "api.cloudflare.com");
+  assert.ok(new URL(url).pathname.endsWith("/workers/scripts/telegram-worker/settings"));
+  assert.equal(options.method || "GET", "GET");
 });
 
 test("LINE webhook routes remain bounded to member-dashboard-chat-worker", async () => {
