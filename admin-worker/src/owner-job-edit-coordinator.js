@@ -1,4 +1,4 @@
-    if(plan.captainEvidence)await verifyCaptainEvidence(this.env,current,plan.captainEvidence);
+import { buildCaptainEdit, verifyCaptainEvidence } from './owner-job-edit-captain.js';
 import { applyAdminJobVoid } from './admin-job-void.js';
 import { at, loadJob, revision, buildEdit, reply, S, J } from './owner-job-edit.js';
 
