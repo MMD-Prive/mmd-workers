@@ -72,6 +72,7 @@ export const TG_THREADS = (env = {}) => {
     studio_alert: topics.alerts,
     mms_alert: topics.alerts,
     mms_manual_handoff: topics.alerts,
+    henna_customer_watch: topics.alerts,
     mms_job: topics.alerts,
 
     applications: topics.public_model,
