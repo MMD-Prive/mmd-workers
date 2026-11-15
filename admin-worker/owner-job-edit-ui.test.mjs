@@ -94,6 +94,8 @@ test('JSDOM Captain: relationship changed after review stops final Save without 
    await until(()=>b.responses.some(r=>r.method==='POST'&&r.status===409)&&!b.$('confirm').open,'blocked save');
    assert.deepEqual(b.h.writes,[]);assert.equal(b.h.payments.length,1);assert.ok(b.h.payCalls.every(p=>p.endsWith('/balance')));
  }finally{b.close();}
+});
+
 test('cancel reads a fresh revision and reload sends the original revision to endpoint in recovery mode', async () => {
  const {handleAdminJobVoidRequest} = await import('./src/admin-job-void.js');
  const {JobEditJournal} = await import('./src/owner-job-edit-coordinator.js');
