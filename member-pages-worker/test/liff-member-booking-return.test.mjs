@@ -14,11 +14,13 @@ test('LINE return preserves safe appointments model selector, never foreign URL 
 
 import {runInNewContext} from 'node:vm';
 import {readFileSync} from 'node:fs';
+import {createReferenceFetch} from '../src/liff-request-reference.js';
 const source=readFileSync(new URL('../src/liff-member-shell.js',import.meta.url),'utf8');
 const lane=source.slice(source.indexOf('  function memberApiFetch('),source.indexOf('  async function readOwnHistoryPreview('));
 for(const reason of ['leave','account-reset'])test('real serialized API lane blocks queued Booking POST after '+reason,async()=>{
  let release,active=true;const calls=[];
- const api=runInNewContext(lane+'\nmemberApiFetch',{
+ const api=runInNewContext('const referenceFetch=createReferenceFetch(fetch);'+lane+'\nmemberApiFetch',{
+  createReferenceFetch,
   memberApiChain:Promise.resolve(),AbortController,Response,Uint8Array,Error,setTimeout,clearTimeout,
   fetch:async(url,init)=>{calls.push([url,init.method]);if(url==='/blocking')await new Promise(r=>release=r);return Response.json({ok:true});}
  });
