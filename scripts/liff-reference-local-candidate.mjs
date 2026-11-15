@@ -35,5 +35,5 @@ export function assemble(directory) {
  let reverse=code.slice(0,-('\n'+helper).length);
  for(const p of changes.toReversed())reverse=reverse.split(p.after).join(p.before);
  assert.equal(reverse,baseline,'All untouched bytes including Owner Overlay must be preserved');
- return {code,branding,receipt:{local_only:true,baseline_sha256:digest(baseline),candidate_sha256:digest(code),branding_sha256:digest(branding),patch_groups:changes.length,reverse_exact:true,config_changed:false}};
+ return {baseline,code,branding,receipt:{local_only:true,baseline_sha256:digest(baseline),candidate_sha256:digest(code),branding_sha256:digest(branding),patch_groups:changes.length,reverse_exact:true,config_changed:false}};
 }
