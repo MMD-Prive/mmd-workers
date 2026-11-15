@@ -12,7 +12,7 @@ export function coModelView({role, sessionId, modelName, lifecycle, partnerId, a
 }
 export function renderCoModel(view) {
   const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  return '<section aria-label="MY CO MODEL"><h2>MY CO MODEL</h2><p>อ่านอย่างเดียว · '+esc(view.model_name)+'</p><p>รหัสงาน '+esc(view.session_id)+'</p><p>สถานะในระบบ '+esc(view.lifecycle)+'</p><ul>'+view.channels.map(c=>'<li>'+esc(c.channel)+' · ยังไม่มีประวัติที่ตรวจสอบได้ · จำนวนข้อความ รูป และสาย: ยังยืนยันไม่ได้</li>').join('')+'</ul>'+renderEvidence(view.evidence)+'<p>ผู้ประสานงานปัจจุบัน / ผู้รับช่วง: ยังไม่มีหลักฐานยืนยัน</p><p>ไทม์ไลน์ยังไม่ครบ ไม่ได้หมายความว่าไม่มีการติดต่อ</p></section>';
+  return '<section aria-label="MY CO MODEL"><h2>MY CO MODEL</h2><p>อ่านอย่างเดียว · '+esc(view.model_name)+'</p><p>รหัสงาน '+esc(view.session_id)+'</p><p>สถานะในระบบ '+esc(view.lifecycle)+'</p><ul>'+view.channels.map(c=>'<li>'+esc(c.channel)+' · ยังไม่มีประวัติที่ตรวจสอบได้ · จำนวนข้อความ รูป และสาย: ยังยืนยันไม่ได้</li>').join('')+'</ul>'+renderEvidence(view.evidence)+'<p>ผู้ประสานงานปัจจุบัน / ผู้รับช่วง: ยังไม่มีหลักฐานยืนยัน</p><p>ประวัติการติดต่อยังไม่ครบ ไม่ได้หมายความว่าไม่มีการติดต่อ</p></section>';
 }
 
 function renderEvidence(e) {
