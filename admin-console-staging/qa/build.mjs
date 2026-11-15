@@ -3,6 +3,11 @@ import { execFileSync } from 'node:child_process';
 const root = new URL('../', import.meta.url);
 let build = readFileSync(new URL('build.mjs', root), 'utf8');
 build = build.replace('217a23730c4c70a7f2cb68e550bf7a74227ae424', 'a748a4d9a99f2614b8cc177aa0dafc37584daee2');
+// The QA pin already includes the login UX that the older base pin needs patched in.
+const loginOverlayStart = build.indexOf('edit(loginCore, "readCredentialBoundAdminActor }"');
+const loginOverlayEnd = build.indexOf('edit("admin-worker/src/credential-bound-admin-session.js"', loginOverlayStart);
+if (loginOverlayStart < 0 || loginOverlayEnd < 0) throw new Error('Base login overlay changed');
+build = build.slice(0, loginOverlayStart) + build.slice(loginOverlayEnd);
 writeFileSync(new URL('build-qa-generated.mjs', root), build);
 try { execFileSync(process.execPath, [new URL('build-qa-generated.mjs', root).pathname], { stdio: 'inherit' }); }
 finally { unlinkSync(new URL('build-qa-generated.mjs', root)); }

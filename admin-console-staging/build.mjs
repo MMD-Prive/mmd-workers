@@ -29,6 +29,11 @@ function edit(path, from, to) {
 }
 
 const loginCore = "admin-worker/src/admin-login-hero-worker-core.js";
+edit(loginCore, "readCredentialBoundAdminActor }", "readCredentialBoundAdminActor, readCredentialBoundAdminLoginReason }");
+edit(loginCore, "response: renderLoginGate(request, env)", "response: await renderLoginGate(request, env)");
+edit(loginCore, "function renderLoginGate(request, env)", "async function renderLoginGate(request, env)");
+edit(loginCore, 'error: url.searchParams.get("error") || "",',
+  "reason: await readCredentialBoundAdminLoginReason(request, env),");
 
 edit("admin-worker/src/credential-bound-admin-session.js",
   "const ALLOWED_ORIGINS = new Set([\n", "const ALLOWED_ORIGINS = new Set([\n  " + JSON.stringify(origin) + ",\n");
