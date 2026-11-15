@@ -8,8 +8,9 @@ import {fixture,MODEL,apiModule} from './helpers/partner-fixture.mjs';
 const bundle=await build({entryPoints:[new URL('../src/public-index.ts',import.meta.url).pathname],bundle:true,write:false,format:'esm'});
 const {default:pageWorker}=await import('data:text/javascript;base64,'+Buffer.from(bundle.outputFiles[0].text).toString('base64'));
 async function settle(check){for(let n=0;n<100;n++){if(check())return;await new Promise(r=>setTimeout(r,20));}assert.ok(check(),'UI operation did not settle');}
-async function ui(t,{expired=false,system=null}={}){
+async function ui(t,{expired=false,system=null,seed=null}={}){
   const f=await fixture();
+  if(seed)seed(f);
   if(system)f.db.Sessions[0].fields[apiModule.SESSION_FIELDS.referralSnapshotJson]=JSON.stringify({contract:'partner_agreement_v1',system});
   if(expired)f.db.Partners[0].fields[apiModule.MODEL_PARTNERS.accessTokenHash]='invalidated-fixture';
   const w=new Window({url:'https://www.mmdbkk.com/partner/dashboard?t='+encodeURIComponent(f.token),settings:{enableJavaScriptEvaluation:true,disableCSSFileLoading:true,disableJavaScriptFileLoading:true,disableIframePageLoading:true}});
@@ -26,6 +27,21 @@ async function ui(t,{expired=false,system=null}={}){
   const q=s=>w.document.querySelector(s);
   return {f,w,q,errors};
 }
+test('announcement detail submits only current roster image and retains values on revision conflict',async t=>{
+ const {q,w,f,errors}=await ui(t);
+ const input={id:'ann-ui-fixture-000001',revision:null,title:'ประกาศ QA',brief:'ข้อมูลจำลอง',category:'ถ่ายภาพ',area:'กรุงเทพฯ',requirements:'นายแบบ',start_at:new Date(Date.now()+86400000*4).toISOString(),end_at:new Date(Date.now()+86400000*4+7200000).toISOString(),deadline:new Date(Date.now()+86400000).toISOString(),required_count:1,budget_min:5000,budget_max:8000,budget_basis:'model_net',travel_terms:'ตามข้อตกลง',partner_fee_terms:'แยกจากค่าตัว',private_details:'PRIVATE SECRET',status:'open',audience:'all_active',partner_ids:[]};
+ const response=await f.call('/v1/partner/admin/announcements/save',{owner:true,body:input});assert.equal(response.status,200);let row=(await response.json()).announcement;
+ const A=apiModule.PARTNER_ASSETS,asset='recIIIIIIIIIIIIII';f.db.Assets.push({id:asset,fields:{[A.partner]:[f.db.Partners[0].id],[A.model]:[MODEL],[A.fileType]:'image/jpeg',[A.fileName]:'current.jpg',[A.fileCategory]:'photo',[A.reviewStatus]:'pending_review',[A.r2Key]:'partner-shared/fixture/current.jpg'}});
+ await settle(()=>!q('[data-ann-all]').disabled);q('[data-ann-all]').click();q('[data-ann-refresh]').click();await settle(()=>q('[data-ann-list] [data-ann-detail]'));q('[data-ann-list] [data-ann-detail]').click();await settle(()=>q('[data-ann-propose]'));
+ assert.equal(q('[data-ann-body]').textContent.includes('PRIVATE SECRET'),false);
+ const form=q('[data-ann-propose]');form.elements.model_id.value=MODEL;form.elements.model_id.dispatchEvent(new w.Event('change'));await settle(()=>form.elements.asset_id.querySelector('option[value="'+asset+'"]'));
+ form.elements.asset_id.value=asset;form.elements.rate.value='6000';form.elements.note.value='รักษาข้อมูลที่กรอก';form.elements.photo_current.checked=true;form.elements.share_with_mmd.checked=true;
+ const changed=await f.call('/v1/partner/admin/announcements/save',{owner:true,body:{...input,revision:row.revision,brief:'รายละเอียดเปลี่ยน'}});assert.equal(changed.status,200);
+ form.dispatchEvent(new w.Event('submit',{cancelable:true}));await settle(()=>q('[data-ann-send-status]').textContent.includes('รายละเอียดเปลี่ยน'));assert.equal(form.elements.note.value,'รักษาข้อมูลที่กรอก');assert.equal(form.elements.rate.value,'6000');
+ q('[data-ann-latest]').click();await settle(()=>q('[data-ann-updated]'));assert.match(q('[data-ann-updated]').textContent,/รายละเอียดเปลี่ยน/);q('[data-ann-updated] button').click();
+ form.dispatchEvent(new w.Event('submit',{cancelable:true}));await settle(()=>q('[data-ann-feedback]').textContent.includes('ระบบบันทึกข้อเสนอแล้ว'));
+ row=(await (await f.call('/v1/partner/announcements/detail?id='+input.id)).json()).announcement;assert.equal(row.proposals.length,1);assert.equal(row.proposals[0].note,'รักษาข้อมูลที่กรอก');assert.equal(f.messages.length,0);assert.deepEqual(errors,[]);
+});
 test('dashboard without token redirects directly to canonical LINE login and renders no fallback page',async t=>{
   const f=await fixture();t.after(f.restore);
   const response=await pageWorker.fetch(new Request('https://www.mmdbkk.com/partner/dashboard'),f.env,{});
@@ -47,6 +63,8 @@ test('access revocation closes an open private editor and clears decrypted field
   q('[data-edit-model]').click();
   q('[name=private_note]').value='LOCAL UNSAVED SECRET';q('[data-general-note]').value='PRIVATE GENERAL';
   f.db.Partners[0].fields[apiModule.MODEL_PARTNERS.accessTokenHash]='revoked-fixture';
+  // Navigation may detach status UI before an outstanding request rejects.
+  q('[data-loading]').remove();
   w.dispatchEvent(new w.Event('focus'));
   await settle(()=>w.location.pathname==='/sigil/model/dashboard/partner-login');
   assert.equal(q('[data-model-dialog]').open,false);assert.equal(q('.pcr-shell').hidden,true);
@@ -156,4 +174,56 @@ test('failed encrypted save blocks queued overwrites and preserves the unsaved n
  const original=f.env.PARTNER_ASSETS.put;let attempts=0;f.env.PARTNER_ASSETS.put=async()=>{attempts++;return null;};
  q('[data-general-note]').value='UNSAVED LOCAL NOTE';q('[data-save-vault]').click();q('[data-save-vault]').click();await settle(()=>attempts===1&&q('[data-flash]').textContent.includes('อีกอุปกรณ์'));
  assert.equal(attempts,1);assert.equal(q('[data-general-note]').value,'UNSAVED LOCAL NOTE');assert.equal(f.objects.size,0);f.env.PARTNER_ASSETS.put=original;assert.deepEqual(errors,[]);
+});
+
+test('LV Max keeps upcoming work first after calendar hydration and collapses past jobs',async t=>{
+ const {q,w,errors}=await ui(t,{seed(f){
+  const fields=apiModule.SESSION_FIELDS,original=f.db.Sessions[0];
+  original.fields[fields.startTime]='2099-01-02T03:00:00Z';original.fields[fields.endTime]='2099-01-02T05:00:00Z';
+  f.db.Sessions.push({id:'recZZZZZZZZZZZZZZ',fields:{...original.fields,[fields.sessionId]:'past_fixture',[fields.startTime]:'2020-01-01T03:00:00Z',[fields.endTime]:'2020-01-01T05:00:00Z'}});
+ }});
+ assert.ok(q('[data-jobs] > .lv-job'));
+ assert.ok(q('[data-jobs] > .lv-history [data-job="recZZZZZZZZZZZZZZ"]'));
+ assert.equal(q('[data-jobs] > .lv-history').open,false);
+ assert.equal(q('.pcr-mission-roster').previousElementSibling,q('[data-ann-home]'));
+ assert.equal(q('[data-ann-home]').previousElementSibling.contains(q('[data-jobs]')),true);
+ assert.equal(q('.lv-private').open,false);assert.deepEqual(errors,[]);
+});
+test('LV Max reorders linked models through the real API and keeps ranking separate from visibility',async t=>{
+ const other='recNNNNNNNNNNNNNN';
+ const {q,w,f,errors}=await ui(t,{seed(f){
+  f.db.Models.push({id:other,fields:{...f.db.Models[0].fields,[apiModule.MODELS.workingName]:'Second Model'}});
+  f.db.Referrals.push({id:'recEEEEEEEEEEEEEE',fields:{...f.db.Referrals[0].fields,[apiModule.MODEL_REFERRALS.model]:[other]}});
+ }});
+ q('[data-lv-sort]').click();
+ const selector='[data-home-models] [data-model="'+other+'"] [data-order-move="top"]';
+ await settle(()=>q(selector)&&!q(selector).disabled);q(selector).click();
+ await settle(()=>q('[data-home-models] [data-model]').dataset.model===other);
+ const persisted=await(await f.call('/v1/partner/roster-order')).json();assert.deepEqual(persisted.model_ids,[other,MODEL]);
+ assert.deepEqual(f.messages,[]);assert.deepEqual(f.writes,[]);
+ q('[data-home-models] [data-edit-model="visibility"]').click();
+ assert.equal(q('[name=sales_visibility]').closest('[data-editor-group]').hidden,false);
+ assert.equal(q('[name=display_name]').closest('[data-editor-group]').hidden,true);
+ assert.match(q('.lv-editor-note').textContent,/สถานะเดิมยังมีผล/);assert.deepEqual(errors,[]);
+});
+
+test('job detail reads ETA without model impersonation, wrong-place request retains current state',async t=>{
+ const {q,f,errors}=await ui(t,{seed:f=>{f.db.Sessions[0].fields[apiModule.SESSION_FIELDS.lifecycle]='en_route';f.db.Jobs=[{id:'recJOB00000000001',fields:{session_id:'session_fixture',events_json:JSON.stringify([{event:'eta_update',ts:new Date().toISOString(),eta_minutes:25}])}}];}});
+ q('[data-load-job-detail]').click();await settle(()=>q('[data-live-job]').textContent.includes('กำลังเดินทาง'));
+ assert.match(q('[data-live-job]').textContent,/คาดว่าจะถึงอีกประมาณ/);assert.match(q('[data-live-job]').textContent,/ประวัติการติดต่อยังไม่ครบ/);
+ q('[data-coordinate="wrong_place"]').click();assert.equal(q('[data-view-panel="console"]').hidden,false);assert.match(q('[data-console-form]').elements.message.value,/ตรวจหมุดล่าสุด/);assert.equal(q('[data-console-form]').elements.share_with_mmd.checked,false);
+ assert.equal(f.db.Sessions[0].fields[apiModule.SESSION_FIELDS.lifecycle],'en_route');assert.equal(f.messages.length,0);assert.equal(f.writes.length,0);assert.deepEqual(errors,[]);
+});
+test('sales editor separates work lane from customer audience and retains input on rejection',async t=>{
+ const {q,f,errors}=await ui(t);q('[data-edit-model="visibility"]').click();
+ const form=q('[data-model-form]');form.elements.offer_type.value='vip';form.elements.partner_source_rate_thb.value='';form.elements.customer_sell_rate_thb.value='9000';form.elements.share_with_mmd.checked=true;q('[name=audience_scope]').checked=true;
+ q('[data-save-sales]').click();await settle(()=>!q('[data-save-sales]').disabled);
+ assert.equal(form.elements.offer_type.value,'vip');assert.equal(form.elements.customer_sell_rate_thb.value,'9000');assert.match(q('[data-dialog-feedback]').textContent,/กรอกเรท/);assert.equal(f.db.Rules.length,0);assert.deepEqual(errors,[]);
+});
+test('retry keeps its request key only until a confirmed successful submission',async t=>{
+ const {q,w,errors}=await ui(t);q('[data-edit-model="visibility"]').click();const form=q('[data-model-form]');
+ form.elements.partner_source_rate_thb.value='6000';form.elements.customer_sell_rate_thb.value='9000';form.elements.share_with_mmd.checked=true;q('[name=audience_scope]').checked=true;
+ const original=w.fetch,keys=[];w.fetch=(path,opts={})=>{if(path.startsWith('/v1/partner/sales/proposal')){keys.push(opts.headers['Idempotency-Key']);if(keys.length===1)return Promise.resolve(Response.json({ok:false},{status:503}));}return original(path,opts);};
+ for(let i=0;i<3;i++){q('[data-save-sales]').click();await settle(()=>!q('[data-save-sales]').disabled);}
+ assert.equal(keys[0],keys[1]);assert.notEqual(keys[1],keys[2]);assert.deepEqual(errors,[]);
 });

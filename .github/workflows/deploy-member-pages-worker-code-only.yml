@@ -444,7 +444,7 @@ jobs:
         run: node --test scripts/my-mmd-home-delta-adapter.test.mjs scripts/my-mmd-home-delta-workflow.test.mjs scripts/care-back-november-policy-release.test.mjs scripts/member-pages-owner-approval.test.mjs
       - name: Apply reviewed My MMD policy to the fresh active artifact
         env:
-          APPROVED_SOURCE_SHA: 625164e20d8713aaf26db7fcb43bbb1d7befe084
+          APPROVED_SOURCE_SHA: de0e236412c4b44289fa25ac934d83b024da13d4
           GH_TOKEN: ${{ github.token }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: b176eda1172b741fd2e58904cc9d77c5

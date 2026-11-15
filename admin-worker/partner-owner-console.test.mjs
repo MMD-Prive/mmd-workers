@@ -4,6 +4,17 @@ import {createCredentialBoundAdminSession} from './src/credential-bound-admin-se
 import {handlePartnerOwnerConsole,readPartnerFinanceAuditCoverage} from './src/partner-owner-console.js';
 
 const origin='https://www.mmdbkk.com';
+test('announcements use fixed owner routes and whitelist detail/media/cursor query fields',async()=>{
+ const f=await fixture();
+ for(const [path,tail] of [['announcements?cursor=next&url=https://evil.invalid','announcements?cursor=next'],['announcement-detail?id=announcement-fixture&actor=forged','announcements/detail?id=announcement-fixture'],['announcement-media?asset_id=recIIIIIIIIIIIIII&t=secret','announcements/media?asset_id=recIIIIIIIIIIIIII']]){
+  const r=await handlePartnerOwnerConsole(f.request('/v1/admin/partners/'+path),f.env,{});assert.equal(r.status,200);assert.equal(f.calls.at(-1).url,'https://partners-worker.internal/v1/partner/admin/'+tail);
+ }
+ for(const route of ['announcement-save','announcement-decision']){
+  assert.equal((await handlePartnerOwnerConsole(f.request('/v1/admin/partners/'+route,{method:'POST',headers:{'content-type':'application/json'},body:'{}'}),f.env,{})).status,403);
+  assert.equal((await handlePartnerOwnerConsole(f.request('/v1/admin/partners/'+route,{method:'POST',headers:{origin,'content-type':'application/json'},body:'{}'}),f.env,{})).status,200);
+ }
+ const page=await (await handlePartnerOwnerConsole(f.request('/internal/admin/partners'),f.env,{})).text();assert.match(page,/MMD Announcement/);assert.doesNotThrow(()=>new Function(page.match(/<script>([\s\S]*?)<\/script>/)[1]));
+});
 async function fixture(role='owner'){
   const calls=[];const env={ADMIN_LOGIN_CREDENTIAL:'fixture-credential',ADMIN_SESSION_SECRET:'fixture-secret',PARTNERS_WORKER:{async fetch(r){calls.push(r);return Response.json({ok:true});}}};
   const token=await createCredentialBoundAdminSession(new Request(origin),{id:'owner-fixture',role},env);

@@ -97,7 +97,7 @@ export function calculateVerifiedSessionBalance(session, records, env = {}) {
     records: normalized,
   };
 }
-export async function readVerifiedSessionBalance(env, session) {
+export async function readVerifiedSessionBalance(env, session, onStage) {
   const fields = session?.fields || {};
   const sessionId = text(value(fields, env.AT_SESSIONS__SESSION_ID, F.sessionId, 'session_id'));
   if (!sessionId) throw balanceError('balance_session_missing');
@@ -118,13 +118,14 @@ export async function readVerifiedSessionBalance(env, session) {
     rows.push(...data.records);
     if (!data.offset) {
       const summary=calculateVerifiedSessionBalance(session, rows, env);
+      onStage?.("credit_session_validation");
       if(!sessionNeedsCreditRead(env,session))return {...summary,paid_credit_thb:0,bonus_credit_thb:0,credit_applied_thb:0,credit_claim_id:null};
       const identity=sessionCreditIdentity(session);
       for(const {record} of summary.records){
         const f=record.fields||{};
         for(const key of ['Client','fldcrLuJijj7xr0y8'])if(f[key]!==undefined&&JSON.stringify(f[key])!==JSON.stringify([identity.client_record_id]))throw balanceError('balance_payment_client_mismatch');
       }
-      const credit=await readSessionCreditBalance(env,session);
+      const credit=await readSessionCreditBalance(env,session,onStage);
       const applied=credit.paid_credit_thb+credit.bonus_credit_thb;
       const remainingCents=Math.round(summary.total_amount_thb*100)-Math.round(summary.verified_paid_thb*100)-applied*100;
       return {...summary,paid_credit_thb:credit.paid_credit_thb,bonus_credit_thb:credit.bonus_credit_thb,credit_applied_thb:applied,credit_claim_id:credit.claim_id||null,

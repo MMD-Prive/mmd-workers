@@ -232,10 +232,6 @@ async function reconcileCanonicalLinks(env, body, canonical, ids) {
     sessionPatch[SESSION_FIELDS.model] = [ids.modelId];
     sessionPatch[SESSION_FIELDS.modelProvenance] = modelProvenance;
   }
-  if (Object.keys(sessionPatch).length) {
-    await airtablePatchRecord(env, tables.sessions, session.id, sessionPatch);
-  }
-
   const resolvedJobId = ids.jobId || clean(session?.fields?.[SESSION_FIELDS.jobId]);
   let job = null;
   if (resolvedJobId) job = await airtableFindOne(env, tables.jobs, JOB_FIELDS.jobId, resolvedJobId);
@@ -249,6 +245,10 @@ async function reconcileCanonicalLinks(env, body, canonical, ids) {
       modelProvenance,
     }));
   } else {
+    if (job.fields?.[JOB_FIELDS.sessionId] !== ids.sessionId ||
+        (resolvedJobId && job.fields?.[JOB_FIELDS.jobId] !== resolvedJobId)) {
+      throw typedError(409, "canonical_job_session_conflict");
+    }
     const jobPatch = {};
     const existingNote = clean(job.fields?.[JOB_FIELDS.note]);
     const snapshotNote = withJobServicePricingNote(preservePartnerSnapshot(existingNote, body), validateJobServicePricing(body));
@@ -268,6 +268,15 @@ async function reconcileCanonicalLinks(env, body, canonical, ids) {
     if (Object.keys(jobPatch).length) await airtablePatchRecord(env, tables.jobs, job.id, jobPatch);
   }
 
+  const jobId = clean(job?.fields?.[JOB_FIELDS.jobId]);
+  const sessionJobId = clean(session.fields?.[SESSION_FIELDS.jobId]);
+  if (!/^[-\w]{1,120}$/.test(jobId)) throw typedError(409, "canonical_job_id_invalid");
+  if (sessionJobId && sessionJobId !== jobId) throw typedError(409, "session_job_id_conflict");
+  if (!sessionJobId) sessionPatch[SESSION_FIELDS.jobId] = jobId;
+  if (Object.keys(sessionPatch).length) {
+    await airtablePatchRecord(env, tables.sessions, session.id, sessionPatch);
+  }
+
   const status = linkageStatus(Boolean(ids.clientId), Boolean(ids.modelId));
   return {
     status,
@@ -278,7 +287,7 @@ async function reconcileCanonicalLinks(env, body, canonical, ids) {
     session_record_id: session.id,
     job_record_id: job?.id || null,
     session_id: ids.sessionId,
-    job_id: clean(job?.fields?.[JOB_FIELDS.jobId] || resolvedJobId) || null,
+    job_id: jobId,
     session_linked: true,
     job_linked: Boolean(job?.id),
     client_source: clientSource || null,

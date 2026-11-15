@@ -58,7 +58,7 @@ test('dashboard augmentation preserves existing queues and adds owner queues', (
   const out = augmentDashboardPayload(base, ops);
   assert.equal(out.counts.payment_review, 2);
   assert.equal(out.counts.completion_review, 3);
-  assert.equal(out.queues.payout_ready.href, '/internal/admin/jobs/completion');
+  assert.equal(out.queues.payout_ready.href, '/internal/admin/jobs/all?ops=payout');
 });
 
 test('dashboard job links never point at nonexistent dynamic admin job routes', () => {

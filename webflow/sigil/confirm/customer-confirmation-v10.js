@@ -473,6 +473,8 @@
 
     function render(d) {
       details = d;
+      R.dataset.workLane = ["private_model", "public_model"].includes(d.model_work_lane)
+        ? d.model_work_lane : "";
       const p = d.pricing || {};
       E.model.textContent = str(d.model_name) || "—";
       E.type.textContent = work(d.job_type);

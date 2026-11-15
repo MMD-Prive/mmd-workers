@@ -198,6 +198,7 @@ jobs:
 
             for path in \
               /v1/partner/dashboard \
+              /v1/partner/jobs/detail \
               /v1/partner/private-vault; do
               body="$(mktemp)"
               code="$(curl --silent --show-error -o "$body" -w "%{http_code}" "$origin$path")"

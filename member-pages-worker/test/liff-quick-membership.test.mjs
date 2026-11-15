@@ -5,7 +5,7 @@ import vm from "node:vm";
 const source = readFileSync(new URL("../src/liff-member-shell.js", import.meta.url), "utf8");
 const start = source.indexOf("  function memberApiFetch(");
 const end = source.indexOf("  function hideMemberProfile()", start);
-const profileStart = source.indexOf("  async function readProfile(", end);
+const profileStart = source.indexOf("  function setProfileRetry(", end);
 assert.ok(start >= 0 && end > start && profileStart > end);
 const functions = "let memberApiChain = Promise.resolve(); let profileGeneration = 0;\n"
   + source.slice(start, end)

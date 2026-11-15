@@ -72,7 +72,24 @@ export async function handleAdminJobVoidRequest(request, env, actor) {
   const sessionId = String(body?.session_id || "").trim();
   if (!/^[A-Za-z0-9_-]{3,119}$/.test(sessionId)) return voidJson({ ok: false, error: "invalid_session_id" }, 400);
   if (body?.confirm !== true) return voidJson({ ok: false, error: "confirmation_required" }, 400);
+  const expectedRevision = body.revision;
+  if (typeof expectedRevision !== "string" || !/^[a-f0-9]{64}$/.test(expectedRevision)) {
+    return voidJson({ ok: false, error: "invalid_revision" }, 400);
+  }
   const reason = String(body?.reason || "").trim().slice(0, 200);
+  if (!env.JOB_EDIT_COORDINATOR?.getByName) return voidJson({ ok: false, error: "void_unavailable" }, 503);
+  try {
+    return await env.JOB_EDIT_COORDINATOR.getByName(sessionId).fetch(new Request("https://job-edit.internal/void", {
+      method: "POST",
+      body: JSON.stringify({ recover: body.recover === true, body: { session_id: sessionId, reason, revision: expectedRevision }, actor: { id: actor.id, role: actor.role } }),
+    }));
+  } catch {
+    return voidJson({ ok: false, error: "void_unavailable" }, 503);
+  }
+}
+
+export async function applyAdminJobVoid(env, { body, actor, recover }, storage, hash) {
+  const { session_id: sessionId, reason } = body;
   if (!env.AIRTABLE_API_KEY) return voidJson({ ok: false, error: "void_unavailable" }, 503);
   const baseId = env.AIRTABLE_BASE_ID || DEFAULT_BASE_ID;
   const tables = {
@@ -86,6 +103,21 @@ export async function handleAdminJobVoidRequest(request, env, actor) {
     const matching = sessions.filter((r) => String(r.fields?.[VOID_SESSION.id] || "") === sessionId);
     if (matching.length !== 1) return voidJson({ ok: false, error: "job_not_found" }, 404);
     const session = matching[0];
+    const pending = await storage.get("void:pending");
+    const finish = async result => {
+      await storage.put("void:done:" + hash, result);
+      await storage.delete("void:pending");
+      return voidJson(result);
+    };
+    if (pending) {
+      if (pending.hash !== hash || pending.recordId !== session.id ||
+          lower(session.fields?.[VOID_SESSION.status]) !== "cancelled" ||
+          session.fields?.[VOID_SESSION.note] !== pending.note) {
+        return voidJson({ ok: false, error: "void_outcome_unknown", recovery_required: true }, 503);
+      }
+      return await finish({ ok: true, voided: true, session_id: sessionId, warning: "payment_intent_outcome_unknown" });
+    }
+    if (recover) return voidJson({ ok: false, error: "void_receipt_not_found" }, 404);
     const ref = String(session.fields?.[VOID_SESSION.paymentRef] || "").trim();
     if (ref && !/^[A-Za-z0-9_-]{3,160}$/.test(ref)) return voidJson({ ok: false, error: "payment_ref_invalid" }, 409);
 
@@ -101,10 +133,18 @@ export async function handleAdminJobVoidRequest(request, env, actor) {
     if (decision.already) return voidJson({ ok: true, voided: true, already_voided: true, session_id: sessionId });
 
     const at = new Date().toISOString();
+    const note = buildVoidNote(session.fields?.[VOID_SESSION.note], { actor, reason, at });
+    await storage.put("void:pending", { hash, recordId: session.id, note });
     await patch(env, baseId, tables.sessions, session.id, {
       [VOID_SESSION.status]: "Cancelled",
-      [VOID_SESSION.note]: buildVoidNote(session.fields?.[VOID_SESSION.note], { actor, reason, at }),
+      [VOID_SESSION.note]: note,
     });
+    const updated = await list(env, baseId, tables.sessions, `{${VOID_SESSION.id}}="${sessionId}"`, Object.values(VOID_SESSION));
+    if (updated.length !== 1 || updated[0].id !== session.id ||
+        lower(updated[0].fields?.[VOID_SESSION.status]) !== "cancelled" ||
+        updated[0].fields?.[VOID_SESSION.note] !== note) {
+      return voidJson({ ok: false, error: "void_outcome_unknown", recovery_required: true }, 503);
+    }
 
     let paymentMarked = 0;
     let warning = null;
@@ -116,9 +156,9 @@ export async function handleAdminJobVoidRequest(request, env, actor) {
         warning = "payment_intent_not_marked";
       }
     }
-    return voidJson({ ok: true, voided: true, session_id: sessionId, payment_intents_marked: paymentMarked, ...(warning ? { warning } : {}) });
+    return await finish({ ok: true, voided: true, session_id: sessionId, payment_intents_marked: paymentMarked, ...(warning ? { warning } : {}) });
   } catch (_) {
-    return voidJson({ ok: false, error: "void_unavailable" }, 503);
+    return voidJson({ ok: false, error: await storage.get("void:pending") ? "void_outcome_unknown" : "void_unavailable" }, 503);
   }
 }
 

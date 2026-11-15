@@ -49,6 +49,13 @@ function assertTarget(href, lang = "en") {
   assert.deepEqual([...url.searchParams], lang ? [["t", token], ["lang", lang]] : [["t", token]]);
 }
 
+test("only a server-provided work lane selects Private artwork", async t => {
+  for (const [value, expected] of [["private_model", "private_model"], ["public_model", "public_model"], ["unknown", ""]]) {
+    const ui = await setup(t, { details: { model_work_lane: value } });
+    assert.equal(ui.w.document.querySelector("#mmd-job-confirm-v16").dataset.workLane, expected);
+  }
+});
+
 test("deposit click ACKs the current revision and navigates to checkout", async t => {
   const ui = await setup(t);
   assert.equal(ui.pay.hidden, false);

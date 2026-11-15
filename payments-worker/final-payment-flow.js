@@ -44,6 +44,7 @@ export async function handleFinalPaymentFlow(request, env = {}) {
   const sessionId = clean(body?.session_id, 220);
   if (!sessionId) return json({ ok: false, error: "session_id_required", authority: "payments-worker" }, 400);
 
+  let balanceStage = "session_lookup";
   try {
     if (path === VERIFIED_BALANCE_PATH || path === VERIFIED_REPORT_PATH) {
       if (!body || Object.keys(body).length !== 1 || typeof body.session_id !== 'string' || !/^[-\w]{1,220}$/.test(body.session_id)) return json({ok:false,error:'invalid_balance_request'},400);
@@ -57,7 +58,12 @@ export async function handleFinalPaymentFlow(request, env = {}) {
         if(!response.ok||data.status!=='verified')return json({ok:false,error:'report_unavailable',balance:null},503);
         return json({ok:true,authority:'payments-worker',balance:sessionBalanceView(data.balance,sessionId)});
       }
-      const balance = sessionBalanceView(await readVerifiedSessionBalance(env, session), sessionId);
+      balanceStage = "payment_ledger";
+      const summary = await readVerifiedSessionBalance(env, session, (stage) => {
+        balanceStage = stage;
+      });
+      balanceStage = "response_projection";
+      const balance = sessionBalanceView(summary, sessionId);
       return json({ok:true,authority:'payments-worker',balance});
     }
     if (path === FINAL_PAYMENT_ACTIVATE_PATH) {
@@ -71,6 +77,24 @@ export async function handleFinalPaymentFlow(request, env = {}) {
     }
     return json({ ok: true, authority: "payments-worker", ...snapshot });
   } catch (error) {
+    if (path === VERIFIED_BALANCE_PATH) {
+      const knownCodes = [
+        "airtable_not_ready", "balance_ledger_unavailable",
+        "balance_ledger_pagination_invalid", "balance_ledger_incomplete",
+        "balance_payment_client_mismatch", "credit_session_fields_conflict", "credit_session_identity_unconfirmed",
+        "credit_session_lane_conflict", "credit_authority_unavailable",
+      ];
+      const requestId = request.headers.get("x-request-id");
+      console.warn(JSON.stringify({
+        event: "verified_balance_read_failed",
+        stage: balanceStage,
+        status: Number(error?.status || 500),
+        code: knownCodes.includes(error?.message) ? error.message : "unclassified",
+        ...(/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(requestId || "")
+          ? { request_id: requestId }
+          : {}),
+      }));
+    }
     return json({
       ok: false,
       ...(path===VERIFIED_REPORT_PATH?{balance:null}:{}),

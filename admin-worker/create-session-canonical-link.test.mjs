@@ -91,7 +91,7 @@ function recordFrom(url) {
   return decodeURIComponent(parts[3] || "");
 }
 
-function makeFetch({ lineUserId = "U-line-001", existingJob = false, existingJobNote = "", sessionFields = {} } = {}) {
+function makeFetch({ lineUserId = "U-line-001", existingJob = false, existingJobNote = "", sessionFields = {}, sessionPatchFails = false } = {}) {
   const calls = [];
   const fetch = async (input, init = {}) => {
     const url = urlString(input);
@@ -121,6 +121,7 @@ function makeFetch({ lineUserId = "U-line-001", existingJob = false, existingJob
       return json({ records: [{ id: SESSION_RECORD_ID, fields: { session_id: "sess_001", job_id: "", ...sessionFields } }] });
     }
     if (method === "PATCH" && table === ENV.AIRTABLE_TABLE_SESSIONS && recordId === SESSION_RECORD_ID) {
+      if (sessionPatchFails) return json({ error: "fixture_write_failed" }, 503);
       return json({ id: SESSION_RECORD_ID, fields: init.body ? JSON.parse(init.body).fields : {} });
     }
 
@@ -201,8 +202,10 @@ test("allows typed Client and Model names without canonical IDs", async () => {
     assert.equal(mock.calls.some((c) => c.method === "GET" && tableFrom(c.url) === ENV.AIRTABLE_TABLE_MODELS), false);
 
     const sessionPatches = mock.calls.filter((c) => c.method === "PATCH" && tableFrom(c.url) === ENV.AIRTABLE_TABLE_SESSIONS);
-    assert.equal(sessionPatches.length, 0);
+    assert.equal(sessionPatches.length, 1);
     const jobCreate = mock.calls.find((c) => c.method === "POST" && tableFrom(c.url) === ENV.AIRTABLE_TABLE_JOBS);
+    assert.deepEqual(sessionPatches[0].body.fields, { job_id: jobCreate.body.fields.job_id });
+    assert.match(data.linkage.job_id, /^[-\w]+$/);
     assert.equal(jobCreate.body.fields["Model (โมเดล)"], "Mira");
     assert.equal("Client (ลูกค้า)" in jobCreate.body.fields, false);
     assert.equal("Canonical Model" in jobCreate.body.fields, false);
@@ -342,6 +345,8 @@ test("updates existing Job by session_id instead of creating a duplicate", async
     assert.equal(response.status, 200);
     const data = await response.json();
     assert.equal(data.linkage.job_record_id, JOB_RECORD_ID);
+    const sessionPatch = mock.calls.find(c => c.method === "PATCH" && tableFrom(c.url) === ENV.AIRTABLE_TABLE_SESSIONS);
+    assert.equal(sessionPatch.body.fields.job_id, "JOB-EXISTING");
     assert.equal(mock.calls.filter((c) => c.method === "POST" && tableFrom(c.url) === ENV.AIRTABLE_TABLE_JOBS).length, 0);
     assert.equal(mock.calls.filter((c) => c.method === "PATCH" && tableFrom(c.url) === ENV.AIRTABLE_TABLE_JOBS).length, 1);
   } finally {
@@ -438,4 +443,21 @@ for (const [name, canonicalLine, sessionFields, expected] of [
       assert.equal(patches[0].body.fields['Payment Status'],undefined);
     }
   }finally{globalThis.fetch=originalFetch;}
+});
+
+test("requires review when the Session write fails after creating the Job", async () => {
+  const originalFetch = globalThis.fetch;
+  const mock = makeFetch({ sessionPatchFails: true });
+  globalThis.fetch = mock.fetch;
+  try {
+    const response = await handleCanonicalLinkedJobCreate(
+      request(baseBody()), ENV, {}, { fetch: async () => json({ ok: true, session_id: "sess_001" }) },
+    );
+    const { linkage } = await response.json();
+    assert.equal(linkage.status, "review_required");
+    assert.equal(linkage.session_linked, false);
+    assert.equal(mock.calls.filter(c => c.method === "POST" && tableFrom(c.url) === ENV.AIRTABLE_TABLE_JOBS).length, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
