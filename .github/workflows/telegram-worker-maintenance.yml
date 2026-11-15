@@ -1,0 +1,87 @@
+name: Telegram maintenance (separate owner approval)
+
+on:
+  workflow_dispatch:
+    inputs:
+      production_approved:
+        description: 'Owner approval for the single selected operation and its side effects'
+        type: boolean
+        required: true
+        default: false
+      approval_ref:
+        description: 'Owner approval reference for this operation and commit'
+        type: string
+        required: true
+      approved_sha:
+        description: 'Full main commit SHA approved for this operation'
+        type: string
+        required: true
+      operation:
+        description: 'Choose one; no maintenance is part of deploy'
+        type: choice
+        required: true
+        default: none
+        options:
+          - none
+          - webhook
+          - menu
+          - premium-room
+          - topic-smoke
+
+concurrency:
+  group: deploy-telegram-worker-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  production-approval:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha && github.run_attempt == 1
+    uses: ./.github/workflows/admin-production-approval.yml
+    with:
+      approval_ref: ${{ inputs.approval_ref }}
+      approved_sha: ${{ inputs.approved_sha }}
+
+  maintenance:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha && github.run_attempt == 1
+    needs: [production-approval]
+    environment: mmd-production-mutation
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Require an explicit operation
+        env:
+          OPERATION: ${{ inputs.operation }}
+        run: |
+          case "$OPERATION" in
+            webhook|menu|premium-room|topic-smoke) ;;
+            *) exit 1 ;;
+          esac
+      - name: Repair webhook only
+        if: inputs.operation == 'webhook'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node scripts/telegram-workflow-operations.mjs webhook
+      - name: Update menu only
+        if: inputs.operation == 'menu'
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.MMS_TELEGRAM_BOT_TOKEN || secrets.TELEGRAM_BOT_TOKEN }}
+        run: node scripts/telegram-workflow-operations.mjs menu
+      - name: Sync room titles and welcome (may send and pin a message)
+        if: inputs.operation == 'premium-room'
+        env:
+          INTERNAL_API_TOKEN: ${{ secrets.INTERNAL_API_TOKEN || secrets.TELEGRAM_INTERNAL_TOKEN }}
+        run: node scripts/telegram-workflow-operations.mjs premium-room
+      - name: Send one topic smoke (real messages)
+        if: inputs.operation == 'topic-smoke'
+        env:
+          INTERNAL_API_TOKEN: ${{ secrets.INTERNAL_API_TOKEN }}
+        run: node scripts/telegram-workflow-operations.mjs topic-smoke

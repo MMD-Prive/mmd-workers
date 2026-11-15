@@ -11,6 +11,7 @@ on:
       - 'scripts/admin-current-session-code-only*'
       - 'scripts/admin-production-validation*'
       - 'scripts/admin-workflow-safety.test.mjs'
+      - 'scripts/telegram-workflow-*'
       - 'scripts/payments-confirmation-release-guard*'
   push:
     branches: [main]
@@ -23,6 +24,7 @@ on:
       - 'scripts/admin-current-session-code-only*'
       - 'scripts/admin-production-validation*'
       - 'scripts/admin-workflow-safety.test.mjs'
+      - 'scripts/telegram-workflow-*'
       - 'scripts/payments-confirmation-release-guard*'
 
 permissions:
@@ -43,6 +45,8 @@ jobs:
         run: |
           node --check scripts/admin-production-approval.mjs
           node --test scripts/admin-production-approval.test.mjs scripts/admin-workflow-safety.test.mjs
+          node --check scripts/telegram-workflow-operations.mjs
+          node --test scripts/telegram-workflow-safety.test.mjs scripts/telegram-workflow-operations.test.mjs scripts/deploy-uploaded-worker-version.test.mjs
           node --test scripts/admin-current-session-code-only.test.mjs scripts/admin-production-validation.test.mjs
           node --check admin-worker/model-session-action-target.test.mjs
           node --experimental-global-webcrypto --test admin-worker/model-current-session.test.mjs admin-worker/model-session-runtime-v1a.test.mjs admin-worker/model-session-action-target.test.mjs
