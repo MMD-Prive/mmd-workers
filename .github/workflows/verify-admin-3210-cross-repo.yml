@@ -1,0 +1,29 @@
+name: Verify admin-3210 cross-repo
+on:
+  push:
+    branches: [codex/admin-3210-cross-repo-test]
+permissions: {}
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: admin-3210-artifact-read
+    steps:
+      - name: Require scoped artifact reader
+        env:
+          ARTIFACT_TOKEN: ${{ secrets.ADMIN_3210_ARTIFACT_READ_TOKEN }}
+        run: test -n "$ARTIFACT_TOKEN"
+      - uses: actions/download-artifact@v4
+        with:
+          repository: MMD-Prive/demo-repository
+          run-id: '43654503771'
+          name: admin-3210
+          github-token: ${{ secrets.ADMIN_3210_ARTIFACT_READ_TOKEN }}
+          path: admin-3210
+      - name: Verify downloaded bytes
+        working-directory: admin-3210
+        run: |
+          sha256sum -c <<'SUMS'
+          9ce16a84793622f06a2beed56d1165ec87d8329f148eddeee0524afca56085f8  admin-login-hero-worker.js
+          293d6271bb6b2d59ab151132ac4f2b184bda1d2fbee82b8513d31718126f7088  admin-login-hero-worker.js.map
+          SUMS
