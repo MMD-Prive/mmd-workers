@@ -30,3 +30,60 @@ test('Owner pages require login; invalid Partner and non-fixture session denied'
 test('login is same-origin and Owner-only; fixture launch links require Owner',async()=>{const f=setup();assert.equal((await f.call('partner','/qa/partners')).status,401);const cookie=await login(f,'partner');assert.equal((await f.call('partner','/qa/partners',{headers:{cookie}})).status,200);assert.equal((await f.call('admin','/internal/admin/login/session',{method:'POST'})).status,403);});
 test('fixture transport rejects network/write and storage has no write methods',async()=>{const f=await createFixtures(secret);assert.equal((await f.http('https://api.airtable.com/v0/production/Sessions')).status,403);assert.equal((await f.http('https://api.line.me/v2/bot/message/push',{method:'POST'})).status,405);assert.equal(f.storage.put,undefined);assert.equal(f.storage.delete,undefined);const key='job-travel/v1/invalid/ledger.json';assert.equal(await f.storage.get(key),null);});
 test('missing binding and wrong host fail closed',async()=>{const f=setup();delete f.p.ADMIN_CO_MODEL;const t=await fixtureToken(secret,'A');const r=await f.call('partner','/v1/partner/jobs/detail?session_record_id='+IDS.A+'&t='+t);assert.match((await r.json()).detail.co_model_html,/ยังยืนยันไม่ได้/);assert.equal((await admin.fetch(new Request('https://www.mmdbkk.com/qa/owner'),f.a,f.ctx)).status,403);});
+
+test('both login pages identify staging, preserve password-manager fields and use their fixture launcher',async()=>{
+ const f=setup();
+ for(const [side,next] of [['admin','/qa/owner'],['partner','/qa/partners']]){
+  const r=await f.call(side,'/internal/admin/login?next=https://example.invalid/steal');
+  assert.equal(r.status,200);const html=await r.text();
+  assert.match(html,/Staging/);assert.doesNotMatch(html,/Production|ระบบจริง/);
+  assert.match(html,/autocomplete="current-password"/);
+  assert.ok(html.includes('name="next" value="'+next+'"'));
+ }
+});
+test('Owner login returns only the role launcher for JSON and form redirects; wrong password remains denied',async()=>{
+ const f=setup();
+ for(const [side,next] of [['admin','/qa/owner'],['partner','/qa/partners']]){
+  const origin='https://'+(side==='admin'?ADMIN_HOST:PARTNER_HOST);
+  for(const suppliedNext of ['',next,'//example.invalid/steal','/qa/owner?token=bad','/internal/admin/console']){
+   const r=await f.call(side,'/internal/admin/login/session',{method:'POST',headers:{origin,'content-type':'application/json','x-mmd-login-fetch':'1'},body:JSON.stringify({action:'owner_login',credential:'fixture-owner-password',next:suppliedNext})});
+   assert.equal(r.status,200);assert.equal((await r.json()).next,next);
+   const cookie=r.headers.get('set-cookie').split(';')[0];
+   assert.equal((await f.call(side,next,{headers:{cookie}})).status,200);
+  }
+  const form=await f.call(side,'/internal/admin/login/session',{method:'POST',headers:{origin,'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({action:'owner_login',credential:'fixture-owner-password',next:'https://example.invalid'})});
+  assert.equal(form.status,303);assert.equal(form.headers.get('location'),next);
+  const bad=await f.call(side,'/internal/admin/login/session',{method:'POST',headers:{origin,'content-type':'application/json','x-mmd-login-fetch':'1'},body:JSON.stringify({action:'owner_login',credential:'wrong'})});
+  assert.equal(bad.status,401);assert.equal(bad.headers.get('set-cookie'),null);
+ }
+});
+test('served Partner client sends same-origin credentials through its real API helper',async()=>{
+ const {runInNewContext}=await import('node:vm');
+ const f=setup(),token=await fixtureToken(secret,'A');
+ const page=await f.call('partner','/partner/dashboard?t='+token);const html=await page.text();
+ const helper=html.match(/function api\(path, options\) \{[\s\S]*?\n  \}/)?.[0];assert.ok(helper,'rendered API helper missing');
+ const calls=[];
+ const api=runInNewContext('('+helper+')',{state:{authBlocked:false},token,signInMessage:'blocked',fetch:async(path,options)=>{
+  calls.push({path,options});
+  // Simulate Access rejecting an omitted cookie before the existing fixture handler.
+  assert.equal(options.credentials,'same-origin');assert.equal(options.referrerPolicy,'no-referrer');
+  return f.call('partner',path,options);
+ }});
+ const own=await api('/v1/partner/jobs/detail?session_record_id='+IDS.A,{credentials:'omit'});
+ assert.equal(own.ok,true);assert.match(own.detail.co_model_html,/2 ครั้ง/);
+ await assert.rejects(api('/v1/partner/jobs/detail?session_record_id='+IDS.B));
+ await assert.rejects(api('/v1/partner/jobs/detail?session_record_id='+IDS.A,{method:'POST'}));
+ assert.equal(calls.length,3);assert.ok(calls.every(c=>c.path.startsWith('/v1/partner/')));
+});
+test('Partner B cannot read A; write attempts leave both fixture projections unchanged',async()=>{
+ const f=setup(),cookie=await login(f),token=await fixtureToken(secret,'B');
+ assert.equal((await f.call('partner','/v1/partner/jobs/detail?session_record_id='+IDS.A+'&t='+token)).status,403);
+ const path='/v1/admin/jobs/edit?view=co-model&session_id=sess_fixture_A';
+ const before=(await (await f.call('admin',path,{headers:{cookie}})).json()).co_model;
+ for(const side of ['admin','partner'])for(const method of ['POST','PUT','PATCH','DELETE']){
+  const r=await f.call(side,side==='admin'?path:'/v1/partner/jobs/detail?session_record_id='+IDS.B+'&t='+token,{method,headers:{cookie,'content-type':'application/json'},body:JSON.stringify({status:'changed'})});
+  assert.equal(r.status,405);assert.equal((await r.json()).error,'staging_read_only');
+ }
+ const after=(await (await f.call('admin',path,{headers:{cookie}})).json()).co_model;
+ assert.deepEqual(after,before);
+});
