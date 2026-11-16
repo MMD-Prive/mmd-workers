@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "build": "node build.mjs",
-    "test": "node --test bundle.test.mjs",
+    "test": "node --test bundle.test.mjs pinned-source.test.mjs",
     "preflight": "node preflight.mjs"
   },
   "devDependencies": {"esbuild": "0.25.12"}
