@@ -97,7 +97,7 @@ export const PARTNER_LVMAX_JS = String.raw`
         '<p>'+esc(d.location||'รอยืนยันจุดนัด')+'</p>'+(d.map_url?'<a class="mmdp-btn ghost" href="'+esc(d.map_url)+'" target="_blank" rel="noopener noreferrer">เปิดหมุดจุดนัด</a>':'')+
         '<details class="lv-history"><summary>การรับทราบก่อนวันงาน</summary>'+(r.recorded_acknowledged_at?'<p>ระบบบันทึกการรับทราบ '+dateTime(r.recorded_acknowledged_at)+'</p><small>ยังไม่ยืนยันว่าเป็นรายละเอียดฉบับล่าสุด</small>':'<p>ยังไม่มีเวลารับทราบที่ยืนยันได้</p>')+
         (r.scheduled_at?'<p>กำหนดแจ้ง '+dateTime(r.scheduled_at)+'<br>กำหนดส่งให้เปอร์ตรวจหากยังไม่รับทราบ '+dateTime(r.owner_review_at)+'</p><small>กำหนดการนี้ไม่ใช่หลักฐานว่าส่งแจ้งเตือนแล้ว</small>':'')+'</details>'+
-        '<p class="lv-incomplete">ประวัติการติดต่อยังไม่ครบ · ยังไม่รวม LINE, Telegram, จำนวนรูปและสาย</p>';
+        (d.co_model_html || '<p class="lv-incomplete">MY CO MODEL · ยังอ่านข้อมูลไม่ได้</p>');
       lvTickEta();
     }).catch(function(e){if(state.authBlocked)return;host.textContent='อัปเดตไม่ได้ · '+e.message;}).finally(function(){button.disabled=false;button.textContent='อัปเดตสถานะหน้างาน';});
   }

@@ -297,9 +297,9 @@ test("issuer persists complete service and renewal snapshots for long combined-p
     ["tblC98mKWbzmPuNzX", "tblWGGJJOx5eBvBZJ"].sort());
 });
 
-test("discounted job: deposit is 30% of the post-discount amount rounded UP to 500 and the discount kind is carried", async () => {
+test("discounted job: ordinary deposit is 30% of the post-discount amount rounded UP to a baht and the discount kind is carried", async () => {
   const { env } = envWithAirtableRecorder();
-  // full 21,000 - discount 1,500 = net 19,500 -> 30% = 5,850 -> ceil to 500 = 6,000 (not 6,300 from the full price)
+  // Full 21,000 less 1,500 = net 19,500; ordinary deposit is 5,850.
   const result = await handleCanonicalConfirmLink(post({
     session_id: "sess_discount_kind",
     payment_ref: "pay_discount_kind",
@@ -314,12 +314,12 @@ test("discounted job: deposit is 30% of the post-discount amount rounded UP to 5
   assert.equal(p.discount_thb, 1500);
   assert.equal(p.net_price_thb, 19500);
   assert.equal(p.discount_kind, "special_price");
-  assert.equal(p.deposit_minimum_thb, 6000);
-  assert.equal(p.deposit_due_thb, 6000);
-  assert.equal(p.balance_thb, 13500);
+  assert.equal(p.deposit_minimum_thb, 5850);
+  assert.equal(p.deposit_due_thb, 5850);
+  assert.equal(p.balance_thb, 13650);
 });
 
-test("minimum deposit rounds up to the next 500 for every job, and unknown discount kinds are dropped", async () => {
+test("ordinary deposit rounds up to a baht, and unknown discount kinds are dropped", async () => {
   const { env } = envWithAirtableRecorder();
   const result = await handleCanonicalConfirmLink(post({
     session_id: "sess_round_500", payment_ref: "pay_round_500",
@@ -328,7 +328,7 @@ test("minimum deposit rounds up to the next 500 for every job, and unknown disco
     amount_thb: 18000, discount_kind: "freebie", payment_type: "deposit",
   }), env);
   const p = (await result.json()).pricing_breakdown;
-  assert.equal(p.deposit_minimum_thb, 5500); // 30% = 5,400 -> 5,500
-  assert.equal(p.deposit_due_thb, 5500);
+  assert.equal(p.deposit_minimum_thb, 5400); // 30% = 5,400
+  assert.equal(p.deposit_due_thb, 5400);
   assert.equal("discount_kind" in p, false);
 });

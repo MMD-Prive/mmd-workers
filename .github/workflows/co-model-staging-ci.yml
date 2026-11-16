@@ -1,0 +1,31 @@
+name: MY CO MODEL isolated staging CI
+on:
+  pull_request:
+    paths:
+      - 'co-model-staging/**'
+      - '.github/workflows/co-model-staging-ci.yml'
+permissions:
+  contents: read
+jobs:
+  bundle-and-preflight:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: co-model-staging/package-lock.json
+      - run: npm ci --no-audit --no-fund
+        working-directory: co-model-staging
+      - run: npm run build && npm test && npm run preflight
+        working-directory: co-model-staging
+      - uses: actions/upload-artifact@v4
+        with:
+          name: co-model-staging-review-bundles
+          path: |
+            co-model-staging/.build/admin.mjs
+            co-model-staging/.build/partner.mjs
+            co-model-staging/.build/manifest.json

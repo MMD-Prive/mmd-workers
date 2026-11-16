@@ -50,7 +50,8 @@ test("Create Job reveals fields in dependency order and avoids unrelated default
   const response = handleCreateJobWorkerPage(new Request("https://mmdbkk.com/internal/admin/jobs/create-job"));
   const html = await response.text();
   const steps = [...html.matchAll(/data-step="(\d)"/g)].map(match => Number(match[1]));
-  assert.deepEqual(steps, [1, 2, 3, 4, 5, 6, 7]);
+  assert.deepEqual(steps, [0, 1, 2, 3, 4, 5, 6, 7]);
+  assert.ok(html.indexOf("ค้นหาโมเดลก่อนกำหนดงาน") < html.indexOf("1. เลือกลูกค้า"));
   assert.ok(html.indexOf("1. เลือกลูกค้า") < html.indexOf("2. กำหนดขอบเขตงาน"));
   assert.ok(html.indexOf("2. กำหนดขอบเขตงาน") < html.indexOf("3. เลือกนายแบบ"));
   assert.match(html, /name="visibility" value="private"/);
@@ -109,8 +110,18 @@ test("Create Job shows up to five recent photos for members and models without a
   assert.match(html, /PHOTO_MAX=5/);
   assert.match(html, /\/v1\/admin\/booking-models\/'\+encodeURIComponent\(id\)\+'\/drive/);
   assert.match(html, /\/v1\/admin\/clients\/profile-photo\/sync/);
+  assert.match(html, /hydratePhotos\('model',item,button,strip\)/);
+  assert.match(html, /Per Rename/);
   assert.match(html, /\.thumbs\{display:flex;flex-wrap:wrap/);
   assert.doesNotMatch(html, /overflow-x:\s*(auto|scroll)/);
+});
+
+test("Private Model deposit choices default to 30% in five point steps", async () => {
+  const html = await handleCreateJobWorkerPage(new Request("https://mmdbkk.com/internal/admin/jobs/create-job")).text();
+  const options = [...html.matchAll(/<option value="(20|25|30|35|40)"(?: selected)?>(?:20|25|30|35|40)%<\/option>/g)].map(match => Number(match[1]));
+  assert.deepEqual(options, [20, 25, 30, 35, 40]);
+  assert.match(html, /<option value="30" selected>30%<\/option>/);
+  assert.match(html, /หมายเหตุ: เฉพาะงาน Private Model คิดมัดจำจากยอดบริการก่อนลด ไม่รวมค่าเดินทาง/);
 });
 
 test("Travel fee option gives the 25 km Siam Square case only as an example and readiness failure shows its cause", async () => {

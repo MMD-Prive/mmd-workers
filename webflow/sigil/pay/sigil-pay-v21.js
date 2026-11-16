@@ -279,6 +279,11 @@
     text("[data-sp21-location]",data.location_name||"MMD กำลังยืนยัน");
     text("[data-sp21-net]",money(net));
     text("[data-sp21-due]",money(due));
+    var privateDeposit=stage.toLowerCase()==="deposit"&&pricing.deposit_policy==="private_model_v1";
+    text("[data-sp21-due-label]",stage.toLowerCase()==="deposit"?(privateDeposit?"มัดจำ Private Model":"มัดจำ"):"ชำระครั้งนี้");
+    var remark=$("[data-sp21-deposit-remark]"),remarkBreak=$("[data-sp21-deposit-remark-break]");
+    if(remark){remark.hidden=!privateDeposit;if(privateDeposit)remark.textContent="หมายเหตุ: "+pricing.deposit_requested_percent+"% ของยอดบริการก่อนลด ไม่รวมค่าเดินทาง · ปัดขึ้นทีละ ฿500 โดยไม่เกินยอดบริการสุทธิ";}
+    if(remarkBreak)remarkBreak.hidden=!privateDeposit;
 
     var map=$("[data-sp21-map]");
     var mapUrl=safeHttps(data.google_map_url);
@@ -291,8 +296,8 @@
     var discountRow=$("[data-sp21-discount-row]");
     var hasDiscount=full!=null&&net!=null&&full>net;
     if(fullRow){
-      fullRow.hidden=!hasDiscount;
-      if(hasDiscount)text("[data-sp21-full]",money(full));
+      fullRow.hidden=full==null;
+      if(full!=null)text("[data-sp21-full]",money(full));
     }
     if(discountRow){
       discountRow.hidden=!hasDiscount;
@@ -300,6 +305,10 @@
         var pct=num(pricing.discount_percent);
         var diff=discount!=null?discount:(full-net);
         text("[data-sp21-discount]","- "+money(diff)+(pct!=null&&pct>0?" · "+pct+"%":""));
+        var labels={coupon:"คูปอง",discount:"ส่วนลด",promotion:"โปรโมชั่น",special_price:"ราคาพิเศษ"};
+        var kind=labels[clean(pricing.discount_kind)]||"ส่วนลด";
+        var reason=clean(pricing.discount_reason).slice(0,120);
+        text("[data-sp21-discount-reason]",reason&&reason!==kind?"("+kind+" · "+reason+")":"("+kind+")");
       }
     }
 

@@ -115,7 +115,7 @@ async function readinessUi(api) {
 test('approved one-job grant automatically rechecks without creating a job',async()=>{
   const html=await handleCreateJobWorkerPage(new Request('https://example.test/internal/admin/jobs/create-job')).text();
   const start=html.indexOf("$('grantConfirm').onchange=");
-  const end=html.indexOf(';setStep(1);loadRequestedClient()',start);
+  const end=html.indexOf(';setStep(0);loadRequestedClient()',start);
   assert.ok(start>0&&end>start,'grant handler is available');
   const nodes=new Map([
     ['grantConfirm',{checked:true}],
@@ -127,7 +127,7 @@ test('approved one-job grant automatically rechecks without creating a job',asyn
   let checks=0;const calls=[];const snapshot={client_id:body.client_id,model:body.model,job_date:body.job_date};
   const ctx=vm.createContext({
     $:id=>nodes.get(id),readPayload:()=>({...snapshot}),JSON,
-    readinessSequence:0,readinessKey:'old',readinessResult:{can_create:false},
+    initialModelId:'',readinessSequence:0,readinessKey:'old',readinessResult:{can_create:false},
     approvedOwnerGrantKey:'',show:()=>{},checkReadiness:async()=>{checks++;return false},
     api:async(path,opts)=>{calls.push({path,payload:JSON.parse(opts.body)});return {grant_status:'pending'}}
   });

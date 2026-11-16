@@ -1,0 +1,31 @@
+import { readFileSync, writeFileSync, unlinkSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+const root = new URL('../', import.meta.url);
+let build = readFileSync(new URL('build.mjs', root), 'utf8');
+build = build.replace('217a23730c4c70a7f2cb68e550bf7a74227ae424', 'a748a4d9a99f2614b8cc177aa0dafc37584daee2');
+// The QA pin already includes the login UX that the older base pin needs patched in.
+const loginOverlayStart = build.indexOf('edit(loginCore, "readCredentialBoundAdminActor }"');
+const loginOverlayEnd = build.indexOf('edit("admin-worker/src/credential-bound-admin-session.js"', loginOverlayStart);
+if (loginOverlayStart < 0 || loginOverlayEnd < 0) throw new Error('Base login overlay changed');
+build = build.slice(0, loginOverlayStart) + build.slice(loginOverlayEnd);
+writeFileSync(new URL('build-qa-generated.mjs', root), build);
+try { execFileSync(process.execPath, [new URL('build-qa-generated.mjs', root).pathname], { stdio: 'inherit' }); }
+finally { unlinkSync(new URL('build-qa-generated.mjs', root)); }
+const fixture = new URL('.build/admin-worker/test/fixtures/create-job-form-runtime.mjs', root);
+let source = readFileSync(fixture, 'utf8');
+source = source.replace("'rec' + String(++serial).padStart(14, '0')", "'rec' + crypto.randomUUID().replaceAll('-', '').slice(0, 14)");
+writeFileSync(fixture, source);
+const stagingFile = new URL('.build/staging.mjs', root);
+source = readFileSync(stagingFile, 'utf8')
+  .replaceAll('217a23730c4c70a7f2cb68e550bf7a74227ae424', 'a748a4d9a99f2614b8cc177aa0dafc37584daee2')
+  .replaceAll('recFixtureClient001', 'recCLIENT00000001')
+  .replaceAll('recFixtureModel001', 'recMODEL000000001')
+  .replace('[1, 2, 3, 4, 5, 6]', '[1, 2, 3, 4, 5]');
+source = source.replace('const matched = p.get("client_id") === clientId && p.get("q") === "Fixture Model" && (privateMatch || publicMatch);', 'const matched = p.get("q")?.toLowerCase().includes("fixture") && (!p.has("client_id") || privateMatch || publicMatch);');
+source = source.replace('display_name: "Fixture Model"', 'display_name: "Fixture Model", model_name: "Fixture Model", model_lookup_key: "private/standard/Mira", visibility: "private", access_folder: "standard", profile_photos: memberPhotos');
+writeFileSync(stagingFile, source);
+
+execFileSync('npm', ['exec', '--yes', '--package=esbuild@0.25.12', '--', 'esbuild',
+  'admin-console-staging/qa/entry.mjs', '--bundle', '--format=esm', '--platform=node',
+  '--inject:admin-console-staging/qa/context.mjs', '--outfile=admin-console-staging/.build/qa-bundle.mjs'],
+  { cwd: new URL('../../', import.meta.url), stdio: 'inherit' });

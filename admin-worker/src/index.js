@@ -1,3 +1,4 @@
+import { resolveChosenJobPartner } from './create-job-drive-discovery.js';
 import { readCanonicalCurrentSession, canonicalModelIds } from "./model-current-session.js";
 import {readModelPayout} from './model-payout-read.js';
 import {readModelCustomerPayment} from './model-customer-payment-read.js';
@@ -6149,7 +6150,7 @@ export {
    Job create
 ========================= */
 const CUSTOMER_DEPOSIT_PERCENT = 30;
-const CUSTOMER_DEPOSIT_ROUND_STEP_THB = 500;
+const CUSTOMER_DEPOSIT_ROUND_STEP_THB = 1;
 
 export function computeCustomerDepositAmount(serviceAmountThb) {
   const total = Number(serviceAmountThb);
@@ -6256,7 +6257,15 @@ async function createAdminJob(env, body) {
   // pass the existing authoritative access gate, including conflicting aliases.
   const jobVisibility = [work.job_visibility, body.job_visibility, body.booking_visibility,
     body.visibility, jobDetails.world].some(value => str(value).toLowerCase() === "private") ? "private" : "public";
+  const requestedPaymentType = str(body.payment_type || payment.payment_type || "deposit").toLowerCase();
+  if (jobVisibility === "private" && requestedPaymentType === "deposit") {
+    const requestedRate = Number(body.deposit_percent ?? 30);
+    if (!Number.isInteger(requestedRate) || requestedRate < 20 || requestedRate > 40 || requestedRate % 5 !== 0) {
+      throw new CreateSessionAccessError("invalid_private_model_deposit_percent", "Private Model deposit must be 20–40% in steps of 5%.", 400);
+    }
+  }
 
+  const selectedSource = await resolveChosenJobPartner(env, body);
   let privateGate = null;
   if (jobVisibility === "private") {
     privateGate = await enforcePrivateCreateAccess(env, body);
@@ -6306,10 +6315,18 @@ async function createAdminJob(env, body) {
   // Customer-visible reason for a discount (coupon / discount / promotion / special price).
   const discountKindRaw = str(servicePricing?.discount?.kind || body.discount_kind || "").toLowerCase();
   const discountKind = pricing_adjustment === "discount" && DISCOUNT_KINDS.includes(discountKindRaw) ? discountKindRaw : "";
-  const deposit_percent = payment_type === "deposit" ? CUSTOMER_DEPOSIT_PERCENT : undefined;
-  const deposit_amount_thb = payment_type === "deposit"
-    ? computeCustomerDepositAmount(service_amount_thb)
+  const discountReason = discountKind ? str(servicePricing?.discount?.reason || "").slice(0, 120) : "";
+  const privateModelDeposit = payment_type === "deposit" && jobVisibility === "private";
+  const deposit_percent = payment_type === "deposit"
+    ? (privateModelDeposit ? Number(body.deposit_percent ?? 30) : CUSTOMER_DEPOSIT_PERCENT)
     : undefined;
+  if (privateModelDeposit && (!Number.isInteger(deposit_percent) || deposit_percent < 20 || deposit_percent > 40 || deposit_percent % 5 !== 0)) {
+    throw new CreateSessionAccessError("invalid_private_model_deposit_percent", "Private Model deposit must be 20–40% in steps of 5%.");
+  }
+  const depositBasis = service_amount_thb + Math.max(0, original_amount_thb - amount_thb);
+  const deposit_amount_thb = payment_type !== "deposit" ? undefined : privateModelDeposit
+    ? Math.min(service_amount_thb, Math.ceil(depositBasis * deposit_percent / 100 / 500) * 500)
+    : Math.min(service_amount_thb, Math.ceil(service_amount_thb * CUSTOMER_DEPOSIT_PERCENT / 100));
   const customerJobTotal = jobTotalWithTravel(service_amount_thb, amount_thb, body.travel_fee_thb, rawNote);
   const balance_amount_thb = payment_type === "deposit"
     ? Math.max(0, customerJobTotal - deposit_amount_thb)
@@ -6336,6 +6353,8 @@ async function createAdminJob(env, body) {
     original_amount_thb,
     pricing_adjustment,
     ...(discountKind ? { discount_kind: discountKind } : {}),
+    ...(discountReason ? { discount_reason: discountReason } : {}),
+    ...(privateModelDeposit ? { deposit_policy: "private_model_v1" } : {}),
     deposit_percent,
     deposit_amount_thb,
     balance_amount_thb,
@@ -6354,6 +6373,11 @@ async function createAdminJob(env, body) {
   const issuerPayload = jobDetails.operational_status === "pending_client_link"
     ? { operational_status: "pending_client_link", held_job: payload }
     : payload;
+  if (selectedSource) {
+    const checkedSource=await resolveChosenJobPartner(env,body);
+    if (JSON.stringify(checkedSource)!==JSON.stringify(selectedSource)) throw new CreateSessionAccessError('model_partner_source_changed','Model source changed; review again.',409);
+    payload.note += '\n[MMD MODEL SOURCE v1] '+JSON.stringify(checkedSource);
+  }
   const minted = await callPaymentsCreateLink(env, issuerPayload);
 
   if (jobDetails.operational_status === "pending_client_link") {
@@ -6476,7 +6500,7 @@ async function notifyJobCreated(env, data) {
     data.public_job?.special_care_names ? `Special care: ${escHtml(data.public_job.special_care_names)}` : "",
     `Amount: <b>${Number(data.amount_thb).toLocaleString("en-US")} THB</b>`,
     data.payment_type === "full" ? "Payment: <b>FULL</b>" : "",
-    data.payment_type === "deposit" && data.deposit_amount_thb != null ? `Deposit 30%: <b>${Number(data.deposit_amount_thb).toLocaleString("en-US")} THB</b>` : "",
+    data.payment_type === "deposit" && data.deposit_amount_thb != null ? `Deposit ${Number(data.deposit_percent)}%: <b>${Number(data.deposit_amount_thb).toLocaleString("en-US")} THB</b>` : "",
     data.payment_type === "deposit" && data.balance_amount_thb != null ? `Balance: <b>${Number(data.balance_amount_thb).toLocaleString("en-US")} THB</b>` : "",
     `Session: <code>${escHtml(data.session_id || "-")}</code>`,
     `Payment Ref: <code>${escHtml(data.payment_ref || "-")}</code>`,

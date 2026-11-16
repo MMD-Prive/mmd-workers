@@ -39,7 +39,9 @@ test('delivery-only retry respects terminal receipt, backoff and expiry',async()
 });
 
 test('due delivery retry survives page restart and leaves money untouched',async()=>{
- const h=fixture();await h.seed({done:false,now:Date.now()-120000});h.env.TELEGRAM_INTERNAL_SEND_URL='https://telegram.example/internal/send';h.env.INTERNAL_TOKEN='test';const original=globalThis.fetch;let sends=0;globalThis.fetch=async()=>{sends++;return Response.json({ok:true})};try{const r=await h.request(true);assert.equal(r.status,200);const d=await r.json();assert.equal(d.money_truth_changed,false);assert.equal(d.confirmation.dispatched,true);assert.equal(d.confirmation.delivery_status,'delivered');assert.equal(d.confirmation.model_acknowledged_at,null);assert.equal(sends,1);await h.request(true);assert.equal(sends,1,'terminal replay cannot resend');}finally{globalThis.fetch=original;}
+ // Fixture credentials cover this branch and main's scoped Telegram credential migration.
+ // No production credential or dispatch logic is changed.
+ const h=fixture();await h.seed({done:false,now:Date.now()-120000});h.env.TELEGRAM_INTERNAL_SEND_URL='https://telegram.example/internal/send';h.env.INTERNAL_TOKEN='test';h.env.AUTH_SERVICE_ADMIN_TO_TELEGRAM='test';const original=globalThis.fetch;let sends=0;globalThis.fetch=async()=>{sends++;return Response.json({ok:true})};try{const r=await h.request(true);assert.equal(r.status,200);const d=await r.json();assert.equal(d.money_truth_changed,false);assert.equal(d.confirmation.dispatched,true);assert.equal(d.confirmation.delivery_status,'delivered');assert.equal(d.confirmation.model_acknowledged_at,null);assert.equal(sends,1);await h.request(true);assert.equal(sends,1,'terminal replay cannot resend');}finally{globalThis.fetch=original;}
 });
 
 
