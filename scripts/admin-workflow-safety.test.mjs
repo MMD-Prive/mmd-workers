@@ -187,3 +187,23 @@ for (const file of ['sync-model-dashboard-routes.yml', 'sync-model-line-link-api
     ]) assert.throws(() => assertSafety(altered, file));
   });
 }
+
+test('#3210 release is dispatch-only and isolates the source repo token from production', () => {
+  const source = read('deploy-admin-current-session-code-only.yml');
+  assert.deepEqual([...source.split('\njobs:')[0].matchAll(/^  ([\w_]+):/gm)]
+    .map(([, key]) => key), ['workflow_dispatch', 'contents', 'actions', 'group']);
+  const parsed = new Map(jobs(source).map(job => [job.id, job.body]));
+  const fetch = parsed.get('fetch-3210-artifact');
+  const release = parsed.get('release');
+  assert.ok(parsed.get('production-approval').includes(condition));
+  assert.ok(fetch.includes(condition) && release.includes(condition));
+  assert.match(fetch, /needs: \[production-approval\]/);
+  assert.match(fetch, /environment: admin-3210-artifact-read/);
+  assert.match(fetch, /repository: MMD-Prive\/demo-repository/);
+  assert.match(fetch, /github-token: \$\{\{ secrets.ADMIN_3210_ARTIFACT_READ_TOKEN \}\}/);
+  assert.doesNotMatch(fetch, /CLOUDFLARE_API_TOKEN|--execute-approved/);
+  assert.match(release, /needs: \[production-approval, fetch-3210-artifact\]/);
+  assert.match(release, /environment: mmd-production-mutation/);
+  assert.match(release, /needs\.fetch-3210-artifact\.result == 'success'/);
+  assert.doesNotMatch(release, /ADMIN_3210_ARTIFACT_READ_TOKEN/);
+});
