@@ -371,6 +371,7 @@ export async function releaseCurrentSession(io, artifactPins = { baseline: EXPEC
     await unchanged(deployment, active); // inherit resolves LATEST, not necessarily active.
     state.baseline_version = active;
     state.baseline_deployment = deployment.id;
+    if (candidate) state.rollback_version = active;
     failureStage = 'local_bundle';
     const code = candidate?.code ?? await io.bundle(version, io.sha);
     assert.ok(code instanceof Uint8Array && code.byteLength > 0, 'compiled module required');

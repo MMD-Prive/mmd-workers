@@ -2,8 +2,16 @@ import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
-export const EXPECTED=Object.freeze({version:'f94ebccc-e8a0-4f3d-8c9b-3bf9e6cd39db',deployment:'8a419777-9b54-4fe3-ad82-fd48661706b6',js:'b67c9fdc16604215f59e12b2b504e6d8fe103397240808d129f230be52bba42f',map:'f9acc097f21769ff37bf697c4b6e28425108524142f0cf52d664f5ec99166e94'});
-export const CANDIDATE = Object.freeze({js:'9ce16a84793622f06a2beed56d1165ec87d8329f148eddeee0524afca56085f8',map:'293d6271bb6b2d59ab151132ac4f2b184bda1d2fbee82b8513d31718126f7088'});
+export const EXPECTED = Object.freeze({
+  version: '98614455-f94e-4b35-90c1-c01474af6912',
+  deployment: '108e0ed0-c103-49ed-a58d-e5eed475149d',
+  js: 'b37cbdac91214cc2a6bf3ad80efe94038e46fe9b3a60108ea2563eb36acd8b1a',
+  map: 'd4103e813cd5b0ae7cbd33bfd401e3a8e4421d4de449090870a084ccf7f9fc84',
+});
+export const CANDIDATE = Object.freeze({
+  js: '42598aa308b5256c4ef619b370cd6e703c4ae5de8360198b3c278c76fa37acd7',
+  map: 'd7c688f2edc7f158957ab25e955d0d4ec346dac2df7e24d7a2ccd1c9878e2d96',
+});
 export const hash=b=>createHash('sha256').update(b).digest('hex');
 
 export async function readVersionDigests(get, accountId, versionId) {

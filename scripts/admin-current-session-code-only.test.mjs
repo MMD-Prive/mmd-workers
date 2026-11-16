@@ -598,6 +598,8 @@ for (const mode of ['match', 'missing JS', 'missing map', 'wrong JS hash', 'wron
     if (mode === 'match') {
       const result = await releaseCurrentSession(f.io, pins);
       assert.equal(result.phase, 'uploaded-verified-not-promoted');
+      assert.equal(result.rollback_version, version);
+      assert.equal(f.receipts.at(-1).rollback_version, version);
       assert.deepEqual(result.upload_readback_digests, pins.candidate);
     } else {
       await assert.rejects(releaseCurrentSession(f.io, pins),
