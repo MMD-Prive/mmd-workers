@@ -7,6 +7,7 @@ const modules = [
   ["CEO · ภาพรวมและจุดตัดสินใจ", "ดูภาพรวม เปิด PER · AI OPS และ FLUSH จากงานเดิม", "/internal/ceo", "ceo owner per ภาพรวม ตัดสินใจ"],
   ["ลูกค้าและ MMD Memory", "ค้นตัวตน ชื่อที่เปอร์เรียก และประวัติที่มีหลักฐาน", "/internal/admin/member-intelligence", "ลูกค้า memory client customer LINE Per Rename"],
   ["งานทั้งหมด", "เลือกงานเดิมเพื่อตรวจรายละเอียดและขั้นตอนที่ค้าง", "/internal/admin/jobs/all", "งาน job session คอนเฟิร์ม confirmation"],
+  ["Job Board · บอร์ดงาน", "เปิดบอร์ดงานและดูรายการประกาศ", "/internal/admin/jobs/job-board", "job board บอร์ดงาน ประกาศงาน"],
   ["สร้างงานใหม่", "เลือก Client และ Model ก่อนสร้างงาน", "/internal/admin/jobs/create-job", "สร้าง create booking จอง"],
   ["กล่องสลิป", "ตรวจหลักฐานและการจับคู่กับลูกค้าและงาน", "/internal/ceo/payment-slip-inbox", "สลิป slip inbox evidence"],
   ["ตรวจรับเงิน", "เปิดรายการเพื่อตรวจเงินและสถานะคอนเฟิร์ม", "/internal/admin/payments", "เงิน payment verify คอนเฟิร์ม confirmation"],

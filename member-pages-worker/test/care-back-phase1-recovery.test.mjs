@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { test, beforeEach } from "node:test";
 
 import {
   approveCareBackPhase1RecoveryDiscount,
@@ -7,6 +7,9 @@ import {
   memberAppRecoveryCoupons,
   readCareBackPhase1Recovery,
 } from "../src/care-back-phase1-recovery.js";
+
+// Fix the fixture clock; production expiry continues to use the real clock.
+beforeEach(t => t.mock.method(Date, "now", () => Date.parse("2026-10-01T00:00:00Z")));
 
 const LINE_ID = `U${"a".repeat(32)}`;
 const RECOVERY_ID = "CB6-P1-TEST";
@@ -124,4 +127,14 @@ test("used recovery coupon cannot be approved again", async () => {
     }),
     (error) => error?.code === "CARE_BACK_RECOVERY_USED",
   );
+});
+
+test("recovery expires at the exact fixture expiry boundary", async (t) => {
+  t.mock.method(Date, "now", () => Date.parse("2026-11-16T00:00:00Z"));
+  const setup = env();
+  assert.equal((await readCareBackPhase1Recovery(setup.env, LINE_ID)).customer_state, "expired");
+  await assert.rejects(approveCareBackPhase1RecoveryDiscount(setup.env, {
+    lineUserId: LINE_ID, modelLevel: "Standard Models", jobFormat: "VIP",
+  }), error => error?.code === "CARE_BACK_RECOVERY_EXPIRED");
+  assert.ok(setup.calls.every(call => call.method === "GET"));
 });

@@ -36,7 +36,8 @@ test("My MMD CARE readback returns the verified linked Wish text from backend st
   } finally { globalThis.fetch = originalFetch; }
 });
 
-test("Coupons read repairs a stale CARE BACK claim from verified session + completed linked Wish", async () => {
+test("Coupons read repairs a stale CARE BACK claim from verified session + completed linked Wish", async (t) => {
+  t.mock.method(Date, "now", () => Date.parse("2026-10-01T00:00:00Z"));
   const key = await sessionKey();
   const expectedHash = await MEMBER_APP_WISH_READBACK_INTERNALS.hmacHex(SECRET, `wish-customer:${IDENTITY}`);
   const repairs = [];
