@@ -1,0 +1,11 @@
+{
+  "name": "mmd-co-model-staging-review",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test bundle.test.mjs",
+    "preflight": "node preflight.mjs"
+  },
+  "devDependencies": {"esbuild": "0.25.12"}
+}
