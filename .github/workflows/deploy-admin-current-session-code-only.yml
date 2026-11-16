@@ -16,6 +16,10 @@ on:
         description: 'Full main SHA approved for release'
         type: string
         required: true
+      artifact_3210_run_id:
+        description: 'Optional demo-repository run ID for #3210 upload and verification only'
+        type: string
+        required: false
       expected_version:
         description: 'Active admin-worker version UUID from fresh approved preflight'
         type: string
@@ -53,9 +57,45 @@ jobs:
           APPROVED_SHA: ${{ inputs.approved_sha }}
         run: node scripts/admin-production-approval.mjs
 
-  release:
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha
+  fetch-3210-artifact:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha && inputs.artifact_3210_run_id != ''
     needs: [production-approval]
+    environment: admin-3210-artifact-read
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require a run ID and the scoped artifact reader
+        env:
+          ARTIFACT_RUN_ID: ${{ inputs.artifact_3210_run_id }}
+          ARTIFACT_TOKEN: ${{ secrets.ADMIN_3210_ARTIFACT_READ_TOKEN }}
+        run: |
+          [[ "$ARTIFACT_RUN_ID" =~ ^[0-9]+$ && -n "$ARTIFACT_TOKEN" ]]
+      - name: Download the approved bundle from the private source repo
+        uses: actions/download-artifact@v4
+        with:
+          repository: MMD-Prive/demo-repository
+          run-id: ${{ inputs.artifact_3210_run_id }}
+          name: admin-3210
+          github-token: ${{ secrets.ADMIN_3210_ARTIFACT_READ_TOKEN }}
+          path: ${{ runner.temp }}/admin-3210
+      - name: Pass only the two expected files to the release job
+        uses: actions/upload-artifact@v4
+        with:
+          name: admin-3210-release-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/admin-3210/admin-login-hero-worker.js
+            ${{ runner.temp }}/admin-3210/admin-login-hero-worker.js.map
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    if: >-
+      !cancelled() &&
+      github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha &&
+      needs.production-approval.result == 'success' &&
+      ((inputs.artifact_3210_run_id == '' && needs.fetch-3210-artifact.result == 'skipped') ||
+       (inputs.artifact_3210_run_id != '' && needs.fetch-3210-artifact.result == 'success'))
+    needs: [production-approval, fetch-3210-artifact]
     environment: mmd-production-mutation
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -72,10 +112,18 @@ jobs:
         run: |
           node --test scripts/admin-production-approval.test.mjs scripts/admin-current-session-code-only.test.mjs
           node --experimental-global-webcrypto --test admin-worker/model-current-session.test.mjs admin-worker/model-session-runtime-v1a.test.mjs
+      - name: Download approved #3210 bundle
+        if: inputs.artifact_3210_run_id != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: admin-3210-release-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/admin-3210
       - name: Install pinned local bundler
+        if: inputs.artifact_3210_run_id == ''
         run: npm install --global wrangler@4.105.0 --no-audit --no-fund
       - name: Release exact code; preserve configuration; no retry or migration fallback
         env:
+          ARTIFACT_3210_DIRECTORY: ${{ inputs.artifact_3210_run_id != '' && format('{0}/admin-3210', runner.temp) || '' }}
           GH_TOKEN: ${{ github.token }}
           PRODUCTION_APPROVED: ${{ inputs.production_approved }}
           APPROVAL_REF: ${{ inputs.approval_ref }}

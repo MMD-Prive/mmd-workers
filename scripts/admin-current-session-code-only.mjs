@@ -1,5 +1,6 @@
 // Scoped release transport. Importing this module never contacts production.
 import assert from 'node:assert/strict';
+import { CANDIDATE, EXPECTED, DELTA_SHA, ENTRY, load3210Artifacts, readVersionDigests } from './admin-3210-artifact-adapter.mjs';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
@@ -286,6 +287,7 @@ export function createTransport(token, request = fetch) {
   return async (path, { method = 'GET', body } = {}) => {
     const read = method === 'GET' && (
       new RegExp(`^${ROOT}/(deployments(?:/[a-f0-9-]{36})?|versions(?:/[a-f0-9-]{36})?|script-settings|schedules|subdomain)$`, 'i').test(path)
+      || new RegExp(`^/accounts/${ACCOUNT}/workers/workers/admin-worker/versions/[a-f0-9-]{36}\\?include=modules,sourcemaps$`, 'i').test(path)
       || path === `/zones/${ZONE}/workers/routes`);
     const write = method === 'POST' && [ROOT + '/versions?bindings_inherit=strict', ROOT + '/deployments'].includes(path);
     assert.ok(read || write, 'endpoint/method outside code-only scope');
@@ -303,7 +305,7 @@ export function createTransport(token, request = fetch) {
   };
 }
 
-export async function releaseCurrentSession(io) {
+export async function releaseCurrentSession(io, artifactPins = { baseline: EXPECTED, candidate: CANDIDATE }) {
   const root = io.root ?? ROOT;
   assert.ok([ROOT, `/accounts/${ACCOUNT}/workers/scripts/immigrate-worker`, `/accounts/${ACCOUNT}/workers/scripts/member-dashboard-chat-worker`].includes(root), 'unapproved release Worker');
   const state = { phase: 'preflight', worker: root.split('/').at(-1), source_sha: io.sha };
@@ -321,10 +323,30 @@ export async function releaseCurrentSession(io) {
     const version = await call('/versions/' + active);
     assert.equal(version.id, active, 'baseline version mismatch');
     const config = versionConfiguration(version);
+    const candidate = io.artifact3210Directory
+      ? load3210Artifacts(io.artifact3210Directory, artifactPins.candidate)
+      : null;
+    const readDigests = id => readVersionDigests(async path => ({
+      success: true, result: await io.call(path + '?include=modules,sourcemaps'),
+    }), ACCOUNT, id);
+    if (candidate) {
+      assert.equal(root, ROOT);
+      const { version: baselineVersion, deployment: baselineDeployment, js, map } = artifactPins.baseline;
+      assert.equal(active, baselineVersion, 'artifact baseline version mismatch');
+      assert.equal(deployment.id, baselineDeployment, 'artifact baseline deployment mismatch');
+      assert.deepEqual(await readDigests(active), { js, map }, 'baseline artifact SHA256 mismatch');
+    }
     const metadata = (io.metadataFactory ?? uploadMetadata)(version, io.sha);
     // A stale build variable or temporal proximity is not source provenance.
     failureStage = 'source_validation';
-    state.source_evidence = await io.sourceCheck(version, deployment);
+    state.source_evidence = candidate
+      ? { commit_sha: DELTA_SHA, workflow_commit_sha: io.sha, dirty_tree: false,
+        method: 'verified-3210-artifact-delta' }
+      : await io.sourceCheck(version, deployment);
+    if (candidate) {
+      metadata.main_module = ENTRY;
+      metadata.annotations = {'workers/message': 'Verified #3210 artifact delta on ' + active};
+    }
     state.source_evidence.checked_at = io.now();
     failureStage = 'baseline_configuration';
     const settings = await call('/script-settings');
@@ -350,10 +372,12 @@ export async function releaseCurrentSession(io) {
     state.baseline_version = active;
     state.baseline_deployment = deployment.id;
     failureStage = 'local_bundle';
-    const code = await io.bundle(version, io.sha);
+    const code = candidate?.code ?? await io.bundle(version, io.sha);
     assert.ok(code instanceof Uint8Array && code.byteLength > 0, 'compiled module required');
     failureStage = 'build_evidence';
-    state.build_evidence = { ...await io.buildEvidence(code, io.sha), recorded_at: io.now() };
+    state.build_evidence = { ...(candidate ? {release_id: io.releaseId, artifact: {
+      digest: {algorithm: 'sha256', value: artifactPins.candidate.js }, source_map_sha256: artifactPins.candidate.map,
+    }} : await io.buildEvidence(code, io.sha)), recorded_at: io.now() };
     assert.ok(state.build_evidence?.artifact?.digest?.algorithm === 'sha256'
       && state.build_evidence.artifact.digest.value === sha256(code), 'artifact digest does not match uploaded module');
     validateShellAssetPin(state.build_evidence, io.sha);
@@ -364,7 +388,9 @@ export async function releaseCurrentSession(io) {
     await unchanged(deployment, active);
     const form = new FormData();
     form.set('metadata', JSON.stringify(metadata));
-    form.set('worker.js', new Blob([code], { type: 'application/javascript+module' }), 'worker.js');
+    const entry = candidate ? ENTRY : 'worker.js';
+    form.set(entry, new Blob([code], { type: 'application/javascript+module' }), entry);
+    if (candidate) form.set(entry + '.map', new Blob([candidate.map], {type: 'application/source-map'}), entry + '.map');
     failureStage = 'upload';
     save('upload-attempted-outcome-unknown');
     const uploaded = await call('/versions?bindings_inherit=strict', { method: 'POST', body: form });
@@ -378,10 +404,21 @@ export async function releaseCurrentSession(io) {
     const exact = await call('/versions/' + uploaded.id);
     assert.equal(exact.id, uploaded.id, 'uploaded version mismatch');
     same(versionConfiguration(exact), config, 'uploaded configuration mismatch');
-    assert.equal(exact.annotations?.['workers/commit_sha'], io.sha, 'source annotation mismatch');
+    if (candidate) {
+      const digests = await readDigests(uploaded.id);
+      assert.deepEqual(digests, artifactPins.candidate, 'uploaded artifact SHA256 mismatch');
+      state.upload_readback_digests = digests;
+    } else {
+      assert.equal(exact.annotations?.['workers/commit_sha'], io.sha, 'source annotation mismatch');
+    }
     const versions = (await call('/versions'))?.items;
     assert.equal(versions?.[0]?.id, uploaded.id, 'uploaded latest mismatch');
     assert.equal(versions?.[1]?.id, active, 'upload predecessor mismatch');
+    if (candidate) {
+      await unchanged(deployment, uploaded.id);
+      save('uploaded-verified-not-promoted');
+      return state;
+    }
     failureStage = 'pre_promotion_approval_and_drift';
     await io.approve();
     await unchanged(deployment, uploaded.id);
@@ -486,10 +523,12 @@ async function main() {
     sourceState = validateSourceState({ expectedSha: sha,
       headSha: git('rev-parse', 'HEAD'), dirtyStatus: git('status', '--porcelain=v1', '--untracked-files=all') });
     git('merge-base', '--is-ancestor', '5dd40718129f3902e16be6c93dbaea509eb15fd1', sha);
+    if (process.env.ARTIFACT_3210_DIRECTORY) git('merge-base', '--is-ancestor', DELTA_SHA, sha);
   };
   const dir = mkdtempSync(join(tmpdir(), 'mmd-current-session-code-only-'));
   const journal = resolve(process.env.RUNNER_TEMP || dir, 'current-session-code-only-receipt.json');
-  await releaseCurrentSession({ sha, approve,
+  const result = await releaseCurrentSession({ sha, approve,
+    artifact3210Directory: process.env.ARTIFACT_3210_DIRECTORY,
     expectedVersion: process.env.EXPECTED_VERSION,
     expectedDeployment: process.env.EXPECTED_DEPLOYMENT,
     releaseId,
@@ -502,7 +541,9 @@ async function main() {
     save: state => writeFileSync(journal, JSON.stringify(state, null, 2), { mode: 0o600 }),
     bundle: async (baseline, sourceSha) => buildCurrentSessionBundle(baseline, dir, sourceSha),
   });
-  console.log('Code-only deployment readback complete; no business-write smoke was performed.');
+  console.log(result.phase === 'uploaded-verified-not-promoted'
+    ? 'Artifact upload and checksum readback complete. Traffic remains on the baseline.'
+    : 'Code-only deployment readback complete; no business-write smoke was performed.');
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

@@ -237,12 +237,13 @@ test('workflow is manual, exact-SHA, independently protected, and not the broad 
   assert.doesNotMatch(source, /^  (push|pull_request|schedule|workflow_run):/m);
   assert.match(source, /default: false/);
   assert.match(source, /actions: read/);
-  assert.equal((source.match(/inputs.approved_sha == github.sha/g) || []).length, 2);
-  assert.match(source, /needs: \[production-approval\]\n    environment: mmd-production-mutation/);
+  assert.equal((source.match(/inputs.approved_sha == github.sha/g) || []).length, 3);
+  assert.match(source, /needs: \[production-approval, fetch-3210-artifact\]\n    environment: mmd-production-mutation/);
   assert.match(source, /EXPECTED_VERSION: \$\{\{ inputs.expected_version \}\}/);
   assert.match(source, /EXPECTED_DEPLOYMENT: \$\{\{ inputs.expected_deployment \}\}/);
   assert.doesNotMatch(source, /ensure-private|ensure-payment|ensure.*routes|wrangler deploy|wrangler secret|secrets: inherit|--var|--keep-vars/);
-  assert.equal((source.match(/secrets\./g) || []).length, 1);
+  assert.deepEqual([...new Set([...source.matchAll(/secrets\.(\w+)/g)].map(([, name]) => name))],
+    ['ADMIN_3210_ARTIFACT_READ_TOKEN', 'CLOUDFLARE_API_TOKEN']);
   assert.match(source, /node scripts\/admin-current-session-code-only.mjs --execute-approved/);
   assert.match(source, /current-session-code-only-receipt-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}/);
   assert.match(source, /retention-days: 90/);
@@ -543,3 +544,73 @@ test('safe reason codes retain upload outcome unknown without retry', async () =
   assert.equal(f.receipts.at(-1).failure_stage,'upload');
   assert.equal(f.receipts.at(-1).reason_code,'RELEASE_STAGE_FAILED'); assert.equal(f.writes().length,1);
 });
+
+for (const mode of ['match', 'missing JS', 'missing map', 'wrong JS hash', 'wrong map hash', 'drift', 'wrong local map']) {
+  test('#3210 artifact release: ' + mode, async t => {
+    const { ACCOUNT } = await import('./admin-current-session-code-only.mjs');
+    const { ENTRY, hash } = await import('./admin-3210-artifact-adapter.mjs');
+    const directory = mkdtempSync(join(tmpdir(), 'admin-3210-test-'));
+    t.after(() => rmSync(directory, { recursive: true, force: true }));
+    const names = [ENTRY, ENTRY + '.map'];
+    const baseline = [Buffer.from('baseline code'), Buffer.from('baseline map')];
+    const candidate = [Buffer.from('candidate code'), Buffer.from('candidate map')];
+    const [version, deployment] = [id(2), id(1)];
+    const pins = {
+      baseline: { version, deployment, js: hash(baseline[0]), map: hash(baseline[1]) },
+      candidate: { js: hash(candidate[0]), map: hash(candidate[1]) },
+    };
+    for (const [index, name] of names.entries()) {
+      writeFileSync(join(directory, name), mode === 'wrong local map' && index === 1
+        ? Buffer.from('wrong map') : candidate[index]);
+    }
+    const f = fixture({ baselineVersion: version, baselineDeployment: deployment,
+      alter: (result, { path, uploaded }) => {
+        if (mode === 'drift' && uploaded && path === ROOT + '/deployments') {
+          result.deployments[0].id = id(5);
+        }
+        return result;
+      },
+    });
+    const call = f.io.call;
+    const versionPath = id => `/accounts/${ACCOUNT}/workers/workers/admin-worker/versions/${id}?include=modules,sourcemaps`;
+    const modules = bytes => names.map((name, index) => ({
+      name,
+      content_type: index === 1 ? 'application/source-map' : 'application/javascript+module',
+      content_base64: bytes[index].toString('base64'),
+    }));
+    f.io.artifact3210Directory = directory;
+    f.io.releaseId = '1001.1';
+    f.io.bundle = () => assert.fail('must use locked artifacts');
+    f.io.sourceCheck = () => assert.fail('must use exact baseline digests');
+    f.io.call = async (path, init) => {
+      if (path === versionPath(version)) return { id: version, modules: modules(baseline) };
+      if (path === versionPath(id(3))) {
+        const readback = modules(candidate);
+        const index = mode.endsWith('map') ? 1 : 0;
+        if (mode.startsWith('missing')) readback.splice(index, 1);
+        if (mode === 'wrong JS hash' || mode === 'wrong map hash') {
+          readback[mode.includes('map') ? 1 : 0].content_base64 = 'eA==';
+        }
+        return { id: id(3), modules: readback };
+      }
+      return call(path, init);
+    };
+    if (mode === 'match') {
+      const result = await releaseCurrentSession(f.io, pins);
+      assert.equal(result.phase, 'uploaded-verified-not-promoted');
+      assert.deepEqual(result.upload_readback_digests, pins.candidate);
+    } else {
+      await assert.rejects(releaseCurrentSession(f.io, pins),
+        /incomplete or unexpected readback modules|uploaded artifact SHA256 mismatch|active deployment drift|candidate #3210 hash mismatch/);
+      assert.equal(f.receipts.at(-1).phase, 'stopped');
+    }
+    assert.deepEqual(f.writes().map(x => x.path),
+      mode === 'wrong local map' ? [] : [ROOT + '/versions?bindings_inherit=strict']);
+    if (mode === 'wrong local map') return;
+    const body = f.writes()[0].body;
+    assert.equal(JSON.parse(body.get('metadata')).main_module, ENTRY);
+    for (const [index, name] of names.entries()) {
+      assert.deepEqual(Buffer.from(await body.get(name).arrayBuffer()), candidate[index]);
+    }
+  });
+}
