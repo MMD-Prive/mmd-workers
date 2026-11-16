@@ -71,7 +71,8 @@ test("Coupons read repairs a stale CARE BACK claim from verified session + compl
         code:"ABC234",
         approved_discount_percent:null,
         activated_at:"2026-09-15T18:30:00.000Z",
-        expires_at:"2026-11-15T18:30:00.000Z",
+        // This fixture exercises an active coupon at the time the test runs.
+        expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
         single_use:true,
       } });
     },
