@@ -40,7 +40,7 @@ try {
       await page.waitForTimeout(300);
 
       if (route === "/sigil/model/dashboard" && lang === "en") {
-        const en = page.locator('[data-mm-lv-lang="en"]');
+        const en = page.locator('button[data-mm-lv-lang="en"]');
         if (await en.count()) {
           await en.click();
           await page.waitForTimeout(150);
