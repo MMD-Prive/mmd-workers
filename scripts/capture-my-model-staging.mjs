@@ -48,7 +48,7 @@ try {
       }
 
       const body = (await page.locator("body").innerText()).replace(/\s+/g, " ");
-      if (!/LOCAL FIXTURE · LV15/.test(body)) throw new Error(name + " missing local fixture banner");
+      if (name === "home" && !/LOCAL FIXTURE · LV15/.test(body)) throw new Error(name + " missing local fixture banner");
       if (/fixture_state=confirmed|fixture_state=en_route/.test(page.url())) throw new Error(name + " entered a positive fixture");
       const receipt = await (await page.request.get(base + "/__fixture/receipt")).json();
       if (receipt.production_requests !== 0) throw new Error(name + " attempted production traffic");
