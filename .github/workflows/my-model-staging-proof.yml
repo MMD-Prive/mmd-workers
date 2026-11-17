@@ -1,0 +1,60 @@
+name: MY MODEL source-backed staging proof
+
+on:
+  push:
+    branches:
+      - staging/my-model-proof-20261117
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install repository dependencies
+        run: npm ci --ignore-scripts
+      - name: Install isolated browser runtime
+        run: |
+          npm ci --prefix tools/browser
+          cd tools/browser
+          npx playwright install --with-deps chromium
+      - name: Verify MY MODEL presentation contracts
+        run: |
+          node --test             webflow/sigil/model/my-model-lovable-vnext-skin-20261017.test.mjs             webflow/sigil/model/model-lv15-presentation.test.mjs             model-dashboard-presentation-worker/index.test.mjs
+      - name: Start isolated no-credential preview
+        run: |
+          node scripts/preview-model-lv15.mjs > /tmp/my-model-preview.log 2>&1 &
+          echo $! > /tmp/my-model-preview.pid
+          for attempt in $(seq 1 60); do
+            if curl --silent --fail "http://127.0.0.1:4203/sigil/model/dashboard?fixture_state=auth" > /dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/my-model-preview.log
+          exit 1
+      - name: Capture 390px TH + EN auth-required proof
+        run: |
+          node scripts/capture-my-model-staging.mjs http://127.0.0.1:4203 artifacts/my-model-staging
+          cp /tmp/my-model-preview.log artifacts/my-model-staging/preview-runtime.log
+      - name: Stop preview
+        if: always()
+        run: |
+          if [ -f /tmp/my-model-preview.pid ]; then
+            kill "$(cat /tmp/my-model-preview.pid)" 2>/dev/null || true
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: my-model-staging-proof-${{ github.run_number }}
+          path: artifacts/my-model-staging/**
+          if-no-files-found: warn
+          retention-days: 7
