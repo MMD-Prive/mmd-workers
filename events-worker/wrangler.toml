@@ -27,7 +27,7 @@ MODEL_LIFF_PUBLISHED_ID = "2010864854-N34SgCqq"
 
 # Owner-approved New Card 2026 source. One model rotates daily; campaign copy
 # or art is sent only while its approved manifest entry remains current.
-HYPE_COMPCARD_ENABLED = "true"
+HYPE_COMPCARD_ENABLED = "false"
 HYPE_COMPCARD_SEND_AT_ICT = "16:30"
 HYPE_PROMOTION_ENABLED = "true"
 HYPE_PROMOTION_SEND_AT_ICT = "10:00"
