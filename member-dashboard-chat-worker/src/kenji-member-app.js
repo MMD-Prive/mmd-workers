@@ -1,4 +1,9 @@
 import {personalMain} from "../../shared/personal-main-catalog.mjs";
+import {
+  KENJI_PUBLIC_ALLOWED_CAPABILITIES,
+  classifyKenjiPublicCapability,
+  isGeneralKenjiIntent,
+} from "./kenji-public-capability-policy.js";
 import {renderKenjiNextLvPage} from "./kenji-next-lv-page.js";
 const PAGE_PATHS = new Set(["/member/kenji", "/member/kenji/"]);
 const CHAT_PATHS = new Set(["/api/member/kenji/chat", "/api/member/kenji/chat/"]);
@@ -36,6 +41,7 @@ function json(payload, status = 200) {
       "cache-control": "no-store",
       "content-type": "application/json; charset=utf-8",
       "x-mmd-kenji": "member-chat-v1",
+      "x-mmd-kenji-policy": "public-general-promotions-v1",
     },
   });
 }
@@ -88,7 +94,7 @@ function evidenceSources(truth) {
   };
 }
 
-function contextBundle(truth, message) {
+function contextBundle(truth, message, capability) {
   const displayName = text(truth?.display_name, 100);
   return {
     evaluated_at: new Date().toISOString(),
@@ -107,11 +113,17 @@ function contextBundle(truth, message) {
       entitlement_snapshot: truth?.resolver_snapshot || {},
       evidence_sources: evidenceSources(truth),
     },
+    capability_policy: {
+      schema_version: "mmd.kenji_public_capabilities.v1",
+      requested: capability,
+      allowed: [...KENJI_PUBLIC_ALLOWED_CAPABILITIES],
+      server_enforced: true,
+    },
     current_message: message,
   };
 }
 
-async function askAiWorker(truth, message, env) {
+async function askAiWorker(truth, message, capability, env) {
   if (!env.AI_WORKER?.fetch) return { ok: false, status: 503, reason: "ai_worker_binding_missing" };
   let response;
   try {
@@ -122,12 +134,15 @@ async function askAiWorker(truth, message, env) {
         "x-mmd-internal-call": "true",
         "x-mmd-service-binding": "member-dashboard-chat-worker",
         "x-service-name": "member-dashboard-chat-worker",
+        "x-mmd-kenji-capability": capability,
       },
       body: JSON.stringify({
         actor: { role: "system" },
         message,
         member_truth: truth,
-        context_bundle: contextBundle(truth, message),
+        allowed_capabilities: [...KENJI_PUBLIC_ALLOWED_CAPABILITIES],
+        requested_capability: capability,
+        context_bundle: contextBundle(truth, message, capability),
       }),
     }));
   } catch {
@@ -140,12 +155,35 @@ async function askAiWorker(truth, message, env) {
   return { ok: true, data: payload.data };
 }
 
+function capabilityError(classification) {
+  return json({
+    ok: false,
+    error: "capability_not_allowed",
+    capability: classification.capability,
+    reason: classification.reason,
+    allowed_capabilities: [...KENJI_PUBLIC_ALLOWED_CAPABILITIES],
+  }, 403);
+}
+
+function promotionContractUnavailable() {
+  return json({
+    ok: false,
+    error: "published_promotion_contract_unavailable",
+    capability: "published_promotions",
+    allowed_capabilities: [...KENJI_PUBLIC_ALLOWED_CAPABILITIES],
+    source_route: "/my-mmd/coupons",
+    retryable: false,
+  }, 423);
+}
+
 export async function handleKenjiMemberChat(request, env = {}) {
   if (!sameOriginAllowed(request)) return json({ ok: false, error: "origin_not_allowed" }, 403);
   const body = await request.json().catch(() => null);
   const message = text(body?.message, MAX_MESSAGE);
   if (!message) return json({ ok: false, error: "message_required" }, 400);
 
+  // Preserve the canonical session boundary. Capability details are returned
+  // only after the member session has been resolved successfully.
   const truth = await readMemberTruth(request, env);
   if (!truth.ok) {
     return json({
@@ -155,16 +193,33 @@ export async function handleKenjiMemberChat(request, env = {}) {
     }, truth.status);
   }
 
-  const result = await askAiWorker(truth.payload, message, env);
+  const classification = classifyKenjiPublicCapability(message);
+  if (!classification.allowed) return capabilityError(classification);
+  if (classification.capability === "published_promotions") return promotionContractUnavailable();
+
+  const result = await askAiWorker(truth.payload, message, classification.capability, env);
   if (!result.ok) return json({ ok: false, error: result.reason }, result.status);
+  if (!isGeneralKenjiIntent(result.data.intent)) {
+    return json({
+      ok: false,
+      error: "ai_worker_capability_mismatch",
+      expected_intent: "general",
+      received_intent: text(result.data.intent, 80) || null,
+      allowed_capabilities: [...KENJI_PUBLIC_ALLOWED_CAPABILITIES],
+    }, 503);
+  }
 
   const selected = truth.payload.personal_main?.source === "member-pages-worker" ? personalMain(truth.payload.personal_main.id) : null;
   return json({
     ok: true,
     personal_main: selected ? {id:selected.id,name:selected.name} : null,
     reply: (selected ? selected.greeting + "\n" : "") + text(result.data.reply, 1200),
-    action: result.data.action || null,
-    intent: text(result.data.intent, 80),
+    // General Q&A cannot surface a Worker-selected action into a restricted
+    // lane. Published promotions remain an explicit Coupons handoff above.
+    action: null,
+    intent: "general",
+    capability: "general_qna",
+    allowed_capabilities: [...KENJI_PUBLIC_ALLOWED_CAPABILITIES],
     review_required: result.data?.safety?.review_required === true,
     member: {
       display_name: text(truth.payload.display_name, 100) || null,
