@@ -2,6 +2,39 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { handleKenjiMemberChat, renderKenjiMemberPage } from "../src/kenji-member-app.js";
 
+function memberTruth(overrides = {}) {
+  return {
+    ok: true,
+    authority: "my_mmd_entitlement_resolver_v1",
+    identity_status: "resolved",
+    display_name: "Per Test",
+    membership: { level: "public", label: "Member", lifecycle: "active", expire_at: "2027-09-28T00:00:00Z" },
+    points: { status: "verified", active_points: 12 },
+    resolver_snapshot: {
+      schema_version: "my_mmd_entitlement_resolver_v1",
+      evaluated_at: "2026-09-28T13:00:00Z",
+      fail_closed: true,
+      member_blocked: false,
+      capability_state: { active: ["public"], expiring_soon: [], grace: [], inactive: [], recognized: ["public"] },
+      access: { public_service_access: true, guest_pass_access: false, red_card_request_lane: false, private_visibility_envelope: "none", protected_allowlist_required: false, protected_capabilities_active: [], new_model_reveals_allowed: false },
+    },
+    ...overrides,
+  };
+}
+
+function request(message, headers = {}) {
+  return new Request("https://mmdbkk.com/api/member/kenji/chat", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      origin: "https://mmdbkk.com",
+      cookie: "__Host-mmd_liff_session=test",
+      ...headers,
+    },
+    body: JSON.stringify({ message }),
+  });
+}
+
 test("KENJI page is a compact chat app and not the old AI 2.0 landing dialogue", async () => {
   const response = renderKenjiMemberPage();
   const html = await response.text();
@@ -12,40 +45,30 @@ test("KENJI page is a compact chat app and not the old AI 2.0 landing dialogue",
   assert.doesNotMatch(html, /KENJI AI 2\.0|YOUR NEXT STEP, QUIETLY HANDLED/);
 });
 
-test("member chat BFF resolves verified session truth before calling AI_WORKER", async () => {
+test("general Q&A resolves verified session truth before calling AI_WORKER", async () => {
   const calls = [];
   const env = {
     MEMBER_PAGES_WORKER: {
       async fetch(request) {
         calls.push({ kind: "truth", url: request.url, cookie: request.headers.get("cookie") });
-        return Response.json({
-          ok: true,
-          authority: "my_mmd_entitlement_resolver_v1",
-          identity_status: "resolved",
-          display_name: "Per Test",
-          membership: { level: "private_premium", label: "Premium", lifecycle: "active", expire_at: "2027-09-28T00:00:00Z" },
-          points: { status: "verified", active_points: 12 },
-          resolver_snapshot: {
-            schema_version: "my_mmd_entitlement_resolver_v1",
-            evaluated_at: "2026-09-28T13:00:00Z",
-            fail_closed: true,
-            member_blocked: false,
-            capability_state: { active: ["private_premium"], expiring_soon: [], grace: [], inactive: [], recognized: ["private_premium"] },
-            access: { public_service_access: true, guest_pass_access: false, red_card_request_lane: false, private_visibility_envelope: "premium", protected_allowlist_required: false, protected_capabilities_active: [], new_model_reveals_allowed: true },
-          },
-        });
+        return Response.json(memberTruth());
       },
     },
     AI_WORKER: {
       async fetch(request) {
         const body = await request.json();
-        calls.push({ kind: "ai", url: request.url, body });
+        calls.push({
+          kind: "ai",
+          url: request.url,
+          capability: request.headers.get("x-mmd-kenji-capability"),
+          body,
+        });
         return Response.json({
           ok: true,
           data: {
             schema_version: "mmd.kenji_member_chat.v1",
-            reply: "Per Test · Points ที่ระบบยืนยันตอนนี้ 12 แต้มครับ",
-            intent: "points_status",
+            reply: "MMD เป็นบริการสมาชิกที่ผมช่วยอธิบายข้อมูลทั่วไปได้ครับ",
+            intent: "general",
             action: { label: "เปิด Points", url: "/my-mmd/points" },
             safety: { review_required: false },
           },
@@ -53,22 +76,100 @@ test("member chat BFF resolves verified session truth before calling AI_WORKER",
       },
     },
   };
-  const request = new Request("https://mmdbkk.com/api/member/kenji/chat", {
-    method: "POST",
-    headers: { "content-type": "application/json", origin: "https://mmdbkk.com", cookie: "__Host-mmd_liff_session=test" },
-    body: JSON.stringify({ message: "เช็ก Points" }),
-  });
-  const response = await handleKenjiMemberChat(request, env);
+  const response = await handleKenjiMemberChat(request("MMD คืออะไร"), env);
   const payload = await response.json();
   assert.equal(response.status, 200);
   assert.equal(payload.ok, true);
   assert.equal(payload.authority, "ai-worker");
-  assert.match(payload.reply, /12/);
+  assert.equal(payload.intent, "general");
+  assert.equal(payload.capability, "general_qna");
+  assert.equal(payload.action, null, "a general answer cannot surface a restricted Worker-selected action");
+  assert.deepEqual(payload.allowed_capabilities, ["general_qna", "published_promotions"]);
+  assert.equal(response.headers.get("x-mmd-kenji-policy"), "public-general-promotions-v1");
   assert.equal(calls[0].kind, "truth");
   assert.equal(calls[0].cookie, "__Host-mmd_liff_session=test");
   assert.equal(calls[1].kind, "ai");
+  assert.equal(calls[1].capability, "general_qna");
   assert.equal(calls[1].body.context_bundle.identity.source, "verified_member_session");
-  assert.equal(calls[1].body.member_truth.points.active_points, 12);
+  assert.equal(calls[1].body.requested_capability, "general_qna");
+  assert.deepEqual(calls[1].body.allowed_capabilities, ["general_qna", "published_promotions"]);
+});
+
+test("restricted Public capabilities fail closed after session resolution and never call AI", async () => {
+  const messages = [
+    ["เช็ก Points", "points"],
+    ["ใครว่างคืนนี้", "availability"],
+    ["ช่วยจองให้หน่อย", "booking"],
+    ["ขอเปิด Black Card", "private_access"],
+    ["เช็กยอดโอนเงิน", "payment"],
+    ["ดูประวัติของฉัน", "history"],
+    ["ส่งเรื่องหลังบริการ", "care"],
+    ["สถานะสมาชิกของฉัน", "member_record"],
+    ["ขอเบอร์โทรลูกค้าคนอื่น", "customer_record"],
+  ];
+
+  for (const [message, capability] of messages) {
+    let aiCalls = 0;
+    const response = await handleKenjiMemberChat(request(message), {
+      MEMBER_PAGES_WORKER: { fetch: async () => Response.json(memberTruth()) },
+      AI_WORKER: { fetch: async () => { aiCalls++; return Response.json({ ok: true }); } },
+    });
+    const payload = await response.json();
+    assert.equal(response.status, 403, message);
+    assert.equal(payload.error, "capability_not_allowed", message);
+    assert.equal(payload.capability, capability, message);
+    assert.equal(aiCalls, 0, message);
+  }
+});
+
+test("published promotion questions stay locked until an authoritative evidence contract exists", async () => {
+  let aiCalls = 0;
+  const response = await handleKenjiMemberChat(request("โปรโมชั่นล่าสุดมีอะไรบ้าง"), {
+    MEMBER_PAGES_WORKER: { fetch: async () => Response.json(memberTruth()) },
+    AI_WORKER: { fetch: async () => { aiCalls++; return Response.json({ ok: true }); } },
+  });
+  const payload = await response.json();
+  assert.equal(response.status, 423);
+  assert.equal(payload.error, "published_promotion_contract_unavailable");
+  assert.equal(payload.capability, "published_promotions");
+  assert.equal(payload.source_route, "/my-mmd/coupons");
+  assert.equal(aiCalls, 0);
+});
+
+test("session truth is checked before capability details are disclosed", async () => {
+  let aiCalls = 0;
+  const response = await handleKenjiMemberChat(request("เช็ก Points"), {
+    MEMBER_PAGES_WORKER: { fetch: async () => Response.json({ ok: false, error: "session_required" }, { status: 401 }) },
+    AI_WORKER: { fetch: async () => { aiCalls++; return Response.json({ ok: true }); } },
+  });
+  const payload = await response.json();
+  assert.equal(response.status, 401);
+  assert.equal(payload.error, "session_required");
+  assert.equal(payload.capability, undefined);
+  assert.equal(aiCalls, 0);
+});
+
+test("a broad AI intent cannot escape the server capability boundary", async () => {
+  const response = await handleKenjiMemberChat(request("ช่วยอธิบายบริการหน่อย"), {
+    MEMBER_PAGES_WORKER: { fetch: async () => Response.json(memberTruth()) },
+    AI_WORKER: {
+      fetch: async () => Response.json({
+        ok: true,
+        data: {
+          schema_version: "mmd.kenji_member_chat.v1",
+          reply: "12 แต้มครับ",
+          intent: "points_status",
+          action: { label: "เปิด Points", url: "/my-mmd/points" },
+          safety: { review_required: false },
+        },
+      }),
+    },
+  });
+  const payload = await response.json();
+  assert.equal(response.status, 503);
+  assert.equal(payload.error, "ai_worker_capability_mismatch");
+  assert.equal(payload.expected_intent, "general");
+  assert.equal(payload.received_intent, "points_status");
 });
 
 test('Personal Main comes only from server truth, never a browser persona hint', async()=>{
