@@ -30,6 +30,9 @@ test("restricted account and operational lanes fail closed", () => {
     ["ประวัติของฉัน", "history"],
     ["ส่งเรื่องหลังบริการ", "care"],
     ["สมาชิกหมดอายุหรือยัง", "member_record"],
+    ["คูปองของฉันใช้ได้ไหม", "member_coupon"],
+    ["my coupon balance", "member_coupon"],
+    ["โปรโมชั่นนี้ของฉันใช้ได้ไหม", "member_coupon"],
     ["ขอข้อมูลสมาชิกคนอื่น", "customer_record"],
   ];
   for (const [message, capability] of cases) {
