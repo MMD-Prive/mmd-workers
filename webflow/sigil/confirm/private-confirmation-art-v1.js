@@ -116,6 +116,7 @@
 
     #mmd-payment-confirmation.atelier[data-atelier-world="private"]::before {
       content: "" !important;
+      display: block !important;
       background-color: #0d0b0a !important;
       background-image: linear-gradient(180deg,transparent 60%,#0d0b0a 92%),
         linear-gradient(90deg,rgba(9,7,6,.82),rgba(9,7,6,.32) 58%,rgba(9,7,6,.08)),
