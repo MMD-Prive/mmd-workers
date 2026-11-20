@@ -278,7 +278,36 @@ body,button,textarea{font-family:"LINE Seed Sans TH","Noto Sans Thai",system-ui,
       const result = await response.json().catch(function () { return null; });
       if (ownGeneration !== generation) return;
       if (response.status === 401) { markSessionLost(); return; }
+      if (response.status === 423 && result?.error === "published_promotion_contract_unavailable") {
+        appendMessage(message, "user");
+        appendMessage(
+          "ตอนนี้ผมยังยืนยันข้อมูลโปรโมชั่นที่ประกาศล่าสุดไม่ได้ครับ เพื่อไม่ให้แจ้งสิทธิ์คลาดเคลื่อน เปิด MY MMD เพื่อตรวจคูปองที่ระบบยืนยันไว้ได้โดยตรงครับ",
+          "bot",
+          { label: "เปิดคูปองใน MY MMD", url: "/my-mmd/coupons" },
+          false,
+        );
+        input.value = "";
+        updateHeight();
+        setStatus("");
+        history.scrollTop = history.scrollHeight;
+        return;
+      }
       if (response.status === 423) { setStatus("ขณะนี้ MMD กำลังดูแลเรื่องนี้ โปรดลองอีกครั้งภายหลังครับ", "error"); return; }
+      if (response.status === 403 && result?.error === "capability_not_allowed"
+        && ["member_coupon", "member_record", "points", "history", "payment"].includes(result.capability)) {
+        appendMessage(message, "user");
+        appendMessage(
+          "ข้อมูลนี้เกี่ยวข้องกับสิทธิ์หรือข้อมูลเฉพาะบัญชีครับ ผมจะไม่คำนวณหรือยืนยันแทนระบบ กรุณาเปิด MY MMD เพื่อดูข้อมูลที่ยืนยันแล้วครับ",
+          "bot",
+          { label: "เปิด MY MMD", url: result.capability === "member_coupon" ? "/my-mmd/coupons" : "/my-mmd/" },
+          false,
+        );
+        input.value = "";
+        updateHeight();
+        setStatus("");
+        history.scrollTop = history.scrollHeight;
+        return;
+      }
       if (!response.ok || !result || result.ok !== true) {
         setStatus("ยังส่งคำถามไม่สำเร็จ ระบบยังไม่ยืนยันผล กรุณาตรวจสอบก่อนลองใหม่ครับ", "error");
         return;
