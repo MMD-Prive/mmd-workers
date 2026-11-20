@@ -6,7 +6,7 @@ import {handlePartnerOwnerConsole,readPartnerFinanceAuditCoverage} from './src/p
 const origin='https://www.mmdbkk.com';
 test('announcements use fixed owner routes and whitelist detail/media/cursor query fields',async()=>{
  const f=await fixture();
- for(const [path,tail] of [['announcements?cursor=next&url=https://evil.invalid','announcements?cursor=next'],['announcement-detail?id=announcement-fixture&actor=forged','announcements/detail?id=announcement-fixture'],['announcement-media?asset_id=recIIIIIIIIIIIIII&t=secret','announcements/media?asset_id=recIIIIIIIIIIIIII']]){
+ for(const [path,tail] of [['job-sales?cursor=next&url=https://evil.invalid','job-sales?cursor=next'],['announcements?cursor=next&url=https://evil.invalid','announcements?cursor=next'],['announcement-detail?id=announcement-fixture&actor=forged','announcements/detail?id=announcement-fixture'],['announcement-media?asset_id=recIIIIIIIIIIIIII&t=secret','announcements/media?asset_id=recIIIIIIIIIIIIII']]){
   const r=await handlePartnerOwnerConsole(f.request('/v1/admin/partners/'+path),f.env,{});assert.equal(r.status,200);assert.equal(f.calls.at(-1).url,'https://partners-worker.internal/v1/partner/admin/'+tail);
  }
  for(const route of ['announcement-save','announcement-decision']){

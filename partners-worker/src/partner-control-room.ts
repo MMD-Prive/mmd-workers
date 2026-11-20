@@ -1,3 +1,4 @@
+import { PARTNER_JOB_SALES_JS, PARTNER_JOB_SALES_CSS } from "./partner-job-sales-ui";
 import { PARTNER_ANNOUNCEMENTS_JS, PARTNER_ANNOUNCEMENTS_CSS } from "./partner-announcements-ui";
 import { PARTNER_LVMAX_JS, PARTNER_LVMAX_CSS } from "./partner-lvmax";
 import { PARTNER_HERO_JS } from "./partner-dashboard-skin";
@@ -352,6 +353,7 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
   function load() { return api("/v1/partner/dashboard").then(function(data){state.stale=false;hydrate(data);}).catch(function(error){if(state.authBlocked)return;state.stale=true;var loading=$("[data-loading]",root);if(loading)loading.textContent=state.data ? "อัปเดตไม่ได้ · ข้อมูลที่เห็นเป็นข้อมูลครั้งก่อน" : error.message;setFlash(error.message,"error");if(state.data){$$('[data-job-action],[data-edit-model],[data-model-link],[data-order-move]',root).forEach(function(b){b.disabled=true;});} }); }
 
   ${PARTNER_OPERATIONS_JS}
+  ${PARTNER_JOB_SALES_JS}
   ${PARTNER_LVMAX_JS}
   ${PARTNER_ANNOUNCEMENTS_JS}
 
@@ -377,7 +379,7 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
 })();
 `;
 
-export const PARTNER_CONTROL_ROOM_CSS = String.raw`
+export const PARTNER_CONTROL_ROOM_CSS = PARTNER_JOB_SALES_CSS + String.raw`
 .pcr-mission-extra{margin-block:14px}.pcr-mission-extra summary{cursor:pointer;padding:12px;min-height:44px}.pcr-mission-roster .pcr-models{display:grid;grid-template-columns:minmax(0,1fr)}.pcr-mission-roster .pcr-model{grid-template-columns:64px minmax(0,1fr)}.pcr-mission-roster .pcr-model-image{min-height:64px;height:64px}.pcr-quick-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}.pcr-quick-actions button{min-height:44px}
 .pcr-finance-card{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;padding:18px;margin:0 0 14px;border:1px solid var(--mmdp-line);border-radius:16px;background:linear-gradient(135deg,rgba(215,175,103,.10),rgba(49,16,21,.16))}.pcr-finance-card small,.pcr-table small{display:block;color:var(--mmdp-muted);margin-top:4px}.pcr-finance-card h3{margin:5px 0}.pcr-finance-state,.pcr-audit-flag{display:inline-flex;align-items:center;padding:5px 8px;border:1px solid var(--mmdp-line);border-radius:999px;color:var(--mmdp-gold-2);font-family:var(--mmdp-font-en);font-size:10px;font-weight:600;letter-spacing:.08em}.pcr-finance-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:0 0 14px}.pcr-finance-metrics article{padding:14px;border:1px solid var(--mmdp-line);border-radius:14px;background:rgba(255,255,255,.025)}.pcr-finance-metrics span{display:block;color:var(--mmdp-muted);font-size:12px}.pcr-finance-metrics strong{display:block;margin-top:5px;color:var(--mmdp-ivory);font-family:var(--mmdp-font-secondary);font-size:18px}.pcr-finance-warning{margin:0 0 14px;padding:14px;border:1px solid rgba(255,142,142,.42);border-radius:14px;background:rgba(105,32,32,.18);color:var(--mmdp-copy)}.pcr-finance-warning b{color:#ffd1d1}.pcr-table td b{display:block}.pcr-table td .pcr-audit-flag{margin-top:6px;color:#ffd1d1}@media(max-width:720px){.pcr-finance-metrics{grid-template-columns:1fr 1fr}.pcr-finance-card{flex-direction:column}.pcr-table{overflow-x:auto}}
 .pcr-side small,.pcr-side button,.pcr-status,.pcr-meta span,.pcr-table th,.pcr-telegram small{font-family:var(--mmdp-font-en)}

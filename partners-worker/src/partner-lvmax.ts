@@ -98,6 +98,7 @@ export const PARTNER_LVMAX_JS = String.raw`
         '<details class="lv-history"><summary>การรับทราบก่อนวันงาน</summary>'+(r.recorded_acknowledged_at?'<p>ระบบบันทึกการรับทราบ '+dateTime(r.recorded_acknowledged_at)+'</p><small>ยังไม่ยืนยันว่าเป็นรายละเอียดฉบับล่าสุด</small>':'<p>ยังไม่มีเวลารับทราบที่ยืนยันได้</p>')+
         (r.scheduled_at?'<p>กำหนดแจ้ง '+dateTime(r.scheduled_at)+'<br>กำหนดส่งให้เปอร์ตรวจหากยังไม่รับทราบ '+dateTime(r.owner_review_at)+'</p><small>กำหนดการนี้ไม่ใช่หลักฐานว่าส่งแจ้งเตือนแล้ว</small>':'')+'</details>'+
         (d.co_model_html || '<p class="lv-incomplete">MY CO MODEL · ยังอ่านข้อมูลไม่ได้</p>');
+      mountJobSales(host,id);
       lvTickEta();
     }).catch(function(e){if(state.authBlocked)return;host.textContent='อัปเดตไม่ได้ · '+e.message;}).finally(function(){button.disabled=false;button.textContent='อัปเดตสถานะหน้างาน';});
   }
