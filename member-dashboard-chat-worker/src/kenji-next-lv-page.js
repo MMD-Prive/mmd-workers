@@ -137,7 +137,7 @@ body,button,textarea{font-family:"LINE Seed Sans TH","Noto Sans Thai",system-ui,
           </a>
         </nav>
         <div class="mode-row" aria-label="เลือกหัวข้อ"><button class="mode" type="button" data-mode="qa" aria-pressed="true">คำถามทั่วไป (Q&A)</button><button class="mode" type="button" data-mode="promo" aria-pressed="false">โปรโมชั่น</button></div>
-        <div class="intro-panel" data-mode-panel="qa"><h2>เลือกคำถาม หรือพิมพ์ด้วยตัวเอง</h2><div class="prompt-row"><button type="button" class="prompt" data-prompt="GWs คืออะไร">GWs</button><button type="button" class="prompt" data-prompt="EMs คืออะไร">EMs</button><button type="button" class="prompt" data-prompt="สมัครสมาชิกแล้วได้อะไรบ้าง">สิทธิสมาชิก</button><button type="button" class="prompt" data-prompt="Black Card คืออะไร">Black Card</button><button type="button" class="prompt" data-prompt="MMD คืออะไร">บริการ MMD</button><button type="button" class="prompt" data-prompt="ชำระเงินอย่างไร">ชำระเงิน</button></div></div>
+        <div class="intro-panel" data-mode-panel="qa"><h2>เลือกคำถาม หรือพิมพ์ด้วยตัวเอง</h2><div class="prompt-row"><button type="button" class="prompt" data-prompt="MMD คืออะไร">บริการ MMD</button><button type="button" class="prompt" data-prompt="MY MMD คืออะไร">MY MMD</button><button type="button" class="prompt" data-prompt="Kenji ช่วยอะไรได้บ้าง">เกี่ยวกับ Kenji</button><button type="button" class="prompt" data-prompt="บริการ Companion คืออะไร">Companion</button><button type="button" class="prompt" data-prompt="เริ่มต้นใช้งานเว็บไซต์อย่างไร">เริ่มใช้งาน</button><button type="button" class="prompt" data-prompt="ติดต่อ MMD ได้ทางไหน">ติดต่อ MMD</button></div></div>
         <div class="intro-panel" data-mode-panel="promo" hidden><div class="promo-info"><strong>ดูโปรโมชั่นจากประกาศของ MMD</strong><p>รายการและสิทธิ์ส่วนบุคคลอาจเปลี่ยนแปลงได้ ตรวจสอบคูปองจาก MY MMD ก่อนใช้สิทธิ์ทุกครั้ง</p><a href="/my-mmd/coupons">เปิดคูปองใน MY MMD ↗</a><button type="button" class="prompt" data-prompt="สอบถามเงื่อนไขโปรโมชั่นที่ประกาศแล้ว">ถามเงื่อนไขโปรโมชั่น</button></div></div>
         <div class="history" id="kenji-history" role="log" aria-label="ข้อความสนทนา" aria-live="polite" aria-relevant="additions text"></div>
         <p class="status" id="kenji-status" role="status" aria-live="polite"></p>
@@ -278,7 +278,36 @@ body,button,textarea{font-family:"LINE Seed Sans TH","Noto Sans Thai",system-ui,
       const result = await response.json().catch(function () { return null; });
       if (ownGeneration !== generation) return;
       if (response.status === 401) { markSessionLost(); return; }
+      if (response.status === 423 && result?.error === "published_promotion_contract_unavailable") {
+        appendMessage(message, "user");
+        appendMessage(
+          "ตอนนี้ผมยังยืนยันข้อมูลโปรโมชั่นที่ประกาศล่าสุดไม่ได้ครับ เพื่อไม่ให้แจ้งสิทธิ์คลาดเคลื่อน เปิด MY MMD เพื่อตรวจคูปองที่ระบบยืนยันไว้ได้โดยตรงครับ",
+          "bot",
+          { label: "เปิดคูปองใน MY MMD", url: "/my-mmd/coupons" },
+          false,
+        );
+        input.value = "";
+        updateHeight();
+        setStatus("");
+        history.scrollTop = history.scrollHeight;
+        return;
+      }
       if (response.status === 423) { setStatus("ขณะนี้ MMD กำลังดูแลเรื่องนี้ โปรดลองอีกครั้งภายหลังครับ", "error"); return; }
+      if (response.status === 403 && result?.error === "capability_not_allowed"
+        && ["member_coupon", "member_record", "points", "history", "payment"].includes(result.capability)) {
+        appendMessage(message, "user");
+        appendMessage(
+          "ข้อมูลนี้เกี่ยวข้องกับสิทธิ์หรือข้อมูลเฉพาะบัญชีครับ ผมจะไม่คำนวณหรือยืนยันแทนระบบ กรุณาเปิด MY MMD เพื่อดูข้อมูลที่ยืนยันแล้วครับ",
+          "bot",
+          { label: "เปิด MY MMD", url: result.capability === "member_coupon" ? "/my-mmd/coupons" : "/my-mmd/" },
+          false,
+        );
+        input.value = "";
+        updateHeight();
+        setStatus("");
+        history.scrollTop = history.scrollHeight;
+        return;
+      }
       if (!response.ok || !result || result.ok !== true) {
         setStatus("ยังส่งคำถามไม่สำเร็จ ระบบยังไม่ยืนยันผล กรุณาตรวจสอบก่อนลองใหม่ครับ", "error");
         return;

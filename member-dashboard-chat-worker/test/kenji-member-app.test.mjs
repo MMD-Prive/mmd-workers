@@ -93,6 +93,12 @@ test("general Q&A resolves verified session truth before calling AI_WORKER", asy
   assert.equal(calls[1].body.context_bundle.identity.source, "verified_member_session");
   assert.equal(calls[1].body.requested_capability, "general_qna");
   assert.deepEqual(calls[1].body.allowed_capabilities, ["general_qna", "published_promotions"]);
+  assert.deepEqual(calls[1].body.member_truth, { display_name: "Per Test" });
+  assert.deepEqual(calls[1].body.context_bundle.customer_context, { rename: "Per Test" });
+  assert.equal("points" in calls[1].body.member_truth, false);
+  assert.equal("membership" in calls[1].body.member_truth, false);
+  assert.equal("resolver_snapshot" in calls[1].body.context_bundle.customer_context, false);
+  assert.equal("latest_cycle" in calls[1].body.context_bundle.customer_context, false);
 });
 
 test("restricted Public capabilities fail closed after session resolution and never call AI", async () => {
@@ -105,6 +111,7 @@ test("restricted Public capabilities fail closed after session resolution and ne
     ["ดูประวัติของฉัน", "history"],
     ["ส่งเรื่องหลังบริการ", "care"],
     ["สถานะสมาชิกของฉัน", "member_record"],
+    ["คูปองของฉันใช้ได้ไหม", "member_coupon"],
     ["ขอเบอร์โทรลูกค้าคนอื่น", "customer_record"],
   ];
 
@@ -133,6 +140,35 @@ test("published promotion questions stay locked until an authoritative evidence 
   assert.equal(payload.error, "published_promotion_contract_unavailable");
   assert.equal(payload.capability, "published_promotions");
   assert.equal(payload.source_route, "/my-mmd/coupons");
+  assert.equal(aiCalls, 0);
+});
+
+test("feature flag alone cannot unlock public promotions or forward member cookies", async () => {
+  let requests = [];
+  let aiCalls = 0;
+  const response = await handleKenjiMemberChat(request("โปรโมชั่นล่าสุดมีอะไรบ้าง"), {
+    KENJI_PUBLIC_PROMOTIONS_ENABLED: "true",
+    MEMBER_PAGES_WORKER: { fetch: async () => Response.json(memberTruth()) },
+    KENJI_PROMOTION_EVIDENCE_WORKER: {
+      fetch: async (req) => {
+        requests.push(req);
+        return Response.json({
+          schema_version: "mmd.public_promotion_evidence.v1",
+          authority: "legacy_knowledge_card",
+          read_only: true,
+          campaigns: [],
+        });
+      },
+    },
+    AI_WORKER: { fetch: async () => { aiCalls++; return Response.json({ ok: true }); } },
+  });
+  const payload = await response.json();
+  assert.equal(response.status, 423);
+  assert.equal(payload.error, "published_promotion_contract_unavailable");
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].method, "GET");
+  assert.equal(requests[0].headers.get("cookie"), null);
+  assert.equal(requests[0].headers.get("authorization"), null);
   assert.equal(aiCalls, 0);
 });
 
@@ -203,12 +239,12 @@ test("NEXT LV remains member-only, mobile-first and CSP-nonced", async () => {
   assert.ok(qaStart >= 0 && promoStart > qaStart);
   const qaPanel = html.slice(qaStart, promoStart);
   assert.deepEqual([...qaPanel.matchAll(/data-prompt="([^"]+)"/g)].map(([, prompt]) => prompt), [
-    "GWs คืออะไร",
-    "EMs คืออะไร",
-    "สมัครสมาชิกแล้วได้อะไรบ้าง",
-    "Black Card คืออะไร",
     "MMD คืออะไร",
-    "ชำระเงินอย่างไร",
+    "MY MMD คืออะไร",
+    "Kenji ช่วยอะไรได้บ้าง",
+    "บริการ Companion คืออะไร",
+    "เริ่มต้นใช้งานเว็บไซต์อย่างไร",
+    "ติดต่อ MMD ได้ทางไหน",
   ]);
   const promptStart = html.indexOf('document.querySelectorAll("[data-prompt]").forEach(function (button) {');
   const modesStart = html.indexOf("  modes.forEach(function (button) {", promptStart);
@@ -244,6 +280,9 @@ test("NEXT LV remains member-only, mobile-first and CSP-nonced", async () => {
   assert.ok(html.includes('href="/my-mmd/"'));
   assert.ok(!html.includes('href="/member/my-mmd"'));
   assert.match(html, /ดูโปรโมชั่นจากประกาศของ MMD/);
+  assert.match(html, /published_promotion_contract_unavailable/);
+  assert.match(html, /เปิดคูปองใน MY MMD/);
+  assert.match(html, /"member_coupon"/);
   assert.doesNotMatch(html, /localStorage\.|sessionStorage\.|javascript:/);
   assert.match(response.headers.get("content-security-policy") || "", /connect-src 'self'/);
   assert.ok((response.headers.get("content-security-policy") || "").includes("https://s3.amazonaws.com"));

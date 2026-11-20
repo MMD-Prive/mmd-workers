@@ -30,6 +30,9 @@ test("restricted account and operational lanes fail closed", () => {
     ["ประวัติของฉัน", "history"],
     ["ส่งเรื่องหลังบริการ", "care"],
     ["สมาชิกหมดอายุหรือยัง", "member_record"],
+    ["คูปองของฉันใช้ได้ไหม", "member_coupon"],
+    ["my coupon balance", "member_coupon"],
+    ["โปรโมชั่นนี้ของฉันใช้ได้ไหม", "member_coupon"],
     ["ขอข้อมูลสมาชิกคนอื่น", "customer_record"],
   ];
   for (const [message, capability] of cases) {
@@ -38,6 +41,16 @@ test("restricted account and operational lanes fail closed", () => {
       allowed: false,
       reason: capability,
     });
+  }
+});
+
+test("all Public Q&A shortcut prompts stay in the allowed general lane", () => {
+  const questions = [
+    "MMD คืออะไร", "MY MMD คืออะไร", "Kenji ช่วยอะไรได้บ้าง",
+    "บริการ Companion คืออะไร", "เริ่มต้นใช้งานเว็บไซต์อย่างไร", "ติดต่อ MMD ได้ทางไหน",
+  ];
+  for (const question of questions) {
+    assert.equal(classifyKenjiPublicCapability(question).capability, "general_qna", question);
   }
 });
 

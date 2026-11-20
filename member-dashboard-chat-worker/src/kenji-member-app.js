@@ -5,6 +5,10 @@ import {
   isGeneralKenjiIntent,
 } from "./kenji-public-capability-policy.js";
 import {renderKenjiNextLvPage} from "./kenji-next-lv-page.js";
+import {
+  PUBLIC_PROMOTION_EVIDENCE_URL,
+  selectPublishedPromotionEvidence,
+} from "./kenji-public-promotion-evidence.js";
 const PAGE_PATHS = new Set(["/member/kenji", "/member/kenji/"]);
 const CHAT_PATHS = new Set(["/api/member/kenji/chat", "/api/member/kenji/chat/"]);
 const LEGACY_PATHS = new Set(["/member/kenji-ai-20", "/member/kenji-ai-20/"]);
@@ -78,22 +82,8 @@ async function readMemberTruth(request, env) {
   return { ok: true, payload };
 }
 
-function evidenceSources(truth) {
-  const found = { state: "FOUND" };
-  const unavailable = { state: "SOURCE_UNAVAILABLE" };
-  return {
-    rename_identity: truth?.display_name ? found : unavailable,
-    line_oa_1to1: unavailable,
-    line_crew: unavailable,
-    chat_exports_attachments: unavailable,
-    hashtags_tenure: unavailable,
-    recognition_history: unavailable,
-    membership_cycles: found,
-    payment_evidence: unavailable,
-    resolver_snapshot: found,
-  };
-}
-
+// This is a Public Q&A lane. A verified session is needed for admission,
+// not permission to forward entitlements, payments, Points or resolver snapshots.
 function contextBundle(truth, message, capability) {
   const displayName = text(truth?.display_name, 100);
   return {
@@ -104,15 +94,7 @@ function contextBundle(truth, message, capability) {
       confidence: displayName ? "high" : "low",
       source: "verified_member_session",
     },
-    customer_context: {
-      rename: displayName,
-      latest_cycle: {
-        package_code: text(truth?.membership?.level, 80),
-        expire_at: text(truth?.membership?.expire_at, 80),
-      },
-      entitlement_snapshot: truth?.resolver_snapshot || {},
-      evidence_sources: evidenceSources(truth),
-    },
+    customer_context: { rename: displayName },
     capability_policy: {
       schema_version: "mmd.kenji_public_capabilities.v1",
       requested: capability,
@@ -139,7 +121,7 @@ async function askAiWorker(truth, message, capability, env) {
       body: JSON.stringify({
         actor: { role: "system" },
         message,
-        member_truth: truth,
+        member_truth: { display_name: text(truth?.display_name, 100) },
         allowed_capabilities: [...KENJI_PUBLIC_ALLOWED_CAPABILITIES],
         requested_capability: capability,
         context_bundle: contextBundle(truth, message, capability),
@@ -163,6 +145,55 @@ function capabilityError(classification) {
     reason: classification.reason,
     allowed_capabilities: [...KENJI_PUBLIC_ALLOWED_CAPABILITIES],
   }, 403);
+}
+
+// Feature remains disabled until a separate release authorizes and binds the
+// independently attested, read-only registry. Neither a coupon wallet nor a
+// legacy Knowledge Card can satisfy this source contract on its own.
+async function handlePublishedPromotion(truth, env) {
+  if (env.KENJI_PUBLIC_PROMOTIONS_ENABLED !== "true" || !env.KENJI_PROMOTION_EVIDENCE_WORKER?.fetch) {
+    return promotionContractUnavailable();
+  }
+  let response;
+  try {
+    response = await env.KENJI_PROMOTION_EVIDENCE_WORKER.fetch(new Request(PUBLIC_PROMOTION_EVIDENCE_URL, {
+      method: "GET",
+      headers: {
+        "accept": "application/json",
+        "cache-control": "no-store",
+        "x-mmd-internal-call": "true",
+        "x-mmd-service-binding": "member-dashboard-chat-worker",
+      },
+    }));
+  } catch {
+    return promotionContractUnavailable();
+  }
+  if (!response.ok) return promotionContractUnavailable();
+  const evidence = await response.json().catch(() => null);
+  const verified = await selectPublishedPromotionEvidence(evidence);
+  if (!verified.ok) return promotionContractUnavailable();
+
+  const expired = verified.state === "announcement_expired";
+  return json({
+    ok: true,
+    reply: expired
+      ? "โปรโมชั่นรอบประกาศนี้สิ้นสุดแล้วครับ สิทธิ์ที่เกี่ยวข้องกับบัญชีต้องตรวจจากระบบ MY MMD โดยตรง ไม่สามารถยืนยันจากแชตได้ครับ"
+      : verified.reply,
+    action: expired
+      ? { label: "เปิดคูปองใน MY MMD", url: "/my-mmd/coupons" }
+      : { label: "อ่านประกาศโปรโมชั่น", url: verified.public_url },
+    intent: "published_promotions",
+    capability: "published_promotions",
+    campaign_id: verified.campaign_id,
+    announcement_state: verified.state,
+    allowed_capabilities: [...KENJI_PUBLIC_ALLOWED_CAPABILITIES],
+    review_required: false,
+    member: {
+      display_name: text(truth?.display_name, 100) || null,
+      membership_label: text(truth?.membership?.label, 80) || null,
+    },
+    authority: "mmd_promotion_evidence_registry",
+  });
 }
 
 function promotionContractUnavailable() {
@@ -195,7 +226,7 @@ export async function handleKenjiMemberChat(request, env = {}) {
 
   const classification = classifyKenjiPublicCapability(message);
   if (!classification.allowed) return capabilityError(classification);
-  if (classification.capability === "published_promotions") return promotionContractUnavailable();
+  if (classification.capability === "published_promotions") return handlePublishedPromotion(truth.payload, env);
 
   const result = await askAiWorker(truth.payload, message, classification.capability, env);
   if (!result.ok) return json({ ok: false, error: result.reason }, result.status);

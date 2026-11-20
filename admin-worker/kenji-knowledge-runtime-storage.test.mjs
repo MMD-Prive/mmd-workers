@@ -45,6 +45,17 @@ test("published runtime returns Airtable cards instead of readiness-only empty s
             effective_from: "2026-08-09",
           },
         },
+        {
+          id: "recRetiredCareBack",
+          fields: {
+            knowledge_id: "kenji_20_011_care_back_2026",
+            title: "Superseded CARE BACK",
+            category: "promotion",
+            language: "th",
+            customer_answer: "Stale 30-day coupon guidance",
+            status: "active",
+          },
+        },
       ],
     });
   };
@@ -113,11 +124,6 @@ test("static fallback still prevents empty published cards when Airtable env is 
   const body = await response.json();
   assert.equal(body.ok, true);
   assert.equal(body.storage.persisted, false);
-  assert.ok(body.cards.length >= 6);
-  const careBack = body.cards.find((card) => card.knowledge_id === "kenji_20_011_care_back_2026");
-  assert.ok(careBack);
-  assert.match(careBack.customer_answer, /Birthday Wish/);
-  assert.match(careBack.customer_answer, /10%/);
-  assert.match(careBack.internal_instruction, /2026-09-30/);
-  assert.match(careBack.internal_instruction, /\+1 year/);
+  assert.ok(body.cards.length >= 5);
+  assert.equal(body.cards.some((card) => card.knowledge_id === "kenji_20_011_care_back_2026"), false);
 });

@@ -1,3 +1,5 @@
+import { isRetiredKenjiPromotionKnowledge } from "../../shared/kenji-retired-promotion-knowledge.mjs";
+
 const AIRTABLE_API = "https://api.airtable.com/v0";
 
 export const KENJI_KNOWLEDGE_PUBLIC_PUBLISHED_PATH = "/v1/public/kenji/knowledge/published";
@@ -305,6 +307,7 @@ function toPublicCard(card = {}) {
 function isPublicCard(card = {}) {
   const id = clean(card.id || card.knowledge_id).toLowerCase();
   if (!id || /deploy|cloudflare|smoke|wrangler|worker/.test(id)) return false;
+  if (isRetiredKenjiPromotionKnowledge(card)) return false;
   if (!clean(card.customer_answer || card.answer)) return false;
   const status = clean(card.status).toLowerCase();
   if (status && !["active", "approved", "published"].includes(status)) return false;
