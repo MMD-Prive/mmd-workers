@@ -2,7 +2,7 @@ import {
   handleKenjiKnowledgeWorkflowRequest,
   isKenjiKnowledgeWorkflowRequest,
 } from "./kenji-knowledge-airtable-adapter.js";
-import { isRetiredKenjiPromotionKnowledge } from "../../shared/kenji-retired-promotion-knowledge.mjs";
+import { isUnverifiedKenjiPromotionKnowledge } from "../../shared/kenji-retired-promotion-knowledge.mjs";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 
@@ -579,7 +579,7 @@ function airtableFormula(query = {}) {
 
 function filterCards(cards, query = {}) {
   let result = Array.isArray(cards) ? cards.slice() : [];
-  if (query.publishedOnly) result = result.filter((card) => ["active", "approved", "published"].includes(clean(card.status).toLowerCase()) && !isRetiredKenjiPromotionKnowledge(card));
+  if (query.publishedOnly) result = result.filter((card) => ["active", "approved", "published"].includes(clean(card.status).toLowerCase()) && !isUnverifiedKenjiPromotionKnowledge(card));
   if (query.status) result = result.filter((card) => clean(card.status).toLowerCase() === clean(query.status).toLowerCase() || (query.status === "published" && clean(card.status).toLowerCase() === "active"));
   if (query.language) result = result.filter((card) => clean(card.language).toLowerCase() === clean(query.language).toLowerCase());
   if (query.category) result = result.filter((card) => clean(card.category).toLowerCase() === clean(query.category).toLowerCase());
@@ -599,7 +599,7 @@ export function rankKenjiKnowledgeForInternalDraft(cards = [], input = {}) {
 
   return (Array.isArray(cards) ? cards : [])
     .filter(isPublishedRetrievalCard)
-    .filter((card) => !isRetiredKenjiPromotionKnowledge(card))
+    .filter((card) => !isUnverifiedKenjiPromotionKnowledge(card))
     .map((card) => {
       const payload = card?.payload_json && typeof card.payload_json === "object" && !Array.isArray(card.payload_json)
         ? card.payload_json

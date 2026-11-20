@@ -143,6 +143,20 @@ test("published promotion questions stay locked until an authoritative evidence 
   assert.equal(aiCalls, 0);
 });
 
+test("bare CARE BACK and Double Moment cannot reach AI without verified publication evidence", async () => {
+  for (const message of ["CARE BACK", "Double Moment", "แคร์แบ็ก 6 ปี", "ส่วนลดล่าสุด"]) {
+    let aiCalls = 0;
+    const response = await handleKenjiMemberChat(request(message), {
+      MEMBER_PAGES_WORKER: { fetch: async () => Response.json(memberTruth()) },
+      AI_WORKER: { fetch: async () => { aiCalls++; return Response.json({ ok: true }); } },
+    });
+    const body = await response.json();
+    assert.equal(response.status, 423, message);
+    assert.equal(body.error, "published_promotion_contract_unavailable", message);
+    assert.equal(aiCalls, 0, message);
+  }
+});
+
 test("feature flag alone cannot unlock public promotions or forward member cookies", async () => {
   let requests = [];
   let aiCalls = 0;

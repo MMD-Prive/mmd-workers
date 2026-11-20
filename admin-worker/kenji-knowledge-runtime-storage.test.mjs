@@ -46,6 +46,23 @@ test("published runtime returns Airtable cards instead of readiness-only empty s
           },
         },
         {
+          id: "recLegacySales",
+          fields: {
+            knowledge_id: "kenji_sep2026_membership_sales_02_double_moment",
+            title: "September Double Moment",
+            category: "membership", status: "active",
+            workflow_stage: "published", customer_answer: "180-day credit",
+          },
+        },
+        {
+          id: "recFreshNoAuthority",
+          fields: {
+            knowledge_id: "active_promo_without_published_revision",
+            title: "Unreviewed active offer", category: "promotion",
+            status: "active", customer_answer: "This offer has no publication receipt",
+          },
+        },
+        {
           id: "recRetiredCareBack",
           fields: {
             knowledge_id: "kenji_20_011_care_back_2026",
@@ -70,6 +87,7 @@ test("published runtime returns Airtable cards instead of readiness-only empty s
     assert.equal(body.storage.persisted, true);
     assert.equal(body.cards.length, 1);
     assert.equal(body.cards[0].knowledge_id, "kenji_20_006_payment_proof");
+    assert.equal(body.cards.some((card) => /double_moment|active_promo/.test(card.knowledge_id)), false);
   } finally {
     globalThis.fetch = originalFetch;
   }

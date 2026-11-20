@@ -68,6 +68,34 @@ test("public published runtime works without admin auth and strips internal fiel
           },
         },
         {
+          id: "recLegacySeptemberSales",
+          fields: {
+            knowledge_id: "kenji_sep2026_membership_sales_02_double_moment",
+            title: "Double Moment 180 days — old published",
+            category: "membership", status: "active",
+            response_mode: "auto_reply_allowed",
+            customer_answer: "Double Moment validity 180 days",
+          },
+        },
+        {
+          id: "recLegacyCouponFlow",
+          fields: {
+            knowledge_id: "sigil_kb_20260904_care_back_coupon_booking_flow_001",
+            title: "CARE BACK Coupon to Booking",
+            category: "promotion", status: "active",
+            customer_answer: "Old Wish coupon flow",
+          },
+        },
+        {
+          id: "recUnknownActiveCampaign",
+          fields: {
+            knowledge_id: "new_campaign_without_proof",
+            title: "A newly active campaign with no approved publication revision",
+            category: "promotion", status: "active",
+            customer_answer: "Unverified member offer",
+          },
+        },
+        {
           id: "recPaymentProofDuplicate",
           createdTime: "2026-08-09T16:31:28.000Z",
           fields: {
@@ -106,6 +134,7 @@ test("public published runtime works without admin auth and strips internal fiel
     assert.equal(body.cards.some((card) => /cloudflare|deploy/i.test(card.title || card.knowledge_id)), false);
     assert.equal(body.cards.filter((card) => card.knowledge_id === "kenji_20_006_payment_proof").length, 1);
     assert.equal(body.cards.some((card) => card.knowledge_id === "kenji_20_011_care_back_2026"), false);
+    assert.equal(body.cards.some((card) => /kenji_sep2026_membership_sales_|care_back_coupon_booking_flow|new_campaign_without_proof/.test(card.knowledge_id)), false);
     assert.equal(Object.hasOwn(body.storage, "base_id"), false);
   } finally {
     globalThis.fetch = originalFetch;

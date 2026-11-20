@@ -20,6 +20,17 @@ test("Public Kenji exposes only general Q&A and published promotions", () => {
   });
 });
 
+test("campaign names without the word promotion cannot bypass publication evidence", () => {
+  for (const message of [
+    "CARE BACK", "care-back มีอะไรใหม่", "แคร์แบ็ก 6 ปี",
+    "Double Moment", "double-moment 20K", "ส่วนลดล่าสุด", "6 YEARS",
+  ]) {
+    assert.deepEqual(classifyKenjiPublicCapability(message), {
+      capability: "published_promotions", allowed: true, reason: null,
+    }, message);
+  }
+});
+
 test("restricted account and operational lanes fail closed", () => {
   const cases = [
     ["เช็ก Points", "points"],
