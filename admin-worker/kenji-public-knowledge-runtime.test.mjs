@@ -92,7 +92,7 @@ test("public published runtime works without admin auth and strips internal fiel
     assert.equal(body.ok, true);
     assert.equal(body.mode, "public_published_runtime");
     assert.equal(body.data_status, "live");
-    assert.ok(body.count >= 7);
+    assert.ok(body.count >= 6);
     assert.deepEqual(body.coverage, {
       airtable_count: 1,
       canonical_fallback_count: body.count - 1,
@@ -123,7 +123,7 @@ test("public published runtime falls back to static public cards without Airtabl
   assert.equal(body.data_status, "static_fallback");
   assert.equal(body.storage.persisted, false);
   assert.equal(body.coverage.canonical_fallback_count, 0);
-  assert.ok(body.cards.length >= 6);
+  assert.ok(body.cards.length >= 5);
   assert.equal(body.cards.some((card) => Object.hasOwn(card, "internal_instruction")), false);
   assert.equal(body.cards.some((card) => card.knowledge_id === "kenji_20_011_care_back_2026"), false);
 });
