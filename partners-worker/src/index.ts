@@ -460,6 +460,7 @@ export default {
       }
 
       if (/^\/v1\/partner\/(?:admin\/)?announcements(?:\/(?:detail|save|propose|decision|media|preferences))?$/.test(url.pathname)) return await handlePartnerAnnouncements(request, runtimeEnv);
+      if (["GET", "POST"].includes(request.method) && url.pathname === "/v1/partner/jobs/sales-proposal") return await handlePartnerJobSales(request, runtimeEnv);
       if (request.method === "GET" && url.pathname === "/v1/partner/jobs/detail") return await handlePartnerJobDetail(request, runtimeEnv);
       if (["GET", "POST"].includes(request.method) && url.pathname === "/v1/partner/roster-order") {
         return await handlePartnerRosterOrder(request, runtimeEnv);
@@ -488,6 +489,7 @@ export default {
         return await handlePartnerWorkingSystemChange(request, runtimeEnv);
       }
 
+      if (request.method === "GET" && url.pathname === "/v1/partner/admin/job-sales") return await handleAdminJobSales(request, runtimeEnv);
       if (request.method === "GET" && url.pathname === "/v1/partner/admin/working-systems") {
         return await handleAdminWorkingSystemQueue(request, runtimeEnv);
       }
@@ -2918,6 +2920,107 @@ async function handlePartnerAssetRead(request: Request, env: RuntimeEnv): Promis
 }
 
 // Read-only projection: Partner assignment must still match after dependent reads.
+async function handleAdminJobSales(request: Request, env: RuntimeEnv): Promise<Response> {
+  const authError = verifyAdminAuthority(request, env);
+  if (authError) return authError;
+  const bucket = (env as RuntimeEnv & {PARTNER_ASSETS?: R2Bucket}).PARTNER_ASSETS;
+  if (!bucket) return errorResponse(request, env, "job_sales_unavailable", "Storage unavailable.", 503, true);
+  try {
+    const cursor = new URL(request.url).searchParams.get("cursor") || undefined;
+    const list = await bucket.list({prefix: "partner-job-sales/v1/", limit: 50, cursor});
+    const proposals = await Promise.all(list.objects.map(async item => {
+      const object = await bucket.get(item.key);
+      if (!object) return null;
+      const value = await object.json<Record<string, unknown>>();
+      return {session_record_id: value.session_record_id, partner_record_id: value.partner_record_id, proposal: value.proposal, updated_at: value.updated_at, revision: object.etag, status: "pending_review"};
+    }));
+    const response = json(request, env, {ok: true, proposals: proposals.filter(Boolean), next_cursor: list.truncated ? list.cursor : null});
+    response.headers.set("Cache-Control", "no-store, private");
+    return response;
+  } catch { return errorResponse(request, env, "job_sales_unavailable", "Storage unavailable.", 503, true); }
+}
+
+// Proposals are scoped to one Partner and one canonical Session. Activation and
+// settlement continue through the owner-authoritative agreement workflow.
+async function handlePartnerJobSales(request: Request, env: RuntimeEnv): Promise<Response> {
+  const verified = await verifyPartnerTokenFromRequest(request, env);
+  if (!verified.ok) return verified.response;
+  const body = request.method === "POST" ? await readJsonObject(request) : { ok: true as const, value: {} as Record<string, unknown> };
+  if (!body.ok) return errorResponse(request, env, "invalid_json", "Invalid proposal.", 400, false);
+  const id = request.method === "POST" ? readString(body.value, "session_record_id") : new URL(request.url).searchParams.get("session_record_id") || "";
+  if (!/^rec[A-Za-z0-9]{14,24}$/.test(id)) return errorResponse(request, env, "session_record_id_invalid", "Invalid session.", 400, false);
+  const partner = verified.value.partnerRecord;
+  const partnerId = fieldText(partner, MODEL_PARTNERS.partnerId);
+  const table = env.AIRTABLE_TABLE_SESSIONS || "tblC98mKWbzmPuNzX";
+  const session = await getAirtableRecord(env, table, id);
+  if (!partnerId || fieldText(session, SESSION_FIELDS.partnerIdSnapshot) !== partnerId) return errorResponse(request, env, "partner_session_scope_forbidden", "Job is outside this Partner scope.", 403, false);
+  const modelIds = fieldLinkIds(session, SESSION_FIELDS.canonicalModel);
+  const referrals = await listLinkedRecordsForPartner(env, env.AIRTABLE_TABLE_MODEL_REFERRALS, MODEL_REFERRALS.partner, partner.id, partnerId);
+  const activeReferral = referrals.find(row => modelIds.length === 1 && fieldLinkIds(row, MODEL_REFERRALS.model).includes(modelIds[0]!) && !["inactive", "revoked", "transferred", "archived"].includes(normalizeStatus(fieldText(row, MODEL_REFERRALS.ownershipStatus))));
+  if (!activeReferral) return errorResponse(request, env, "partner_model_scope_forbidden", "Active model relationship required.", 403, false);
+  const signature = (row: AirtableRecord) => JSON.stringify([SESSION_FIELDS.sessionId, SESSION_FIELDS.partnerIdSnapshot, SESSION_FIELDS.canonicalModel, SESSION_FIELDS.startTime, SESSION_FIELDS.endTime, SESSION_FIELDS.lifecycle, SESSION_FIELDS.status, SESSION_FIELDS.paymentStatus, SESSION_FIELDS.commissionSnapshotLocked, SESSION_FIELDS.commissionSnapshotJson, SESSION_FIELDS.partnerSnapshotJson, SESSION_FIELDS.workLane, SESSION_FIELDS.workType].map(key => row.fields[key]));
+  const jobRevision = await sha256Hex(signature(session));
+  const lifecycle = customerSessionLifecycle({model_session_state: session.fields[SESSION_FIELDS.lifecycle], "Session Status": session.fields[SESSION_FIELDS.status]});
+  const editable = session.fields[SESSION_FIELDS.commissionSnapshotLocked] !== true && !["work_started", "in_progress", "work_finished", "separated", "completed", "cancelled", "canceled", "closed", "void", "declined"].includes(lifecycle);
+  const bucket = (env as RuntimeEnv & {PARTNER_ASSETS?: R2Bucket}).PARTNER_ASSETS;
+  if (!bucket) return errorResponse(request, env, "job_sales_unavailable", "Job proposal storage unavailable.", 503, true);
+  const key = "partner-job-sales/v1/" + await sha256Hex(partner.id + ":" + id) + ".json";
+  try {
+    const stored = await bucket.get(key);
+    const doc = stored ? await stored.json<Record<string, any>>() : null;
+    if (doc && (doc.partner_record_id !== partner.id || doc.session_record_id !== id)) throw new Error("invalid scope");
+    async function stillCurrent() {
+      const auth = await verifyPartnerTokenFromRequest(request, env);
+      if (!auth.ok) return false;
+      const current = await getAirtableRecord(env, table, id);
+      const referral = await getAirtableRecord(env, env.AIRTABLE_TABLE_MODEL_REFERRALS, activeReferral!.id);
+      return auth.value.partnerRecord.id === partner.id && signature(current) === signature(session) && fieldLinkIds(referral, MODEL_REFERRALS.partner).includes(partner.id) && fieldLinkIds(referral, MODEL_REFERRALS.model).includes(modelIds[0]!) && !["inactive", "revoked", "transferred", "archived"].includes(normalizeStatus(fieldText(referral, MODEL_REFERRALS.ownershipStatus)));
+    }
+    function result(value: Record<string, any> | null, revision: string | null) {
+      const response = json(request, env, {ok: true, proposal: value ? {...value.proposal, status: value.job_revision === jobRevision ? "pending_review" : "job_changed", updated_at: value.updated_at} : null, revision, job_revision: jobRevision, editable});
+      response.headers.set("Cache-Control", "no-store, private");
+      return response;
+    }
+    if (request.method === "GET") {
+      if (!await stillCurrent()) return errorResponse(request, env, "job_detail_changed", "Reload current job scope.", 409, true);
+      return result(doc, stored?.etag || null);
+    }
+    if (!editable) return errorResponse(request, env, "job_sales_locked", "Job has started or settlement is locked.", 409, false);
+    const input = body.value;
+    const system = readString(input, "system");
+    const money = (value: unknown) => typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1000000 && Math.abs(value * 100 - Math.round(value * 100)) < 0.000001;
+    if (!["bridge", "co_partner", "profit_share"].includes(system) || !money(input.source_rate_thb) || !money(input.customer_sell_rate_thb) || Number(input.customer_sell_rate_thb) < Number(input.source_rate_thb)) return errorResponse(request, env, "job_sales_invalid", "Select a system and valid model/sale amounts.", 400, false);
+    if (input.share_with_mmd !== true) return errorResponse(request, env, "explicit_share_required", "Confirm sharing this job proposal.", 400, false);
+    const commission = input.commission_percent;
+    const share = input.partner_share_percent;
+    if (system === "bridge" && (typeof commission !== "number" || !Number.isFinite(commission) || commission < 5 || commission > 10)) return errorResponse(request, env, "bridge_commission_invalid", "Bridge commission must be between 5% and 10%.", 400, false);
+    if (system === "profit_share" && (typeof share !== "number" || !Number.isFinite(share) || share <= 0 || share >= 100)) return errorResponse(request, env, "profit_share_invalid", "Partner share must be greater than 0% and less than 100%.", 400, false);
+    if (typeof input.note !== "string" || input.note.length > 1200) return errorResponse(request, env, "job_sales_invalid", "Note is required and must fit 1200 characters.", 400, false);
+    const proposal = {system, source_rate_thb: input.source_rate_thb, customer_sell_rate_thb: input.customer_sell_rate_thb, commission_percent: system === "bridge" ? commission : null, partner_share_percent: system === "profit_share" ? share : null, note: input.note.trim(), model_record_id: modelIds[0], basis_rule: "payment_truth_net_basis"};
+    const digest = await sha256Hex(JSON.stringify(proposal));
+    const requestKey = request.headers.get("Idempotency-Key") || "";
+    if (requestKey.length < 8 || requestKey.length > 180) return errorResponse(request, env, "idempotency_key_required", "A stable request key is required.", 400, false);
+    if (input.job_revision !== jobRevision) return errorResponse(request, env, "job_detail_changed", "Job changed; review current details.", 409, true);
+    if (doc?.request_key === requestKey) {
+      if (doc.input_digest !== digest || doc.job_revision !== jobRevision) return errorResponse(request, env, "job_sales_conflict", "Retry key contains different data.", 409, false);
+      if (!await stillCurrent()) return errorResponse(request, env, "job_detail_changed", "Reload current job scope.", 409, true);
+      return result(doc, stored!.etag);
+    }
+    if (!Object.hasOwn(input, "revision") || input.revision !== (stored?.etag || null)) return errorResponse(request, env, "job_sales_conflict", "Proposal changed; reload before saving.", 409, true);
+    if (!await stillCurrent()) return errorResponse(request, env, "job_detail_changed", "Reload current job scope.", 409, true);
+    const history = doc?.history || [];
+    if (!Array.isArray(history) || history.length >= 500) return errorResponse(request, env, "job_sales_history_full", "Proposal history requires owner review.", 409, false);
+    const updatedAt = new Date().toISOString();
+    const next = {partner_record_id: partner.id, session_record_id: id, job_revision: jobRevision, proposal, input_digest: digest, request_key: requestKey, updated_at: updatedAt, history: [...history, {at: updatedAt, actor: partner.id, proposal}]};
+    const saved = await bucket.put(key, JSON.stringify(next), {onlyIf: stored ? {etagMatches: stored.etag} : {etagDoesNotMatch: "*"}, httpMetadata: {contentType: "application/json"}});
+    if (!saved) return errorResponse(request, env, "job_sales_conflict", "Proposal changed; reload before saving.", 409, true);
+    if (!await stillCurrent()) return errorResponse(request, env, "job_detail_changed", "Job changed during save; reload before proceeding.", 409, true);
+    return result(next, saved.etag);
+  } catch {
+    return errorResponse(request, env, "job_sales_unavailable", "Job proposal storage unavailable. Retry after reloading.", 503, true);
+  }
+}
+
 async function handlePartnerJobDetail(request: Request, env: RuntimeEnv): Promise<Response> {
   const verified = await verifyPartnerTokenFromRequest(request, env);
   if (!verified.ok) return verified.response;
