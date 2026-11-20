@@ -15,7 +15,7 @@ The Git source card `knowledge/kenji/cards/promotion/care-back-2026-final-lock-t
 3. An explicit feature gate `KENJI_PUBLIC_PROMOTIONS_ENABLED === "true"`. **No flag is enabled by this PR.** Missing/invalid/stale/ambiguous evidence remains typed HTTP 423 `published_promotion_contract_unavailable`; `AI_WORKER` is never called for promotions.
 4. Verified, currently published single-campaign evidence may produce only the **exact approved Thai copy** and its allowed public promotion link; expiry produces a fixed neutral message and MY MMD handoff. It cannot calculate or grant a coupon or member benefit.
 5. A personal coupon request is a restricted lane (HTTP 403), even if the message also mentions a promotion. The existing /member/kenji UI now translates typed 423/403 to customer-safe MY MMD handoffs. Other 423 conditions retain their prior behavior.
-6. The general Q&A AI payload now has minimal identity-only context, while the BFF still resolves a verified server session before classifying/answering.
+6. The general Q&A AI payload now has minimal identity-only context, while the BFF still resolves a verified server session before classifying/answering. The Worker-generated UI shortcut prompts no longer advertise restricted Black Card, payment or membership lookup actions.
 
 ## Contract
 
@@ -47,7 +47,7 @@ The currently observable Webflow CARE BACK page, promo-code records and policy c
 
 - Test malformed/missing/stale evidence, hash/revision mismatch, draft/unpublished/cross-domain link, personal coupon request, explicit expiration at Bangkok midnight, October/November/Honor distinction, and `AI_WORKER` call count zero on denied promotions.
 - Keep old member/Points/payment/booking/care guardrails, same-origin check and session-first 401 behavior.
-- Reconcile legacy Kenji shortcut prompts in the Worker-generated page separately; do not enable legacy operational lanes.
+- The Worker-generated /member/kenji shortcut prompts have been replaced with General Q&A-only examples. Verify they still classify as general; independently reconcile any older Webflow /concierge/kenji page before publication. Do not enable legacy operational lanes.
 - Real iOS/LINE QA, known test session, and no customer data or writes.
 - Verify active Cloudflare Worker deployment **and** Edge Router owner against the reviewed Git commit. Merge != deploy; uploaded version != active traffic.
 - Keep `KENJI_PUBLIC_PROMOTIONS_ENABLED` off until the evidence producer is attested, tested and explicitly approved. No deploy, Webflow publish, marketing post, customer write or LINE send is within this change.
