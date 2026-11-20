@@ -25,7 +25,7 @@ const RESTRICTED = Object.freeze([
   ],
 ]);
 
-const PUBLISHED_PROMOTION = /(โปรโมชั่น|โปรโมชัน|โปรล่าสุด|promotion|promo|campaign|คูปอง|coupon|offer|สิทธิพิเศษที่ประกาศ|care[\\s_-]*back|แคร์[\\s_-]*แบ[ก็ค]|double[\\s_-]*moment|6[\\s_-]*years|6[\\s_-]*ปี|ส่วนลด)/i;
+const PUBLISHED_PROMOTION = /(โปรโมชั่น|โปรโมชัน|โปรล่าสุด|promotion|promo|campaign|คูปอง|coupon|offer|สิทธิพิเศษที่ประกาศ|care[\s_-]*back|แคร์[\s_-]*แบ[ก็ค]|double[\s_-]*moment|6[\s_-]*years|6[\s_-]*ปี|ส่วนลด)/i;
 
 function messageText(value) {
   return value == null ? "" : String(value).trim().replace(/\s+/g, " ").slice(0, 800);
