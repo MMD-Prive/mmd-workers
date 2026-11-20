@@ -239,12 +239,12 @@ test("NEXT LV remains member-only, mobile-first and CSP-nonced", async () => {
   assert.ok(qaStart >= 0 && promoStart > qaStart);
   const qaPanel = html.slice(qaStart, promoStart);
   assert.deepEqual([...qaPanel.matchAll(/data-prompt="([^"]+)"/g)].map(([, prompt]) => prompt), [
-    "GWs คืออะไร",
-    "EMs คืออะไร",
-    "สมัครสมาชิกแล้วได้อะไรบ้าง",
-    "Black Card คืออะไร",
     "MMD คืออะไร",
-    "ชำระเงินอย่างไร",
+    "MY MMD คืออะไร",
+    "Kenji ช่วยอะไรได้บ้าง",
+    "บริการ Companion คืออะไร",
+    "เริ่มต้นใช้งานเว็บไซต์อย่างไร",
+    "ติดต่อ MMD ได้ทางไหน",
   ]);
   const promptStart = html.indexOf('document.querySelectorAll("[data-prompt]").forEach(function (button) {');
   const modesStart = html.indexOf("  modes.forEach(function (button) {", promptStart);
