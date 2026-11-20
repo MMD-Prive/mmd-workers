@@ -44,6 +44,16 @@ test("restricted account and operational lanes fail closed", () => {
   }
 });
 
+test("all Public Q&A shortcut prompts stay in the allowed general lane", () => {
+  const questions = [
+    "MMD คืออะไร", "MY MMD คืออะไร", "Kenji ช่วยอะไรได้บ้าง",
+    "บริการ Companion คืออะไร", "เริ่มต้นใช้งานเว็บไซต์อย่างไร", "ติดต่อ MMD ได้ทางไหน",
+  ];
+  for (const question of questions) {
+    assert.equal(classifyKenjiPublicCapability(question).capability, "general_qna", question);
+  }
+});
+
 test("only the exact general AI intent can be rendered", () => {
   assert.equal(isGeneralKenjiIntent("general"), true);
   assert.equal(isGeneralKenjiIntent(" GENERAL "), true);
