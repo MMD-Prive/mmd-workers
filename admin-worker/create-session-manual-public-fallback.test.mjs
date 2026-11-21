@@ -39,7 +39,7 @@ function installEmptyAirtable() {
   };
 }
 
-test("lookup with no canonical match returns one manual public-only client", async () => {
+test("lookup with no canonical match signals manual Public fallback without returning a customer", async () => {
   const restore = installEmptyAirtable();
   try {
     const response = await handleCreateSessionClientLineageRequest(
@@ -54,17 +54,11 @@ test("lookup with no canonical match returns one manual public-only client", asy
     assert.equal(response.status, 200);
     assert.equal(body.ok, true);
     assert.equal(body.manual_fallback, true);
-    assert.equal(body.count, 1);
-    assert.equal(body.records.length, 1);
-
-    const record = body.records[0];
-    assert.equal(record.client_name, "หนุ่ย");
-    assert.equal(record.remembered_name, "หนุ่ย");
-    assert.equal(record.matched_on, "manual_name_pending_reconcile");
-    assert.equal(record.membership_status, "guest_public_only");
-    assert.equal(record.manual_public_only, true);
-    assert.equal(record.identity_status, "pending_reconcile");
-    assert.equal(record.entitlement_snapshot_source, "none");
+    assert.equal(body.no_canonical_match, true);
+    assert.equal(body.count, 0);
+    for (const key of ["records", "results", "items"]) {
+      assert.deepEqual(body[key], [], key);
+    }
     assert.match(body.lineage_warnings.join(" "), /manual_public_only_pending_reconcile/);
   } finally {
     restore();
