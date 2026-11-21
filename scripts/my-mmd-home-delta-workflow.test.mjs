@@ -16,7 +16,7 @@ test('reference release pins the merged #3219 source and unchanged companion to 
  const raw=readFileSync(new URL('./liff-reference-3219-delta-manifest.json',import.meta.url));
  const manifest=parseHomeManifest(raw,'6a6f7b1ff7208df61f7b15f8a22be995297f5d1c1409195000359bc25724d55f','member-pages-worker');
  assert.equal(manifest.source_sha,'b7dec7a7213bdce8c7f2a369f2a2304d6dd9466f');
- assert.equal(manifest.source_sha,job.match(/APPROVED_SOURCE_SHA: ([a-f0-9]{40})/)[1]);
+ // Historical manifest remains immutable; the current release pin is tested below.
  assert.equal(manifest.baseline_version,'0e415d37-1823-4914-940a-4b3853b262a6');
  assert.equal(manifest.baseline_deployment,'455961e8-a71e-4efe-ab29-c252987f431e');
  assert.equal(manifest.modules.length,2);
@@ -31,6 +31,28 @@ test('reference release pins the merged #3219 source and unchanged companion to 
  assert.match(after,/requestRef:env\[SERVER_REFERENCE\]/);
  assert.equal(after.split('const referenceFetch = (${createReferenceFetch.toString()})').length-1,2);
  assert.match(job,/environment: member-pages-code-only-owner/);
+ assert.match(job,/if: always\(\)/);
+});
+test('401 reason release pins exact source, bytes and the unchanged Owner approval guards',()=>{
+ const raw=readFileSync(new URL('./liff-401-3232-delta-manifest.json',import.meta.url));
+ const manifest=parseHomeManifest(raw,'557ca0a3cf5284ae2fbf8fb60f9129600950c23d7554df08d9768814574b857a','member-pages-worker');
+ assert.equal(manifest.source_sha,'5595437dd72ef77f8d46de2ce2842b5afd25468c');
+ assert.equal(manifest.source_sha,job.match(/APPROVED_SOURCE_SHA: ([a-f0-9]{40})/)[1]);
+ assert.equal(manifest.baseline_version,'734d8b02-e4db-4e25-a0a3-108b5f928fff');
+ assert.equal(manifest.baseline_deployment,'bbb82854-f2ec-439c-a60b-8ed8640cd1ab');
+ assert.equal(manifest.modules.length,2);
+ const entry=manifest.modules.find(m=>m.name===manifest.main_module);
+ assert.equal(entry.before_sha256,'4164694e5b482ad0e1186a933da50c1041fa60941992f9c6104f3913114b4bcb');
+ assert.equal(entry.after_sha256,'4d68981d15c22fdf6f46b5c70ba7887617576f94b86a35e9328b1ed4e92bd7e7');
+ assert.equal(entry.patches.length,1);
+ const branding=manifest.modules.find(m=>m.name==='app-branding-module.mjs');
+ assert.equal(branding.before_sha256,'76c2130c17a40f459b3697262f4a2cc86de0c3ecf2cee631e22a17128533ad60');
+ assert.equal(branding.after_sha256,branding.before_sha256);assert.deepEqual(branding.patches,[]);
+ assert.match(entry.patches[0].after,/LIFF_SESSION_REQUIRED/);
+ assert.match(entry.patches[0].after,/LIFF_SESSION_INVALID/);
+ assert.match(job,/environment: member-pages-code-only-owner/);
+ assert.match(job,/needs: \[production-approval\]/);
+ assert.match(job,/inputs.approved_sha == github.sha/);
  assert.match(job,/if: always\(\)/);
 });
 test('historical entry lane manifest preserves merged #3070 source',()=>{

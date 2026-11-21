@@ -4,6 +4,7 @@ on:
     paths:
       - scripts/my-mmd-home-delta-*
       - scripts/liff-reference-*
+      - scripts/liff-401-3232-delta-manifest.json
       - scripts/care-back-november-policy-release.mjs
       - scripts/member-pages-owner-approval.test.mjs
       - .github/workflows/deploy-member-pages-worker-code-only.yml
