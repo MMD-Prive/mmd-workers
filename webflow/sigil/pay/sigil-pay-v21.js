@@ -253,6 +253,16 @@
     payment=data;
     var p=data.payment||{};
     var pricing=data.pricing||{};
+    if(data.model_work_lane === "public_model" || pricing.deposit_policy === "public_model_v1"){
+      root.dataset.paymentWorld="public";
+      text(".sp21__brand-copy strong","MMD Privé");
+      text(".sp21__brand-copy small","ชำระเงิน");
+      text(".sp21__verify-banner small","MMD PRIVÉ");
+      text(".sp21__eyebrow","สรุปรายการชำระเงิน");
+      $(".sp21__private").hidden=true;
+      $(".sp21__verify-banner").hidden=true;
+      text("footer strong","MMD Privé");
+    }
     var meta=statusMeta(data);
     var due=num(p.amount_due_thb);
     var net=num(pricing.net_price_thb);
@@ -281,9 +291,10 @@
     text("[data-sp21-due]",money(due));
     var privateDeposit=stage.toLowerCase()==="deposit"&&pricing.deposit_policy==="private_model_v1";
     text("[data-sp21-due-label]",stage.toLowerCase()==="deposit"?(privateDeposit?"มัดจำ Private Model":"มัดจำ"):"ชำระครั้งนี้");
+    var publicDeposit=stage.toLowerCase()==="deposit"&&pricing.deposit_policy==="public_model_v1";
     var remark=$("[data-sp21-deposit-remark]"),remarkBreak=$("[data-sp21-deposit-remark-break]");
-    if(remark){remark.hidden=!privateDeposit;if(privateDeposit)remark.textContent="หมายเหตุ: "+pricing.deposit_requested_percent+"% ของยอดบริการก่อนลด ไม่รวมค่าเดินทาง · ปัดขึ้นทีละ ฿500 โดยไม่เกินยอดบริการสุทธิ";}
-    if(remarkBreak)remarkBreak.hidden=!privateDeposit;
+    if(remark){remark.hidden=!(privateDeposit||publicDeposit);if(publicDeposit)remark.textContent="มัดจำขั้นต่ำ 20% ของยอดบริการเต็มก่อนลด ไม่รวมค่าเดินทาง · ปัดขึ้นเป็นบาท โดยไม่เกินยอดบริการสุทธิ";if(privateDeposit)remark.textContent="หมายเหตุ: "+pricing.deposit_requested_percent+"% ของยอดบริการก่อนลด ไม่รวมค่าเดินทาง · ปัดขึ้นทีละ ฿500 โดยไม่เกินยอดบริการสุทธิ";}
+    if(remarkBreak)remarkBreak.hidden=!(privateDeposit||publicDeposit);
 
     var map=$("[data-sp21-map]");
     var mapUrl=safeHttps(data.google_map_url);
@@ -307,6 +318,8 @@
         text("[data-sp21-discount]","- "+money(diff)+(pct!=null&&pct>0?" · "+pct+"%":""));
         var labels={coupon:"คูปอง",discount:"ส่วนลด",promotion:"โปรโมชั่น",special_price:"ราคาพิเศษ"};
         var kind=labels[clean(pricing.discount_kind)]||"ส่วนลด";
+        var title=discountRow.querySelector("span");
+        if(title&&title.firstChild?.nodeType===3)title.firstChild.nodeValue=kind+(pricing.discount_mode==="percent"?" (%) ":" (จำนวนเงิน) ");
         var reason=clean(pricing.discount_reason).slice(0,120);
         text("[data-sp21-discount-reason]",reason&&reason!==kind?"("+kind+" · "+reason+")":"("+kind+")");
       }

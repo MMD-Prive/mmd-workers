@@ -78,6 +78,8 @@ export async function handlePaymentInstructions(request, env = {}, fetchConfirma
     stage: text(payment.stage, 80) || null,
     amount_due_thb: numberOrNull(payment.amount_due_thb),
     currency: "THB",
+    pricing: details.pricing || null,
+    billing: details.billing || null,
     instruction_profile: instructionIds[0],
   };
 

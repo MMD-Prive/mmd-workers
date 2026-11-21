@@ -273,19 +273,42 @@ function modelPayoutBreakdown(servicePricing, modelPayout, jobType) {
   if (!servicePricing || !Array.isArray(servicePricing.addons) || modelPayout === null) return null;
   const base = numberOrNull(servicePricing.model_base_payout_thb);
   const baseLine = modelPayoutLine(base, servicePricing.model_standard_base_rate_thb, servicePricing.model_base_job_adjustment_thb);
+  if (baseLine && servicePricing.model_base_adjustment_type) Object.assign(baseLine, {
+    adjustment_type: servicePricing.model_base_adjustment_type || "amount",
+    adjustment_value: numberOrNull(servicePricing.model_base_adjustment_value),
+    adjustment_reason: text(servicePricing.model_base_adjustment_reason, 200) || null,
+  });
   const additions = servicePricing.addons.map((item) => ({
     option: String(item?.option || "").toLowerCase(),
     ...modelPayoutLine(item?.model_payout_thb, item?.model_standard_rate_thb, item?.model_job_adjustment_thb),
+    ...(item?.model_adjustment_type ? {adjustment_type: item.model_adjustment_type,
+      adjustment_value: numberOrNull(item.model_adjustment_value),
+      adjustment_reason: text(item.model_adjustment_reason, 200) || null} : {}),
   }));
   const total = numberOrNull(servicePricing.model_total_payout_thb);
+  const promotionShare = numberOrNull(servicePricing.discount?.model_share_thb) || 0;
+  const modelTravel = numberOrNull(servicePricing.model_travel_fee_thb) || 0;
   const allowed = new Set(["mk", "burn", "kiss", "live", "group"]);
-  if (baseLine === null || base <= 0 || additions.some((item) => !allowed.has(item.option) || item.amount_thb === null || item.amount_thb < 0)
-    || !Number.isFinite(total) || Math.abs(base + additions.reduce((sum, item) => sum + item.amount_thb, 0) - total) > 0.01
+  if (baseLine === null || base <= 0 || additions.some((item) => !allowed.has(item.option) || !Number.isFinite(item.amount_thb) || item.amount_thb < 0)
+    || !Number.isFinite(total) || Math.abs(base + additions.reduce((sum, item) => sum + item.amount_thb, 0) - promotionShare + modelTravel - total) > 0.01
     || Math.abs(total - modelPayout) > 0.01) return null;
   const parts = text(jobType, 240).split(/[:+,|]/).map((part) => part.trim()).filter(Boolean);
   const baseLabel = parts.find((part) => ["pn", "vip"].includes(part.toLowerCase())) || parts.at(-1) || "งานหลัก";
-  return [{ label: text(baseLabel, 40).toUpperCase(), ...baseLine },
+  const lines = [{ label: text(baseLabel, 40).toUpperCase(), ...baseLine },
     ...additions.filter((item) => item.amount_thb > 0).map(({ option, ...line }) => ({ label: option.toUpperCase(), ...line }))];
+  let remainingShare = promotionShare;
+  for (const line of lines) {
+    const share = Math.min(line.amount_thb, remainingShare);
+    if (share > 0) {
+      line.discount_share_thb = share;
+      line.discount_reason = text(servicePricing.discount?.reason, 200) || null;
+      line.amount_thb = Math.round((line.amount_thb - share) * 100) / 100;
+      remainingShare = Math.round((remainingShare - share) * 100) / 100;
+    }
+  }
+  if (remainingShare > 0) return null;
+  if (modelTravel > 0) lines.push({ label: "Travel", amount_thb: modelTravel });
+  return lines;
 }
 
 function modelPayoutLine(amountValue, standardValue, adjustmentValue) {
@@ -312,8 +335,10 @@ function customerPricing(raw, netFallback) {
     discount_thb: discount,
     discount_kind: ["coupon", "discount", "promotion", "special_price"].includes(text(source.discount_kind, 40)) ? text(source.discount_kind, 40) : null,
     discount_reason: text(source.discount_reason, 120) || null,
+    discount_basis_thb: numberOrNull(source.discount_basis_thb),
+    discount_rounding: text(source.discount_rounding, 40) || null,
     net_price_thb: net,
-    ...(source.deposit_policy === "private_model_v1" ? { deposit_policy: source.deposit_policy, deposit_requested_percent: numberOrNull(source.deposit_requested_percent) } : {}),
+    ...(["private_model_v1", "public_model_v1"].includes(source.deposit_policy) ? { deposit_policy: source.deposit_policy, deposit_requested_percent: numberOrNull(source.deposit_requested_percent) } : {}),
     deposit_basis_thb: basis,
     deposit_percent: numberOrNull(source.deposit_percent),
     deposit_due_thb: numberOrNull(source.deposit_due_thb),

@@ -15,12 +15,18 @@ export function customerBillingBreakdown(pricing, totalValue, travelValue, servi
   const included = travel > 0 && equal(net, total) && travel <= total;
   const added = travel > 0 && net != null && net >= 0 && equal(net + travel, total);
   const priceValid = net != null && net >= 0 && (equal(net, total) || added);
+  const discountBasis = amount(pricing?.discount_basis_thb) ?? full;
+  const expectedDiscount = pricing?.discount_rounding === 'floor_to_500_baht'
+    ? Math.floor(discountBasis * amount(pricing?.discount_percent) / 100 / 500) * 500
+    : Math.round(discountBasis * amount(pricing?.discount_percent)) / 100;
   const billing = {
     schema: 'customer_billing_breakdown_v1', total_thb: total,
     original_price_thb: priceValid ? full : null,
     discount_thb: priceValid ? discount : null,
+    discount_mode: priceValid ? (pricing?.discount_mode || 'none') : null,
+    discount_reason: priceValid ? String(pricing?.discount_reason || '').slice(0, 120) : null,
     discount_percent: priceValid && amount(pricing?.discount_percent) > 0 && amount(pricing?.discount_percent) <= 100
-      && Math.abs(full * amount(pricing.discount_percent) / 100 - discount) <= 1 ? amount(pricing.discount_percent) : null,
+      && Math.abs(expectedDiscount - discount) <= 0.01 ? amount(pricing.discount_percent) : null,
     discount_kind: priceValid && ['coupon', 'discount', 'promotion', 'special_price'].includes(pricing?.discount_kind) ? pricing.discount_kind : null,
     travel_fee_thb: travel,
     travel_treatment: included ? 'included' : added ? 'added' : travel > 0 ? 'review_required' : 'none',

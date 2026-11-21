@@ -22,7 +22,10 @@ function validateDiscount(d, gross, fail) {
   if (d === undefined || d === null) return null;
   if (typeof d !== "object" || !["customer_request", "promotion"].includes(d.mode) || !["amount", "percent"].includes(d.type)
     || !money(d.value) || d.value <= 0 || !money(d.amount_thb) || d.amount_thb <= 0 || d.amount_thb >= gross) fail();
-  if (d.type === "percent" && (d.value > 100 || !sameMoney(Math.round(gross * d.value) / 100, d.amount_thb))) fail();
+  const rounding = d.rounding === "floor_to_500_baht" ? d.rounding : "cent";
+  const percentageAmount = rounding === "floor_to_500_baht"
+    ? Math.floor(gross * d.value / 100 / 500) * 500 : Math.round(gross * d.value) / 100;
+  if (d.type === "percent" && (d.value > 100 || !sameMoney(percentageAmount, d.amount_thb))) fail();
   if (d.type === "amount" && !sameMoney(d.value, d.amount_thb)) fail();
   if (d.amount_thb > gross * 0.25 + 1e-6) fail();
   const modelShare = d.mode === "promotion" ? Math.floor(d.amount_thb * 100 / 2) / 100 : 0;
@@ -38,7 +41,47 @@ function validateDiscount(d, gross, fail) {
     kind = d.kind;
   }
   return { mode: d.mode, type: d.type, value: d.value, amount_thb: d.amount_thb, mmd_share_thb: round2(d.amount_thb - modelShare),
-    model_share_thb: modelShare, ...(kind ? { kind } : {}), ...(reason ? { reason } : {}) };
+    model_share_thb: modelShare, ...(d.type === "percent" ? { rounding, basis_thb: gross } : {}), ...(kind ? { kind } : {}), ...(reason ? { reason } : {}) };
+}
+
+function modelAdjustment(amount, standard, adjustment, type, value, reason, fail) {
+  if (standard === undefined && adjustment === undefined) return {};
+  if (!money(standard) || standard <= 0 || !Number.isFinite(adjustment)
+    || !sameMoney(standard + adjustment, amount)) fail();
+  const mode = type || "amount";
+  const input = value ?? adjustment;
+  if (!["amount", "percent"].includes(mode) || !Number.isFinite(input)) fail();
+  const expected = mode === "percent" ? round2(standard * input / 100) : input;
+  if (Math.abs(expected - adjustment) > 0.001) fail();
+  const explanation = typeof reason === "string" ? reason.trim().slice(0, 200) : "";
+  if (type && adjustment !== 0 && !explanation) fail();
+  return { standard, adjustment, type: mode, value: input, reason: explanation };
+}
+
+export function validateJobCustomerDiscount(body) {
+  if (body.customer_discount == null) return null;
+  const fail = () => { const error = new Error("Invalid customer discount metadata.");
+    error.code = "customer_discount_invalid"; error.status = 400; throw error; };
+  const gross = Number(body.original_amount_thb) - Number(body.travel_fee_thb || 0);
+  const discount = validateDiscount(body.customer_discount, gross, fail);
+  if (!discount.reason) fail();
+  if (!money(gross) || !sameMoney(gross - discount.amount_thb, body.service_amount_thb)) fail();
+  if (body.job_visibility !== "private" && discount.model_share_thb > 0) fail();
+  return { ...discount, basis_thb: gross };
+}
+
+export function validateJobModelRate(body) {
+  const rate = body.model_rate;
+  if (rate == null) return null;
+  const fail = () => { const error = new Error("Invalid model rate metadata.");
+    error.code = "model_rate_invalid"; error.status = 400; throw error; };
+  const value = modelAdjustment(rate.amount_thb, rate.standard_amount_thb,
+    rate.job_adjustment_thb, rate.adjustment_type, rate.adjustment_value, rate.adjustment_reason, fail);
+  if (value.standard === undefined || !sameMoney(rate.amount_thb, body.pay_model_thb)) fail();
+  return { version: 1, model_base_payout_thb: rate.amount_thb, model_total_payout_thb: rate.amount_thb,
+    model_standard_base_rate_thb: value.standard, model_base_job_adjustment_thb: value.adjustment,
+    model_base_adjustment_type: value.type, model_base_adjustment_value: value.value,
+    model_base_adjustment_reason: value.reason, addons: [] };
 }
 
 /** Optional, backward-compatible quote envelope. Never grants membership or changes settlement policy. */
@@ -106,11 +149,31 @@ export function validateJobServicePricing(body) {
     }
     if (body.pay_model_thb !== modelTotal) fail();
   }
+  const baseAdjustment = needsModel ? modelAdjustment(p.model_base_payout_thb,
+    p.model_standard_base_rate_thb, p.model_base_job_adjustment_thb,
+    p.model_base_adjustment_type, p.model_base_adjustment_value, p.model_base_adjustment_reason, fail) : {};
+  const addonAdjustments = p.addons.map(a => modelAdjustment(a.model_payout_thb,
+    a.model_standard_rate_thb, a.model_job_adjustment_thb,
+    a.model_adjustment_type, a.model_adjustment_value, a.model_adjustment_reason, fail));
   // Persist only validated bounded fields, never arbitrary browser metadata.
   const snapshot = { version: 1, currency: "THB", settlement_mode: p.settlement_mode,
     client_base_amount_thb: p.client_base_amount_thb, model_base_payout_thb: p.model_base_payout_thb,
+    ...(baseAdjustment.standard !== undefined ? {
+      model_standard_base_rate_thb: baseAdjustment.standard,
+      model_base_job_adjustment_thb: baseAdjustment.adjustment,
+      model_base_adjustment_type: baseAdjustment.type,
+      model_base_adjustment_value: baseAdjustment.value,
+      model_base_adjustment_reason: baseAdjustment.reason,
+    } : {}),
     addons: OPTIONS.flatMap(option => p.addons.filter(a => a.option === option).map(a => ({ option,
-      client_amount_thb: a.client_amount_thb, model_payout_thb: a.model_payout_thb }))),
+      client_amount_thb: a.client_amount_thb, model_payout_thb: a.model_payout_thb,
+      ...(addonAdjustments[p.addons.indexOf(a)].standard !== undefined ? {
+        model_standard_rate_thb: addonAdjustments[p.addons.indexOf(a)].standard,
+        model_job_adjustment_thb: addonAdjustments[p.addons.indexOf(a)].adjustment,
+        model_adjustment_type: addonAdjustments[p.addons.indexOf(a)].type,
+        model_adjustment_value: addonAdjustments[p.addons.indexOf(a)].value,
+        model_adjustment_reason: addonAdjustments[p.addons.indexOf(a)].reason,
+      } : {}) }))),
     client_total_amount_thb: clientTotal, ...(travelFee > 0 ? { travel_fee_thb: travelFee } : {}),
     ...(modelTravelFee > 0 ? { model_travel_fee_thb: modelTravelFee } : {}), model_total_payout_thb: modelTotal,
     ...(discount ? { client_gross_amount_thb: clientGross, model_gross_payout_thb: modelGross, discount } : {}) };

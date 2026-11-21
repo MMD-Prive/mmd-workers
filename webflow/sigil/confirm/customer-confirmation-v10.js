@@ -185,7 +185,7 @@
           <p class="mjc16__bill-note" data-c-discount-note hidden></p>
           <div class="is-total"><span>ยอดรวม</span><b data-c-net>—</b></div>
           <div><span>มัดจำชำระแล้ว</span><b data-c-deposit>—</b></div>
-          <div><span>ยอดคงเหลือ</span><b data-c-balance>—</b></div>
+          <div><span>คงเหลือหลังมัดจำ</span><b data-c-balance>—</b></div>
         </div>
 
     <div class="mjc16__paycta" data-c-paycta hidden>
@@ -491,6 +491,14 @@
       } else E.map.hidden = true;
       E.full.textContent = money(p.full_price_thb);
       E.discount.textContent = discountText(p);
+      const discountLabel = E.discount?.closest("div")?.querySelector("span");
+      const discountKind = str(p.discount_kind || d.billing?.discount_kind).toLowerCase();
+      if (discountLabel) {
+        const isPercent = p.discount_mode === "percent";
+        const label = {promotion:"โปรโมชั่น",coupon:"คูปอง",special_price:"ราคาพิเศษ"}[discountKind] || "ส่วนลด";
+        discountLabel.textContent = label + (isPercent ? " (%)" : " (จำนวนเงิน)");
+      }
+
       E.net.textContent = money(p.net_price_thb ?? d.amount_thb);
       const discountAmount = Number(p.discount_thb);
       const hasDiscount = Number.isFinite(discountAmount) && discountAmount > 0;
@@ -502,8 +510,20 @@
         const kinds = { coupon: "คูปอง", discount: "ส่วนลด", promotion: "โปรโมชั่น", special_price: "ราคาพิเศษ (Special price)" };
         const kind = str(p.discount_kind || d.billing?.discount_kind).toLowerCase();
         E.discountNote.textContent = hasDiscount ? "หมายเหตุ: ราคานี้ลดจากราคาก่อนลด" + (kinds[kind] ? " · " + kinds[kind] : "") : "";
+        const reason = str(p.discount_reason || d.billing?.discount_reason);
+        if (hasDiscount && reason) E.discountNote.textContent = reason;
+        let roundingNote = R.querySelector("[data-c-discount-rounding]");
+        if (!roundingNote) {
+          roundingNote = document.createElement("p");roundingNote.className = "mjc16__bill-note";
+          roundingNote.setAttribute("data-c-discount-rounding", "");E.discountNote.after(roundingNote);
+        }
+        roundingNote.textContent = "ส่วนลดเปอร์เซ็นต์ปัดยอดลงทีละ ฿500";
+        roundingNote.hidden = !hasDiscount || p.discount_mode !== "percent" || p.discount_rounding !== "floor_to_500_baht";
         E.discountNote.hidden = !hasDiscount;
       }
+      let policyNote=R.querySelector('[data-public-deposit-policy]');
+      if(!policyNote){policyNote=document.createElement('p');policyNote.setAttribute('data-public-deposit-policy','');policyNote.className='mjc16__bill-note';E.balance.closest('div').after(policyNote);}
+      policyNote.hidden=p.deposit_policy!=='public_model_v1';policyNote.textContent='มัดจำขั้นต่ำ 20% ของยอดบริการเต็มก่อนลด ไม่รวมค่าเดินทาง · มัดจำ '+money(p.deposit_due_thb);
       E.deposit.textContent = money(p.deposit_received_thb);
       E.balance.textContent = money(p.balance_thb);
       loaded = true;
