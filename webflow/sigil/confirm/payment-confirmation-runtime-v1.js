@@ -182,6 +182,8 @@
           #mmd-payment-confirmation[data-payment-world="public"] .mpc-shell{display:block;padding:24px 0 44px}
           #mmd-payment-confirmation[data-payment-world="public"] .mpc-brand{position:relative;inset:auto;display:inline-flex;min-height:44px}
           #mmd-payment-confirmation[data-payment-world="public"] .mpc-card{margin:24px 0 0;background:#fff;box-shadow:none}
+          #mmd-payment-confirmation[data-payment-world="public"] :is(.mpc-summary-item span,.mpc-status p,.mpc-brand small){color:#57454d!important;-webkit-text-fill-color:#57454d!important}
+          #mmd-payment-confirmation[data-payment-world="public"] .mpc-actions a[href*="lin.ee"]{color:#79101c!important;-webkit-text-fill-color:#79101c!important;border-color:#a46b76}
           #mmd-payment-confirmation[data-payment-world="public"] .mpc-language{background:#fff;color:#211b1e;border-color:#e1d4d8}
           #mmd-payment-confirmation[data-payment-world="public"] .mpc-progress li{color:#695860;border-color:#e1d4d8}
           #mmd-payment-confirmation[data-payment-world="public"] .mpc-progress :is(.is-current,.is-done){color:#941523;border-color:#941523}

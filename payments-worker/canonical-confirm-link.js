@@ -221,7 +221,7 @@ export async function handleCanonicalConfirmLink(request, env) {
           deposit_round_step_thb: privateModelDeposit ? 500 : CUSTOMER_DEPOSIT_ROUND_STEP_THB,
           deposit_rounding: privateModelDeposit ? "ceil_to_500_baht" : "ceil_to_baht",
         }
-      : {
+      : discountMode === "none" ? null : {
           full_price_thb: originalAmountThb, discount_mode: discountMode,
           discount_percent: discountPercent, discount_basis_thb: discountBasis,
           discount_rounding: discountRounding, discount_thb: discountMode === "none" ? 0 : discountThb,

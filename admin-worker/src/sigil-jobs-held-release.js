@@ -229,9 +229,13 @@ function paymentPayload(body, session, meta) {
   const pricing = noteSnapshot(note, PRICING_MARKER);
   const basis = pricing.deposit_basis_thb;
   const deposit = pricing.deposit_due_thb;
+  const grossPolicy = ["public_model_v1", "private_model_v1"].includes(pricing.deposit_policy);
+  const serviceAmount = grossPolicy
+    ? amountThb - Number(fieldValue(session, SESSION_FIELDS.travelFeeThb) || 0)
+    : basis;
   const heldDeposit = paymentType === "deposit" && pricing.net_price_thb === amountThb
-    && Number.isFinite(basis) && basis > 0 && basis <= amountThb
-    && Number.isFinite(deposit) && deposit > 0 && deposit <= basis;
+    && Number.isFinite(basis) && basis > 0 && basis <= (grossPolicy ? pricing.full_price_thb : amountThb)
+    && Number.isFinite(deposit) && deposit > 0 && deposit <= serviceAmount;
   const full = pricing.full_price_thb;
   const heldDiscount = heldDeposit && Number.isFinite(full) && full > amountThb
     && Math.abs(full - amountThb - pricing.discount_thb) < 0.005;
@@ -249,8 +253,9 @@ function paymentPayload(body, session, meta) {
     amount_thb: amountThb,
     travel_fee_thb: fieldValue(session, SESSION_FIELDS.travelFeeThb),
     model_travel_fee_thb: fieldValue(session, SESSION_FIELDS.modelTravelFeeThb),
-    ...(heldDeposit ? { service_amount_thb: basis, deposit_amount_thb: deposit } : {}),
-    ...(heldDiscount ? { original_amount_thb: full, pricing_adjustment: "discount", discount_kind: pricing.discount_kind } : {}),
+    ...(heldDeposit ? { service_amount_thb: serviceAmount, deposit_amount_thb: deposit } : {}),
+    ...(heldDiscount ? { original_amount_thb: full, pricing_adjustment: "discount", discount_kind: pricing.discount_kind, discount_reason: pricing.discount_reason, discount_mode: pricing.discount_mode, discount_percent: pricing.discount_percent, discount_basis_thb: pricing.discount_basis_thb, discount_rounding: pricing.discount_rounding } : {}),
+    ...(heldDeposit && grossPolicy ? { deposit_policy: pricing.deposit_policy, deposit_percent: pricing.deposit_requested_percent } : {}),
     pay_model_thb: fieldValue(session, SESSION_FIELDS.payModelThb),
     payment_type: paymentType,
     payment_method: paymentMethod,

@@ -22,7 +22,7 @@ const EXPECT = {
   "7ba09b7d9763e44a72a34e7c18ac73e6f6d538d3fba3f4922a77961dfebe68b2"
  ],
  "pc_js": [
-  "c2ad361f689060cf31b6fe79b94149c4aa023fc7f4f0c367c336e02192c341d0"
+  "afe3abeed8a672089a408a9d7418fbfdae7b6bb42524065968e3e8c56c98e5d7"
  ]
 };
 
@@ -50,7 +50,7 @@ test('payment-confirmation theme injects the original CSS unchanged', () => {
   assert.deepEqual(s.slice(1).map((x) => x.id), ['mmd-payment-theme-v3', 'mmd-tmib-atelier-20261101']);
 });
 
-test('runtime files contain the original inline scripts unchanged', () => {
+test('runtime files match the reviewed script checksums', () => {
   for (const [file, key] of [['model-confirmation-runtime-v1.js', 'mc_js'], ['payment-confirmation-runtime-v1.js', 'pc_js']]) {
     const src = read(file);
     const body = src.slice(src.indexOf('*/') + 3);

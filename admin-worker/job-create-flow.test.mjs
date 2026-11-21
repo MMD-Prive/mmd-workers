@@ -220,9 +220,9 @@ test('Create Job preserves negotiated discount into SIGIL Pricing v1', async () 
   assert.equal(pricing.discount_mode, 'amount');
   assert.equal(pricing.discount_thb, 5000);
   assert.equal(pricing.net_price_thb, 25000);
-  assert.equal(pricing.deposit_basis_thb, 25000);
-  assert.equal(pricing.deposit_due_thb, 7500);
-  assert.equal(pricing.balance_thb, 17500);
+  assert.equal(pricing.deposit_basis_thb, 30000);
+  assert.equal(pricing.deposit_due_thb, 6000);
+  assert.equal(pricing.balance_thb, 19000);
 });
 
 for (const visibility of ['private', 'public']) {
@@ -255,14 +255,14 @@ for (const visibility of ['private', 'public']) {
 
     const h = await run(body, { privateFixture });
     assert.equal(h.status, 200, JSON.stringify(h.data));
-    assert.equal(h.data.balance_amount_thb, privateFixture ? 13000 : 13600);
+    assert.equal(h.data.balance_amount_thb, privateFixture ? 13000 : 15000);
     assert.equal(h.issuances[0].service_amount_thb, 18000);
     assert.equal(h.issuances[0].amount_thb, 19000);
     assert.equal(h.records.get(JOBS)[0].fields.Budget, 19000);
     const session = h.records.get(SESSIONS)[0].fields;
     assert.equal(session.fldhwC79ndbnEXSZz, 19000);
     assert.equal(session.fldlTO5aNfqUmlNWm, 8000);
-    assert.equal(h.records.get(PAYMENTS)[0].fields.fldvCSwrUW8OMAooS, privateFixture ? 6000 : 5400);
+    assert.equal(h.records.get(PAYMENTS)[0].fields.fldvCSwrUW8OMAooS, privateFixture ? 6000 : 4000);
     assert.ok(session.fldEcDkF7CH9VixWM.length <= 4000);
     assert.equal(parseMarkedJson(session.fldEcDkF7CH9VixWM, 'MMD Model Remark v1').text, 'Fixture arrival instructions');
     const snapshot = privateFixture ? 'MMD SERVICE PRICING v1' : 'MMD PUBLIC JOB v2';
@@ -272,12 +272,12 @@ for (const visibility of ['private', 'public']) {
     assert.equal(details.pricing.full_price_thb, 21000);
     assert.equal(details.pricing.discount_kind, 'coupon');
     assert.equal(details.pricing.net_price_thb, 19000);
-    assert.equal(details.pricing.deposit_basis_thb, privateFixture ? 20000 : 18000);
-    assert.equal(details.pricing.deposit_due_thb, privateFixture ? 6000 : 5400);
-    assert.equal(details.pricing.balance_thb, privateFixture ? 13000 : 13600);
+    assert.equal(details.pricing.deposit_basis_thb, 20000);
+    assert.equal(details.pricing.deposit_due_thb, privateFixture ? 6000 : 4000);
+    assert.equal(details.pricing.balance_thb, privateFixture ? 13000 : 15000);
     assert.equal(details.billing.total_thb, 19000);
     assert.equal(details.billing.travel_treatment, 'included');
-    assert.equal(details.payment.amount_due_thb, privateFixture ? 6000 : 5400);
+    assert.equal(details.payment.amount_due_thb, privateFixture ? 6000 : 4000);
     if (privateFixture) assert.deepEqual(details.billing.service_items, [{ label: 'PN', amount_thb: 20000 }]);
   });
 }
@@ -325,22 +325,22 @@ test('held job release keeps the quoted deposit and both travel amounts', async 
   assert.equal(h.status, 200, JSON.stringify(h.data));
   assert.equal(h.records.has(PAYMENTS), false);
   const session = h.records.get(SESSIONS)[0].fields;
-  assert.equal(parseMarkedJson(session.fldEcDkF7CH9VixWM, 'SIGIL Pricing v1').deposit_due_thb, 5400);
+  assert.equal(parseMarkedJson(session.fldEcDkF7CH9VixWM, 'SIGIL Pricing v1').deposit_due_thb, 4000);
 
   const reconcile = { operational_create_mode: 'reconcile_held', session_id: h.data.session_id,
     client_record_id: CLIENT, model_record_id: MODEL };
   const released = await submit(h, reconcile);
   assert.equal(released.status, 200, JSON.stringify(released.data));
-  assert.equal(released.data.pricing_breakdown.deposit_due_thb, 5400);
-  assert.equal(released.data.pricing_breakdown.balance_thb, 13600);
+  assert.equal(released.data.pricing_breakdown.deposit_due_thb, 4000);
+  assert.equal(released.data.pricing_breakdown.balance_thb, 15000);
   assert.equal(released.data.pricing_breakdown.discount_kind, 'coupon');
   assert.equal(session.fld703jI4zQ0CYMHh, 1000);
   assert.equal(session.fldqYkGm9Vd3P366W, 600);
-  assert.equal(h.records.get(PAYMENTS)[0].fields.fldvCSwrUW8OMAooS, 5400);
+  assert.equal(h.records.get(PAYMENTS)[0].fields.fldvCSwrUW8OMAooS, 4000);
   const details = await readFixtureConfirmation(h, session);
-  assert.equal(details.pricing.deposit_basis_thb, 18000);
-  assert.equal(details.pricing.deposit_due_thb, 5400);
-  assert.equal(details.payment.amount_due_thb, 5400);
+  assert.equal(details.pricing.deposit_basis_thb, 20000);
+  assert.equal(details.pricing.deposit_due_thb, 4000);
+  assert.equal(details.payment.amount_due_thb, 4000);
   assert.equal(details.billing.total_thb, 19000);
   assert.equal(details.billing.discount_kind, 'coupon');
 
@@ -361,8 +361,8 @@ test('JSON-shaped operator text is truncated without dropping Confirmation prici
   assert.match(session.fldEcDkF7CH9VixWM, /\[Operator export\]/);
   const details = await readFixtureConfirmation(h, session);
   assert.equal(details.pricing.full_price_thb, 10000);
-  assert.equal(details.pricing.deposit_due_thb, 3000);
-  assert.equal(details.payment.amount_due_thb, 3000);
+  assert.equal(details.pricing.deposit_due_thb, 2000);
+  assert.equal(details.payment.amount_due_thb, 2000);
 });
 
 test('strict create without canonical Client fails before any write or issuer call', async () => {
@@ -395,7 +395,7 @@ test('a renewal equal to the travel fee stays out of the Job Budget and service 
   body.membership_action = { type: 'renew', renewal_amount_thb: 3000, include_in_payment: true, tier_hint: 'standard' };
   const h = await run(body);
   assert.equal(h.status, 200, JSON.stringify(h.data));
-  assert.equal(h.data.balance_amount_thb, 7000);
+  assert.equal(h.data.balance_amount_thb, 8000);
   assert.equal(h.records.get(SESSIONS)[0].fields.fldhwC79ndbnEXSZz, 10000);
   assert.equal(h.records.get(JOBS)[0].fields.Budget, 10000);
   assert.equal(h.records.get(PAYMENTS)[0].fields.fldvCSwrUW8OMAooS, 13000);

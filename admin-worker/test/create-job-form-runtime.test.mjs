@@ -51,7 +51,7 @@ test('new blank form searches, reviews, persists through canonical workers and d
   assert.equal(h.calls.filter(x=>x.path==='/v1/admin/job/create').length,1);
   const url=new URL(h.d.querySelector('.payment-url').value);assert.equal(url.origin,'https://miniapp.line.me');assert.ok(url.searchParams.get('t'));
   assert.equal(url.searchParams.get('t'),new URL(h.outcome.data.customer_payment_url).searchParams.get('t'));
-  assert.equal(h.outcome.data.amount_due_thb,3000);assert.equal(h.outcome.data.confirmation_release_state,'held_until_payment_approved');
+  assert.equal(h.outcome.data.amount_due_thb,2000);assert.equal(h.outcome.data.confirmation_release_state,'held_until_payment_approved');
   assert.doesNotMatch(h.$('notice').textContent,/job-confirmation\?t=|job-model\?t=/);
   assert.equal(h.outcome.issuances[0].payment_method,'');assert.equal(h.$('create').disabled,true);
 });
