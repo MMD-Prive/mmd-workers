@@ -1,6 +1,36 @@
 // Diagnostic references are never identity or authorization evidence.
 const SERVER_REFERENCE = Symbol('liff-server-diagnostic-reference');
 
+// Read only bounded JSON from a clone; never log raw bodies or unknown codes.
+async function allowed401Reason(response) {
+  if (response.status !== 401 || !/^application\/json(?:\s*;|$)/i.test(response.headers.get('content-type') || '')) return '';
+  let reader, timer;
+  try {
+    reader = response.clone().body?.getReader();
+    if (!reader) return '';
+    const read = async () => {
+      const chunks = []; let size = 0;
+      while (true) {
+        const {done, value} = await reader.read();
+        if (done) break;
+        size += value.byteLength;
+        if (size > 4096) return '';
+        chunks.push(value);
+      }
+      const bytes = new Uint8Array(size); let offset = 0;
+      for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+      const code = JSON.parse(new TextDecoder().decode(bytes))?.error?.code;
+      return code === 'LIFF_SESSION_REQUIRED' || code === 'LIFF_SESSION_INVALID' ? code : '';
+    };
+    return await Promise.race([read(), new Promise(resolve => { timer = setTimeout(() => resolve(''), 100); })]);
+  } catch { return ''; }
+  finally {
+    clearTimeout(timer);
+    // Tee cancellation can wait for the original body; never await it.
+    try { reader?.cancel().catch(() => {}); } catch {}
+  }
+}
+
 export async function withReferenceWorker(request, env, ctx, run) {
   const path = new URL(request.url).pathname;
   const operation = path === '/member/api/liff/start' && request.method === 'POST' ? 'start'
@@ -42,12 +72,13 @@ export async function withRequestReference(request, env, ctx, operation, run) {
   const flow = request.headers.get('x-mmd-diag-flow');
   const retry = request.headers.get('x-mmd-diag-retry-of');
   const ref = crypto.randomUUID(), started = Date.now();
-  const record = (outcome, status) => {
+  const record = (outcome, status, reason = '') => {
     const row = {event:'liff_request_reference', request_ref:ref, operation, outcome,
       observed_at:Date.now(), duration_ms:Math.min(300000, Math.max(0, Date.now()-started)),
       ...(valid(flow) ? {client_flow_ref:flow, correlation_authority:'untrusted_client_reference'} : {}),
       ...(operation === 'profile' && valid(flow) && valid(retry) ? {client_retry_of:retry} : {}),
-      ...(Number.isInteger(status) ? {status} : {})};
+      ...(Number.isInteger(status) ? {status} : {}),
+      ...(reason ? {reason_code:reason} : {})};
     try { console.info(row); } catch {}
     if (typeof ctx?.waitUntil === 'function' && typeof env?.LIFF_IDENTITY_KV?.put === 'function') {
       try { ctx.waitUntil(Promise.resolve().then(() => env.LIFF_IDENTITY_KV.put(
@@ -58,7 +89,7 @@ export async function withRequestReference(request, env, ctx, operation, run) {
   record('begin');
   try {
     const response = await run(ref);
-    record('complete', response.status);
+    record('complete', response.status, await allowed401Reason(response));
     const result = new Response(response.body, response);
     result.headers.set('x-mmd-diag-request', ref);
     return result;
