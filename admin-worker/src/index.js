@@ -8,7 +8,7 @@ import {notifyOwnerWrongLocation} from './model-travel-owner.js';
 import {meetingBinding} from '../../shared/model-travel-store.mjs';
 import { notifyTravelEvent } from "./model-travel-notification.js";
 import { requestMemberReplyRefresh } from "../../shared/member-reply-refresh.mjs";
-import { validateJobServicePricing, withJobServicePricingNote, DISCOUNT_KINDS, jobTotalWithTravel } from "./job-service-pricing.js";
+import { validateJobCustomerDiscount, validateJobModelRate, validateJobServicePricing, withJobServicePricingNote, DISCOUNT_KINDS, jobTotalWithTravel } from "./job-service-pricing.js";
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
 import { requestPaymentsConfirmLink } from "./payments-issuer-transport.js";
 import { assertConfirmationUrlPair } from "./confirmation-link-role-guard.js";
@@ -6243,8 +6243,8 @@ function withCanonicalPublicJobNote(note, publicJob) {
 }
 
 async function createAdminJob(env, body) {
-  let servicePricing;
-  try { servicePricing = validateJobServicePricing(body); }
+  let servicePricing, customerDiscount, modelRate;
+  try { servicePricing = validateJobServicePricing(body); customerDiscount = validateJobCustomerDiscount(body); modelRate = servicePricing ? null : validateJobModelRate(body); }
   catch (error) { throw new CreateSessionAccessError(error.code, error.message, error.status); }
   const work = body?.work || {};
   const model = body?.model || {};
@@ -6287,7 +6287,9 @@ async function createAdminJob(env, body) {
   const google_map_url = str(body.google_map_url || jobDetails.google_map_url || "");
   const rawNote = str(body.note || notes.operation_note || notes.handling_note || body.notes || "");
   const modelDirections = { text: str(jobDetails.brief || "").slice(0, 2000), meeting_point: str(jobDetails.meeting_point || "").slice(0, 500) };
-  const baseNote = withJobServicePricingNote(withCanonicalPublicJobNote(rawNote, publicJob), servicePricing);
+  const pricingNote = servicePricing || modelRate || customerDiscount ? rawNote.split("\n").filter(line => !line.trimStart().startsWith("[MMD MODEL PAYOUT BREAKDOWN v1]") && !line.trimStart().startsWith("[SIGIL Pricing v1]")).join("\n") : rawNote;
+  const modelNote = modelRate ? `[MMD MODEL PAYOUT BREAKDOWN v1] ${JSON.stringify(modelRate)}\n${pricingNote}` : pricingNote;
+  const baseNote = withJobServicePricingNote(withCanonicalPublicJobNote(modelNote, publicJob), servicePricing);
   // Stored in the internal session note; only the model confirmation endpoint extracts this marker.
   const note = modelDirections.text || modelDirections.meeting_point
     ? `${baseNote}\n[MMD Model Remark v1] ${JSON.stringify(modelDirections)}` : baseNote;
@@ -6313,12 +6315,12 @@ async function createAdminJob(env, body) {
   const pricing_adjustment = str(body.pricing_adjustment || payment.pricing_adjustment || "")
     .toLowerCase();
   // Customer-visible reason for a discount (coupon / discount / promotion / special price).
-  const discountKindRaw = str(servicePricing?.discount?.kind || body.discount_kind || "").toLowerCase();
+  const discountKindRaw = str(servicePricing?.discount?.kind || customerDiscount?.kind || body.discount_kind || "").toLowerCase();
   const discountKind = pricing_adjustment === "discount" && DISCOUNT_KINDS.includes(discountKindRaw) ? discountKindRaw : "";
-  const discountReason = discountKind ? str(servicePricing?.discount?.reason || "").slice(0, 120) : "";
+  const discountReason = discountKind ? str(servicePricing?.discount?.reason || customerDiscount?.reason || "").slice(0, 120) : "";
   const privateModelDeposit = payment_type === "deposit" && jobVisibility === "private";
   const deposit_percent = payment_type === "deposit"
-    ? (privateModelDeposit ? Number(body.deposit_percent ?? 30) : CUSTOMER_DEPOSIT_PERCENT)
+    ? (privateModelDeposit ? Number(body.deposit_percent ?? 30) : (jobVisibility === "public" ? 20 : CUSTOMER_DEPOSIT_PERCENT))
     : undefined;
   if (privateModelDeposit && (!Number.isInteger(deposit_percent) || deposit_percent < 20 || deposit_percent > 40 || deposit_percent % 5 !== 0)) {
     throw new CreateSessionAccessError("invalid_private_model_deposit_percent", "Private Model deposit must be 20–40% in steps of 5%.");
@@ -6326,7 +6328,7 @@ async function createAdminJob(env, body) {
   const depositBasis = service_amount_thb + Math.max(0, original_amount_thb - amount_thb);
   const deposit_amount_thb = payment_type !== "deposit" ? undefined : privateModelDeposit
     ? Math.min(service_amount_thb, Math.ceil(depositBasis * deposit_percent / 100 / 500) * 500)
-    : Math.min(service_amount_thb, Math.ceil(service_amount_thb * CUSTOMER_DEPOSIT_PERCENT / 100));
+    : Math.min(service_amount_thb, Math.ceil((jobVisibility === "public" ? depositBasis * 20 : service_amount_thb * CUSTOMER_DEPOSIT_PERCENT) / 100));
   const customerJobTotal = jobTotalWithTravel(service_amount_thb, amount_thb, body.travel_fee_thb, rawNote);
   const balance_amount_thb = payment_type === "deposit"
     ? Math.max(0, customerJobTotal - deposit_amount_thb)
@@ -6354,7 +6356,13 @@ async function createAdminJob(env, body) {
     pricing_adjustment,
     ...(discountKind ? { discount_kind: discountKind } : {}),
     ...(discountReason ? { discount_reason: discountReason } : {}),
-    ...(privateModelDeposit ? { deposit_policy: "private_model_v1" } : {}),
+    ...((servicePricing?.discount || customerDiscount) ? {
+      discount_mode: (servicePricing?.discount || customerDiscount).type,
+      discount_percent: (servicePricing?.discount || customerDiscount).type === "percent" ? (servicePricing?.discount || customerDiscount).value : 0,
+      discount_basis_thb: servicePricing?.client_gross_amount_thb ?? customerDiscount?.basis_thb,
+      discount_rounding: (servicePricing?.discount || customerDiscount).rounding || "cent",
+    } : {}),
+    ...(privateModelDeposit ? { deposit_policy: "private_model_v1" } : jobVisibility === "public" ? { deposit_policy: "public_model_v1" } : {}),
     deposit_percent,
     deposit_amount_thb,
     balance_amount_thb,

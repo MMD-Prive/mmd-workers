@@ -475,3 +475,23 @@ html,body{background:#0B0E10}
 #sigil-pay-v21 .sp21__verify-banner div{padding:12px 14px}
 #sigil-pay-v21 .sp21__verify-banner small{color:var(--sp21-gold);font-size:10px;letter-spacing:.1em}
 #sigil-pay-v21 .sp21__verify-banner p{font-size:clamp(21px,4vw,30px);font-weight:700;line-height:1.25;color:var(--sp21-text)}
+
+#sigil-pay-v21[data-payment-world="public"]{
+  color-scheme:light;
+  --sp21-bg:#fbfaf8;
+  --sp21-panel:#fff;
+  --sp21-panel-strong:#f6efed;
+  --sp21-panel-soft:#f6efed;
+  --sp21-text:#211b1e;
+  --sp21-body:#50434a;
+  --sp21-muted:#695860;
+  --sp21-line:#e1d4d8;
+  --sp21-line-strong:#941523;
+  --sp21-gold:#941523;
+  --sp21-gold-deep:#79101c;
+}
+#sigil-pay-v21[data-payment-world="public"] :is(.sp21__btn--primary,.sp21__btn--gold){
+  background:#941523;
+  color:#fff!important;
+}
+#sigil-pay-v21[data-payment-world="public"] .sp21__method[aria-selected=true]{background:#f6e4e8}

@@ -128,9 +128,20 @@ export async function handleCanonicalConfirmLink(request, env) {
       : amountThb;
     const pricingAdjustment = clean(body.pricing_adjustment).toLowerCase();
     const discountThb = Math.max(0, originalAmountThb - amountThb);
-    const discountMode = discountThb > 0 && pricingAdjustment === "discount" ? "amount" : "none";
+    const discountMode = discountThb > 0 && pricingAdjustment === "discount"
+      ? (body.discount_mode === "percent" ? "percent" : "amount") : "none";
+    const discountPercent = discountMode === "percent" ? Number(body.discount_percent) : null;
+    const discountBasis = discountMode === "percent" ? Number(body.discount_basis_thb ?? originalAmountThb) : null;
+    const discountRounding = body.discount_rounding === "floor_to_500_baht" ? body.discount_rounding : "cent";
+    if (discountMode === "percent") {
+      const computed = discountRounding === "floor_to_500_baht"
+        ? Math.floor(discountBasis * discountPercent / 100 / 500) * 500
+        : Math.round(discountBasis * discountPercent) / 100;
+      if (!(discountPercent > 0 && discountPercent <= 100) || !(discountBasis > 0 && discountBasis <= originalAmountThb)
+        || Math.abs(computed - discountThb) > 0.001) throw httpError(400, "discount_metadata_mismatch");
+    }
     const discountKindRaw = clean(body.discount_kind).toLowerCase();
-    const discountKind = discountMode === "amount" && DISCOUNT_KINDS.includes(discountKindRaw) ? discountKindRaw : null;
+    const discountKind = discountMode !== "none" && DISCOUNT_KINDS.includes(discountKindRaw) ? discountKindRaw : null;
     const discountReason = discountKind ? clean(body.discount_reason).slice(0, 120) : "";
     const payModelThb = optionalNonNegativeNumber(
       body.pay_model_thb ?? body.pay_model ?? body.model_pay_thb ?? body.model_pay,
@@ -153,8 +164,9 @@ export async function handleCanonicalConfirmLink(request, env) {
     if (privateModelDeposit && (!Number.isInteger(requestedPrivatePercent) || requestedPrivatePercent < 20 || requestedPrivatePercent > 40 || requestedPrivatePercent % 5 !== 0)) {
       throw httpError(400, "invalid_private_model_deposit_percent");
     }
-    const depositBasisThb = privateModelDeposit ? serviceAmountThb + discountThb : serviceAmountThb;
-    const minimumDepositThb = Math.min(serviceAmountThb, privateModelDeposit ? Math.ceil(depositBasisThb * 20 / 100 / 500) * 500 : Math.ceil(serviceAmountThb * CUSTOMER_DEPOSIT_PERCENT / 100));
+    const publicModelDeposit = !components && paymentStage === "deposit" && body.deposit_policy === "public_model_v1";
+    const depositBasisThb = privateModelDeposit || publicModelDeposit ? serviceAmountThb + discountThb : serviceAmountThb;
+    const minimumDepositThb = Math.min(serviceAmountThb, privateModelDeposit ? Math.ceil(depositBasisThb * 20 / 100 / 500) * 500 : Math.ceil((publicModelDeposit ? depositBasisThb * 20 : serviceAmountThb * CUSTOMER_DEPOSIT_PERCENT) / 100));
     let selectedDepositThb = minimumDepositThb;
     if (paymentStage === "deposit") {
       if (body.deposit_percent != null) {
@@ -189,14 +201,16 @@ export async function handleCanonicalConfirmLink(request, env) {
       ? {
           full_price_thb: Math.max(originalAmountThb, jobTotalThb),
           discount_mode: discountMode,
-          discount_percent: null,
-          discount_thb: discountMode === "amount" ? discountThb : 0,
+          discount_percent: discountPercent,
+          discount_basis_thb: discountBasis,
+          discount_rounding: discountRounding,
+          discount_thb: discountMode !== "none" ? discountThb : 0,
           ...(discountKind ? { discount_kind: discountKind } : {}),
           ...(discountReason ? { discount_reason: discountReason } : {}),
           net_price_thb: jobTotalThb,
           deposit_basis_thb: depositBasisThb,
-          ...(privateModelDeposit ? { deposit_policy: "private_model_v1", deposit_requested_percent: requestedPrivatePercent } : {}),
-          deposit_minimum_percent: privateModelDeposit ? 20 : CUSTOMER_DEPOSIT_PERCENT,
+          ...(privateModelDeposit ? { deposit_policy: "private_model_v1", deposit_requested_percent: requestedPrivatePercent } : publicModelDeposit ? { deposit_policy: "public_model_v1", deposit_requested_percent: 20 } : {}),
+          deposit_minimum_percent: privateModelDeposit || publicModelDeposit ? 20 : CUSTOMER_DEPOSIT_PERCENT,
           deposit_minimum_thb: minimumDepositThb,
           deposit_percent: selectedDepositPercent,
           deposit_due_thb: selectedDepositThb,
@@ -207,7 +221,14 @@ export async function handleCanonicalConfirmLink(request, env) {
           deposit_round_step_thb: privateModelDeposit ? 500 : CUSTOMER_DEPOSIT_ROUND_STEP_THB,
           deposit_rounding: privateModelDeposit ? "ceil_to_500_baht" : "ceil_to_baht",
         }
-      : null;
+      : discountMode === "none" ? null : {
+          full_price_thb: originalAmountThb, discount_mode: discountMode,
+          discount_percent: discountPercent, discount_basis_thb: discountBasis,
+          discount_rounding: discountRounding, discount_thb: discountMode === "none" ? 0 : discountThb,
+          ...(discountKind ? { discount_kind: discountKind } : {}),
+          ...(discountReason ? { discount_reason: discountReason } : {}),
+          net_price_thb: jobTotalThb, deposit_due_thb: 0, deposit_received_thb: 0, balance_thb: jobTotalThb,
+        };
     const holdMarker = held
       ? `[MMD_JOB_HOLD_V1] ${JSON.stringify({ status: "pending_client_link", confirmation_hold: true, dispatch_hold: true, entitlement_release_hold: true })}`
       : "";
