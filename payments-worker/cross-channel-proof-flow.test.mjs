@@ -297,7 +297,7 @@ test("web pending then LINE unreadable evidence remains pending for manual revie
     });
     assert.equal(result.deduped,false); assert.equal(h.calls.proofCreates,2); assert.equal(h.calls.downstream,1);
     assert.equal(h.calls.telegramMessages,1); assert.match(h.calls.telegramPayloads[0].text,/หลักฐานซ้ำ/);
-    assert.ok(h.calls.telegramPayloads[0].text.includes("proof_id=line_same_picture&focus=verify"));
+    assert.ok(h.calls.telegramPayloads[0].text.includes("proof_id=line_same_picture&amp;focus=verify"));
     assert.equal(h.records.Proofs[1].fields.status, "pending");
     assert.equal(h.records.Proofs[1].fields.session, undefined);
     assert.equal(h.records.Proofs[1].fields.payment, undefined);
@@ -343,8 +343,8 @@ test("signed web slip failure alerts Ops instead of failing silently", async () 
     }), h.env, async () => Response.json({ ok: false, error: "synthetic_downstream_failure" }, { status: 503 }));
     assert.equal(response.status, 503);
     assert.equal(h.calls.telegramMessages, 1);
-    assert.match(String(h.calls.telegramPayloads[0]?.text || ""), /PAYMENT SLIP FLOW FAILED/);
-    assert.match(String(h.calls.telegramPayloads[0]?.text || ""), /ตรวจ Payment\/Proof ก่อนขอให้ลูกค้าส่งซ้ำ/);
+    assert.match(String(h.calls.telegramPayloads[0]?.text || ""), /ลูกค้าส่งสลิปผ่านหน้าชำระเงินไม่สำเร็จ/);
+    assert.match(String(h.calls.telegramPayloads[0]?.text || ""), /ค้นหารหัสการชำระในคิวชำระเงินก่อนขอให้ลูกค้าส่งซ้ำ/);
   } finally { globalThis.fetch = original; }
 });
 

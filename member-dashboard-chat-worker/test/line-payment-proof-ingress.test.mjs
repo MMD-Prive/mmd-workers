@@ -210,10 +210,9 @@ test("Payment Confirm message shows exact job context instead of a bare slip", a
   }, { deduped: false });
   assert.equal(result.thread_id, 22);
   assert.equal(h.messages.length, 1);
-  assert.match(h.messages[0].text, /Customer: แม่ไก่/);
-  assert.match(h.messages[0].text, /Job Match: ✅ exact canonical match/);
-  assert.match(h.messages[0].text, /Job: MMD-JOB-001/);
-  assert.match(h.messages[0].text, /Model: Gohan/);
+  assert.match(h.messages[0].text, /ลูกค้า: แม่ไก่/);
+  assert.match(h.messages[0].text, /งานที่จับคู่ได้: MMD-JOB-001/);
+  assert.match(h.messages[0].text, /โมเดล: Gohan/);
   assert.match(h.messages[0].text, /Ever Green/);
 });
 
@@ -239,10 +238,10 @@ test("Payment Confirm shows bounded candidates when the slip matches multiple jo
       },
     },
   }, { deduped: false });
-  assert.match(h.messages[0].text, /ambiguous · 2 candidates/);
+  assert.match(h.messages[0].text, /พบ 2 งานที่อาจตรงกับสลิปนี้/);
   assert.match(h.messages[0].text, /JOB-A/);
   assert.match(h.messages[0].text, /JOB-B/);
-  assert.match(h.messages[0].text, /Do not guess/);
+  assert.match(h.messages[0].text, /ขั้นต่อไป: ตรวจและผูกสลิปกับงานที่ถูกต้องก่อนยืนยันเงินเข้า/);
 });
 
 test("tracking kind separates membership, job deposit, and job final payment", () => {
@@ -353,8 +352,42 @@ test("Telegram clearly labels four LINE slip categories and does not verify from
     assert.equal(result.thread_id, item.thread, item.kind);
     assert.match(h.messages[0].text, new RegExp(`ประเภท: ${item.label}`), item.kind);
     assert.match(h.messages[0].text, /สถานะ: รอตรวจสอบ/, item.kind);
+    assert.match(h.messages[0].text, item.thread === 20
+      ? /ขั้นต่อไป: ตรวจยอดเงินจริงในบัญชี/
+      : /ขั้นต่อไป: ตรวจและผูกสลิปกับงานที่ถูกต้องก่อนยืนยันเงินเข้า/, item.kind);
+    assert.match(h.messages[0].text, /เปิดรายการในหลังบ้าน:/, item.kind);
+    assert.doesNotMatch(h.messages[0].text, /Action:/, item.kind);
     assert.doesNotMatch(h.messages[0].text, /verified|ยืนยันแล้วจากระบบรับเงิน/i, item.kind);
   }
+});
+
+test("LINE payment classification conflict tells reviewers what to check before confirming", async () => {
+  const h = telegramHarness();
+  await notifyPaymentProofOps(h.env, {
+    proofId: "line_conflicting_payment",
+    sourceType: "user",
+    paymentContextText: "ต่ออายุสมาชิก",
+    analysis: {
+      ops_route: { topic: "payment", reason: "fixture_conflict", should_alert: true },
+      job_correlation: { status: "exact" },
+    },
+  });
+  assert.equal(h.messages.length, 2);
+  assert.match(h.messages[0].text, /ขั้นต่อไป: ตรวจว่ารายการนี้เป็นค่างานหรือค่าสมาชิกก่อนยืนยันเงินเข้า/);
+  assert.equal(h.messages[1].message_thread_id, 9);
+  assert.match(h.messages[1].text, /ข้อมูลประเภทการชำระเงินขัดกัน/);
+  assert.match(h.messages[1].text, /งดเปิดสิทธิ์สมาชิกจนกว่าจะยืนยัน/);
+});
+
+test("LINE proof sends customer punctuation as literal text in Telegram HTML", async () => {
+  const h = telegramHarness();
+  await notifyPaymentProofOps(h.env, {
+    proofId: "line_customer_punctuation",
+    sourceType: "user",
+    payerName: "A < B & C",
+    paymentContextText: "ต่ออายุสมาชิก",
+  });
+  assert.match(h.messages[0].text, /ลูกค้า: A &lt; B &amp; C/);
 });
 
 test("Telegram remains pending even if a caller reports materialized settlement", async () => {

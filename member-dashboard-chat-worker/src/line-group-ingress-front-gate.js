@@ -547,7 +547,7 @@ function compactOpsWhen(summary = {}) {
 function jobCandidateLine(candidate = {}, index = 0) {
   const ref = asString(candidate.job_id || candidate.session_id) || "ไม่ทราบรหัสงาน";
   const details = [
-    asString(candidate.model_name) ? `Model ${asString(candidate.model_name)}` : "",
+    asString(candidate.model_name) ? `โมเดล ${asString(candidate.model_name)}` : "",
     compactOpsWhen(candidate),
     asString(candidate.location_name),
   ].filter(Boolean);
@@ -560,28 +560,25 @@ function paymentJobCorrelationLines(analysis = {}) {
   const selected = correlation.selected || null;
   if (status === "not_applicable") return [];
   if (status === "exact" && selected) {
-    const ref = asString(selected.job_id || selected.session_id) || "matched";
+    const ref = asString(selected.job_id || selected.session_id) || "ไม่พบรหัสงาน";
     return [
-      "Job Match: ✅ exact canonical match",
-      `Job: ${ref}`,
-      asString(selected.model_name) ? `Model: ${asString(selected.model_name)}` : "",
-      compactOpsWhen(selected) ? `When: ${compactOpsWhen(selected)}` : "",
-      asString(selected.location_name) ? `Location: ${asString(selected.location_name)}` : "",
-      asString(correlation.reason) ? `Match basis: ${asString(correlation.reason)}` : "",
+      `งานที่จับคู่ได้: ${ref}`,
+      asString(selected.model_name) ? `โมเดล: ${asString(selected.model_name)}` : "",
+      compactOpsWhen(selected) ? `วันงาน: ${compactOpsWhen(selected)}` : "",
+      asString(selected.location_name) ? `สถานที่: ${asString(selected.location_name)}` : "",
+      asString(correlation.reason) ? `เกณฑ์จับคู่: ${asString(correlation.reason)}` : "",
     ].filter(Boolean);
   }
   if (status === "ambiguous") {
     const candidates = Array.isArray(correlation.candidates) ? correlation.candidates.slice(0, 5) : [];
     return [
-      `Job Match: ⚠️ ambiguous · ${Number(correlation.candidate_count || candidates.length) || candidates.length} candidates`,
+      `⚠️ พบ ${Number(correlation.candidate_count || candidates.length) || candidates.length} งานที่อาจตรงกับสลิปนี้`,
       ...candidates.map((candidate, index) => jobCandidateLine(candidate, index)),
-      "Action: choose the canonical Job before Official Verify. Do not guess.",
     ];
   }
   return [
-    "Job Match: ⚠️ ยังระบุงานไม่ได้",
-    asString(correlation.reason) ? `Reason: ${asString(correlation.reason)}` : "",
-    "Action: resolve/bind the canonical Job before Official Verify. Do not guess.",
+    "⚠️ ยังจับคู่งานไม่ได้",
+    asString(correlation.reason) ? `สาเหตุ: ${asString(correlation.reason)}` : "",
   ].filter(Boolean);
 }
 
@@ -649,7 +646,16 @@ async function notifyPaymentProofOps(env = {}, evidence = {}, result = {}) {
   const trackingKind = asString(analysis.payment_intelligence?.tracking_kind) || "unresolved_payment";
   const settlement = result?.settlement || null;
   const category = paymentProofCategory(trackingKind, isMembership);
-  const statusLine = "สถานะ: รอตรวจสอบ";
+  let nextStep = "ตรวจยอดเงินจริงในบัญชี แล้วกดยืนยันเงินเข้า (Official Verify)";
+  if (route.should_alert === true) {
+    nextStep = "ตรวจว่ารายการนี้เป็นค่างานหรือค่าสมาชิกก่อนยืนยันเงินเข้า";
+  } else if (analysis.proof_precheck?.status === "duplicate") {
+    nextStep = "เทียบกับหลักฐานเดิม อย่านับยอดซ้ำ";
+  } else if (analysis.proof_precheck?.status === "needs_review") {
+    nextStep = "เทียบข้อมูลสลิปกับรายการในหลังบ้านก่อนยืนยันเงินเข้า";
+  } else if (!isMembership && analysis.job_correlation?.status !== "exact") {
+    nextStep = "ตรวจและผูกสลิปกับงานที่ถูกต้องก่อนยืนยันเงินเข้า";
+  }
   const text = [
     analysis.classification?.image_class === "bank_transfer_slip"
       ? `${isMembership ? "🧾" : "💳"} สลิป${category}` : `📎 ${PAYMENT_PROOF_OPS_COPY_TH.imagePending}`,
@@ -657,26 +663,29 @@ async function notifyPaymentProofOps(env = {}, evidence = {}, result = {}) {
     `ยอด: ${summary.amount}`,
     `สถานะเงิน: ${summary.bankStatus}`,
     ...(isMembership ? [`ประเภทเงิน: ${summary.purpose}`] : []),
-    statusLine,
-    `เปิดตรวจและยืนยันเงินเข้า: ${analysis.proof_precheck?.review_url || paymentProofReviewUrl(result.proofId || evidence.proofId)}`,
+    "สถานะ: รอตรวจสอบ",
+    `ขั้นต่อไป: ${nextStep}`,
+    `เปิดรายการในหลังบ้าน: ${analysis.proof_precheck?.review_url || paymentProofReviewUrl(result.proofId || evidence.proofId)}`,
     ...proofPrecheckLines(analysis.proof_precheck),
-    `Source: ${evidence.sourceType === "user" ? "LINE OA direct" : "LINE payment group"}`,
-    `Proof: ${evidence.proofId}`,
-    `Classified: ${purpose}`,
     `ประเภท: ${category}`,
-    customer ? `Customer: ${customer}` : "Customer: pending match",
     ...(!isMembership ? paymentJobCorrelationLines(analysis) : []),
-    `Routing: ${route.reason}`,
-    analysis.job_correlation?.status === "exact" || isMembership
-      ? "ขั้นต่อไป: ตรวจเงินเข้าจริง แล้วกด ยืนยันเงินเข้า (Official Verify) ในลิงก์ด้านบน"
-      : "Action: resolve the canonical Job, then Official Verify. No guessing / no money-truth mutation.",
+    `ที่มา: ${evidence.sourceType === "user" ? "แชต LINE OA" : "กลุ่มชำระเงิน LINE"}`,
+    `รหัสหลักฐาน: ${evidence.proofId}`,
+    `ผลจัดประเภท: ${purpose} (${route.reason})`,
   ].filter(Boolean).join("\n");
   const notificationPurpose = paymentNotificationPurpose({ isMembership, settlementStatus: settlement?.status });
   const main = await sendOpsMessage(env, { chatId, threadId, flow: isMembership ? "membership" : "payment_proof", text, eventKey: evidence.proofId, purpose: notificationPurpose });
   let alertSent = false;
   let alertDelivery = null;
   if (route.should_alert === true) {
-    alertDelivery = await sendOpsMessage(env, { chatId, threadId: alertsOpsThreadId(env), flow: "alert", text: `🚨 MMD Payment Classification Conflict\nProof: ${evidence.proofId}\nReason: ${route.reason}\nAction: keep pending; do not activate automatically.`, eventKey: evidence.proofId, purpose: "payment_classification_conflict" });
+    const alertText = [
+      "🚨 ข้อมูลประเภทการชำระเงินขัดกัน",
+      "สถานะ: ยังไม่ยืนยันเงินเข้า",
+      "ขั้นต่อไป: เปิดคิวชำระเงินแล้วตรวจว่าเป็นค่างานหรือค่าสมาชิก งดเปิดสิทธิ์สมาชิกจนกว่าจะยืนยัน",
+      `รหัสหลักฐาน: ${evidence.proofId}`,
+      `สาเหตุ: ${route.reason}`,
+    ].join("\n");
+    alertDelivery = await sendOpsMessage(env, { chatId, threadId: alertsOpsThreadId(env), flow: "alert", text: alertText, eventKey: evidence.proofId, purpose: "payment_classification_conflict" });
     alertSent = alertDelivery.delivered === true;
   }
   // A failed Telegram send never changes or blocks the pending Payment Proof.
@@ -704,13 +713,13 @@ async function notifyHeldEvidenceReview(env = {}, audit = {}) {
   const chatId = paymentOpsChatId(env);
   if (!chatId) return { delivered: false, skipped: true, reason: "telegram_config_missing" };
   const text = [
-    "🟠 MMD Held Payment Evidence — review required",
-    `Proof candidate: ${asString(audit.proof_id)}`,
-    `Hold reason: ${asString(audit.hold_reason) || "uncertain_payment_image"}`,
-    `Reprocess attempts: ${Number(audit.attempts) || 0}`,
-    `Source: ${audit.source_type === "user" ? "LINE OA direct" : "LINE payment group"}`,
-    "This image was never promoted to a Payment Proof and holds no payment truth.",
-    "Action: inspect the private evidence candidate in Ops. Do not mark paid from here; Official Verify / payments-worker remains the only settlement path.",
+    "🟠 ภาพจาก LINE ต้องตรวจด้วยคน",
+    "สถานะ: ยังไม่ได้ลงเป็นสลิปชำระเงิน",
+    "ขั้นต่อไป: ค้นหารหัสภาพในหลังบ้านเพื่อตรวจหลักฐาน งดยืนยันเงินเข้าจนกว่าจะลงเป็นสลิปและตรวจยอดจริง",
+    `รหัสภาพ: ${asString(audit.proof_id)}`,
+    `สาเหตุ: ${asString(audit.hold_reason) || "uncertain_payment_image"}`,
+    `จำนวนครั้งที่ระบบตรวจซ้ำ: ${Number(audit.attempts) || 0}`,
+    `ที่มา: ${audit.source_type === "user" ? "แชต LINE OA" : "กลุ่มชำระเงิน LINE"}`,
   ].join("\n");
   return sendOpsMessage(env, {
     chatId,
