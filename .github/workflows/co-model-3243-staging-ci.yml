@@ -1,0 +1,32 @@
+name: MY CO MODEL #3243 staging preflight
+on:
+  pull_request:
+    paths:
+      - 'co-model-request-staging/**'
+      - '.github/workflows/co-model-3243-staging-ci.yml'
+permissions:
+  contents: read
+jobs:
+  staging-fixture-preflight:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci --prefix partners-worker --ignore-scripts --no-audit --no-fund
+      - run: node co-model-request-staging/build.mjs
+      - run: |
+          set -o pipefail
+          node co-model-request-staging/preflight.mjs | tee co-model-request-staging/.build/preflight.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: co-model-3243-staging-review
+          path: |
+            co-model-request-staging/.build/manifest.json
+            co-model-request-staging/.build/preflight.json
+            co-model-request-staging/.build/owner.mjs
+            co-model-request-staging/.build/partner.mjs
