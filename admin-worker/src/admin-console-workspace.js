@@ -22,6 +22,11 @@ export function adminConsoleWorkspace(routing, path, bootHome) {
   function open(url, replace = false) {
     if (routing.resolve(location.href)?.view === "") homeUrl = here();
     if (url === path) url = homeUrl;
+    if (url === path + "#ac-directory") {
+      const scopedHome = new URL(homeUrl, location.origin);
+      scopedHome.hash = "ac-directory";
+      url = relative(scopedHome);
+    }
     if (here() === url) return;
     if (replace) history.replaceState(null, "", url);
     else history.pushState({ consoleBack: true }, "", url);
@@ -29,6 +34,24 @@ export function adminConsoleWorkspace(routing, path, bootHome) {
     document.getElementById("ac-main").focus();
     window.scrollTo(0, 0);
   }
+
+  const directory = document.getElementById("ac-directory");
+  directory?.addEventListener("input", event => {
+    const normalize = value => value.toLowerCase().replace(/\s+/g, "");
+    const query = normalize(event.target.value.trim());
+    let matches = 0;
+    for (const group of directory.querySelectorAll("[data-ac-group]")) {
+      const label = group.querySelector("summary").textContent;
+      let visible = false;
+      for (const link of group.querySelectorAll("a")) {
+        link.hidden = !normalize(label + " " + link.textContent).includes(query);
+        if (!link.hidden) { visible = true; matches++; }
+      }
+      group.hidden = !visible;
+      group.open = Boolean(query) && visible;
+    }
+    directory.querySelector("[data-ac-no-tools]").hidden = matches !== 0;
+  });
 
   function follow(event, fromTool) {
     const link = event.target.closest?.("a[href]");
@@ -44,7 +67,7 @@ export function adminConsoleWorkspace(routing, path, bootHome) {
     if (url) {
       event.preventDefault();
       event.stopPropagation();
-      const fromMenu = !fromTool && link.matches(".ac-nav-link, .ac-room-link");
+      const fromMenu = !fromTool && link.matches(".ac-nav-link, .ac-room-link, [data-ac-directory-view]");
       const previous = fromMenu ? lastToolUrl.get(routing.resolve(url)?.view) : "";
       open(previous || url);
     } else if (fromTool) {
@@ -119,6 +142,7 @@ export function adminConsoleWorkspace(routing, path, bootHome) {
     }
     updateNotice();
     if (isHome) {
+      if (directory && location.hash === "#ac-directory") directory.open = true;
       if (!homeClient) homeClient = bootHome(routing.toConsole);
       else homeClient();
       homeUrl = here();

@@ -158,6 +158,14 @@ body.ac-page{margin:0;background:#fff;color:#272b30;-webkit-font-smoothing:antia
 #admin-console .ac-pagination>span{text-align:center;font-size:13px;line-height:1.45;color:var(--ac-muted);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 #admin-console .ac-pagination .ac-button{font-size:14px;padding:8px 11px}
 #admin-console .ac-board-note{padding:13px 16px;background:#f8f9fa;border-top:1px solid var(--ac-line);color:var(--ac-muted);font-size:12px;line-height:1.6}
+#admin-console .ac-owner-desk{margin-bottom:20px}
+#admin-console .ac-directory{margin-top:8px;border-block:1px solid var(--ac-line);padding:4px 0}
+#admin-console .ac-directory summary,#admin-console .ac-directory a{min-height:44px;padding:11px 4px;cursor:pointer;font-weight:700}
+#admin-console .ac-directory label{display:grid;gap:5px}
+#admin-console .ac-directory input{width:100%;padding:10px;border:1px solid var(--ac-line);border-radius:6px;background:white}
+#admin-console .ac-directory p{font-size:13px;color:var(--ac-muted);margin:8px 0}
+#admin-console .ac-directory nav{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr));gap:0 12px}
+#admin-console .ac-directory a{display:block;font-weight:400;text-decoration:underline;text-underline-offset:3px}
 #admin-console .ac-tools-panel{display:none}
 #admin-console .ac-footer{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px 18px;margin-top:20px;color:var(--ac-muted);font-size:12px;line-height:1.6;padding-bottom:env(safe-area-inset-bottom,0px)}
 @media(min-width:360px) and (max-width:599px){

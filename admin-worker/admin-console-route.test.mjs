@@ -185,3 +185,13 @@ test('only an authorized, matching Console iframe request gets the tool frame po
   assert.equal(denied.status, 303);
   assert.notEqual(denied.headers.get('x-frame-options'), 'SAMEORIGIN');
 });
+
+test('only the verified Owner session gets the cross-system directory', async () => {
+  for (const role of ['owner', 'admin']) {
+    const response = await worker.fetch(request(PATH, { headers: {
+      Cookie: await cookie(role), 'x-mmd-admin-role': 'owner',
+    } }), ENV, {});
+    assert.equal(response.status, 200);
+    assert.equal((await response.text()).includes('id="ac-directory"'), role === 'owner');
+  }
+});

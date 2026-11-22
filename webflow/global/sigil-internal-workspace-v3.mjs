@@ -283,10 +283,10 @@ export function installInternalWorkspace(pages = INTERNAL_PAGES, dailyPages = DA
   const search=document.createElement('input');search.type='search';search.placeholder='ค้นหาหน้า / Search pages';search.setAttribute('aria-label','ค้นหาหน้าภายใน');directory.append(search);
   const nav=document.createElement('nav');nav.setAttribute('aria-label','หน้าภายในทั้งหมด');directory.append(nav);
   if (dailyLayout) {
-    const unique=new Map([['/internal/admin/dashboard',{title:'หน้าหลัก · งานของ Per',path:'/internal/admin/dashboard'}]]);
+    const unique=new Map([['/internal/admin/console#ac-directory',{title:'Console · ระบบทั้งหมดของเปอร์',path:'/internal/admin/console#ac-directory'}],['/internal/admin/dashboard',{title:'หน้าหลัก · งานของ Per',path:'/internal/admin/dashboard'}]]);
     for(const page of [...dailyPages,...pages]) if(!omittedPaths.includes(page.path)&&!unique.has(page.path)) unique.set(page.path,page);
     const all=[...unique.values()];
-    const dailyPaths=new Set(['/internal/admin/dashboard',...dailyPages.map(page=>page.path)]);
+    const dailyPaths=new Set(['/internal/admin/console#ac-directory','/internal/admin/dashboard',...dailyPages.map(page=>page.path)]);
     const buckets=[
       ['ใช้ประจำ',page=>dailyPaths.has(page.path)],
       ['ลูกค้าและสมาชิก',page=>/customer|member|relink|client-intake|my-mmd/.test(page.path)],
