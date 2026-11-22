@@ -121,3 +121,35 @@ test("failed Official Verify never enqueues or dispatches confirmation links", a
     assert.equal(h.tables.Audit.length, 0);
   } finally { globalThis.fetch = original; }
 });
+
+function liffFixture() {
+  const h = fixture();
+  h.tables.Proofs[0].fields = { proof_id: "proof-1", payment_ref: "pay-1", amount_thb: 2500, payment: ["recPayment"], status: "pending", channel: "web_pay", "MMD — LIFF Renewal Sessions": ["recRenewal"] };
+  h.tables.Payments[0].fields = { "Payment Reference": "pay-1", session_id: "liff-1", Amount: 2500, payment_stage: "membership", "Package Code": "premium" };
+  h.tables.Renewals = [{ id: "recRenewal", fields: { renewal_session_id: "liff-1", requested_package: "premium", renewal_amount_thb: 2500, line_user_id: "U" + "a".repeat(32), renewal_flow_status: "identity_linked" } }];
+  h.tables.Members = [{ id: "recMember", fields: { line_id: "U" + "a".repeat(32), member_id: "member-fixture", "Contact Email": "member@example.test", "Membership Tier": "Premium" } }];
+  h.env.AIRTABLE_TABLE_LIFF_RENEWAL_SESSIONS = "Renewals";
+  h.env.AIRTABLE_TABLE_MEMBERS = "Members";
+  return h;
+}
+
+test("LIFF web proof approval reads real Airtable field names and exact canonical member identity", async () => {
+  const h = liffFixture();
+  const response = await h.review();
+  assert.equal(response.status, 200, JSON.stringify(await response.clone().json()));
+  assert.equal(h.lastSettlementBody().package_code, "premium");
+  assert.equal(h.lastSettlementBody().member_email, "member@example.test");
+  assert.equal(h.lastSettlementBody().session_id, "liff-1");
+  assert.equal(h.lastSettlementBody().renewal_session_id, "liff-1");
+  assert.equal(h.settlements(), 1);
+});
+
+for (const [name, change] of [
+  ["another session", h => { h.tables.Renewals[0].fields.renewal_session_id = "other"; }],
+  ["another amount", h => { h.tables.Renewals[0].fields.renewal_amount_thb = 1000; }],
+  ["ambiguous identity", h => { h.tables.Members.push({ ...h.tables.Members[0], id: "recOther" }); }],
+]) test(`LIFF approval refuses ${name} before contacting Payments`, async () => {
+  const h = liffFixture(); change(h);
+  assert.equal((await h.review()).status, 409);
+  assert.equal(h.settlements(), 0);
+});
