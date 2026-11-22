@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { inferMembershipPayment } from "../../shared/payment-intelligence.mjs";
 import {
   handlePublicMembershipPayment,
   isPublicMembershipPaymentPath,
@@ -68,7 +69,7 @@ test("public catalog is server-owned and contains Member, Elite and Red Card", a
   assert.deepEqual(payload.packages.map((item) => [item.package_code, item.amount_thb, item.duration_days]), [
     ["mmd_member", 690, 365],
     ["elite", 4990, 730],
-    ["red_card", 11499, 365],
+    ["red_card", 11499, 730],
   ]);
   assert.equal(payload.payment_surface, "/pay/checkout");
 });
@@ -148,4 +149,16 @@ test("public checkout validator rejects alternate hosts and extra query keys", (
   assert.equal(validate("https://mmdbkk.com/pay/checkout?t=x"), "https://mmdbkk.com/pay/checkout?t=x");
   assert.equal(validate("https://www.mmdbkk.com/pay/checkout?t=x"), "");
   assert.equal(validate("https://mmdbkk.com/pay/checkout?t=x&amount=690"), "");
+});
+
+test("Red Card inference agrees with the two-year Public catalog without changing other tiers", () => {
+  for (const [package_code, amount_thb, days] of [
+    ["red_card", 11499, 730],
+    ["mmd_member", 690, 365],
+    ["elite", 4990, 730],
+  ]) {
+    const inference = inferMembershipPayment({ amount_thb, package_code, linked_member: true });
+    assert.equal(inference.inferred_package_code, package_code);
+    assert.equal(inference.inferred_term_days, days);
+  }
 });
