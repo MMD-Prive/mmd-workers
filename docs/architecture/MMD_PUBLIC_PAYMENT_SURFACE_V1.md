@@ -67,7 +67,7 @@ The signed token format and payment authority remain shared.
 | --- | --- | ---: | --- |
 | mmd_member | MMD Member | 690 THB | 1 year |
 | elite | Elite | 4,990 THB | 2 years |
-| red_card | Red Card | 11,499 THB | 1 year |
+| red_card | Red Card | 11,499 THB | 2 calendar years |
 
 Webflow may display these values for clarity but must reload the server catalog and may not send amount as authority.
 
@@ -174,3 +174,9 @@ Both are canonical web sources for unified proof intake. Proof remains evidence 
    - private SIGIL regression;
    - proof -> pending -> Official Verify;
    - entitlement/story materialization only after verify.
+
+### Red Card two-year rollout
+
+The catalog uses 730 as the two-year display term. Official Verify uses the existing Public calendar-anniversary logic and preserves stored terms on replay of the same payment reference; this change does not backfill or extend old entitlements.
+
+Before production release, verify the configured Airtable entitlement schema accepts the canonical Red Card fields, in particular `membership_term`, and verify a synthetic Official Verify write against a non-production schema. A mocked entitlement write is not proof of production compatibility. Release the verified entitlement writer before exposing the new term in the Public catalog. Update the currently served Webflow `/pay/membership` main embed separately (page `6a70c99f1b2b686c83001271`, embed `8466d573-3dd8-dbf6-8a65-a4bea41ddcfe`); the checked-in HTML is an earlier fallback. Check desktop and mobile initial render and catalog hydration: 2 years, ฿11,499 paid once, approximately ฿479/month for comparison. Leave `/member/membership` unchanged.

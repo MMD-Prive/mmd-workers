@@ -282,7 +282,7 @@ test("Public Member canonical write typecasts policy-owned legacy Airtable selec
 test("Elite and Red Card plans preserve canonical package identity and term", async () => {
   for (const [packageCode, amount, capability, years] of [
     ["elite", 4990, "public_member", "2_years"],
-    ["red_card", 11499, "red_card", "1_year"],
+    ["red_card", 11499, "red_card", "2_years"],
   ]) {
     const h = harness({ packages: [] });
     const plan = await resolveWriteThroughPlan(h.env, {
@@ -543,3 +543,47 @@ test("replaying a November six-month renewal preserves the original outcome with
 });
 
 
+
+test("Red Card signup uses two calendar years including leap-day clamping", async () => {
+  const h = harness({ packages: [] });
+  const plan = await resolveWriteThroughPlan(h.env, {
+    payment_ref: "PAY-RED-LEAP", amount_thb: 11499, member_email: EMAIL, package_code: "red_card",
+  }, { paid_at: "2028-02-29T04:30:00.000Z" });
+  assert.equal(plan.status, "ready");
+  assert.equal(plan.action, "signup");
+  assert.equal(plan.proposed_expire_at, "2030-02-28T04:30:00.000Z");
+  assert.equal(plan.membership_term, "2_years");
+});
+
+test("Red Card renewal extends active same-package expiry by two calendar years", async () => {
+  const h = harness({ entitlements: [entitlement({
+    packageCode: "red_card", capability: "red_card", expireAt: "2028-02-28T04:30:00.000Z",
+  })], packages: [] });
+  const plan = await resolveWriteThroughPlan(h.env, {
+    payment_ref: "PAY-RED-RENEW", amount_thb: 11499, member_email: EMAIL, package_code: "red_card",
+  }, { paid_at: NOW });
+  assert.equal(plan.status, "ready");
+  assert.equal(plan.action, "renewal");
+  assert.equal(plan.start_at, "2028-02-28T04:30:00.000Z");
+  assert.equal(plan.proposed_expire_at, "2030-02-28T04:30:00.000Z");
+  assert.equal(plan.membership_term, "2_years");
+});
+
+test("Replaying a historical Red Card payment does not rewrite its entitlement", async () => {
+  const existing = entitlement({
+    packageCode: "red_card", capability: "red_card", expireAt: "2027-09-13T04:30:00.000Z", id: "paid_red",
+  });
+  Object.assign(existing.fields, {
+    entitlement_id: "pay_pay_red_old_red_card",
+    payment_ref: "PAY-RED-OLD", membership_term: "1_year", membership_expiry_rule: "1_year_from_verified_payment",
+  });
+  const h = harness({ entitlements: [existing], packages: [] });
+  const response = await reconcileReviewedMembershipEntitlement(
+    reviewedRequest({ amount: 11499, packageCode: "red_card", paymentRef: "PAY-RED-OLD", extra: { paid_at: NOW } }),
+    reviewedResponse(), h.env,
+  );
+  const result = await response.json();
+  assert.equal(result.membership_write_through.duplicate, true);
+  assert.equal(result.membership_write_through.expire_at, "2027-09-13T04:30:00.000Z");
+  assert.equal(h.writes.length, 0);
+});

@@ -8,7 +8,7 @@ Webflow page ID: `6a70c99f1b2b686c83001271`
 Canonical Public Membership:
 - MMD Member — 690 THB / 1 year
 - Elite — 4,990 THB / 2 years
-- Red Card — 11,499 THB / 1 year
+- Red Card — 11,499 THB paid once / 2 years
 
 ## Source mirror
 
