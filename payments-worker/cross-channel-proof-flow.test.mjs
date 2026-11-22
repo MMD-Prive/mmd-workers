@@ -100,7 +100,7 @@ async function fixture({ renewal = false } = {}) {
         calls.telegramDocuments++;
         const form = await request.formData();
         assert.equal(form.get("message_thread_id"), renewal ? "20" : "22");
-        assert.match(String(form.get("caption") || ""), /สถานะ:/);
+        assert.match(String(form.get("caption") || ""), renewal ? /สลิปสมาชิกเข้าแล้ว/ : /สถานะ:/);
         assert.match(String(form.get("caption") || ""), /ยังไม่ยืนยันเงินเข้า/);
         if (!renewal) assert.match(String(form.get("caption") || ""), /บัดเจ็ตรวม:/);
         assert.ok((await form.get("document").arrayBuffer()).byteLength);
