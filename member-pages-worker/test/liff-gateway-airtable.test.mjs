@@ -34,6 +34,14 @@ function mockAirtable(handler) {
 }
 
 describe("LIFF gateway Airtable adapter", () => {
+  it("persists backend-selected package and amount with the canonical payment binding", async () => {
+    const calls = mockAirtable(async () => Response.json({ id: "recLiffPayment" }));
+    await getLiffGatewayStore(env()).upsertSession({ session_id: "liff1", payment_intent_session_id: "payment-session", requested_package: "premium", renewal_amount_thb: 2500 }, "recLiffPayment");
+    assert.equal(calls[0].body.fields.requested_package, "premium");
+    assert.equal(calls[0].body.fields.renewal_amount_thb, 2500);
+    assert.equal(calls[0].body.fields.payment_intent_session_id, "payment-session");
+    assert.equal("verified_at" in calls[0].body.fields, false);
+  });
   it("uses a bounded ten-second gateway timeout by default and clamps explicit overrides", () => {
     assert.equal(liffGatewayAirtableTimeoutMs(env()), 10000);
     assert.equal(liffGatewayAirtableTimeoutMs(env({ AIRTABLE_REQUEST_TIMEOUT_MS: 8500 })), 8500);

@@ -133,6 +133,8 @@ class AirtableLiffGatewayStore {
       model_visibility_mode: selectValue(session.model_visibility_mode, MODEL_VISIBILITY_MODES),
       pricing_lane: selectValue(session.pricing_lane, PRICING_LANES),
       payment_intent_session_id: session.payment_intent_session_id,
+      requested_package: CORE_PACKAGE_CODES.has(session.requested_package) ? session.requested_package : undefined,
+      renewal_amount_thb: Number(session.renewal_amount_thb) > 0 ? Number(session.renewal_amount_thb) : undefined,
       route_after_liff: airtableSessionRoute(session.route_after_liff),
       signed_route_token_hash: session.signed_route_token_hash,
       campaign_code: session.campaign_code,

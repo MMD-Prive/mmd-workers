@@ -56,7 +56,9 @@ The route may:
 - write a pending/manual review note
 - notify Telegram/admin for manual verification
 
-The route currently does not persist the binary file itself. It records safe metadata and pending review context only. Add R2 or Airtable attachment storage separately before claiming slip file storage.
+The unified web intake stores the original file in the private `PAYMENT_SLIP_EVIDENCE` R2 bucket and creates a pending record in `MMD — Payment Proofs`, linked to the canonical Payment and Session when available. The R2 key and SHA-256 are stored in the proof note; this is private evidence storage, not a public attachment URL. Telegram delivery uses a durable outbox with five-minute retries.
+
+For canonical membership payments, `liff_proof_sync` reports correlation to the exact LIFF session after checking the payment session ID, package and amount. The projection links the proof and records the upload timestamp. It adds the verification timestamp only after both the canonical Payment and Proof are officially verified; it never changes money, membership entitlements or LIFF business state. A partial projection failure returns `review_required` and can be repaired by replaying the evidence request without creating a second proof. LINE OA chat evidence has a separate outbox and hourly evidence maintenance; five-minute notification-only ticks preserve that existing schedule.
 
 GET smoke behavior:
 

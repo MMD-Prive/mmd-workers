@@ -242,6 +242,10 @@ jobs:
           npx --yes wrangler@4 versions deploy "${MEMBER_DASHBOARD_CHAT_WORKER_VERSION_ID}@100%" -y \
             2>&1 | tee "$RUNNER_TEMP/member-dashboard-chat-worker-deploy.log"
 
+      - name: Ensure durable payment notification retry schedule
+        if: steps.deploy.outcome == 'success' || steps.migration_deploy.outcome == 'success'
+        run: node scripts/ensure-payment-notification-cron.mjs member-dashboard-chat-worker
+
       - name: Verify existing MMS Therapist auth and AI smoke routes
         id: route_sync
         if: steps.deploy.outcome == 'success' || steps.migration_deploy.outcome == 'success'

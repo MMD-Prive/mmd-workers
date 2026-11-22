@@ -7,6 +7,7 @@ import { inspectPaymentProof, paymentProofIdentity, paymentProofReviewUrl } from
 import { dispatchPaymentNotification, drainPaymentNotifications } from "../shared/payment-notification-outbox.mjs";
 import { formulaValue } from "./lib/payment-primitives.js";
 import { webProofTelegramCaption, proofDocumentDisplayName } from "./proof-notification-caption.mjs";
+import { syncLiffProofProjection } from "./liff-proof-projection.mjs";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const PAY_INTENT_PATH = "/v1/pay/verify";
@@ -785,6 +786,7 @@ async function handleSlipEvidenceIntake(request, env, downstream) {
       const existing = imageHash ? priorProofs.find(proof => paymentProofIdentity(proof).hash === imageHash) : priorProofs[0];
       if (existing) {
         const proof = proofSnapshot(existing);
+        const liffProofSync = await syncLiffProofProjection(env, existing);
         await dispatchWebDuplicateNotice(env, existing, fileFromForm(form)).catch(() => null);
         let notification = null;
         if (existing.fields?.channel === "web_pay" && !/telegram_delivered=true/.test(existing.fields?.note || "")) {
@@ -807,6 +809,7 @@ async function handleSlipEvidenceIntake(request, env, downstream) {
           evidence_submitted: true,
           payment_ref: paymentRef,
           proof_id: proof.proof_id || null,
+          liff_proof_sync: liffProofSync,
           verification_status: proof.status === "verified" ? "verified" : "pending_verification",
           payment_status: proof.status === "verified" ? "paid" : "pending",
           telegram_retry_queued: notification?.queued === true,
@@ -852,6 +855,9 @@ async function handleSlipEvidenceIntake(request, env, downstream) {
 
       if (!proofBundle) return downstreamResponse;
       const created = await createProof(env, proofBundle.fields);
+      const liffProofSync = proofBundle.snapshot.payment_stage === "membership"
+        ? await syncLiffProofProjection(env, { ...created, fields: proofBundle.fields })
+        : { status: "not_applicable" };
       const precheck = await inspectPaymentProof(env, { ...created, fields: proofBundle.fields });
       const delivery = await dispatchWebProofNotification(env, { ...created, fields: proofBundle.fields }, {
         snapshot: proofBundle.snapshot,
@@ -874,6 +880,7 @@ async function handleSlipEvidenceIntake(request, env, downstream) {
         ...downstreamData,
         proof_id: proofBundle.proofId,
         proof_record_id: created?.id || null,
+        liff_proof_sync: liffProofSync,
         evidence_submitted: true,
         already_submitted: false,
         duplicate: false,
