@@ -5,9 +5,13 @@ import { handleConfirmationDetails } from "./confirmation-details.js";
 import { createConfirmTokenRecord, signConfirmToken } from "./index.js";
 import { LINE_GROUP_INGRESS_INTERNALS } from "../member-dashboard-chat-worker/src/line-group-ingress-front-gate.js";
 import { memoryR2 } from "../shared/test/payment-memory-r2.mjs";
+import { handlePaymentReviewRequest } from "../admin-worker/src/payment-review-runtime.js";
+import { handleReviewedProof } from "./reviewed-proof.js";
 
-async function fixture() {
-  const paymentRef = await stablePaymentRef("sess-shared", "deposit");
+async function fixture({ renewal = false } = {}) {
+  const sessionId = renewal ? "liff-renewal-fixture" : "sess-shared";
+  const stage = renewal ? "membership" : "deposit";
+  const paymentRef = await stablePaymentRef(sessionId, stage);
   const bucket = memoryR2();
   const kv = new Map();
   const records = {
@@ -22,6 +26,20 @@ async function fixture() {
     } }],
   };
   const calls = { downstream: 0, proofCreates: 0, telegramDocuments: 0, telegramMessages: 0, telegramPayloads: [] };
+  if (renewal) {
+    const lineId = "U" + "a".repeat(32);
+    records.Payments[0].fields = {
+      payment_ref: paymentRef, "Payment Reference": paymentRef, session_id: sessionId, payment_stage: stage,
+      Amount: 2500, "Package Code": "premium", "Payment Status": "Pending", "Verification Status": "pending_review",
+    };
+    records.Sessions = [];
+    records.Renewals = [{ id: "recRenewal", fields: {
+      renewal_session_id: sessionId, payment_intent_session_id: sessionId, line_user_id: lineId,
+      requested_package: "premium", renewal_amount_thb: 2500, renewal_flow_status: "identity_linked",
+    } }];
+    records.Members = [{ id: "recMember", fields: { line_id: lineId, member_id: "fixture-member", "Contact Email": "fixture@example.test" } }];
+    records.Audit = [];
+  }
   let telegramHealthy = true;
   const airtable = async (request) => {
     const url = new URL(request.url);
@@ -39,24 +57,39 @@ async function fixture() {
       }
       const clauses = [...formula.matchAll(/\{([^}]+)\}='([^']*)'/g)];
       assert.ok(clauses.length, "expected exact filter");
-      return Response.json({ records: rows.filter((r) => clauses.every(([, field, value]) => r.fields[field] === value)) });
+      const match = (r, [, field, value]) => (r.fields[field] ?? "") === value;
+      return Response.json({ records: rows.filter(r => formula.startsWith("OR(")
+        ? clauses.some(clause => match(r, clause))
+        : clauses.every(clause => match(r, clause))) });
     }
     const body = await request.json();
     if (request.method === "POST") {
+      if (renewal && table === "Audit") {
+        const row = { id: "recAudit", fields: body.records[0].fields };
+        rows.push(row);
+        return Response.json({ records: [row] });
+      }
       assert.equal(table, "Proofs", "intake never writes money truth");
       const row = { id: `recProof${++calls.proofCreates}`, fields: body.fields || body.records[0].fields };
       rows.push(row);
       return Response.json(body.records ? { records: [row] } : row);
     }
     assert.equal(request.method, "PATCH");
-    assert.equal(table, "Proofs");
+    assert.ok(table === "Proofs" || renewal && table === "Renewals", "only evidence and LIFF projection may be patched");
     const row = rows.find((r) => r.id === recordId);
     Object.assign(row.fields, body.fields);
+    if (renewal && table === "Proofs" && body.fields["MMD — LIFF Renewal Sessions"]) {
+      // Airtable populates the reciprocal link on the related record.
+      for (const target of records.Renewals.filter(r => body.fields["MMD — LIFF Renewal Sessions"].includes(r.id))) {
+        target.fields["Payment Proof"] = [...new Set([...(target.fields["Payment Proof"] || []), row.id])];
+      }
+    }
     return Response.json(row);
   };
   const env = {
     AIRTABLE_BASE_ID: "app-test", AIRTABLE_API_KEY: "test",
     AIRTABLE_TABLE_PAYMENTS: "Payments", AIRTABLE_TABLE_PAYMENT_PROOFS: "Proofs", AIRTABLE_TABLE_SESSIONS: "Sessions",
+    AIRTABLE_TABLE_LIFF_RENEWAL_SESSIONS: "Renewals", AIRTABLE_TABLE_MEMBERS: "Members", AIRTABLE_TABLE_ACCESS_LOG: "Audit",
     AIRTABLE_HTTP: { fetch: airtable },
     LINE_SLIP_EVIDENCE: bucket, PAYMENT_SLIP_EVIDENCE: bucket,
     PAYMENT_CONFIRMATION_SIGNING_SECRET: "test-only", ALLOWED_ORIGINS: "https://www.mmdbkk.com",
@@ -66,10 +99,10 @@ async function fixture() {
       if (request.url.endsWith("/proof-document")) {
         calls.telegramDocuments++;
         const form = await request.formData();
-        assert.equal(form.get("message_thread_id"), "22");
+        assert.equal(form.get("message_thread_id"), renewal ? "20" : "22");
         assert.match(String(form.get("caption") || ""), /สถานะ:/);
         assert.match(String(form.get("caption") || ""), /ยังไม่ยืนยันเงินเข้า/);
-        assert.match(String(form.get("caption") || ""), /บัดเจ็ตรวม:/);
+        if (!renewal) assert.match(String(form.get("caption") || ""), /บัดเจ็ตรวม:/);
         assert.ok((await form.get("document").arrayBuffer()).byteLength);
       } else {
         calls.telegramMessages++;
@@ -79,7 +112,7 @@ async function fixture() {
     } },
   };
   const iat = Math.floor(Date.now() / 1000);
-  const claims = { role: "customer", kind: "customer_confirm", session_id: "sess-shared", payment_ref: paymentRef, payment_type: "deposit", iat, exp: iat + 3600 };
+  const claims = { role: "customer", kind: "customer_confirm", session_id: sessionId, payment_ref: paymentRef, payment_type: stage, iat, exp: iat + 3600 };
   const token = await signConfirmToken(claims, env.PAYMENT_CONFIRMATION_SIGNING_SECRET);
   await createConfirmTokenRecord(env, token, claims);
   return {
@@ -87,7 +120,7 @@ async function fixture() {
     telegramHealthy(value) { telegramHealthy = value; },
     async web(content = "synthetic proof, no customer data", extra = {}) {
       const form = new FormData();
-      for (const [name, value] of Object.entries({ payment_ref: paymentRef, session_id: "sess-shared", payment_stage: "deposit", source_page: "sigil_pay_v22", t: token, ...extra })) form.append(name, value);
+      for (const [name, value] of Object.entries({ payment_ref: paymentRef, session_id: sessionId, payment_stage: stage, source_page: renewal ? "public_pay" : "sigil_pay_v22", t: token, ...extra })) form.append(name, value);
       form.append("file", new File([content], "proof.png", { type: "image/png" }));
       const response = await handleUnifiedSlipEvidence(new Request("https://sigil.mmdbkk.com/v1/pay/slip/evidence", { method: "POST", headers: { origin: "https://www.mmdbkk.com" }, body: form }), env, async () => {
         calls.downstream++;
@@ -123,6 +156,75 @@ async function fixture() {
     },
   };
 }
+
+test("LIFF renewal checkout shares one proof from web upload and Telegram retry through Admin verification", async () => {
+  const h = await fixture({ renewal: true });
+  const { env, records, calls, paymentRef } = h;
+  const payment = records.Payments[0];
+  const renewal = records.Renewals[0];
+  let settlements = 0;
+  let reviewedPayment;
+  env.INTERNAL_TOKEN = "fixture-internal";
+  env.AUTH_SERVICE_ADMIN_TO_PAYMENTS = "fixture-admin-to-payments";
+  env.PAYMENTS_WORKER = { async fetch(request) {
+    return handleReviewedProof(request, env, null, async (approval) => {
+      // Isolate the bank confirmation and canonical money writer from this integration.
+      settlements++;
+      assert.equal(approval.payment_ref, paymentRef);
+      assert.equal(approval.amount_thb, 2500);
+      assert.equal(approval.package_code, "premium");
+      assert.equal(approval.member_email, "fixture@example.test");
+      payment.fields["Payment Status"] = "Paid";
+      payment.fields["Verification Status"] = "verified";
+      return Response.json({ ok: true, payment_ref: paymentRef, payment_stage: "membership" });
+    }).then(async response => {
+      reviewedPayment = await response.clone().json();
+      return response;
+    });
+  } };
+  function review(proofId) {
+    return handlePaymentReviewRequest(new Request("https://www.mmdbkk.com/v1/admin/payments/review", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ decision: "approve", proof_id: proofId, idempotency_key: "fixture-renewal-review", admin_reason: "Fixture reviewed by owner" }),
+    }), env, { id: "fixture-owner", role: "owner" });
+  }
+
+  h.telegramHealthy(false);
+  const receipt = await h.web();
+  const proof = records.Proofs[0];
+  assert.equal(receipt.liff_proof_sync.status, "linked");
+  assert.equal(receipt.telegram_retry_queued, true);
+  assert.equal(proof.fields.status, "pending");
+  assert.equal(payment.fields["Payment Status"], "Pending");
+  assert.equal(settlements, 0);
+  assert.deepEqual(proof.fields.payment, [payment.id]);
+  assert.deepEqual(renewal.fields["Payment Proof"], [proof.id]);
+  assert.ok(renewal.fields.proof_uploaded_at);
+  assert.equal(renewal.fields.verified_at, undefined);
+
+  h.telegramHealthy(true);
+  assert.equal((await drainWebProofNotifications(env, { now: Date.now() + 120000 })).delivered, 1);
+  assert.equal(calls.telegramDocuments, 2);
+  assert.match(proof.fields.note, /telegram_delivered=true/);
+  assert.equal(payment.fields["Payment Status"], "Pending");
+
+  const approval = await review(receipt.proof_id);
+  assert.equal(approval.status, 200, JSON.stringify(await approval.clone().json()));
+  const result = await approval.json();
+  assert.equal(result.payment_ref, paymentRef);
+  assert.equal(result.audit_write_failed, false);
+  assert.equal(reviewedPayment.liff_proof_sync.status, "linked");
+  assert.equal(reviewedPayment.liff_proof_sync.verified, true);
+  assert.equal(proof.fields.status, "verified");
+  assert.equal(payment.fields["Verification Status"], "verified");
+  assert.ok(renewal.fields.verified_at);
+  assert.equal(JSON.parse(records.Audit[0].fields["After JSON"]).payment_ref, paymentRef);
+  const replay = await (await review(receipt.proof_id)).json();
+  assert.equal(replay.money_truth_changed, false);
+  assert.equal(settlements, 1);
+  assert.equal(calls.proofCreates, 1);
+});
 
 test("LINE first: bank ref is preserved, payment page sees evidence, web upload is duplicate", async () => {
   const h = await fixture();
