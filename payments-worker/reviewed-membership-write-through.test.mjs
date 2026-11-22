@@ -258,6 +258,67 @@ test("Public 690 payment maps to public_member without requiring Private package
   assert.equal(plan.membership_term, "1_year");
 });
 
+test("Public Red Card 11,499 new payment grants two calendar years at Official Verify", async () => {
+  const h = harness({ packages: [] });
+  const response = await reconcileReviewedMembershipEntitlement(
+    reviewedRequest({ amount: 11499, packageCode: "red_card", paymentRef: "PAY-RED-NEW" }),
+    reviewedResponse(),
+    h.env,
+  );
+  const body = await response.json();
+  assert.equal(body.entitlement_materialized, true);
+  assert.equal(body.membership_write_through.action, "signup");
+  assert.equal(body.membership_write_through.membership_term, "2_years");
+  assert.equal(body.membership_write_through.start_at, NOW);
+  assert.equal(body.membership_write_through.expire_at, "2028-09-13T04:30:00.000Z");
+  assert.equal(createdEntitlements(h)[0].fields.expire_at, "2028-09-13T04:30:00.000Z");
+});
+
+test("Public Red Card same-tier renewal grants two calendar years from current expiry", async () => {
+  const priorExpiry = "2027-02-28T08:15:00.000Z";
+  const h = harness({ packages: [], entitlements: [entitlement({ packageCode: "red_card", capability: "red_card", startAt: "2025-02-28T08:15:00.000Z", expireAt: priorExpiry })] });
+  const response = await reconcileReviewedMembershipEntitlement(
+    reviewedRequest({ amount: 11499, packageCode: "red_card", paymentRef: "PAY-RED-RENEW" }),
+    reviewedResponse(),
+    h.env,
+  );
+  const body = await response.json();
+  assert.equal(body.entitlement_materialized, true);
+  assert.equal(body.membership_write_through.action, "renewal");
+  assert.equal(body.membership_write_through.membership_term, "2_years");
+  assert.equal(body.membership_write_through.start_at, priorExpiry);
+  assert.equal(body.membership_write_through.expire_at, "2029-02-28T08:15:00.000Z");
+});
+
+test("Public Red Card historical same-reference materialization remains immutable", async () => {
+  const oldExpiry = "2027-09-13T04:30:00.000Z";
+  const prior = entitlement({ packageCode: "red_card", capability: "red_card", id: "red_old", startAt: NOW, expireAt: oldExpiry });
+  Object.assign(prior.fields, { entitlement_id: "pay_pay_red_old_red_card", payment_ref: "PAY-RED-OLD", membership_term: "1_year" });
+  const h = harness({ packages: [], entitlements: [prior] });
+  const plan = await resolveWriteThroughPlan(h.env, {
+    payment_ref: "PAY-RED-OLD", amount_thb: 11499, member_email: EMAIL, package_code: "red_card",
+  }, { paid_at: NOW });
+  assert.equal(plan.status, "ready");
+  assert.equal(plan.action, "existing_paid");
+  assert.equal(plan.proposed_expire_at, oldExpiry);
+  assert.equal(plan.membership_term, "1_year");
+  assert.equal(h.writes.length, 0);
+});
+
+test("Red Card term change leaves other public membership terms unchanged", async () => {
+  const h = harness({ packages: [] });
+  const memberPlan = await resolveWriteThroughPlan(h.env, {
+    payment_ref: "PAY-MEMBER-TERM", amount_thb: 690, member_email: EMAIL, package_code: "mmd_member",
+  }, { paid_at: NOW });
+  const elitePlan = await resolveWriteThroughPlan(h.env, {
+    payment_ref: "PAY-ELITE-TERM", amount_thb: 4990, member_email: EMAIL, package_code: "elite",
+  }, { paid_at: NOW });
+  assert.equal(memberPlan.proposed_expire_at, "2027-09-13T04:30:00.000Z");
+  assert.equal(memberPlan.membership_term, "1_year");
+  assert.equal(elitePlan.proposed_expire_at, "2028-09-13T04:30:00.000Z");
+  assert.equal(elitePlan.membership_term, "2_years");
+});
+
 test("Public Member canonical write typecasts policy-owned legacy Airtable selects", async () => {
   const h = harness({ packages: [] });
   const response = await reconcileReviewedMembershipEntitlement(
@@ -282,7 +343,7 @@ test("Public Member canonical write typecasts policy-owned legacy Airtable selec
 test("Elite and Red Card plans preserve canonical package identity and term", async () => {
   for (const [packageCode, amount, capability, years] of [
     ["elite", 4990, "public_member", "2_years"],
-    ["red_card", 11499, "red_card", "1_year"],
+    ["red_card", 11499, "red_card", "2_years"],
   ]) {
     const h = harness({ packages: [] });
     const plan = await resolveWriteThroughPlan(h.env, {

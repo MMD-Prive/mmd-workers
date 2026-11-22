@@ -12,7 +12,7 @@ const AUTHORITY = "my_mmd_entitlement_resolver_v1";
 const PACKAGE_POLICY = Object.freeze({
   mmd_member: Object.freeze({ capability: "public_member", entitlement_level: "public_member", label: "MMD Member", years: 1, private_catalog: false }),
   elite: Object.freeze({ capability: "public_member", entitlement_level: "elite", label: "Elite Membership", years: 2, private_catalog: false }),
-  red_card: Object.freeze({ capability: "red_card", entitlement_level: "red_card", label: "Red Card", years: 1, private_catalog: false }),
+  red_card: Object.freeze({ capability: "red_card", entitlement_level: "red_card", label: "Red Card", years: 2, private_catalog: false }),
   standard: Object.freeze({ capability: "private_standard", entitlement_level: "standard_basic", label: "Standard", years: 1, private_catalog: true }),
   premium: Object.freeze({ capability: "private_premium", entitlement_level: "premium", label: "Premium", years: 2, private_catalog: true }),
 });

@@ -1,7 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { classifyPaymentOpsRoute, inferMembershipPayment, membershipInferenceLabel } from "./payment-intelligence.mjs";
+import { classifyPaymentOpsRoute, getPublicMembershipPackage, inferMembershipPayment, membershipInferenceLabel } from "./payment-intelligence.mjs";
+
+test("Public Red Card catalog and payment inference carry a two-year term", () => {
+  assert.equal(getPublicMembershipPackage("red_card").duration_days, 730);
+  const inferred = inferMembershipPayment({ amount_thb: 11499, package_code: "red_card" });
+  assert.equal(inferred.inferred_package_code, "red_card");
+  assert.equal(inferred.inferred_term_days, 730);
+});
 
 test("recognises the 1,999 THB history-qualified Premium renewal", () => {
   const result = inferMembershipPayment({ amount_thb: 1999, linked_member: true });

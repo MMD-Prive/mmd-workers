@@ -12,7 +12,7 @@ const MEMBERSHIP_AMOUNTS = Object.freeze({
   11499: { package_code: "red_card", intent: "membership", price_rule: "public_red_card" },
 });
 
-const TERM_DAYS = Object.freeze({ standard: 365, premium: 730, mmd_member: 365, elite: 730, red_card: 365 });
+const TERM_DAYS = Object.freeze({ standard: 365, premium: 730, mmd_member: 365, elite: 730, red_card: 730 });
 
 export const PUBLIC_MEMBERSHIP_CATALOG = Object.freeze({
   mmd_member: Object.freeze({
@@ -33,7 +33,7 @@ export const PUBLIC_MEMBERSHIP_CATALOG = Object.freeze({
     package_code: "red_card",
     label: "Red Card",
     amount_thb: 11499,
-    duration_days: 365,
+    duration_days: 730,
     entitlement_level: "red_card",
   }),
 });
