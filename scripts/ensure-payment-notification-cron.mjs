@@ -1,7 +1,7 @@
 import { pathToFileURL } from "node:url";
 
 export async function ensurePaymentNotificationCron(worker, env = process.env, fetcher = fetch) {
-  if (!["admin-worker", "payments-worker"].includes(worker)) throw new Error("unsupported_payment_notification_worker");
+  if (!["admin-worker", "payments-worker", "member-dashboard-chat-worker"].includes(worker)) throw new Error("unsupported_payment_notification_worker");
   const token = String(env.CLOUDFLARE_API_TOKEN || "").trim();
   const account = String(env.CLOUDFLARE_ACCOUNT_ID || "").trim();
   if (!token || !account) throw new Error("cloudflare_schedule_configuration_missing");

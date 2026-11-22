@@ -7,7 +7,8 @@ workers_dev = false
 # Cloudflare cron is UTC; no time window unlinks the customer menu.
 # Hourly reconciliation also self-heals assignments after deploys/state drift.
 [triggers]
-crons = ["0 * * * *"]
+# Five-minute ticks drain only the durable payment-notification outbox.
+crons = ["0 * * * *", "*/5 * * * *"]
 
 [[services]]
 binding = "MEMBER_PAGES_WORKER"

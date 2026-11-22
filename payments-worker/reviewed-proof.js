@@ -1,5 +1,6 @@
 import { addBangkokCalendarYears, applyMembershipPromotion, currentPrivateMembershipPromotion, isProtectedPrivateMembership, privateRenewalTiming, privateRenewalBaseYears } from "../shared/membership-promotion-policy.mjs";
 import { constantTimeEqual, formulaValue, httpError } from "./lib/payment-primitives.js";
+import { syncLiffProofProjection } from "./liff-proof-projection.mjs";
 
 const REVIEW_SOURCE = "payment_review_console";
 const LINE_OFC_SOURCE = "line_ofc_payment_ingress";
@@ -175,6 +176,9 @@ export async function handleReviewedProof(request, env = {}, ctx = null, notifyT
       }));
     }
 
+    const liffProofSync = paymentStage === "membership" && proofVerification.verified
+      ? await syncLiffProofProjection(env, { ...proof, fields: { ...fields, status: "verified" } })
+      : { status: "not_applicable" };
     const headers = new Headers(response.headers);
     headers.set("content-type", "application/json; charset=utf-8");
     headers.set("cache-control", "no-store, private");
@@ -198,6 +202,7 @@ export async function handleReviewedProof(request, env = {}, ctx = null, notifyT
       membership_promotion: materialization?.promotion || undefined,
       downstream_access_reconcile_required: Boolean(materialization),
       proof_verification: proofVerification,
+      liff_proof_sync: liffProofSync,
       proof_reconciled: proofVerification.verified === true,
       proof_reconcile_failed: proofVerification.ok === false,
     }), { status: response.status, headers });

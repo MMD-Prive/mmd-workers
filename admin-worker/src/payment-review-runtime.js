@@ -477,8 +477,31 @@ async function buildApprovalContext(env, proof, item, actor, operatorContext = {
   if (expectedAmount != null && Math.abs(expectedAmount - amountThb) > 0.009 && paymentStage !== "deposit") {
     throw httpError(409, "canonical_payment_amount_mismatch");
   }
-  const memberEmail = normalizeEmail(paymentFields.member_email || fields.member_email || item.member_email);
-  const packageCode = canonicalPackageCode(paymentFields.package_code || fields.package_code);
+  let memberEmail = normalizeEmail(paymentFields.member_email || paymentFields["Member Email"] || fields.member_email || item.member_email);
+  const packageCode = canonicalPackageCode(paymentFields.package_code || paymentFields["Package Code"] || fields.package_code);
+  if (paymentStage === "membership" && !memberEmail && paymentRecord) {
+    const renewalIds = uniqueStrings(linkedRecordIds(fields["MMD — LIFF Renewal Sessions"]));
+    if (renewalIds.length > 1) throw httpError(409, "liff_renewal_context_ambiguous");
+    if (renewalIds.length === 1) {
+      const renewal = await airtableGet(env, liffRenewalTable(env), renewalIds[0]);
+      const rf = renewal.fields || {};
+      if (!sessionId || ![rf.renewal_session_id, rf.payment_intent_session_id].includes(sessionId)) throw httpError(409, "liff_renewal_session_mismatch");
+      if (RECOVERY_BLOCKED_STATES.has(safeCode(rf.renewal_flow_status))) throw httpError(409, "liff_renewal_context_not_approvable");
+      if (!packageCode || canonicalPackageCode(rf.requested_package) !== packageCode) throw httpError(409, "liff_renewal_package_mismatch");
+      if (positiveAmount(rf.renewal_amount_thb) !== amountThb) throw httpError(409, "liff_renewal_amount_mismatch");
+      const lineUserId = canonicalLineUserId(rf.line_user_id);
+      if (!lineUserId) throw httpError(409, "canonical_member_context_missing");
+      const members = await airtableList(env, membersTable(env), {
+        filterByFormula: `{line_id}='${formulaValue(lineUserId)}'`, maxRecords: 3,
+      });
+      if (members.length !== 1) throw httpError(409, members.length ? "canonical_member_context_ambiguous" : "canonical_member_context_missing");
+      const linkedMembers = uniqueStrings(linkedRecordIds(fields.member || fields.Member));
+      if (linkedMembers.some(id => id !== members[0].id)) throw httpError(409, "canonical_member_context_ambiguous");
+      const memberFields = members[0].fields || {};
+      memberEmail = normalizeEmail(memberFields["Contact Email"] || memberFields.email || memberFields.member_email);
+      renewalSessionId = safeText(rf.renewal_session_id, 180);
+    }
+  }
   if (["deposit", "final", "tips", "full"].includes(paymentStage) && !sessionId) {
     throw httpError(409, "canonical_session_context_missing");
   }
@@ -633,6 +656,7 @@ async function resolveRecoveryMemberIdentity(env, proofFields, renewalFields) {
 
   const lineUserId = canonicalLineUserId(renewalFields.line_user_id) || manualRecoveryLineUserId(proofFields.note);
   if (!lineUserId) return null;
+
 
   const entitlementRows = await airtableList(env, entitlementsTable(env), {
     filterByFormula: `{line_user_id}='${formulaValue(lineUserId)}'`,
