@@ -1,0 +1,121 @@
+{
+  "date": "2026-11-22",
+  "source_main_sha": "367f0a8f80bb7fb86da99061f5bbf43b1871ffc5",
+  "source_files_verified_equal_to_main": [
+    "payments-worker/reviewed-membership-write-through.js",
+    "shared/payment-intelligence.mjs"
+  ],
+  "production_customer_records_accessed": 0,
+  "real_payments": 0,
+  "local_contract_tests": {
+    "passed": 61,
+    "failed": 0
+  },
+  "live_catalog_check": {
+    "result": "blocked",
+    "reason": "Execution environment CONNECT proxy returned 403; no live catalog response received."
+  },
+  "scope_limitations": [
+    "Calls reconcileReviewedMembershipEntitlement directly with a synthetic successful reviewed response, not a deployed Official Verify HTTP endpoint.",
+    "Airtable transport uses connected tools and field-ID mapping. Renewal PATCH performUpsert is adapted to create after writer replay lookup; atomic REST upsert and deployed writer credential permissions are not covered.",
+    "Schema cloned from live entitlement writer fields; member link retargeted to synthetic Members in a new isolated base.",
+    "No production customer record writes or real payment."
+  ],
+  "ok": true,
+  "base": "appIpoaXcgvjlCGNM",
+  "results": [
+    {
+      "case": "signup",
+      "receipt": {
+        "status": "materialized",
+        "authority": "my_mmd_entitlement_resolver_v1",
+        "duplicate": false,
+        "action": "signup",
+        "package_code": "red_card",
+        "capability": "red_card",
+        "member_id": "SMOKE-RED-signup",
+        "entitlement_record_id": "recrSyiFJnH1pCI10",
+        "entitlement_id": "pay_smoke_red_signup_20261122_red_card",
+        "current_expire_at": null,
+        "start_at": "2026-11-22T05:00:00.000Z",
+        "expire_at": "2028-11-22T05:00:00.000Z",
+        "membership_term": "2_years",
+        "membership_expiry_rule": "2_years_from_verified_payment",
+        "promotion": null,
+        "confidence": 0.94,
+        "manual_reconciliation_required": false
+      }
+    },
+    {
+      "case": "same_reference",
+      "writes": 0
+    },
+    {
+      "case": "active_renewal",
+      "receipt": {
+        "status": "materialized",
+        "authority": "my_mmd_entitlement_resolver_v1",
+        "duplicate": false,
+        "action": "renewal",
+        "package_code": "red_card",
+        "capability": "red_card",
+        "member_id": "SMOKE-RED-signup",
+        "entitlement_record_id": "recy6g3wuLyL1J5wY",
+        "entitlement_id": "pay_smoke_red_renew_20261122_red_card",
+        "current_expire_at": "2028-11-22T05:00:00.000Z",
+        "start_at": "2028-11-22T05:00:00.000Z",
+        "expire_at": "2030-11-22T05:00:00.000Z",
+        "membership_term": "2_years",
+        "membership_expiry_rule": "2_years_from_current_expiry",
+        "promotion": null,
+        "confidence": 0.94,
+        "manual_reconciliation_required": false
+      }
+    },
+    {
+      "case": "leap_day",
+      "receipt": {
+        "status": "materialized",
+        "authority": "my_mmd_entitlement_resolver_v1",
+        "duplicate": false,
+        "action": "signup",
+        "package_code": "red_card",
+        "capability": "red_card",
+        "member_id": "SMOKE-RED-leap",
+        "entitlement_record_id": "recX55SFN6sigSeGq",
+        "entitlement_id": "pay_smoke_red_leap_20261122_red_card",
+        "current_expire_at": null,
+        "start_at": "2024-02-29T12:34:56.000Z",
+        "expire_at": "2026-02-28T12:34:56.000Z",
+        "membership_term": "2_years",
+        "membership_expiry_rule": "2_years_from_verified_payment",
+        "promotion": null,
+        "confidence": 0.94,
+        "manual_reconciliation_required": false
+      }
+    },
+    {
+      "case": "historical_one_year_immutable",
+      "receipt": {
+        "status": "materialized",
+        "authority": "my_mmd_entitlement_resolver_v1",
+        "duplicate": true,
+        "action": "existing_paid",
+        "package_code": "red_card",
+        "capability": "red_card",
+        "member_id": "SMOKE-RED-history",
+        "entitlement_record_id": "rec9EABkDtZ6V1niQ",
+        "entitlement_id": "pay_smoke_red_old_20261122_red_card",
+        "start_at": "2026-11-22T05:00:00.000Z",
+        "expire_at": "2027-11-22T05:00:00.000Z",
+        "membership_term": "1_year",
+        "membership_expiry_rule": "1_year_from_verified_payment",
+        "promotion": null,
+        "manual_reconciliation_required": false
+      },
+      "writes": 0
+    }
+  ],
+  "write_count": 3,
+  "transport": "Connected Airtable adapter, not deployed service-auth endpoint; renewal PATCH upsert is adapted to create after replay lookup."
+}
