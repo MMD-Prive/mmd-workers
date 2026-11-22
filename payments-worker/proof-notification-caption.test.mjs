@@ -85,8 +85,17 @@ test("membership and shop routes preserve their identities without irrelevant jo
   for (const topic of ["membership", "mmd_shop"]) {
     const caption = webProofTelegramCaption({ ...fixture(), route: { topic, shop_title: "MMD Shop" }, inferenceLabel: "Premium Membership" });
     assert.match(caption, topic === "membership" ? /สลิปสมาชิก/ : /MMD Shop/);
-    assert.doesNotMatch(caption, /ยังจับคู่งานไม่ได้|ลูกค้า:|โมเดล:/);
+    assert.match(caption, /สถานะ: ยังไม่ยืนยันเงินเข้า/);
+    assert.match(caption, /ขั้นต่อไป: ตรวจยอดเงินจริง/);
+    assert.match(caption, />เปิดรายการในหลังบ้าน<\/a>/);
+    assert.doesNotMatch(caption, /ยังจับคู่งานไม่ได้|ลูกค้า:|โมเดล:|ลิงก์ลูกค้า/);
   }
+});
+
+test("membership duplicate caption directs the reviewer to the previous evidence", () => {
+  const caption = webProofTelegramCaption({ ...fixture(), route: { topic: "membership" }, precheck: { status: "duplicate" } });
+  assert.match(caption, /ขั้นต่อไป: เทียบกับหลักฐานเดิม อย่านับยอดซ้ำ/);
+  assert.doesNotMatch(caption, /กดยืนยันเงินเข้า/);
 });
 
 test("missing total never reuses the deposit as the total budget", () => {

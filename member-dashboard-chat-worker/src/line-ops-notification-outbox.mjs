@@ -168,6 +168,8 @@ export async function sendThroughTelegramWorker(env = {}, record = {}) {
   }
   if (!token || !chatId) return { ok: false, retryable: true, error: "telegram_config_missing" };
   try {
+    // The Telegram worker parses HTML, but the outbox stores plain text.
+    const message = (record?.message || "").replace(/[&<>]/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[character]));
     const response = await env.TELEGRAM_WORKER.fetch(new Request("https://telegram-worker/telegram/internal/send", {
       method: "POST",
       headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
@@ -175,7 +177,7 @@ export async function sendThroughTelegramWorker(env = {}, record = {}) {
         flow: record?.destination?.flow || "payment_proof",
         chat_id: chatId,
         message_thread_id: record?.destination?.message_thread_id || undefined,
-        text: record?.message || "",
+        text: message,
       }),
     }));
     if (response.ok) return { ok: true, status: response.status };

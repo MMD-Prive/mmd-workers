@@ -45,38 +45,32 @@ export function webProofTelegramCaption({ proofId, snapshot = {}, jobContext = {
     return compactJobProofCaption({ snapshot, jobContext, precheck });
   }
   const reviewUrl = precheck.review_url || paymentProofReviewUrl(proofId, snapshot.session_id);
-  const title = route.topic === "membership" ? "💳 สลิปสมาชิกเข้าแล้ว · รอตรวจ"
-    : route.topic === "mmd_shop" ? `💳 ${oneLine(route.shop_title)} · สลิปเข้าแล้ว รอตรวจ`
-    : "💳 สลิปลูกค้าเข้าแล้ว · รอตรวจ";
+  const isMembership = route.topic === "membership";
+  const title = isMembership ? "💳 สลิปสมาชิกเข้าแล้ว · รอตรวจ"
+    : `💳 ${oneLine(route.shop_title)} · สลิปเข้าแล้ว รอตรวจ`;
   const amount = Number(snapshot.amount_thb);
   const amountText = Number.isFinite(amount) && amount > 0 ? `${amount.toLocaleString("th-TH", { maximumFractionDigits: 2 })} บาท` : "ยังไม่ระบุยอด";
-  const stage = stages[snapshot.payment_stage] || "ตรวจรอบชำระในงาน";
-  const job = route.topic !== "membership" && route.topic !== "mmd_shop";
-  const schedule = proofJobSchedule(jobContext);
-  const warnings = [...(job && jobContext.status !== "exact" ? ["⚠️ ยังจับคู่งานไม่ได้ · ตรวจงานก่อนยืนยันเงินเข้า"] : []), ...proofPrecheckLines(precheck)];
-  const action = reviewUrl ? `<a href="${escape(reviewUrl)}">ตรวจและยืนยันเงินเข้า (Official Verify)</a>` : "⚠️ เปิดคิวชำระเงินเพื่อตรวจงานนี้";
-  const footer = ["ยังไม่ยืนยันเงินเข้า · ยังไม่ปล่อยลิงก์ลูกค้า / โมเดล", "ตรวจเงินจริงก่อนกดปุ่มด้านล่าง", action].join("\n");
+  const stage = stages[snapshot.payment_stage] || (isMembership ? "ค่าสมาชิก" : "ค่าสินค้า");
+  const warnings = proofPrecheckLines(precheck);
+  const action = reviewUrl ? `<a href="${escape(reviewUrl)}">เปิดรายการในหลังบ้าน</a>` : "เปิดคิวชำระเงินในหลังบ้าน";
+  const nextStep = precheck.status === "duplicate" ? "เทียบกับหลักฐานเดิม อย่านับยอดซ้ำ"
+    : precheck.status === "needs_review" ? "เทียบข้อมูลสลิปกับรายการในหลังบ้านก่อนยืนยันเงินเข้า"
+    : "ตรวจยอดเงินจริงในบัญชีก่อนกดยืนยันเงินเข้า (Official Verify)";
+  const footer = ["สถานะ: ยังไม่ยืนยันเงินเข้า", `ขั้นต่อไป: ${nextStep}`, action].join("\n");
 
   // Reserve the warning and review action first. Reduce only display labels,
   // never slice HTML, truncate a review URL or silently drop a risk warning.
   for (const limit of [64, 40, 24, 12, 4, 0]) {
-    const details = [];
-    if (limit && job) {
-      if (jobContext.client_name) details.push(`ลูกค้า: <b>${label(jobContext.client_name, limit)}</b>`);
-      if (jobContext.model_name) details.push(`โมเดล: <b>${label(jobContext.model_name, limit)}</b>`);
-      if (schedule.date) details.push(`วันที่: ${schedule.date}`);
-      if (schedule.time) details.push(`เวลา: ${schedule.time}`);
-      if (jobContext.location_name) details.push(`สถานที่: ${label(jobContext.location_name, limit)}`);
-    } else if (limit && inferenceLabel) details.push(`ประเภท: ${label(inferenceLabel, limit)}`);
     const caption = [
       `<b>${label(title, 64)}</b>`, `ยอดตามรายการ: <b>${escape(amountText)}</b> · ${escape(stage)}`,
-      details.join("\n"), warnings.map(line => escape(line.replace(" · ยังไม่ยืนยันเงินเข้า", ""))).join("\n"), footer,
+      limit && inferenceLabel ? `ประเภท: ${label(inferenceLabel, limit)}` : "",
+      warnings.map(line => escape(line.replace(" · ยังไม่ยืนยันเงินเข้า", ""))).join("\n"), footer,
     ].filter(Boolean).join("\n\n");
     if (caption.length <= 880) return caption;
   }
   // Canonical URLs and bounded precheck messages normally fit without this.
   // Keep fail-closed review status even for unexpectedly large future input.
-  return `<b>💳 รับสลิปแล้ว · ต้องตรวจสอบ</b>\n\n${escape(amountText)} · ${escape(stage)}\nยังไม่ยืนยันเงินเข้า · ยังไม่ปล่อยลิงก์ลูกค้า / โมเดล\n⚠️ ตรวจหลักฐานซ้ำและข้อมูลในคิวชำระเงินก่อนยืนยัน`;
+  return `<b>💳 รับสลิปแล้ว · ต้องตรวจสอบ</b>\n\n${escape(amountText)} · ${escape(stage)}\nสถานะ: ยังไม่ยืนยันเงินเข้า\n⚠️ ตรวจหลักฐานซ้ำและข้อมูลในคิวชำระเงินก่อนยืนยัน`;
 }
 
 // Owner-facing job receipt: diagnostic IDs, review instructions and routing
