@@ -8,6 +8,7 @@ const commands = new Map([
   ['เปิด booking', 'model_request_booking'],
   ['พร้อมส่งคำขอจอง'.normalize('NFKC'), 'model_request_booking'],
   ['my status', 'my_status'],
+  ['คุยกับเปอร์', 'per_review'],
   ['promotion', 'promotion'],
   ['find model', 'models'],
   ['apply job', 'jobs'],

@@ -15,7 +15,9 @@ export function resolveMembershipStatusReply(truth = {}, { inChatOnly = false } 
   if (inChatOnly) text = 'สถานะสมาชิก: ยังตรวจสอบไม่ได้ครับ\nวันหมดอายุ: ยังตรวจสอบไม่ได้ครับ\nเดี๋ยวเปอร์ขอตรวจให้ก่อนนะครับ';
   if (verified) {
     const lifecycle = m.member_blocked === true ? 'blocked' : m.lifecycle;
-    const day = /^\d{4}-\d{2}-\d{2}(?:T.*)?$/.test(String(m.expire_at || '')) ? String(m.expire_at).slice(0,10) : '';
+    const rawExpiry = String(m.expire_at || '');
+    const day = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2}))?$/.test(rawExpiry) &&
+      Number.isFinite(Date.parse(rawExpiry)) ? rawExpiry.slice(0,10) : '';
     const date = new Date(day + 'T00:00:00Z');
     const expiry = Number.isFinite(date.getTime()) && date.toISOString().slice(0,10) === day ? day : '';
     const expiryText = expiry || 'ยังไม่มีวันที่ยืนยันจากระบบครับ';
@@ -23,7 +25,8 @@ export function resolveMembershipStatusReply(truth = {}, { inChatOnly = false } 
       ? `สถานะสมาชิก: ${LABELS[m.level]} · ${STATES[lifecycle]}\nวันหมดอายุ: ${expiryText}`
       : `ประเภทสมาชิก: ${LABELS[m.level]}\nสถานะสมาชิก: ${STATES[lifecycle]}\nวันหมดอายุ: ${expiryText}`;
     const protectedLevel = ['vip','svip','black_card','red_card'].includes(m.level);
-    handoff = protectedLevel || ['blocked','revoked','pending','inactive'].includes(lifecycle);
+    handoff = !expiry || protectedLevel || ['blocked','revoked','pending','inactive'].includes(lifecycle);
+    if (inChatOnly && !expiry) text += '\nฝากให้เปอร์ตรวจวันหมดอายุในแชตนี้ได้ครับ ยังไม่ต้องสมัครหรือชำระซ้ำ';
     if (!inChatOnly && !handoff && ['expired','grace'].includes(lifecycle) && ['private_standard','private_premium'].includes(m.level)) {
       route = `${ENTRY}?intent=renew&view=package`;
       text += '\nตรวจตัวเลือกต่ออายุได้ใน My MMD การกดลิงก์ยังไม่ยืนยันการชำระเงิน ต่ออายุ หรือเปิดสิทธิ์ครับ';

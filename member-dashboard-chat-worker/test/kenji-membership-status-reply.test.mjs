@@ -3,6 +3,14 @@ import assert from 'node:assert/strict';
 import {resolveMembershipStatusReply} from '../src/kenji-membership-status-reply.mjs';
 import {runApprovedCategoryTurn} from '../src/kenji-category-turn.mjs';
 const truth=(level='private_premium',lifecycle='active')=>({ok:true,authority:'my_mmd_entitlement_resolver_v1',identity_status:'resolved',membership:{level,lifecycle,expire_at:'2027-01-01'},points:{status:'unavailable',active_points:null}});
+test('missing or impossible expiry routes to Per, not renewal or signup',()=>{
+  for(const expire_at of [null,'2026-02-31','2026-11-20Tinvalid']) for(const inChatOnly of [true,false]) {
+    const t=truth('private_premium','expired');t.membership.expire_at=expire_at;
+    const r=resolveMembershipStatusReply(t,{inChatOnly});
+    assert.equal(r.handoff_required,true);assert.match(r.text,/เปอร์/);assert.match(r.text,/ยังไม่มีวันที่ยืนยัน/);
+    assert.doesNotMatch(r.text,/intent=renew|intent=signup|2026-02-31/);
+  }
+});
 for(const state of ['active','expiring_soon','expired','grace'])test(`canonical ${state} membership and CTA do not require Points`,()=>{
   const result=resolveMembershipStatusReply(truth('private_standard',state));
   assert.equal(result.live_truth_verified,true);assert.match(result.text,/Standard|2027-01-01/);
