@@ -14,7 +14,7 @@ export default {async fetch(request, env) {
   if (url.pathname === '/qa/login') {
     if (request.method === 'GET') return new Response(
       '<!doctype html><h1>MY CO MODEL · Owner Staging</h1><form method="post"><label>รหัส Owner <input name="credential" type="password" autocomplete="current-password" required></label><button>เข้าสู่ระบบ</button></form>',
-      {headers:{...headers,'Content-Type':'text/html; charset=utf-8'}});
+      {headers:{...headers,'Referrer-Policy':'same-origin','Content-Type':'text/html; charset=utf-8'}});
     if (request.method !== 'POST' || request.headers.get('origin') !== ADMIN) return new Response(null,{status:403,headers});
     const data = await request.formData().catch(()=>null);
     const key = await crypto.subtle.importKey('raw',new TextEncoder().encode(runtime.ADMIN_SESSION_SECRET),{name:'HMAC',hash:'SHA-256'},false,['sign','verify']);

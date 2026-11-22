@@ -47,6 +47,16 @@ const pEnv={TOKEN_SECRET:secret,QA_PARTNER_A_TOKEN:tokenA,QA_PARTNER_B_TOKEN:tok
 const oEnv={ADMIN_LOGIN_CREDENTIAL:randomUUID(),ADMIN_SESSION_SECRET:randomUUID(),
   CO_MODEL_OWNER:new partner.CoModelOwnerService({},pEnv)};
 globalThis.fetch=()=>{throw Error('unexpected_external_fetch');};
+const loginPage=await owner.default.fetch(new Request(ADMIN+'/qa/login'),oEnv);
+assert.equal(loginPage.headers.get('referrer-policy'),'same-origin');
+for(const origin of [undefined,'null','https://other.invalid']){
+  const denied=await owner.default.fetch(new Request(ADMIN+'/qa/login',{
+    method:'POST',headers:origin?{origin}:{},
+    body:new URLSearchParams({credential:oEnv.ADMIN_LOGIN_CREDENTIAL}),
+  }),oEnv);
+  assert.equal(denied.status,403);
+  assert.equal(denied.headers.has('set-cookie'),false);
+}
 const login=await owner.default.fetch(new Request(ADMIN+'/qa/login',{method:'POST',headers:{origin:ADMIN},
   body:new URLSearchParams({credential:oEnv.ADMIN_LOGIN_CREDENTIAL})}),oEnv);
 assert.equal(login.status,303);
@@ -57,6 +67,7 @@ const results=[];
 for(const mode of ['Bridge','รวมโม','หารกำไร']){
   const form=await owner.default.fetch(new Request(ADMIN+OWNER_PATH,{headers:{cookie}}),oEnv);
   assert.equal(form.status,200);
+  assert.equal(form.headers.get('referrer-policy'),'same-origin');
   const draft=(await form.text()).match(/name="draft" value="([^"]+)"/)[1];
   const submit=()=>owner.default.fetch(new Request(ADMIN+OWNER_PATH,{method:'POST',headers:{cookie,origin:ADMIN},
     body:new URLSearchParams({draft,partner:idA,mode,description:'fixture-only'})}),oEnv);
@@ -74,7 +85,9 @@ for(const mode of ['Bridge','รวมโม','หารกำไร']){
   };
   assert.equal((await open(tokenB)).status,404);
   assert.equal((await open(tokenB,'declined')).status,404);
-  assert.equal((await open(tokenA)).status,200);
+  const recipientForm=await open(tokenA);
+  assert.equal(recipientForm.status,200);
+  assert.equal(recipientForm.headers.get('referrer-policy'),'same-origin');
   assert.deepEqual((await Promise.all([open(tokenA,'interested'),open(tokenA,'declined')])).map(r=>r.status),[303,303]);
   assert.match(await (await open(tokenA)).text(),/บันทึกคำตอบแล้ว/);
   results.push({mode,issue:201,wrongAccount:404,answer:303,replay:303});

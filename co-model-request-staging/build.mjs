@@ -17,14 +17,18 @@ await mkdir(new URL('.build/',dir),{recursive:true});
 const overlay={
   name:'fixture-only-overlays',
   setup(bundle){
-    bundle.onLoad({filter:/(co-model-owner\.js|credential-bound-admin-session\.js|partners-worker\/src\/index\.ts)$/},async ({path})=>{
+    bundle.onLoad({filter:/(co-model-intake\.mjs|co-model-owner\.js|credential-bound-admin-session\.js|partners-worker\/src\/index\.ts)$/},async ({path})=>{
       let contents=await readFile(path,'utf8');
       function replace(before,after){
         if(contents.split(before).length!==2)throw Error('source_overlay_mismatch: '+path);
         contents=contents.replace(before,after);
       }
-      if(path.endsWith('/co-model-owner.js')) replace("new URL('/partner/dashboard/co-model-request', request.url)", "new URL('/partner/dashboard/co-model-request', "+JSON.stringify(PARTNER)+")");
-      else if(path.endsWith('/credential-bound-admin-session.js')) replace('  ...PROD_MMD_ORIGINS,','  ...PROD_MMD_ORIGINS,\n  '+JSON.stringify(ADMIN)+',');
+      if(path.endsWith('/co-model-owner.js')) {
+        replace("'Referrer-Policy': 'no-referrer'", "'Referrer-Policy': status === 200 ? 'same-origin' : 'no-referrer'");
+        replace("new URL('/partner/dashboard/co-model-request', request.url)", "new URL('/partner/dashboard/co-model-request', "+JSON.stringify(PARTNER)+")");
+      } else if(path.endsWith('/co-model-intake.mjs')) {
+        replace("'Referrer-Policy': 'no-referrer'", "'Referrer-Policy': available && !result.answer ? 'same-origin' : 'no-referrer'");
+      } else if(path.endsWith('/credential-bound-admin-session.js')) replace('  ...PROD_MMD_ORIGINS,','  ...PROD_MMD_ORIGINS,\n  '+JSON.stringify(ADMIN)+',');
       else {
         replace('const response = await fetch(url.toString(), { ...init, headers });','const response = await (env as RuntimeEnv & {fixtureFetch: typeof fetch}).fixtureFetch(url.toString(), { ...init, headers });');
         contents+='\nexport {verifyPartnerTokenFromRequest};\n';
