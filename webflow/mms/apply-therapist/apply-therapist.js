@@ -53,6 +53,7 @@
 
   buildCatalog();
   restoreDraft();
+  initResidenceFields();
   bind();
   initZones();
   root.dataset.bound="true";
@@ -71,6 +72,80 @@
     var empty=document.createElement("option");empty.value="";empty.textContent=placeholder;select.append(empty);
     items.forEach(function(item){var option=document.createElement("option");option.value=item.code;option.textContent=item.label;select.append(option)});
   }
+
+  function initResidenceFields(){
+    var provinceInput=field("residence_province");
+    var districtInput=field("residence_area");
+    if(!provinceInput||!districtInput)return;
+
+    // Administrative districts for residence only. Service Zones use their own catalog.
+    var districtCatalog={
+      "กรุงเทพมหานคร":"คลองเตย|คลองสาน|คลองสามวา|คันนายาว|จตุจักร|จอมทอง|ดอนเมือง|ดินแดง|ดุสิต|ตลิ่งชัน|ทวีวัฒนา|ทุ่งครุ|ธนบุรี|บางกอกน้อย|บางกอกใหญ่|บางกะปิ|บางขุนเทียน|บางเขน|บางคอแหลม|บางแค|บางซื่อ|บางนา|บางบอน|บางพลัด|บางรัก|บึงกุ่ม|ปทุมวัน|ประเวศ|ป้อมปราบศัตรูพ่าย|พญาไท|พระโขนง|พระนคร|ภาษีเจริญ|มีนบุรี|ยานนาวา|ราชเทวี|ราษฎร์บูรณะ|ลาดกระบัง|ลาดพร้าว|วังทองหลาง|วัฒนา|สวนหลวง|สะพานสูง|สัมพันธวงศ์|สาทร|สายไหม|หนองแขม|หนองจอก|หลักสี่|ห้วยขวาง",
+      "นนทบุรี":"เมืองนนทบุรี|บางกรวย|บางใหญ่|บางบัวทอง|ไทรน้อย|ปากเกร็ด",
+      "ปทุมธานี":"เมืองปทุมธานี|คลองหลวง|ธัญบุรี|หนองเสือ|ลาดหลุมแก้ว|ลำลูกกา|สามโคก",
+      "สมุทรปราการ":"เมืองสมุทรปราการ|บางบ่อ|บางพลี|พระประแดง|พระสมุทรเจดีย์|บางเสาธง",
+      "สมุทรสาคร":"เมืองสมุทรสาคร|กระทุ่มแบน|บ้านแพ้ว",
+      "นครปฐม":"เมืองนครปฐม|กำแพงแสน|นครชัยศรี|ดอนตูม|บางเลน|สามพราน|พุทธมณฑล"
+    };
+    var bangkok="กรุงเทพมหานคร";
+    var other="other";
+    var provinceLabel=provinceInput.closest("label");
+    var districtLabel=districtInput.closest("label");
+    var provinceSelect=addResidenceSelect(provinceLabel,"จังหวัดที่พัก *");
+    var districtSelect=addResidenceSelect(districtLabel,"เขต / อำเภอที่พัก *");
+    provinceSelect.name="residence_province_choice";
+    provinceLabel.querySelector("span").textContent="ระบุจังหวัดที่พัก *";
+    districtLabel.querySelector("span").textContent="ระบุเขต / อำเภอที่พัก *";
+
+    var provinces=Object.keys(districtCatalog).map(function(name){return{code:name,label:name}});
+    provinces.push({code:other,label:"จังหวัดอื่น (ระบุเอง)"});
+    setZoneOptions(provinceSelect,provinces,"เลือกจังหวัด");
+    var savedProvince=provinceInput.value.trim();
+    var normalizedProvince=/^(กรุงเทพฯ|กรุงเทพ|กทม\.?|bangkok)$/i.test(savedProvince)?bangkok:savedProvince;
+    var savedChoice=draft.fields&&draft.fields.residence_province_choice;
+    provinceSelect.value=Object.prototype.hasOwnProperty.call(districtCatalog,normalizedProvince)
+      ?normalizedProvince
+      :(savedProvince||savedChoice===other?other:bangkok);
+    renderDistrict(districtInput.value);
+    provinceSelect.addEventListener("change",function(){
+      provinceInput.value="";
+      renderDistrict("");
+    });
+    districtSelect.addEventListener("change",function(){districtInput.value=districtSelect.value});
+
+    function renderDistrict(savedDistrict){
+      var province=provinceSelect.value;
+      var manual=province===other;
+      provinceLabel.hidden=!manual;
+      districtLabel.hidden=!manual;
+      provinceInput.required=manual;
+      districtInput.required=manual;
+      districtSelect.closest("label").hidden=manual;
+      districtSelect.disabled=manual;
+      if(!manual)provinceInput.value=province;
+
+      var districts=(districtCatalog[province]||"").split("|").filter(Boolean);
+      // Preserve a previously entered area when opening a draft from the old text fields.
+      if(!manual&&savedDistrict&&!districts.includes(savedDistrict))districts.push(savedDistrict);
+      setZoneOptions(districtSelect,districts.map(function(name){return{code:name,label:name}}),
+        province===bangkok?"เลือกเขต":"เลือกอำเภอ");
+      districtSelect.value=manual?"":savedDistrict;
+      districtInput.value=savedDistrict;
+    }
+  }
+
+  function addResidenceSelect(before,text){
+    var label=document.createElement("label");
+    label.className="mta-field";
+    var caption=document.createElement("span");
+    caption.textContent=text;
+    var select=document.createElement("select");
+    select.required=true;
+    label.append(caption,select);
+    before.before(label);
+    return select;
+  }
+
   function zonesForProvince(code){return zoneState.zones.filter(function(zone){return zone.province_code===code}).sort(function(a,b){return Number(a.sort_order||9999)-Number(b.sort_order||9999)})}
   function renderBaseZones(restoreCode){
     var select=field("base_service_zone_code");
@@ -709,7 +784,7 @@
         uploaded:draft.uploaded&&typeof draft.uploaded==="object"?draft.uploaded:{},
         fields:{}
       };
-      ["applicant_name","nickname","phone","line_id","age","height_cm","weight_kg","preferred_contact","current_profession","qualification_note","residence_province","residence_area","base_service_province","base_service_zone_code","lead_time_preference","coverage_area_note","experience_background","experience_years","experience_months","workshop_interest","strengths","spa_name","independent_social"].forEach(function(name){data.fields[name]=value(name)});
+      ["applicant_name","nickname","phone","line_id","age","height_cm","weight_kg","preferred_contact","current_profession","qualification_note","residence_province","residence_area","residence_province_choice","base_service_province","base_service_zone_code","lead_time_preference","coverage_area_note","experience_background","experience_years","experience_months","workshop_interest","strengths","spa_name","independent_social"].forEach(function(name){data.fields[name]=value(name)});
       ["gender_identity","customer_gender_scope","work_preference","mobility_scope","worked_at_spa_before","worked_independently_before"].forEach(function(name){data.fields[name]=checked(name)});
       ["skills","languages","availability_summary","transport_modes"].forEach(function(name){data.fields[name]=selected(name)});
       data.fields.coverage_service_zone_codes=coverageCodes();
