@@ -35,7 +35,9 @@ export async function runApprovedCategoryTurn(env, event, initialRuntime, io) {
     const routedEvent = ['package','regis','apply'].includes(topic) ? {...event,message:{...event.message,text:topic}} : event;
     const intake = lineIntakeCommand(routedEvent);
     try {
-      if (command === 'my_status' || topic === 'checkpts' || intake) {
+      if (topic === 'per_review') {
+        decision = {...silent, handoff_required:true, handoff_reason:'explicit:per_review'};
+      } else if (command === 'my_status' || topic === 'checkpts' || intake) {
         const continuity = await io.continuity();
         const [runtime, owner] = await Promise.all([io.runtime(),io.owner(continuity)]);
         if (continuity?.available !== true) { decision = {...silent, guard_reason:'category_continuity_unavailable'}; return {decision,attempted,delivered:false,deliveryStatus:null}; }
@@ -56,12 +58,15 @@ export async function runApprovedCategoryTurn(env, event, initialRuntime, io) {
       } else {
         const promotion = ['promotion','member_promotion'].includes(topic)
           ? approvedCategoryReply({...event,message:{...event.message,text:'โปร'}},env,{careBackOctoberReply,now}) : null;
-        decision = entryTopicReply(topic) || entryPromotionReply(promotion,topic === 'member_promotion') ||
+        decision = ['promotion','member_promotion'].includes(topic)
+          ? entryPromotionReply(promotion,topic === 'member_promotion') || ([true,'true'].includes(env.KENJI_LINE_APPROVED_PROMO_ENABLED)
+            ? {...silent, handoff_required:true, handoff_reason:'promotion_unverified:per_review'} : silent)
+          : entryTopicReply(topic) ||
           approvedCategoryReply(event,env,{careBackOctoberReply,now}) ||
           (controls.model_keyword_auto_reply !== true && await resolveProfileLinkReply(env,event,{now,readAnchor:io.readProfileAnchor})) || silent;
       }
     } catch { decision = {...silent, guard_reason:'category_resolution_exception'}; }
-    if (decision.text) {
+    if (decision.text || decision.handoff_required) {
       try {
         // Never reuse stale conversational identity or a previous runtime result.
         const continuity = await io.continuity();
@@ -69,12 +74,14 @@ export async function runApprovedCategoryTurn(env, event, initialRuntime, io) {
         if (runtime?.ok === true && runtime.controls?.all_kenji_mutations !== true && runtime.controls?.line_oa_auto_reply !== true &&
             (decision.reply_source !== 'category_profile_link' || runtime.controls?.model_keyword_auto_reply !== true) &&
             continuity?.available === true && owner?.ok === true && owner.active !== true) {
+          // A handoff-only decision goes to the existing Per case queue, never the LINE sender.
+          if (!decision.text) return {decision,attempted:false,delivered:false,deliveryStatus:null};
           attempted = true;
           const button = membershipUriButton(decision);
           result = await io.send(withCategoryReplyGrant(env,token,decision),token,decision.text,button);
           if (result?.ok !== true) decision = {...decision,guard_reason:transportReason(result)};
-        } else decision = {...decision,guard_reason:continuity?.available !== true ? 'category_continuity_unavailable' : runtime?.ok !== true ? 'category_fresh_runtime_unavailable' : owner?.active === true ? 'category_owner_takeover' : owner?.ok !== true ? 'category_owner_unavailable' : 'category_fresh_kill_switch'};
-      } catch { decision = {...decision,guard_reason:attempted ? 'category_transport_exception' : 'category_gate_exception'}; }
+        } else decision = {...decision,handoff_required:false,guard_reason:continuity?.available !== true ? 'category_continuity_unavailable' : runtime?.ok !== true ? 'category_fresh_runtime_unavailable' : owner?.active === true ? 'category_owner_takeover' : owner?.ok !== true ? 'category_owner_unavailable' : 'category_fresh_kill_switch'};
+      } catch { decision = {...decision,handoff_required:attempted && decision.handoff_required === true,guard_reason:attempted ? 'category_transport_exception' : 'category_gate_exception'}; }
     }
   }
   return {decision,attempted,delivered:result?.ok === true,deliveryStatus:result?.status ?? null};

@@ -4,11 +4,43 @@ import {entryTopicCommand} from '../src/kenji-entry-topics.mjs';
 import {isExplicitCategoryCommand,categoryReplyTransportAllowed} from '../src/kenji-reply-category-gate.mjs';
 import {runApprovedCategoryTurn} from '../src/kenji-category-turn.mjs';
 import {currentProfileQuery} from '../src/kenji-profile-link.mjs';
+import {queueKenjiPerCase} from '../src/kenji-per-case.mjs';
 import {readRecentProfileAnchor} from '../src/kenji-line-conversation-history.mjs';
 const env={KENJI_LINE_REPLY_CATEGORY_MODE:'approved_qa_promo',KENJI_LINE_APPROVED_PROMO_ENABLED:'true',LINE_AUTO_REPLY_ENABLED:'true',LINE_KENJI_AI_ENABLED:'true',LINE_KENJI_MODEL_ENABLED:'false'};
 const runtime={ok:true,controls:{model_keyword_auto_reply:true}};
 const now=Date.parse('2026-11-05T12:00:00+07:00');
 const event=text=>({type:'message',mode:'active',timestamp:now,replyToken:'synthetic',source:{type:'user',userId:'U'+'1'.repeat(32)},message:{type:'text',text}});
+test('Per review is internal only; native OA, replay, pause and owner takeover never acquire this handoff',async()=>{
+ for (const [ev,options,wanted] of [
+   [event('คุยกับเปอร์'),{},true],
+   [event('สวัสดีครับ'),{},false],
+   [{...event('คุยกับเปอร์'),deliveryContext:{isRedelivery:true}},{},false],
+   [event('คุยกับเปอร์'),{owner:async()=>({ok:true,active:true})},false],
+   [event('คุยกับเปอร์'),{runtime:async()=>({ok:true,controls:{line_oa_auto_reply:true}})},false],
+   [event('คุยกับเปอร์'),{continuity:async()=>({available:false})},false],
+ ]) {
+   const x=io(options);const r=await runApprovedCategoryTurn(env,ev,runtime,x);
+   assert.equal(r.decision.handoff_required === true,wanted);assert.equal(x.sent.length,0);
+ }
+ const before=Date.parse('2026-10-30T01:00:00+07:00');
+ const x=io({now:before});
+ const missing=await runApprovedCategoryTurn(env,{...event('Promotion'),timestamp:before},runtime,x);
+ assert.equal(missing.decision.handoff_reason,'promotion_unverified:per_review');assert.equal(x.sent.length,0);
+});
+test('manual request reaches one synthetic Per alert and sends no LINE reply', async()=>{
+ const calls=[],alerts=[];const token='a'.repeat(32);
+ const fixture={...env, TELEGRAM_OPS_CHAT_ID:'-10',TELEGRAM_ALERTS_THREAD_ID:'1',AUTH_SERVICE_LINE_TO_TELEGRAM:'fixture',
+   TELEGRAM_WORKER:{fetch:async req=>{alerts.push(await req.json());return Response.json({ok:true,telegram:{ok:true}})}},
+   KENJI_MODEL_DEDUPE:{idFromName:x=>x,get:()=>({fetch:async (_url,init)=>{
+     const {action}=JSON.parse(init.body);calls.push(action);return Response.json(action==='reserve'?{reserved:true,token}:{ok:true});
+   }})}};
+ const ev=event('คุยกับเปอร์'), x=io(), turn={ok:true,accepted:true,subject:'1'.repeat(24),key:'2'.repeat(64)};
+ const result=await runApprovedCategoryTurn(fixture,ev,runtime,x);
+ await queueKenjiPerCase(fixture,ev,turn,result.decision,{ok:true});
+ await queueKenjiPerCase(fixture,ev,{...turn,accepted:false},result.decision,{ok:true});
+ assert.deepEqual(calls,['reserve','confirm']);assert.equal(alerts.length,1);assert.equal(x.sent.length,0);
+ assert.ok(!alerts[0].text.includes(ev.source.userId));
+});
 test('profile navigation reads only current exact names or explicit requests and stays behind both runtime guards',async()=>{
  const calls=[];let outcome={ok:true,status:'profile_link',destination:'public'}, status=200;
  const e={...env,LINE_KENJI_MODEL_ACCESS_ENABLED:'true',INTERNAL_TOKEN:'fixture',ADMIN_WORKER:{fetch:async req=>{
