@@ -68,7 +68,7 @@ test("public catalog is server-owned and contains Member, Elite and Red Card", a
   assert.deepEqual(payload.packages.map((item) => [item.package_code, item.amount_thb, item.duration_days]), [
     ["mmd_member", 690, 365],
     ["elite", 4990, 730],
-    ["red_card", 11499, 365],
+    ["red_card", 11499, 730],
   ]);
   assert.equal(payload.payment_surface, "/pay/checkout");
 });
