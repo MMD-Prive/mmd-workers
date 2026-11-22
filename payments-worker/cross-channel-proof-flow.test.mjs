@@ -297,7 +297,7 @@ test("web pending then LINE unreadable evidence remains pending for manual revie
     });
     assert.equal(result.deduped,false); assert.equal(h.calls.proofCreates,2); assert.equal(h.calls.downstream,1);
     assert.equal(h.calls.telegramMessages,1); assert.match(h.calls.telegramPayloads[0].text,/หลักฐานซ้ำ/);
-    assert.ok(h.calls.telegramPayloads[0].text.includes("proof_id=line_same_picture&focus=verify"));
+    assert.ok(h.calls.telegramPayloads[0].text.includes("proof_id=line_same_picture&amp;focus=verify"));
     assert.equal(h.records.Proofs[1].fields.status, "pending");
     assert.equal(h.records.Proofs[1].fields.session, undefined);
     assert.equal(h.records.Proofs[1].fields.payment, undefined);

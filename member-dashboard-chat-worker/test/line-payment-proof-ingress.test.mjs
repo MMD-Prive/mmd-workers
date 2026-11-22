@@ -211,9 +211,8 @@ test("Payment Confirm message shows exact job context instead of a bare slip", a
   assert.equal(result.thread_id, 22);
   assert.equal(h.messages.length, 1);
   assert.match(h.messages[0].text, /ลูกค้า: แม่ไก่/);
-  assert.match(h.messages[0].text, /Job Match: ✅ exact canonical match/);
-  assert.match(h.messages[0].text, /Job: MMD-JOB-001/);
-  assert.match(h.messages[0].text, /Model: Gohan/);
+  assert.match(h.messages[0].text, /งานที่จับคู่ได้: MMD-JOB-001/);
+  assert.match(h.messages[0].text, /โมเดล: Gohan/);
   assert.match(h.messages[0].text, /Ever Green/);
 });
 
@@ -239,7 +238,7 @@ test("Payment Confirm shows bounded candidates when the slip matches multiple jo
       },
     },
   }, { deduped: false });
-  assert.match(h.messages[0].text, /ambiguous · 2 candidates/);
+  assert.match(h.messages[0].text, /พบ 2 งานที่อาจตรงกับสลิปนี้/);
   assert.match(h.messages[0].text, /JOB-A/);
   assert.match(h.messages[0].text, /JOB-B/);
   assert.match(h.messages[0].text, /ขั้นต่อไป: ตรวจและผูกสลิปกับงานที่ถูกต้องก่อนยืนยันเงินเข้า/);

@@ -547,7 +547,7 @@ function compactOpsWhen(summary = {}) {
 function jobCandidateLine(candidate = {}, index = 0) {
   const ref = asString(candidate.job_id || candidate.session_id) || "ไม่ทราบรหัสงาน";
   const details = [
-    asString(candidate.model_name) ? `Model ${asString(candidate.model_name)}` : "",
+    asString(candidate.model_name) ? `โมเดล ${asString(candidate.model_name)}` : "",
     compactOpsWhen(candidate),
     asString(candidate.location_name),
   ].filter(Boolean);
@@ -560,26 +560,25 @@ function paymentJobCorrelationLines(analysis = {}) {
   const selected = correlation.selected || null;
   if (status === "not_applicable") return [];
   if (status === "exact" && selected) {
-    const ref = asString(selected.job_id || selected.session_id) || "matched";
+    const ref = asString(selected.job_id || selected.session_id) || "ไม่พบรหัสงาน";
     return [
-      "Job Match: ✅ exact canonical match",
-      `Job: ${ref}`,
-      asString(selected.model_name) ? `Model: ${asString(selected.model_name)}` : "",
-      compactOpsWhen(selected) ? `When: ${compactOpsWhen(selected)}` : "",
-      asString(selected.location_name) ? `Location: ${asString(selected.location_name)}` : "",
-      asString(correlation.reason) ? `Match basis: ${asString(correlation.reason)}` : "",
+      `งานที่จับคู่ได้: ${ref}`,
+      asString(selected.model_name) ? `โมเดล: ${asString(selected.model_name)}` : "",
+      compactOpsWhen(selected) ? `วันงาน: ${compactOpsWhen(selected)}` : "",
+      asString(selected.location_name) ? `สถานที่: ${asString(selected.location_name)}` : "",
+      asString(correlation.reason) ? `เกณฑ์จับคู่: ${asString(correlation.reason)}` : "",
     ].filter(Boolean);
   }
   if (status === "ambiguous") {
     const candidates = Array.isArray(correlation.candidates) ? correlation.candidates.slice(0, 5) : [];
     return [
-      `Job Match: ⚠️ ambiguous · ${Number(correlation.candidate_count || candidates.length) || candidates.length} candidates`,
+      `⚠️ พบ ${Number(correlation.candidate_count || candidates.length) || candidates.length} งานที่อาจตรงกับสลิปนี้`,
       ...candidates.map((candidate, index) => jobCandidateLine(candidate, index)),
     ];
   }
   return [
-    "Job Match: ⚠️ ยังระบุงานไม่ได้",
-    asString(correlation.reason) ? `Reason: ${asString(correlation.reason)}` : "",
+    "⚠️ ยังจับคู่งานไม่ได้",
+    asString(correlation.reason) ? `สาเหตุ: ${asString(correlation.reason)}` : "",
   ].filter(Boolean);
 }
 
