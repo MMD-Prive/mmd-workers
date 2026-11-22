@@ -45,6 +45,31 @@ const partner={id:'recKendo000000001',fields:{fldXb55aiAjNPOUWc:'partner_kendo',
 test('dropdown includes only active recognized Partner records and works without a query',async()=>{
   const restore=mock(async()=>Response.json({records:[partner,{...partner,id:'recOther000000001',fields:{...partner.fields,fldajmg66pf2ifGPu:'Archived'}}]}));try {const result=await listWorkingPartners(env);assert.equal(result.length,1);assert.equal(result[0].partner_name,'Kendo');assert.equal(result[0].partner_record_id,partner.id);assert.equal(result[0].partner_type,null);}finally{restore();}
 });
-test('chosen Partner name comes from canonical record; free text is rejected',async()=>{
-  const restore=mock(async()=>Response.json(partner));try {const chosen=await resolveChosenJobPartner(env,{model_source_choice:'partner',partner_attribution:{partner_record_id:partner.id,partner_name:'spoof'}});assert.equal(chosen.partner_name,'Kendo');await assert.rejects(()=>resolveChosenJobPartner(env,{model_source_choice:'partner',partner_attribution:{partner_name:'Kendo'}}),/partner_record_required/);assert.deepEqual(await resolveChosenJobPartner(env,{model_source_choice:'direct'}),{source_kind:'direct'});}finally{restore();}
+test('chosen Partner name comes from a verified Model relationship; free text is rejected', async () => {
+  const modelId = 'recBrew00000000001';
+  const evidence = [{
+    id: 'recReferral00000001',
+    fields: { Model: [modelId], Partner: [partner.id], 'Ownership Status': 'Verified' },
+  }];
+  const live = { ...env, AIRTABLE_TABLE_MODEL_REFERRALS: 'Referrals', AIRTABLE_TABLE_MODEL_PARTNERS: 'Partners' };
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify({ modelId, evidence, partner })));
+  const revision = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+  const restore = mock(async url => {
+    const path = new URL(url).pathname;
+    if (path.endsWith('/Referrals')) return Response.json({ records: evidence });
+    assert.ok(path.endsWith('/Partners/' + partner.id), path);
+    return Response.json(partner);
+  });
+  try {
+    const selection = { model_source_choice: 'partner', model: { model_id: modelId }, partner_attribution: { partner_record_id: partner.id, partner_name: 'spoof', source_revision: revision } };
+    const chosen = await resolveChosenJobPartner(live, selection);
+    assert.equal(chosen.partner_name, 'Kendo');
+    assert.equal(chosen.model_record_id, modelId);
+    await assert.rejects(() => resolveChosenJobPartner(live, { ...selection, model: undefined }), /canonical_model_record_required/);
+    await assert.rejects(() => resolveChosenJobPartner(live, { ...selection, partner_attribution: { partner_record_id: partner.id, source_revision: 'stale' } }), /model_partner_source_changed/);
+    await assert.rejects(() => resolveChosenJobPartner(live, { ...selection, partner_attribution: { partner_name: 'Kendo' } }), /partner_record_required/);
+    assert.deepEqual(await resolveChosenJobPartner(live, { model_source_choice: 'direct' }), { source_kind: 'direct' });
+  } finally {
+    restore();
+  }
 });
