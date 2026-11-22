@@ -1,0 +1,24 @@
+name: MY CO MODEL request CI
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/co-model-request-ci.yml'
+      - 'partners-worker/**'
+      - 'admin-worker/**'
+      - 'immigrate-worker/src/admin-workspace-launcher.ts'
+permissions:
+  contents: read
+jobs:
+  fixture-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci --prefix partners-worker --ignore-scripts --no-audit --no-fund
+      - run: npm run typecheck --prefix partners-worker
+      - run: npm test --prefix partners-worker
+      - run: node --test admin-worker/co-model-owner.test.mjs

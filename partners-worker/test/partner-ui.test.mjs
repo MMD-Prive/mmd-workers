@@ -1,3 +1,4 @@
+import {cloudflareFixture} from "./helpers/cloudflare-fixture.mjs";
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {webcrypto} from 'node:crypto';
@@ -5,7 +6,7 @@ import {build} from 'esbuild';
 import {Window} from 'happy-dom';
 import {fixture,MODEL,apiModule} from './helpers/partner-fixture.mjs';
 
-const bundle=await build({entryPoints:[new URL('../src/public-index.ts',import.meta.url).pathname],bundle:true,write:false,format:'esm'});
+const bundle=await build({plugins:[cloudflareFixture],entryPoints:[new URL('../src/public-index.ts',import.meta.url).pathname],bundle:true,write:false,format:'esm'});
 const {default:pageWorker}=await import('data:text/javascript;base64,'+Buffer.from(bundle.outputFiles[0].text).toString('base64'));
 async function settle(check){for(let n=0;n<100;n++){if(check())return;await new Promise(r=>setTimeout(r,20));}assert.ok(check(),'UI operation did not settle');}
 async function ui(t,{expired=false,system=null,seed=null}={}){

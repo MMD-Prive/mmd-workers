@@ -1578,3 +1578,8 @@ zone_name = "mmdbkk.com"
 [[routes]]
 pattern = "www.mmdbkk.com/v1/admin/compcards*"
 zone_name = "mmdbkk.com"
+
+[[services]]
+binding = "CO_MODEL_OWNER"
+service = "partners-worker"
+entrypoint = "CoModelOwnerService"

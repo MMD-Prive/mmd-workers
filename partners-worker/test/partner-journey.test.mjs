@@ -1,3 +1,4 @@
+import {cloudflareFixture} from "./helpers/cloudflare-fixture.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
@@ -5,7 +6,7 @@ import vm from "node:vm";
 import {build} from "esbuild";
 
 const source = await readFile(new URL("../src/index.ts", import.meta.url), "utf8");
-const js=(await build({stdin:{contents:source+'\nexport {generatePartnerToken,sha256Hex,normalizePartnerSession,officiallyVerifiedPartnerSessions};',loader:'ts',resolveDir:new URL('../src/',import.meta.url).pathname},bundle:true,write:false,format:'esm',platform:'neutral'})).outputFiles[0].text;
+const js=(await build({plugins:[cloudflareFixture],stdin:{contents:source+'\nexport {generatePartnerToken,sha256Hex,normalizePartnerSession,officiallyVerifiedPartnerSessions};',loader:'ts',resolveDir:new URL('../src/',import.meta.url).pathname},bundle:true,write:false,format:'esm',platform:'neutral'})).outputFiles[0].text;
 const { default: worker, generatePartnerToken, sha256Hex, normalizePartnerSession, officiallyVerifiedPartnerSessions } = await import("data:text/javascript;base64," + Buffer.from(js).toString("base64"));
 const PARTNER_ID = "recAAAAAAAAAAAAAA";
 const SESSION_ID = "recBBBBBBBBBBBBBB";

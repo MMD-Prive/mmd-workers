@@ -1,3 +1,6 @@
+import { WorkerEntrypoint } from "cloudflare:workers";
+export { CoModelIntakeObject } from "./co-model-intake-object";
+import type { CoModelIntakeObject } from "./co-model-intake-object";
 import { fetchPartnerCoModel, CO_MODEL_SCOPE_PATH } from '../../shared/co-model-service.mjs';
 import { coModelView, renderCoModel } from '../../shared/co-model-readonly.mjs';
 import { handleAnnouncements, type CandidateSnapshot } from "./partner-announcements";
@@ -386,6 +389,25 @@ export default {
     const url = new URL(request.url);
 
     try {
+      if (url.pathname === '/partner/dashboard/co-model-request') {
+        const auth = await verifyPartnerTokenFromRequest(request, runtimeEnv);
+        if (!auth.ok) return auth.response;
+        const id = url.searchParams.get('request') || '';
+        const link = url.searchParams.get('link') || '';
+        const headers = { 'Cache-Control': 'private, no-store', 'Referrer-Policy': 'no-referrer' };
+        if (!id && !link && request.method === 'GET') {
+          const token = auth.value.token.replace(/[^a-zA-Z0-9_.-]/g, "");
+          return new Response(`<!doctype html><html lang="th"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>MY CO MODEL</title><h1>เปิดคำขอ MY CO MODEL</h1><form method="get"><input type="hidden" name="t" value="${token}"><label>รหัสคำขอ <input name="request" required maxlength="64"></label><label>รหัสลิงก์ <input name="link" required maxlength="64"></label><button>เปิดคำขอ</button></form></html>`, {
+            headers: { ...headers, 'Content-Type': 'text/html; charset=utf-8' },
+          });
+        }
+        if (!/^[a-zA-Z0-9_-]{1,64}$/.test(id) || !/^[a-zA-Z0-9_-]{1,64}$/.test(link)) {
+          return new Response('Invalid request', { status: 400, headers });
+        }
+        const store = (env as Env & { CO_MODEL_INTAKE?: DurableObjectNamespace<CoModelIntakeObject> }).CO_MODEL_INTAKE;
+        if (!store) return new Response('Unavailable', { status: 503, headers });
+        return store.get(store.idFromName(id)).receive(auth.value.partnerRecord.id, request, id, link);
+      }
       if (isRelaxSpaPartnerRequest(url.pathname)) {
         const verified = await verifyPartnerTokenFromRequest(request, runtimeEnv);
         if (!verified.ok) {
@@ -5085,4 +5107,28 @@ async function handleCoModelScope(request:Request,env:RuntimeEnv):Promise<Respon
  if(!partnerId||fieldText(row,SESSION_FIELDS.partnerIdSnapshot)!==partnerId||fieldText(row,SESSION_FIELDS.sessionId)!==sessionId)return new Response(null,{status:403});
  const scope_revision=await sha256Hex(JSON.stringify([verified.value.partnerRecord.id,verified.value.tokenHash,row.id,row.fields]));
  return Response.json({ok:true,session_record_id:recordId,session_id:sessionId,scope_revision},{headers:{"cache-control":"no-store, private"}});
+}
+
+function eligibleCoModelRecipient(record: AirtableRecord): boolean {
+  return normalizeStatus(fieldText(record, MODEL_PARTNERS.approvalStatus)) === "recognized" &&
+    normalizeStatus(fieldText(record, MODEL_PARTNERS.status)) === "active";
+}
+
+// This named RPC entrypoint is reachable only through its service binding.
+export class CoModelOwnerService extends WorkerEntrypoint<RuntimeEnv> {
+  async recipients() {
+    const records = await listAirtableRecords(this.env, this.env.AIRTABLE_TABLE_MODEL_PARTNERS);
+    return records.filter(eligibleCoModelRecipient).map(record => ({
+      id: record.id,
+      name: fieldText(record, MODEL_PARTNERS.partnerName) || "MY PARTNER",
+    }));
+  }
+
+  async issue(id: string, draft: { partnerId: string; mode: string; description: string }) {
+    const record = await getAirtableRecord(this.env, this.env.AIRTABLE_TABLE_MODEL_PARTNERS, draft.partnerId);
+    if (!eligibleCoModelRecipient(record) || record.id !== draft.partnerId) return { status: 403 };
+    const store = (this.env as RuntimeEnv & { CO_MODEL_INTAKE?: DurableObjectNamespace<CoModelIntakeObject> }).CO_MODEL_INTAKE;
+    if (!store) return { status: 503 };
+    return store.get(store.idFromName(id)).manage({role:"owner"}, id, "issue_once", draft);
+  }
 }

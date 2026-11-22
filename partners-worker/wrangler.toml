@@ -66,3 +66,11 @@ service = "admin-worker"
 [[services]]
 binding = "PAYMENTS_WORKER"
 service = "payments-worker"
+
+[[durable_objects.bindings]]
+name = "CO_MODEL_INTAKE"
+class_name = "CoModelIntakeObject"
+
+[[migrations]]
+tag = "co-model-intake-v1"
+new_sqlite_classes = ["CoModelIntakeObject"]

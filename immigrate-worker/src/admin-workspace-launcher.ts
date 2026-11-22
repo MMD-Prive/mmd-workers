@@ -37,6 +37,7 @@ export const ADMIN_WORKSPACE_PANEL = `<section class="mmd-launcher" data-mmd-adm
     </ol>
   </nav>
   <p>เลือกเฉพาะขั้นที่เกี่ยวข้องกับงาน · Kenji ช่วยอ่านและเตรียมข้อมูล การยืนยันเงิน สมาชิก และสิทธิ์ยังอยู่ในหน้าต้นทาง</p>
+  <section aria-labelledby="co-model-owner-title"><h3 id="co-model-owner-title">MY CO MODEL · จัดหาโมเดล</h3><a href="/internal/admin/console/co-model-requests">ออกลิงก์คำขอให้ MY PARTNER</a></section>
   <label for="admin-module-search">ค้นหาเครื่องมือหลังบ้าน</label>
   <input id="admin-module-search" type="search" placeholder="พิมพ์ชื่อหน้าหรือสิ่งที่ต้องทำ" autocomplete="off" maxlength="100" aria-controls="admin-module-list">
   <p class="mmd-launcher__count" data-module-count role="status" aria-live="polite">${modules.length} เครื่องมือ</p>
