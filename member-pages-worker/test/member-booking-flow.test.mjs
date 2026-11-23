@@ -1,3 +1,4 @@
+import {createRequire} from 'node:module';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {handleMemberBooking,digest} from '../src/member-booking-flow.js';
@@ -103,7 +104,7 @@ test('service delegates actual SIGIL search/media policy and actual intake with 
   const chosen=await (await lookup(clientId,options[0].ref)).json();
   assert.equal(chosen.work_type,'dining');assert.equal(chosen.budget_thb,10000);
   assert.equal(chosen.duration_minutes,90);assert.equal(chosen.model_name,'White');
-  const {JSDOM}=await import('jsdom');
+  const {JSDOM}=createRequire(import.meta.url)('jsdom');
   const {handleCreateJobWorkerPage}=await import('../../admin-worker/src/create-job-worker-page.js');
   const pageUrl='https://local.test/internal/admin/jobs/create-job';
   const html=await handleCreateJobWorkerPage(new Request(pageUrl)).text();
