@@ -99,6 +99,16 @@ test('service delegates actual SIGIL search/media policy and actual intake with 
   const lookup=(client,ref='',actor={role:'owner'})=>readCreateJobPublicRequest(new Request(endpoint+client+(ref?'&ref='+ref:'')),env,actor);
   assert.equal((await lookup(clientId,'',{})).status,403);
   assert.deepEqual((await (await lookup('recPublicClient0002')).json()).items,[]);
+  assert.equal((await lookup('recPublicClient0002',reference)).status,404);
+  const fields=rows[0].fields, original=fields.resolver_payload_json;
+  const altered=JSON.parse(original);
+  altered.my_mmd_owner.publicDetails.public_format='travel';
+  fields.resolver_payload_json=JSON.stringify(altered);
+  assert.equal((await lookup(clientId,reference)).status,404);
+  fields.resolver_payload_json=original;
+  fields.lane='private';
+  assert.deepEqual((await (await lookup(clientId)).json()).items,[]);
+  fields.lane='public';
   const options=(await (await lookup(clientId)).json()).items;
   assert.equal(options.length,1);assert.equal(options[0].ref,reference);
   const chosen=await (await lookup(clientId,options[0].ref)).json();

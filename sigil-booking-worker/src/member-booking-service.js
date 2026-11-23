@@ -1,3 +1,4 @@
+import { validMarker, signMarker } from '../../shared/member-booking-marker.mjs';
 import { readPublicBookingDetails } from '../../shared/member-public-booking.mjs';
 import { resolveDiscoveryViewer } from './customer-discovery-policy.js';
 import { currentPrivateContext } from './current-private-access.js';
@@ -66,7 +67,7 @@ export async function handleMemberBookingService(request,env,delegate){
     meta.publicDetails=publicDetails;
     if (/^rec[A-Za-z0-9]{14,30}$/.test(input.client_id || '')) meta.client_id=input.client_id;
   }
-  meta.signature=await sign(secret,markerValue(input.reference,meta));
+  meta.signature=await signMarker(secret,input.reference,meta);
   intakeStarted=true;
   const res=await delegate(new Request('https://sigil-booking.internal/sigil/api/booking/intake',{
    method:'POST',headers:{'content-type':'application/json',cookie:request.headers.get('cookie')||''},body:JSON.stringify({
@@ -87,8 +88,6 @@ export async function handleMemberBookingService(request,env,delegate){
   return json({ok:true,request_ref:input.reference,status:'request_pending_admin_review'},201);
  }catch{return json({ok:false,error:'booking_unavailable',...(input.operation==='submit'&&!intakeStarted?{outcome:'not_started',request_ref:input.reference}:{})},503);}
 }
-function markerValue(ref,m){const parts=[m.schema,m.owner,ref,m.scope,m.fingerprint];if(m.publicDetails!==undefined)parts.push(JSON.stringify(m.publicDetails));if(m.client_id)parts.push(m.client_id);return parts.join(':');}
-async function validMarker(secret,ref,m){return m?.schema==='member_booking_owner_v2'&&['public','private'].includes(m.scope)&&OWNER.test(m.fingerprint||'')&&m.signature===await sign(secret,markerValue(ref,m));}
 export function requestStatus(value){
  const status=String(value||'').trim().toLowerCase().replace(/[ -]+/g,'_');
  if(['draft','requested','submitted','pending','pending_review','request_pending_admin_review'].includes(status))return 'request_pending_admin_review';
@@ -117,5 +116,4 @@ async function read(env,formula){
 }
 function parse(value){try{return JSON.parse(value||'{}');}catch{return {};}}
 async function hash(value){return [...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value)))].map(v=>v.toString(16).padStart(2,'0')).join('');}
-async function sign(secret,value){const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(secret),{name:'HMAC',hash:'SHA-256'},false,['sign']);return [...new Uint8Array(await crypto.subtle.sign('HMAC',key,new TextEncoder().encode(value)))].map(v=>v.toString(16).padStart(2,'0')).join('');}
 function json(body,status=200){return Response.json(body,{status,headers:{'cache-control':'private, no-store'}});}

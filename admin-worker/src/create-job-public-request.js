@@ -1,3 +1,4 @@
+import { validMarker } from '../../shared/member-booking-marker.mjs';
 import { readPublicBookingDetails } from '../../shared/member-public-booking.mjs';
 import { isOwnerActor } from './owner-my-mmd-recovery-diagnostic.js';
 
@@ -12,6 +13,8 @@ export async function readCreateJobPublicRequest(request, env, actor) {
   if ((ref && !/^mmdreq_[a-f0-9]{64}$/.test(ref)) || !/^rec[A-Za-z0-9]{14,30}$/.test(client || '')) {
     return reply({ok:false,error:'กรุณาระบุรหัสคำขอเต็มและเลือกลูกค้า'},400);
   }
+  const secret = env.AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES;
+  if (typeof secret !== 'string' || secret.length < 32) return reply({ok:false,error:'booking_verification_unavailable'},503);
   try {
     const table = env.AIRTABLE_TABLE_BOOKING_REQUESTS_ID || env.AIRTABLE_TABLE_BOOKING_REQUESTS || 'SIGIL Booking Requests';
     const url = new URL('https://api.airtable.com/v0/'+encodeURIComponent(env.AIRTABLE_BASE_ID)+'/'+encodeURIComponent(table));
@@ -27,7 +30,8 @@ export async function readCreateJobPublicRequest(request, env, actor) {
     const f=row.fields;
     const meta = f && JSON.parse(f.resolver_payload_json || '{}').my_mmd_owner;
     if (/^mmdreq_[a-f0-9]{64}$/.test(f?.booking_ref) && (!ref || (records.length===1 && f.booking_ref===ref)) && f.lane === 'public' && meta?.scope === 'public' &&
-        meta.state === 'submitted' && f.line_or_member_id) {
+        meta.state === 'submitted' && meta.client_id === client && f.line_or_member_id &&
+        await validMarker(secret, f.booking_ref, meta)) {
       const digest = await crypto.subtle.digest('SHA-256',new TextEncoder().encode('my-mmd-booking-owner-v1:'+client+':'+f.line_or_member_id));
       const owner = Array.from(new Uint8Array(digest), byte=>byte.toString(16).padStart(2,'0')).join('');
       const details = readPublicBookingDetails(meta.publicDetails || {});
