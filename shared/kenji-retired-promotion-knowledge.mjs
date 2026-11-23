@@ -25,15 +25,16 @@ export function isUnverifiedKenjiPromotionKnowledge(card = {}) {
   if (isRetiredKenjiPromotionKnowledge(card)) return true;
   const id = String(card?.knowledge_id || card?.id || "").trim();
   const category = String(card?.category || card?.payload_json?.category || "").trim().toLowerCase();
-  const sourcePath = String(card?.source_path || card?.source_ref || "").trim();
-  if (category === "promotion" || LEGACY_CAMPAIGN_ID_RE.test(id) || CAMPAIGN_SOURCE_RE.test(sourcePath)) return true;
+  const sources = [card?.source_path, card?.source_ref, card?.payload_json?.source_path, card?.payload_json?.source_ref]
+    .filter((value) => typeof value === "string").map((value) => value.trim());
+  if (category === "promotion" || LEGACY_CAMPAIGN_ID_RE.test(id) || sources.some((source) => CAMPAIGN_SOURCE_RE.test(source))) return true;
   const campaignCopy = [
     card?.title,
     card?.customer_answer,
     card?.answer,
     card?.payload_json?.customer_answer,
     id,
-    sourcePath,
+    ...sources,
   ].filter((part) => typeof part === "string").join(" ");
   return LEGACY_CAMPAIGN_TEXT_RE.test(campaignCopy);
 }

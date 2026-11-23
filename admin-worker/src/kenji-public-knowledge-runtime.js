@@ -21,6 +21,7 @@ const FIELD = Object.freeze({
   customerAnswer: "customer_answer",
   internalInstruction: "internal_instruction",
   allowedChannels: "allowed_channels",
+  allowedAudience: "allowed_audience",
   responseMode: "response_mode",
   riskLevel: "risk_level",
   status: "status",
@@ -155,8 +156,8 @@ export async function handleKenjiPublicKnowledgeRequest(request, env = {}) {
   }
 
   const result = await loadPublicKnowledgeCards(env, { publishedOnly: true, limit: 100 });
-  const publicCards = result.cards.map(toPublicCard).filter(isPublicCard);
-  const canonicalCards = STATIC_PUBLIC_CARDS.map(toPublicCard).filter(isPublicCard);
+  const publicCards = result.cards.filter(isPublicCard).map(toPublicCard);
+  const canonicalCards = STATIC_PUBLIC_CARDS.map(normalizeStaticCard).filter(isPublicCard).map(toPublicCard);
   const liveCards = mergePublicCards(publicCards);
   const cards = mergePublicCards(liveCards, canonicalCards);
   const dataStatus = publicCards.length ? result.data_status : "static_fallback";
@@ -264,6 +265,7 @@ function recordToCard(record = {}) {
     answer: clean(fields[FIELD.customerAnswer]) || payload.customer_answer,
     internal_instruction: clean(fields[FIELD.internalInstruction]) || payload.internal_instruction,
     allowed_channels: arrayValue(fields[FIELD.allowedChannels]),
+    allowed_audience: arrayValue(fields[FIELD.allowedAudience]),
     response_mode: clean(fields[FIELD.responseMode]) || payload.response_mode,
     risk_level: clean(fields[FIELD.riskLevel]) || payload.risk_level,
     status: clean(fields[FIELD.status]) || payload.status,
@@ -282,6 +284,7 @@ function normalizeStaticCard(card) {
     ...card,
     knowledge_id: card.id,
     allowed_channels: ["Webflow", "LINE_OFC"],
+    allowed_audience: ["Public"],
     effective_from: "2026-08-20",
     payload_json: {},
   });
@@ -308,12 +311,16 @@ function isPublicCard(card = {}) {
   const id = clean(card.id || card.knowledge_id).toLowerCase();
   if (!id || /deploy|cloudflare|smoke|wrangler|worker/.test(id)) return false;
   if (isUnverifiedKenjiPromotionKnowledge(card)) return false;
+  // This is the public Webflow feed, not a caller-selected LINE or member lane.
+  // Scope must come from the stored columns, not query parameters or Origin.
+  if (!card.allowed_channels?.some((value) => value.toLowerCase() === "webflow")) return false;
+  if (!card.allowed_audience?.some((value) => ["public", "guest"].includes(value.toLowerCase()))) return false;
   if (!clean(card.customer_answer || card.answer)) return false;
   const status = clean(card.status).toLowerCase();
   if (status && !["active", "approved", "published"].includes(status)) return false;
   const unsafeText = [
     card.title,
-    card.source_path,
+    publicSourcePath(card.source_path),
     card.source_ref,
     card.internal_instruction,
     card.review_note,
