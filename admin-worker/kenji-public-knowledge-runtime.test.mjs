@@ -36,6 +36,8 @@ test("public published runtime works without admin auth and strips internal fiel
             category: "payment",
             language: "th",
             customer_answer: "MMD จะรับหลักฐานไว้ตรวจยอดจริงก่อนอัปเดตขั้นตอนถัดไป",
+            allowed_channels: ["Webflow", "LINE_OFC"],
+            allowed_audience: ["Public"],
             internal_instruction: "Proof is evidence only. Do not expose this field.",
             review_note: "Internal note must not leak.",
             owner: "Boss Per",
@@ -104,6 +106,8 @@ test("public published runtime works without admin auth and strips internal fiel
             category: "payment",
             language: "th",
             customer_answer: "This duplicate must not replace the first canonical Airtable row.",
+            allowed_channels: ["Webflow"],
+            allowed_audience: ["Guest"],
             status: "active",
             response_mode: "handoff_required",
             risk_level: "critical",
@@ -138,6 +142,46 @@ test("public published runtime works without admin auth and strips internal fiel
     assert.equal(Object.hasOwn(body.storage, "base_id"), false);
   } finally {
     globalThis.fetch = originalFetch;
+  }
+});
+
+test("publication checks source references and stored audience/channel before projection", async (t) => {
+  const base = {
+    title: "General information",
+    category: "faq",
+    status: "published",
+    customer_answer: "Public information only",
+    source_path: "/public/help",
+    allowed_channels: ["Webflow"],
+    allowed_audience: ["Public"],
+  };
+  const cases = {
+    allowed: { source_ref: "help-revision-2" },
+    guest: { allowed_audience: ["Guest"] },
+    promotion: { category: "promotion", source_ref: "help-revision-2" },
+    campaign_ref: { source_ref: "campaign/november" },
+    hidden_ref: { source_ref: "internal_token reference" },
+    nested_ref: { source_ref: "help-revision-2", payload_json: JSON.stringify({ source_ref: "/promotion/new" }) },
+    member_only: { allowed_audience: ["premium"] },
+    line_only: { allowed_channels: ["LINE_OFC"] },
+    missing_audience: { allowed_audience: undefined },
+    missing_channel: { allowed_channels: undefined },
+  };
+  t.mock.method(globalThis, "fetch", async () => Response.json({
+    records: Object.entries(cases).map(([id, override]) => ({
+      id, fields: { ...base, knowledge_id: `fixture_${id}`, ...override },
+    })),
+  }));
+  const response = await handleKenjiPublicKnowledgeRequest(
+    request("/v1/public/kenji/knowledge/published?audience=premium&channel=LINE_OFC"), ENV,
+  );
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  const fixtures = body.cards.filter((card) => card.id.startsWith("fixture_"));
+  assert.deepEqual(fixtures.map((card) => card.id), ["fixture_allowed", "fixture_guest"]);
+  assert.equal(body.coverage.airtable_count, 2);
+  for (const card of fixtures) {
+    for (const key of ["source_ref", "allowed_channels", "allowed_audience"]) assert.equal(Object.hasOwn(card, key), false);
   }
 });
 
