@@ -134,6 +134,14 @@ test('service delegates actual SIGIL search/media policy and actual intake with 
     for(const script of doc.scripts)if(!script.src)w.eval(script.textContent);
     el('cq').value=clientId;await el('cs').onclick();el('clients').querySelector('.result').click();
     doc.querySelector('input[name=visibility][value=public]').click();
+    for (const blank of ['', '   ']) {
+      el('bookingRef').value=blank;
+      const before=operations.length;
+      await el('loadBooking').onclick();
+      assert.equal(operations.length,before,'blank reference must not call an API');
+      assert.match(el('bookingSummary').textContent,/เลือกรายการหรือกรอกรหัสคำขอ/);
+      assert.equal(doc.activeElement,el('bookingRef'));
+    }
     await el('showBookings').onclick();assert.equal(el('bookingOptions').options.length,2);
     el('bookingOptions').value=reference;el('bookingOptions').onchange();
     for(let n=0;n<20 && !el('publicFormat').value;n++)await new Promise(resolve=>setTimeout(resolve,5));

@@ -114,6 +114,11 @@ $('loadBooking').onclick=async()=>{
   clearBookingSelection();
   const seq=bookingRead, selectedClient=client?.client_id, ref=$('bookingRef').value.trim();
   if(!selectedClient || visibility()!=='public')return;
+  if(!ref){
+    $('bookingSummary').textContent='กรุณาเลือกรายการหรือกรอกรหัสคำขอให้ครบก่อนอ่านคำขอ';
+    $('bookingRef').focus();
+    return;
+  }
   try{
     const data=await api('/internal/admin/jobs/create-job/public-request?'+new URLSearchParams({ref,client_id:selectedClient}));
     if(seq!==bookingRead || client?.client_id!==selectedClient || visibility()!=='public')return;
