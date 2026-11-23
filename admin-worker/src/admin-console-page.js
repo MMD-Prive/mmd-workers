@@ -1,4 +1,5 @@
 import { SYSTEM_LIGHT } from "../../webflow/global/sigil-brand-v1.mjs";
+import { DAILY_INTERNAL_PAGES, INTERNAL_MENU_OMISSIONS, INTERNAL_PAGES } from "../../webflow/global/sigil-internal-workspace-v3.mjs";
 import { ADMIN_CONSOLE_STYLES } from "./admin-console-style.js";
 import { adminConsoleClient } from "./admin-console-client.js";
 import { adminConsoleWorkspace } from "./admin-console-workspace.js";
@@ -197,7 +198,61 @@ function toolLink(key, description, href, glyph) {
   return `<a class="ac-tool-link" href="${href}"><span class="ac-tool-icon">${icon(glyph)}</span><span class="ac-tool-copy">${translated(key, "strong")}${translated(description, "span")}</span>${icon("arrow", "ac-tool-arrow")}</a>`;
 }
 
-export function renderAdminConsolePage(request) {
+// Only human-facing destinations belong here. Context-dependent tools start at
+// their existing picker (e.g. MY CO MODEL needs the selected job's session).
+function ownerDirectory(routing) {
+  const groups = new Map();
+  const paths = new Set();
+  const additions = [
+    ["แก้งานเดิม · เลือกงานเพื่อดู MY CO MODEL", "/internal/admin/jobs/edit"],
+    ["Job Board · Broadcast", "/internal/admin/jobs/job-board"],
+    ["พื้นที่จัดการงาน", "/internal/admin/work"],
+    ["MMD Memory · ค้นประวัติลูกค้าและชื่อที่เปอร์เรียก", "/internal/admin/member-intelligence"],
+    ["ตรวจปิดงาน", "/internal/admin/jobs/completion"],
+    ["MMS / WMS · จัดการงานนวด รวม Women Massage", "/internal/admin/mms"],
+    ["Relax Spa by 9", "/internal/admin/mms/relax-spa"],
+    ["ตรวจบัญชี LINE ของ Partner", "/internal/admin/mms/partner-line"],
+    ["ตรวจสมาชิก Telegram · Premium / Standard", "/internal/admin/premium-group-cleanup/preview"],
+    ["HYPE Console", "/internal/admin/hype"],
+    ["Social Media", "/internal/admin/social-media"],
+    ["ตรวจคำขอ · MY MMD", "/internal/admin/my-mmd/your-request"],
+    ["ตรวจความครบถ้วนข้อมูลสมาชิก", "/internal/admin/my-mmd/completeness"],
+    ["ตรวจตัวตนลูกค้า", "/internal/admin/customers"],
+    ["ใบสมัครโมเดล", "/internal/admin/model-applications"],
+    ["Double Moment", "/internal/admin/double-moment"],
+  ];
+  const pages = [
+    ...additions.map(([title, path]) => ({ title, path })),
+    ...DAILY_INTERNAL_PAGES, ...INTERNAL_PAGES,
+    ...Object.values(ADMIN_CONSOLE_VIEWS).map(([path, title]) => ({ path, title })),
+  ];
+  for (const { title, path } of pages) {
+    if (paths.has(path) || (INTERNAL_MENU_OMISSIONS.includes(path) && path !== "/docs/manage")) continue;
+    paths.add(path);
+    let group = "MMD · ระบบภายใน";
+    if (["/docs/manage", "/internal/admin/member-intelligence"].includes(path)) group = "MMD Memory · ประวัติลูกค้าและเอกสาร";
+    else if (path.startsWith("/internal/admin/mms")) group = "MMS / WMS · งานนวดและ Partner";
+    else if (/jobs|partners|calendar|control-room/.test(path) || ["/internal/admin/work", "/internal/admin/recovery"].includes(path)) group = "MMD · งานและคิว";
+    else if (/payment|refund|shop/.test(path)) group = "MMD · การเงินและร้านค้า";
+    else if (/member|customer|my-mmd|audience|relink|telegram|hype/.test(path)) group = "MMD · ลูกค้าและสมาชิก";
+    else if (/model|studio|drive|compcard|applications/.test(path)) group = "MMD · โมเดลและ Studio";
+    if (!groups.has(group)) groups.set(group, []);
+    // Dashboard is a separate page even though legacy links normally resolve to Console home.
+    const view = path !== "/internal/admin/dashboard" && routing.toConsole(path);
+    const attrs = view ? 'data-ac-directory-view' : 'target="_blank" rel="noopener"';
+    groups.get(group).push(`<a href="${escapeHtml(view || path)}" ${attrs}>${escapeHtml(title)}</a>`);
+  }
+  return `<section class="ac-owner-desk" aria-label="พื้นที่ทำงานของเปอร์">
+    <a class="ac-button ac-button-quiet" href="${escapeHtml(routing.toConsole("/internal/admin/control-room#owner-actions"))}">ดูคิวที่รอเปอร์จัดการ</a>
+    <details id="ac-directory" class="ac-directory"><summary>ระบบทั้งหมดของเปอร์</summary>
+    <label>ค้นหาระบบหรืองาน<input type="search" data-ac-tool-search placeholder="เช่น MY CO MODEL, WMS, MMD Memory"></label>
+    <p>เครื่องมือนอก Console เปิดในแท็บใหม่ กลับมาแท็บนี้เพื่อทำงานเดิมต่อ</p>
+    ${Array.from(groups, ([name, links]) => `<details data-ac-group><summary>${escapeHtml(name)}</summary><nav aria-label="${escapeHtml(name)}">${links.join("")}</nav></details>`).join("")}
+    <p data-ac-no-tools role="status" hidden>ไม่พบระบบที่ตรงกับคำค้น</p>
+  </details></section>`;
+}
+
+export function renderAdminConsolePage(request, { owner = false } = {}) {
   const method = String(request?.method || "GET").toUpperCase();
   if (method !== "GET" && method !== "HEAD") {
     return new Response(null, { status: 405, headers: { allow: "GET, HEAD", "cache-control": "no-store, private" } });
@@ -285,6 +340,7 @@ export function renderAdminConsolePage(request) {
           <a class="ac-button ac-button-primary ac-create" href="${href("/internal/admin/jobs/create-job")}">${icon("plus")}${translated("createJob")}</a>
           ${translated("description", "p", 'class="ac-description"')}
         </section>
+        ${owner ? ownerDirectory(routing) : ""}
         <section class="ac-overview" aria-labelledby="ac-overview-title">
           <div class="ac-section-caption">${translated("overview", "h2", 'id="ac-overview-title"')}${translated("globalScope", "p")}</div>
           <dl class="ac-metrics">

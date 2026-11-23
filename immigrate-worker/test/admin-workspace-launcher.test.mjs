@@ -25,7 +25,8 @@ function fixture(){
 }
 
 test('actual rendered browser script filters Thai and English without network access',()=>{
-  const f=fixture();assert.equal(f.cards.length,16);assert.equal(f.count.textContent,'16 เครื่องมือ');
+  const f=fixture();assert.equal(f.cards.length,17);assert.equal(f.count.textContent,'17 เครื่องมือ');
+  assert.deepEqual(f.filter('WMS').map(x=>x.href),['/internal/admin/console#ac-directory']);
   assert.deepEqual(f.filter('Job Board').map(x=>x.href),['/internal/admin/jobs/job-board']);
   assert.deepEqual(f.filter('บอร์ดงาน').map(x=>x.href),['/internal/admin/jobs/job-board']);
   assert.deepEqual(f.filter('สลิป').map(x=>x.href),['/internal/ceo/payment-slip-inbox']);
@@ -34,8 +35,8 @@ test('actual rendered browser script filters Thai and English without network ac
   assert.deepEqual(f.filter('CEO').map(x=>x.href),['/internal/ceo','/internal/ceo/kenji-control']);
   assert.deepEqual(f.filter('Kenji').map(x=>x.href),['/internal/admin/kenji','/internal/ceo/kenji-control']);
   assert.equal(f.filter('<script>alert(1)</script>').length,0);assert.equal(f.empty.hidden,false);
-  assert.equal(f.filter(' ').length,16);assert.equal(f.empty.hidden,true);
-  f.input.value='';f.events.search();assert.equal(f.count.textContent,'16 เครื่องมือ');
+  assert.equal(f.filter(' ').length,17);assert.equal(f.empty.hidden,true);
+  f.input.value='';f.events.search();assert.equal(f.count.textContent,'17 เครื่องมือ');
 });
 
 test('launcher is accessible and separates references from gated operational destinations',()=>{
@@ -45,7 +46,7 @@ test('launcher is accessible and separates references from gated operational des
   assert.doesNotMatch(panel,/session_id=|client_id=|payment_ref=|ready|verified/i);
   assert.doesNotMatch(script,/fetch\(|localStorage|sessionStorage|innerHTML|location\./);
   assert.equal((html.match(/data-mmd-admin-launcher aria-labelledby/g)||[]).length,1);
-  assert.match(html,/data-mmd-owner-actions="v1"/);
+  assert.match(html,/id="owner-actions" data-mmd-owner-actions="v1"/);
   assert.match(html,/data-mmd-workflow="20260922"/);
 });
 

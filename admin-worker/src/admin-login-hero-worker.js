@@ -315,7 +315,7 @@ const adminLoginHeroWorker = {
       }
       // Render before the generic admin backfill scheduling path. Opening this
       // read-only workspace must not start a background identity write.
-      return renderAdminConsolePage(gate.request || request);
+      return renderAdminConsolePage(gate.request || request, { owner: gate.actor?.role === "owner" });
     }
     // Trusted Telegram -> Admin Worker service-binding-only Standard group intake (#2141).
     // Do not let the public admin controller or its generic proxy handle this path.

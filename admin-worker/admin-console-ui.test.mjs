@@ -31,8 +31,8 @@ function payload(path, overrides = {}) {
   };
 }
 const settle = async () => { for (let i = 0; i < 12; i++) await new Promise(resolve => setImmediate(resolve)); };
-async function screen(t, { url = BASE, fetcher, beforeBoot } = {}) {
-  const html = await renderAdminConsolePage(new Request(url)).text();
+async function screen(t, { url = BASE, fetcher, beforeBoot, owner = false } = {}) {
+  const html = await renderAdminConsolePage(new Request(url), { owner }).text();
   const dom = new JSDOM(html, { url, runScripts: 'outside-only', pretendToBeVisual: true });
   const calls = [];
   class FixedDate extends Date { constructor(...args) { super(...(args.length ? args : [NOW.toISOString()])); } static now() { return NOW.getTime(); } }
@@ -339,4 +339,48 @@ test('apex Member Intelligence bridges only scoped navigation from its own www f
   document.querySelector('.ac-nav-link[href$="?view=membership"]').click();
   assert.equal(dom.window.location.search, '?view=membership&client_id=' + CLIENT);
   assert.equal(document.querySelector('iframe:not([hidden])'), frame);
+});
+
+test('Owner directory searches the four systems and preserves the scoped job draft', async t => {
+  const { document, dom, calls } = await screen(t, { url: BASE + '?date=all#ac-directory', owner: true });
+  const directory = document.querySelector('#ac-directory');
+  assert.equal(directory.open, true);
+  assert.equal(document.querySelector('.ac-owner-desk > a').getAttribute('href'), '/internal/admin/console?view=control-room#owner-actions');
+  const input = directory.querySelector('input');
+  const search = term => {
+    input.value = term;
+    input.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    return [...directory.querySelectorAll('a:not([hidden])')];
+  };
+  const links = search('');
+  assert.equal(new Set(links.map(link => link.href)).size, links.length);
+  for (const link of links) {
+    assert.equal(link.origin, new URL(BASE).origin);
+    if (!link.hasAttribute('data-ac-directory-view')) {
+      assert.equal(link.target, '_blank');
+      assert.equal(link.rel, 'noopener');
+    }
+  }
+  assert.ok(search('WMS').some(link => link.pathname === '/internal/admin/mms'));
+  assert.ok(search('mmdmemory').some(link => link.pathname === '/docs/manage'));
+  const [edit] = search('MY CO MODEL');
+  assert.equal(edit.search, '?view=edit-job');
+  assert.equal(search('missing-fixture-tool').length, 0);
+  assert.equal(directory.querySelector('[data-ac-no-tools]').hidden, false);
+
+  const [again] = search('MY CO MODEL');
+  again.click();
+  assert.equal(dom.window.location.search, '?view=edit-job');
+  const frame = document.querySelector('iframe');
+  frame.contentDocument.open();
+  frame.contentDocument.write('<!doctype html><input value="unfinished fixture">');
+  frame.contentDocument.close();
+  const popped = new Promise(resolve => dom.window.addEventListener('popstate', resolve, { once: true }));
+  document.querySelector('#ac-back').click();
+  await popped;
+  assert.equal(input.value, 'MY CO MODEL');
+  again.click();
+  assert.equal(document.querySelector('iframe:not([hidden])'), frame);
+  assert.equal(frame.contentDocument.querySelector('input').value, 'unfinished fixture');
+  assert.equal(calls.length, 1);
 });

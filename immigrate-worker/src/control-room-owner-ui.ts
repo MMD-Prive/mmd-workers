@@ -97,7 +97,7 @@ const OWNER_ACTIONS_STYLE = `<style data-mmd-owner-actions-style="v1">
 @media(min-width:760px){[data-mmd-owner-actions] .oaqgrid{grid-template-columns:minmax(220px,.9fr) minmax(280px,1.25fr)}}
 </style>`;
 
-const OWNER_ACTIONS_PANEL = `<section data-mmd-owner-actions="v1" aria-label="Owner actions">
+const OWNER_ACTIONS_PANEL = `<section id="owner-actions" data-mmd-owner-actions="v1" aria-label="Owner actions">
   <div class="oaqh"><div><div class="oaqk">OWNER ACTIONS · READ ONLY</div><h2>วันนี้ควรเคลียร์อะไร</h2><div class="oaqsub">AI สรุปสิ่งที่ต้องดู · เปอร์ตัดสินใจในหน้าต้นทาง · หน้านี้ไม่เปลี่ยนสถานะใด</div></div><span class="oaqstate" data-oaq-state data-state="loading">CHECKING</span></div>
   <div class="oaqcoverage" data-oaq-coverage aria-label="Source availability"></div><div class="oaqgrid"><div class="oaqlist" data-oaq-list><div class="oaqempty">กำลังอ่าน Owner Actions…</div></div><article class="oaqdetail" data-oaq-detail><div class="oaqlabel">DETAIL</div><h3>เลือกรายการเพื่อดูบริบท</h3><p>รายละเอียดจะบอกเหตุผล authority และขอบเขตการตัดสินใจ โดยไม่แสดงข้อมูลรายบุคคล</p></article></div>
   <div class="oaqfoot">Read-only · ไม่มีการส่งข้อความ · ไม่มีการอนุมัติหรือเปลี่ยน Business Truth</div>

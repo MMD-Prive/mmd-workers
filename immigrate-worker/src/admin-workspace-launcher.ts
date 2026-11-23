@@ -1,5 +1,6 @@
 // Navigation only. Destination pages retain their existing session and role gates.
 const modules = [
+  ["ระบบทั้งหมดของเปอร์", "เปิด Console เพื่อค้นงาน MMD, MMS / WMS และ MMD Memory", "/internal/admin/console#ac-directory", "console mmd mms wms mmdmemory ระบบทั้งหมด"],
   ["คืนเงิน · Refund", "เปิดรายการคืนเงินและตรวจหลักฐานที่บันทึกไว้", "/internal/admin/refunds", "refund คืนเงิน บัญชี หลักฐาน"],
   ["Partner · ข้อตกลงและการเงิน", "ตรวจข้อตกลง ค่าตอบแทน และรายการค้าง", "/internal/admin/partners", "partner referral settlement แนะนำ ค่าตอบแทน"],
   ["ติดตามและแก้งานค้าง", "เปิด Recovery เดิมเพื่อตรวจเรื่องที่ต้องทำต่อ", "/internal/admin/recovery", "recovery งานค้าง แก้ไข"],
