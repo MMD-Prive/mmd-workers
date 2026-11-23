@@ -10,7 +10,7 @@ export class MemberBookingCoordinator {
       const fingerprint=await digest(JSON.stringify(input.payload));
       const prior=await this.state.storage.get('request');
       if(prior&&(prior.owner!==input.owner||prior.fingerprint!==fingerprint))return reply({ok:false,error:'request_conflict'},409);
-      if(prior?.state==='rejected')return reply({ok:false,error:prior.error,outcome:'not_started',request_ref:input.reference},422);
+      if(prior?.state==='rejected')return reply({ok:false,error:prior.error,outcome:'not_started',request_ref:input.reference},prior.status ?? 422);
       if(prior?.result)return reply({...prior.result,idempotent:true},200);
       // A prior in-flight/uncertain attempt may have written upstream: never repeat it.
       if(prior)return reply({ok:false,error:'submission_outcome_pending',request_ref:input.reference},409);
@@ -22,7 +22,7 @@ export class MemberBookingCoordinator {
         }));
         const body=await res.json().catch(()=>null);
         if(!res.ok&&body?.outcome==='not_started'&&body.request_ref===input.reference){
-          await this.state.storage.put('request',{owner:input.owner,fingerprint,reference:input.reference,state:'rejected',error:body.error});
+          await this.state.storage.put('request',{owner:input.owner,fingerprint,reference:input.reference,state:'rejected',error:body.error,status:res.status});
           return reply({ok:false,error:body.error,outcome:'not_started',request_ref:input.reference},res.status);
         }
         if(!res.ok||body?.ok!==true||body.request_ref!==input.reference)return reply({ok:false,error:'submission_outcome_pending',request_ref:input.reference},409);
