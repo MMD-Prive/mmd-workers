@@ -16,54 +16,55 @@
   --mms-nav-bg:#f8faf6;--mms-nav-fg:#173126;
   --mms-nav-hover:#e7efe3;--mms-nav-accent:#245139;--mms-nav-line:#d4e0d5;
 }
-[data-mms-therapist-nav] .mms-therapist-header-inner{
+[data-mms-therapist-nav] #mms-therapist-menu{
   box-sizing:border-box;width:min(100%,1120px);min-height:60px;margin-inline:auto;
   padding-inline:max(12px,env(safe-area-inset-left)) max(12px,env(safe-area-inset-right));
   display:flex;align-items:center;justify-content:space-between;gap:12px;
+  font-family:"LINE Seed Sans TH",MMSSeed,LINESeed,"Noto Sans Thai",system-ui,sans-serif;
 }
-[data-mms-therapist-nav] .mms-therapist-logo{
+[data-mms-therapist-nav] #mms-therapist-menu .mms-therapist-logo{
   display:inline-flex;align-items:center;min-height:44px;text-decoration:none;
 }
-[data-mms-therapist-nav] .mms-therapist-logo img{
+[data-mms-therapist-nav] #mms-therapist-menu .mms-therapist-logo img{
   display:block;width:clamp(118px,35vw,148px);height:auto;max-height:none;object-fit:contain;
 }
-[data-mms-therapist-nav] details.mms-therapist-disclosure{
+[data-mms-therapist-nav] #mms-therapist-menu details.mms-therapist-disclosure{
   position:relative;flex:none;margin:0;padding:0;border:0;background:transparent;
 }
-[data-mms-therapist-nav] .mms-therapist-disclosure>summary{
+[data-mms-therapist-nav] #mms-therapist-menu .mms-therapist-disclosure>summary{
   display:flex;align-items:center;justify-content:center;gap:8px;
-  min-height:44px;margin:0;padding:0 13px;border:1px solid var(--mms-nav-line);
+  box-sizing:border-box;min-height:44px;margin:0;padding:0 13px;border:1px solid var(--mms-nav-line);
   border-radius:10px;list-style:none;color:var(--mms-nav-fg);background:var(--mms-nav-bg);
   font-weight:700;font-size:14px;line-height:1.2;cursor:pointer;white-space:nowrap;
 }
-[data-mms-therapist-nav] .mms-therapist-disclosure>summary::-webkit-details-marker{display:none}
-[data-mms-therapist-nav] .mms-therapist-disclosure>summary::after{
+[data-mms-therapist-nav] #mms-therapist-menu .mms-therapist-disclosure>summary::-webkit-details-marker{display:none}
+[data-mms-therapist-nav] #mms-therapist-menu .mms-therapist-disclosure>summary::after{
   content:"";width:7px;height:7px;border:solid currentColor;border-width:0 2px 2px 0;
   transform:translateY(-2px) rotate(45deg);
 }
-[data-mms-therapist-nav] .mms-therapist-disclosure[open]>summary::after{transform:translateY(2px) rotate(225deg)}
-[data-mms-therapist-nav] nav.mms-therapist-destinations{
+[data-mms-therapist-nav] #mms-therapist-menu .mms-therapist-disclosure[open]>summary::after{transform:translateY(2px) rotate(225deg)}
+[data-mms-therapist-nav] #mms-therapist-menu nav.mms-therapist-destinations{
   position:absolute;inset-inline-end:0;top:calc(100% + 6px);box-sizing:border-box;
   width:min(280px,calc(100vw - 32px));max-height:calc(100dvh - 80px);overflow:auto;
   display:grid;gap:2px;margin:0;padding:7px;border:1px solid var(--mms-nav-line);
   border-radius:14px;background:var(--mms-nav-bg);box-shadow:0 12px 30px #0004;
 }
-[data-mms-therapist-nav] .mms-therapist-destinations a{
+[data-mms-therapist-nav] #mms-therapist-menu .mms-therapist-destinations a{
   display:flex;align-items:center;min-height:44px;padding:6px 11px;
   border-radius:8px;color:var(--mms-nav-fg);font-size:15px;line-height:1.35;
   text-decoration:none;white-space:normal;
 }
-[data-mms-therapist-nav] .mms-therapist-destinations a[aria-current="page"],
-[data-mms-therapist-nav] .mms-therapist-destinations a:hover{
+[data-mms-therapist-nav] #mms-therapist-menu .mms-therapist-destinations a[aria-current="page"],
+[data-mms-therapist-nav] #mms-therapist-menu .mms-therapist-destinations a:hover{
   background:var(--mms-nav-hover);color:var(--mms-nav-accent);
 }
-[data-mms-therapist-nav] .mms-therapist-destinations a:last-child{font-weight:750}
-[data-mms-therapist-nav] :is(a,summary):focus-visible{
+[data-mms-therapist-nav] #mms-therapist-menu .mms-therapist-destinations a:last-child{font-weight:750}
+[data-mms-therapist-nav] #mms-therapist-menu :is(a,summary):focus-visible{
   outline:2px solid var(--mms-nav-accent);outline-offset:-2px;
 }
 </style>
 <header class="mta7-head mms-therapist-header" data-mms-therapist-nav data-tone="dark">
-<div class="mms-therapist-header-inner">
+<div class="mms-therapist-header-inner" id="mms-therapist-menu">
   <a class="mms-therapist-logo" href="/therapists" aria-label="MMS Male Massage หน้า Therapist">
     <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a8605ce469f1080c3c57ebe_mms-logo-horizontal-light.svg" alt="MMS Male Massage" width="300" height="70">
   </a>
