@@ -1,3 +1,4 @@
+import {handleCoModelOwner} from "./co-model-owner.js";
 import { handlePartnerCoModelRead } from './co-model-partner-read.js';
 import { CO_MODEL_PATH } from '../../shared/co-model-service.mjs';
 import { allowAdminConsoleFrame } from "../../webflow/global/admin-console-views.mjs";
@@ -297,6 +298,12 @@ const adminLoginHeroWorker = {
     // Read-only RPC must return before the generic contact backfill scheduler.
     if (new URL(request.url).pathname === CO_MODEL_PATH) return handlePartnerCoModelRead(request, runtimeEnv);
     const consolePath = new URL(request.url).pathname.replace(/\/+$/g, "") || "/";
+    if (consolePath === "/internal/admin/console/co-model-requests") {
+      const gate = await applyCredentialBoundAdminGate(request, runtimeEnv, consolePath, request.method);
+      if (gate.response) return gate.response;
+      const actor = await readCredentialBoundAdminActor(gate.request || request, runtimeEnv);
+      return handleCoModelOwner(gate.request || request, runtimeEnv, actor);
+    }
     const isConsoleHome = consolePath === "/internal/admin" && ["GET", "HEAD"].includes(request.method.toUpperCase());
     if (consolePath === ADMIN_CONSOLE_PATH || isConsoleHome) {
       const method = request.method.toUpperCase();
