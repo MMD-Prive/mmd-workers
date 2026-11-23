@@ -211,11 +211,12 @@ test('explicit model requests route to the right authenticated MY MMD view', asy
  assert.equal(x.sent.length, 0);
 });
 
-test('My Status answers in chat without Points or a link', async () => {
+test('My Status asks an unverified account to verify without revealing personal information', async () => {
  const r = await runApprovedCategoryTurn(env, event('My Status'), runtime, io());
  assert.equal(r.delivered, true);
  assert.equal(r.decision.reply_source, 'category_my_status');
- assert.match(r.decision.text, /สถานะสมาชิก:.*\nวันหมดอายุ:/);
- assert.doesNotMatch(r.decision.text, /https?:|Points/i);
+ assert.match(r.decision.text, /สถานะลูกค้า: ยังยืนยันบัญชีไม่ได้/);
+ assert.match(r.decision.text, /กรุณายืนยันบัญชี LINE ใน MY MMD/);
+ assert.doesNotMatch(r.decision.text, /https?:|Points:|ประวัติการใช้บริการ:|ลูกค้าที่สนใจ/i);
  assert.equal((await runApprovedCategoryTurn(env, event('Checkpts'), runtime, io())).delivered, false);
 });

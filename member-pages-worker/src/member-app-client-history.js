@@ -61,6 +61,37 @@ export async function readClientBackedHistoryResult(env = {}, lineUserId = "", n
   }
 }
 
+// LINE chat receives only dates of completed Sessions with an exact Client link.
+export async function readVerifiedLineServiceDates(env, lineUserId, now = new Date()) {
+  const unavailable = { status: "unavailable" };
+  try {
+    const client = await resolveCanonicalClientForLine(env, lineUserId);
+    if (!client?.id) return unavailable;
+    const fields = client.fields || {};
+    const email = normalizeEmail(fields["Contact Email"] || fields.email);
+    const name = String(fields["Client Name"] || fields.nickname || "").trim();
+    const filters = [];
+    if (email) filters.push(`LOWER({email}&"")=${formulaString(email)}`);
+    if (name) filters.push(`ARRAYJOIN({Client})=${formulaString(name)}`);
+    if (!filters.length) return unavailable;
+    const table = String(env.AIRTABLE_TABLE_SESSIONS || SESSIONS_TABLE);
+    const sessions = await airtableList(env, table, {
+      filterByFormula: filters.length > 1 ? `OR(${filters.join(",")})` : filters[0],
+      maxRecords: HISTORY_MAX_RECORDS,
+    });
+    const verified = sessions.filter(record => {
+      const linked = linkedIds(record.fields?.Client);
+      return linked.length === 1 && linked[0] === String(client.id) &&
+        dateOnly(record.fields?.job_date || record.fields?.["Session Date"]);
+    });
+    const dates = buildHistoryItems({ sessions: verified, now })
+      .map(item => item.occurredAt).sort((a, b) => b.localeCompare(a));
+    return { status: "verified", dates: dates.slice(0, 3) };
+  } catch {
+    return unavailable;
+  }
+}
+
 async function readLineOfcRows(env, lineId) {
   const table = String(env.AIRTABLE_TABLE_CONSOLE_INBOX || CONSOLE_INBOX_TABLE).trim();
   try { return await airtableList(env, table, { filterByFormula: `{line_user_id}=${formulaString(lineId)}`, maxRecords: HISTORY_MAX_RECORDS }); }

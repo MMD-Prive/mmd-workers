@@ -46,9 +46,9 @@ export async function runApprovedCategoryTurn(env, event, initialRuntime, io) {
             runtime.controls?.all_kenji_mutations === true || runtime.controls?.line_oa_auto_reply === true ||
             owner?.ok !== true || owner.active === true) { decision = {...silent, guard_reason:owner?.active === true ? 'category_owner_takeover' : owner?.ok !== true ? 'category_owner_unavailable' : 'category_fresh_kill_switch'}; return {decision,attempted,delivered:false,deliveryStatus:null}; }
         if (command === 'my_status' || topic === 'checkpts') {
-          const truth = await resolveKenjiLineLiveTruth({env,event,intent:'membership_status'});
           const inChatOnly = command === 'my_status';
-          decision = {...resolveMembershipStatusReply(truth,{inChatOnly}),intent:'approved_command',
+          const truth = await resolveKenjiLineLiveTruth({env,event,intent:inChatOnly?'my_status':'membership_status'});
+          decision = {...resolveMembershipStatusReply(truth,{inChatOnly, includeSummary:inChatOnly}),intent:'approved_command',
             reply_source:inChatOnly?'category_my_status':'category_checkpts'};
         } else {
           const catalog = intake === 'apply' ? null : await readLineIntakeCatalog(env,event);

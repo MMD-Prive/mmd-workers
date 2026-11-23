@@ -4,7 +4,7 @@ import { projectKenjiRenewalPromotion, readKenjiCareBackCoupon } from "./kenji-m
 import { readKenjiPrivateSignupCatalog } from "./kenji-private-interest.js";
 import { resolveCanonicalRenewalOffer, renewalPriceForSpend } from "./renewal-offer.js";
 import { resolveMemberEntitlements } from "../../auth-worker/src/member-entitlement-resolver.js";
-import { resolveCanonicalClientForLine } from "./member-app-client-history.js";
+import { readVerifiedLineServiceDates, resolveCanonicalClientForLine } from "./member-app-client-history.js";
 
 const PATH = "/__internal/kenji/member-truth";
 const SERVICE_HOST = "member-pages-worker.internal";
@@ -17,7 +17,7 @@ const TIMEOUT_MS = 2500;
 const ENTITLEMENT_TIMEOUT_MS = 900;
 const ENTITLEMENT_TABLE_FALLBACK = "MMD — Member Entitlements";
 const ENTITLEMENT_LINE_FIELD_FALLBACK = "line_user_id";
-const EXPLICIT_INTENTS = new Set(["membership_status", "membership_renewal", "points_status", "rights_check", "private_interest"]);
+const EXPLICIT_INTENTS = new Set(["my_status", "membership_status", "membership_renewal", "points_status", "rights_check", "private_interest"]);
 
 const CAPABILITY_PRIORITY = Object.freeze([
   "black_card",
@@ -191,7 +191,7 @@ async function readTruthContext(env, lineUserId, intent) {
   if (intent === "private_interest") {
     return readCanonicalEntitlementSnapshot(env, lineUserId);
   }
-  if (["membership_status", "membership_renewal"].includes(intent)) {
+  if (["my_status", "membership_status", "membership_renewal"].includes(intent)) {
     const member = await readCanonicalMemberProfile(env, lineUserId);
     if (member.status === "resolved") return member;
     let client = null;
@@ -212,6 +212,11 @@ async function readTruthContext(env, lineUserId, intent) {
           snapshot,
           memberId: "",
         };
+      }
+      if (intent === "my_status" && member.status === "identity_unresolved" &&
+          snapshot.status === "no_entitlement" && ["prospect", "interested", "ลูกค้าที่สนใจ"].includes(
+            text(fields["Membership Status"] || fields.member_status).toLowerCase())) {
+        return { status: "prospect" };
       }
       return { status: snapshot.status };
     }
@@ -377,6 +382,10 @@ export async function handleKenjiLineMemberTruth(request, env = {}) {
   if (!lineUserId || (intent && !EXPLICIT_INTENTS.has(intent))) return json({ ok: false, error: "invalid_request" }, 400);
 
   const resolved = await readTruthContext(env, lineUserId, intent);
+  if (intent === "my_status" && resolved.status === "prospect") {
+    return json({ ok: true, authority: RESOLVER_SCHEMA, identity_status: "resolved", customer_status: "prospect",
+      service_history: await readVerifiedLineServiceDates(env, lineUserId) });
+  }
   const projection = projectKenjiLineMemberTruth(resolved?.status === "resolved" ? resolved : {});
   const ownerContext = !projection && ["rights_check", "private_interest", "membership_status", "membership_renewal"].includes(intent)
     ? await readKenjiOwnerMembershipContext(env, lineUserId) : null;
@@ -392,10 +401,14 @@ export async function handleKenjiLineMemberTruth(request, env = {}) {
     const body = { ok: false, status, failure_class: status, authority: RESOLVER_SCHEMA };
     return json(body, ["identity_unresolved", "no_entitlement"].includes(status) ? 200 : 503);
   }
-  if (intent === "points_status") {
+  if (["points_status", "my_status"].includes(intent)) {
     // Use the same read-only, payment-source-guarded ledger as My MMD.
     // A profile snapshot is never a fallback for an unavailable current read.
-    const context = await readMyMmdVerifiedPointsContext(env, { memberId: resolved.memberId, lineUserId, strictIdentity: true });
+    const [context, serviceHistory] = await Promise.all([
+      readMyMmdVerifiedPointsContext(env, { memberId: resolved.memberId, lineUserId, strictIdentity: true }),
+      intent === "my_status" ? readVerifiedLineServiceDates(env, lineUserId) : null,
+    ]);
+    if (serviceHistory) projection.service_history = serviceHistory;
     projection.points = context.sourceVerified === true && context.state === "resolved" && Number.isSafeInteger(context.confirmedBalance) && context.confirmedBalance >= 0
       ? { status: "verified", active_points: context.confirmedBalance, valid_until: context.nearestExpiry || null, authority: "canonical_paid_points_source_guard_v1" }
       : { status: "unavailable", active_points: null };

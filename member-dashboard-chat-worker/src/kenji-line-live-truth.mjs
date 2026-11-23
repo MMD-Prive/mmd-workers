@@ -5,7 +5,7 @@ const MEMBER_SNAPSHOT_URL = "https://member-pages-worker.internal/__internal/ken
 const AUTHORITY = "my_mmd_entitlement_resolver_v1";
 const TIMEOUT_MS = 1600;
 const MEMBERSHIP_TIMEOUT_MS = 4500;
-const LIVE_TRUTH_INTENTS = new Set(["membership_status", "membership_renewal", "points_status"]);
+const LIVE_TRUTH_INTENTS = new Set(["my_status", "membership_status", "membership_renewal", "points_status"]);
 const POINTS_LIFF_URL = "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=points";
 
 function text(value) {
@@ -40,7 +40,7 @@ function hasVerifiedPoints(points) {
   return points?.status === "verified" && Number.isSafeInteger(points.active_points) && points.active_points >= 0;
 }
 
-function boundedTruth(payload = {}) {
+function boundedTruth(payload = {}, intent = "") {
   const owner = payload.owner_membership_context;
   const reviewed = owner?.renewal_offer;
   if (payload.ok === true && payload.authority === AUTHORITY && payload.identity_status === "owner_oa_linked" &&
@@ -57,10 +57,19 @@ function boundedTruth(payload = {}) {
       points:{status:"unavailable",active_points:null},renewal:{...reviewed} };
   }
   if (payload?.ok !== true || payload?.authority !== AUTHORITY || payload?.identity_status !== "resolved") return null;
+  const history = payload.service_history;
+  const serviceHistory = history?.status === "verified" && Array.isArray(history.dates)
+    ? { status: "verified", dates: history.dates.slice(0, 3) }
+    : { status: "unavailable" };
+  if (intent === "my_status" && payload.customer_status === "prospect") {
+    return { ok: true, authority: AUTHORITY, identity_status: "resolved",
+      customer_status: "prospect", service_history: serviceHistory };
+  }
   const membership = payload?.membership && typeof payload.membership === "object" ? payload.membership : {};
   const former = payload?.former_private_membership && typeof payload.former_private_membership === "object" ? payload.former_private_membership : null;
   const points = payload?.points && typeof payload.points === "object" ? payload.points : {};
-  const verifiedPoints = hasVerifiedPoints(points);
+  const verifiedPoints = hasVerifiedPoints(points) &&
+    (intent !== "my_status" || points.authority === "canonical_paid_points_source_guard_v1");
   const renewalPromotion = payload.renewal?.promotion || payload.renewal || {};
   return {
     ok: true,
@@ -88,6 +97,7 @@ function boundedTruth(payload = {}) {
       status: verifiedPoints ? "verified" : "unavailable",
       active_points: verifiedPoints ? points.active_points : null,
     },
+    ...(intent === "my_status" ? { service_history: serviceHistory } : {}),
     renewal: payload.renewal?.status === "ready" && payload.membership?.member_blocked !== true &&
       ({private_standard:"standard",private_premium:"premium"})[membership.level] === payload.renewal.package_code &&
       Number.isSafeInteger(payload.renewal.amount_thb) && payload.renewal.amount_thb > 0 &&
@@ -131,7 +141,7 @@ export async function resolveKenjiLineLiveTruth({ env = {}, event = {}, intent =
     timer = setTimeout(() => {
       controller.abort("kenji_live_truth_timeout");
       reject(new Error("kenji_live_truth_timeout"));
-    }, ["membership_status", "membership_renewal"].includes(effectiveIntent) ? MEMBERSHIP_TIMEOUT_MS : TIMEOUT_MS);
+    }, ["my_status", "membership_status", "membership_renewal"].includes(effectiveIntent) ? MEMBERSHIP_TIMEOUT_MS : TIMEOUT_MS);
   });
   try {
     const payloadResult = await Promise.race([deadline, (async () => {
@@ -161,7 +171,7 @@ export async function resolveKenjiLineLiveTruth({ env = {}, event = {}, intent =
       truthDiagnostic(effectiveIntent, "upstream_http_error", response.status);
       return { ok: false, status: "upstream_error", failure_class: "upstream_error", authority: AUTHORITY };
     }
-    const truth = boundedTruth(payload || {});
+    const truth = boundedTruth(payload || {}, effectiveIntent);
     if (!truth) truthDiagnostic(effectiveIntent, "contract_invalid", response.status);
     return truth || { ok: false, status: "unavailable", authority: AUTHORITY };
   } catch {

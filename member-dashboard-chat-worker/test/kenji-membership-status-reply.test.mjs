@@ -38,10 +38,10 @@ test('unresolved, foreign, historical or incomplete truth never asserts status o
     assert.match(r.text,/ยังตรวจยืนยันสถานะสมาชิก/);assert.doesNotMatch(r.text,/Points|intent=signup|intent=renew/);
   }
 });
-test('category makes one membership-only canonical request and preserves fresh pause',async()=>{
+test('category makes one MY STATUS canonical request and preserves fresh pause',async()=>{
   let calls=0,sends=0,reads=0;
   const env={KENJI_LINE_REPLY_CATEGORY_MODE:'approved_qa_promo',LINE_AUTO_REPLY_ENABLED:'true',LINE_KENJI_AI_ENABLED:'true',LINE_KENJI_MODEL_ENABLED:'false',MEMBER_PAGES_WORKER:{fetch:async request=>{
-    calls++;assert.equal((await request.json()).intent,'membership_status');
+    calls++;assert.equal((await request.json()).intent,'my_status');
     return Response.json(truth('svip'));
   }}};
   const e={type:'message',mode:'active',timestamp:Date.now(),replyToken:'fixture',source:{type:'user',userId:'U'+'a'.repeat(32)},message:{type:'text',text:'My Status'}};
@@ -51,5 +51,5 @@ test('category makes one membership-only canonical request and preserves fresh p
     runtime:async()=>({ok:true,controls:{line_oa_auto_reply:++reads>1}}),owner:async()=>({ok:true,active:false}),send:async()=>{sends++;return {ok:true,status:200}},
   });
   assert.equal(calls,1);assert.equal(sends,0);assert.equal(r.delivered,false);
-  assert.equal(r.decision.truth_status,'verified');assert.doesNotMatch(r.decision.text,/Points|Hiro/);
+  assert.equal(r.decision.truth_status,'verified');assert.match(r.decision.text,/Points: รอตรวจสอบ/);assert.doesNotMatch(r.decision.text,/Hiro/);
 });
