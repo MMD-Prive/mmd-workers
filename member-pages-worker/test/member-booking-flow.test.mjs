@@ -313,3 +313,17 @@ test('Public register rejects unmatched, unapproved, undocumented or ambiguous r
     });
   }
 });
+
+test('Booking reads White dining from a server-side JSON catalog binding', async () => fixture(async ({env, deps, writes}) => {
+  env.MMD_PUBLIC_RATE_CATALOG = [registerRate];
+  const payload = {...input(), public_format: 'dining', duration_minutes: 90, budget_thb: 10000};
+  const submit = () => handleMemberBooking(request('a', 'requests', payload), env, deps);
+  const first = await submit();
+  assert.equal(first.status, 201);
+  const original = await first.json();
+  const retry = await submit();
+  assert.equal(retry.status, 200);
+  assert.equal((await retry.json()).request_ref, original.request_ref);
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].budget_thb, 10000);
+}));
