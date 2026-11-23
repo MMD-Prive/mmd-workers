@@ -62,6 +62,22 @@ export async function handleMemberBookingService(request,env,delegate){
   }
   const model=(await search(input.payload.model_id)).find(i=>i.model_id===input.payload.model_id);
   if(!model)return reject('selected_model_unavailable');
+  if (scope === 'public') {
+    if (!publicDetails.public_format) return reject('public_booking_details_required');
+    const catalog = env.MMD_PUBLIC_RATE_CATALOG;
+    if (!catalog?.lookup) return reject('approved_rate_unavailable',503);
+    let rate;
+    try {
+      rate = await catalog.lookup(model.model_id, publicDetails.public_format, publicDetails.duration_minutes);
+    } catch {
+      return reject('approved_rate_unavailable',503);
+    }
+    if (rate?.status !== 'approved' || rate.model_id !== model.model_id ||
+        rate.public_format !== publicDetails.public_format || rate.duration_minutes !== publicDetails.duration_minutes ||
+        !Number.isSafeInteger(rate.model_fee_thb) || rate.model_fee_thb <= 0 ||
+        (rate.duration_minutes === 90 && rate.model_fee_thb < 4500)) return reject('approved_rate_unavailable');
+    if (publicDetails.budget_thb < rate.model_fee_thb) return reject('budget_below_approved_rate');
+  }
   const meta={schema:'member_booking_owner_v2',owner:input.owner,scope,fingerprint,state:'submitted'};
   if (publicDetails.public_format) {
     meta.publicDetails=publicDetails;
