@@ -1,3 +1,5 @@
+import { validMarker, signMarker } from '../../shared/member-booking-marker.mjs';
+import { readPublicBookingDetails } from '../../shared/member-public-booking.mjs';
 import { resolveDiscoveryViewer } from './customer-discovery-policy.js';
 import { currentPrivateContext } from './current-private-access.js';
 const PATH='/__internal/member-booking';
@@ -43,11 +45,13 @@ export async function handleMemberBookingService(request,env,delegate){
    for(const row of rows){
     const f=row.fields||{},meta=parse(f.resolver_payload_json).my_mmd_owner,ref=String(f.booking_ref||f['Request ID']||'');
     if(!REF.test(ref)||meta?.owner!==input.owner||!await validMarker(secret,ref,meta)||meta.state!=='submitted')continue;
-    items.push({request_ref:ref,status:requestStatus(f['Request Status']||f.request_status),scope:meta.scope,date:String(f['Preferred Date']||''),time:String(f['Preferred Time']||''),model_name:'นายแบบที่เลือก'});
+    items.push({request_ref:ref,status:requestStatus(f['Request Status']||f.request_status),scope:meta.scope,date:String(f['Preferred Date']||''),time:String(f['Preferred Time']||''),model_name:'นายแบบที่เลือก',...(meta.publicDetails || {})});
    }
    return json({ok:true,items,...(REF.test(input.reference||'')?{active_request_ref:input.reference}:{})});
   }
   if(!REF.test(input.reference||'')||!input.payload||!/^rec[A-Za-z0-9]{14,24}$/.test(input.payload.model_id||''))return reject('invalid_request',400);
+  const publicDetails=readPublicBookingDetails(input.payload);
+  if (!publicDetails) return reject('invalid_request',400);
   const fingerprint=await hash(JSON.stringify(input.payload));
   const existing=await read(env,`{booking_ref}='${input.reference}'`);
   if(existing.length){
@@ -58,13 +62,39 @@ export async function handleMemberBookingService(request,env,delegate){
   }
   const model=(await search(input.payload.model_id)).find(i=>i.model_id===input.payload.model_id);
   if(!model)return reject('selected_model_unavailable');
+  if (scope === 'public') {
+    if (!publicDetails.public_format) return reject('public_booking_details_required');
+    const catalog = env.MMD_PUBLIC_RATE_CATALOG;
+    if (!catalog?.lookup) return reject('approved_rate_unavailable',503);
+    let rate;
+    try {
+      rate = await catalog.lookup(model.model_id, publicDetails.public_format, publicDetails.duration_minutes);
+    } catch {
+      return reject('approved_rate_unavailable',503);
+    }
+    if (rate?.status !== 'approved' || rate.model_id !== model.model_id ||
+        rate.public_format !== publicDetails.public_format || rate.duration_minutes !== publicDetails.duration_minutes ||
+        !Number.isSafeInteger(rate.model_fee_thb) || rate.model_fee_thb <= 0 ||
+        (rate.duration_minutes === 90 && rate.model_fee_thb < 4500)) return reject('approved_rate_unavailable');
+    if (publicDetails.budget_thb < rate.model_fee_thb) return reject('budget_below_approved_rate');
+  }
   const meta={schema:'member_booking_owner_v2',owner:input.owner,scope,fingerprint,state:'submitted'};
-  meta.signature=await sign(secret,markerValue(input.reference,meta));
+  if (publicDetails.public_format) {
+    meta.publicDetails=publicDetails;
+    if (/^rec[A-Za-z0-9]{14,30}$/.test(input.client_id || '')) meta.client_id=input.client_id;
+  }
+  meta.signature=await signMarker(secret,input.reference,meta);
   intakeStarted=true;
   const res=await delegate(new Request('https://sigil-booking.internal/sigil/api/booking/intake',{
    method:'POST',headers:{'content-type':'application/json',cookie:request.headers.get('cookie')||''},body:JSON.stringify({
     booking_ref:input.reference,source:'my_mmd_member_booking',source_path:'/member/liff',lane:scope,model_scope:scope,
     selected_model_id:model.model_id,resolved_model_key:model.model_id,selected_model_name:model.display_name,
+    ...(meta.publicDetails ? {
+      budget_thb:publicDetails.budget_thb,
+      duration_minutes:publicDetails.duration_minutes,
+      service_context:publicDetails.public_format,
+      preference_text:'หมวดงาน Public: '+publicDetails.public_format
+    } : {}),
     preferred_date:input.payload.date,preferred_time:input.payload.time,city:input.payload.area,
     client_notes:['พื้นที่: '+input.payload.area,input.payload.note].filter(Boolean).join('\n'),search_mode:'booking',line_or_member_id:input.member_id
    })
@@ -74,8 +104,6 @@ export async function handleMemberBookingService(request,env,delegate){
   return json({ok:true,request_ref:input.reference,status:'request_pending_admin_review'},201);
  }catch{return json({ok:false,error:'booking_unavailable',...(input.operation==='submit'&&!intakeStarted?{outcome:'not_started',request_ref:input.reference}:{})},503);}
 }
-function markerValue(ref,m){return [m.schema,m.owner,ref,m.scope,m.fingerprint].join(':');}
-async function validMarker(secret,ref,m){return m?.schema==='member_booking_owner_v2'&&['public','private'].includes(m.scope)&&OWNER.test(m.fingerprint||'')&&m.signature===await sign(secret,markerValue(ref,m));}
 export function requestStatus(value){
  const status=String(value||'').trim().toLowerCase().replace(/[ -]+/g,'_');
  if(['draft','requested','submitted','pending','pending_review','request_pending_admin_review'].includes(status))return 'request_pending_admin_review';
@@ -104,5 +132,4 @@ async function read(env,formula){
 }
 function parse(value){try{return JSON.parse(value||'{}');}catch{return {};}}
 async function hash(value){return [...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value)))].map(v=>v.toString(16).padStart(2,'0')).join('');}
-async function sign(secret,value){const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(secret),{name:'HMAC',hash:'SHA-256'},false,['sign']);return [...new Uint8Array(await crypto.subtle.sign('HMAC',key,new TextEncoder().encode(value)))].map(v=>v.toString(16).padStart(2,'0')).join('');}
 function json(body,status=200){return Response.json(body,{status,headers:{'cache-control':'private, no-store'}});}

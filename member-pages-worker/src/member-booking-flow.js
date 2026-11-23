@@ -1,3 +1,4 @@
+import { readPublicBookingDetails } from '../../shared/member-public-booking.mjs';
 import { readBoundedJsonObject } from './bounded-json.js';
 import { readMemberAppSession } from './member-app-api-runtime.js';
 import { resolveCanonicalClientForLine } from './member-app-client-history.js';
@@ -48,16 +49,18 @@ export async function handleMemberBooking(request, env, deps = {}) {
     const parsed=await readBoundedJsonObject(request,8192);
     if (!parsed.ok) return reply({ok:false,error:parsed.code},parsed.status);
     const input=parsed.value;
-    const allowed = ['request_id','model_id','date','time','area','note','scope'];
+    const allowed = ['request_id','model_id','date','time','area','note','scope','public_format','duration_minutes','budget_thb'];
     if (!input || !['public','private'].includes(input.scope || 'public') || Array.isArray(input) || Object.keys(input).some(k=>!allowed.includes(k)) || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(input.request_id || '')
       || !/^rec[A-Za-z0-9]{14,24}$/.test(input.model_id || '') || !validDate(input.date) || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(input.time || '')
       || typeof input.area !== 'string' || !input.area.trim() || input.area.length>120 || input.note != null && (typeof input.note!=='string'||input.note.length>700)) return reply({ok:false,error:'invalid_request',outcome:'not_started'},400);
     // A stable key is opaque correlation only. The account comes from the session.
-    const payload={model_id:input.model_id,date:input.date,time:input.time,area:input.area.trim(),note:input.note || '',scope:input.scope || 'public'};
+    const publicDetails=readPublicBookingDetails(input);
+    if (!publicDetails) return reply({ok:false,error:'invalid_request',outcome:'not_started'},400);
+    const payload={model_id:input.model_id,date:input.date,time:input.time,area:input.area.trim(),note:input.note || '',scope:input.scope || 'public',...publicDetails};
     const reference='mmdreq_'+await digest(owner+':'+input.request_id);
     if (!env.MEMBER_BOOKING_COORDINATOR?.idFromName || !env.MEMBER_BOOKING_COORDINATOR?.get) return reply({ok:false,error:'booking_submission_not_ready',outcome:'not_started'},503);
     const stub=env.MEMBER_BOOKING_COORDINATOR.get(env.MEMBER_BOOKING_COORDINATOR.idFromName(reference));
-    return safeResponse(await stub.fetch(new Request('https://coordinator/submit',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({owner,reference,member_id:session.memberId,payload,cookie:request.headers.get('cookie') || ''})})));
+    return safeResponse(await stub.fetch(new Request('https://coordinator/submit',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({owner,reference,client_id:client.id,member_id:session.memberId,payload,cookie:request.headers.get('cookie') || ''})})));
   } catch {return reply({ok:false,error:'booking_unavailable'},503);}
 }
 function validDate(value) {if(!/^\d{4}-\d{2}-\d{2}$/.test(value || ''))return false;const d=new Date(value+'T00:00:00Z');return Number.isFinite(d.getTime())&&d.toISOString().slice(0,10)===value&&value>=new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Bangkok'});}
