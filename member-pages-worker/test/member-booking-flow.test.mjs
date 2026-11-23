@@ -1,3 +1,4 @@
+import {createPublicRateCatalog} from '../../sigil-booking-worker/src/public-rate-catalog.js';
 import {createRequire} from 'node:module';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -273,3 +274,42 @@ test('catalog outage replays the original 503 without creating a booking', async
   }
   assert.equal(lookups,1);
 }));
+
+const registerRate = {
+  ...approvedRate,
+  approved_by: 'MMD-MOCK',
+  approved_at: '2099-01-01T09:00:00+07:00',
+  approval_ref: 'MOCK-ONLY-001',
+};
+
+test('Public register supplies the exact approved rate to Booking', async () => fixture(async ({env, deps, writes}) => {
+  env.MMD_PUBLIC_RATE_CATALOG = createPublicRateCatalog([
+    {...registerRate, status: 'retired', model_fee_thb: 7000},
+    {...registerRate, public_format: 'event', model_fee_thb: 8000},
+    registerRate,
+  ]);
+  const response = await handleMemberBooking(request('a', 'requests', input()), env, deps);
+  assert.equal(response.status, 201);
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].budget_thb, 5000);
+}));
+
+test('Public register rejects unmatched, unapproved, undocumented or ambiguous rates', async () => {
+  const cases = [
+    [{...registerRate, model_id: 'recOtherModel00001'}],
+    [{...registerRate, public_format: 'event'}],
+    [{...registerRate, duration_minutes: 120}],
+    [{...registerRate, status: 'draft'}],
+    [{...registerRate, status: 'retired'}],
+    [{...registerRate, approval_ref: '  '}],
+    [registerRate, {...registerRate}],
+  ];
+  for (const rows of cases) {
+    await fixture(async ({env, deps, writes}) => {
+      env.MMD_PUBLIC_RATE_CATALOG = createPublicRateCatalog(rows);
+      const response = await handleMemberBooking(request('a', 'requests', input()), env, deps);
+      assert.equal(response.status, 422, JSON.stringify(rows));
+      assert.equal(writes.length, 0);
+    });
+  }
+});
