@@ -110,12 +110,22 @@ test('customer wildcard preserves the existing Therapist auth and app API author
   }
 });
 test('rendered client parses without interpolating backend data',()=>{
-  for(const login of [false,true]){const html=renderTherapistWorkspace(login);const script=html.match(/<script>([\s\S]*?)<\/script>/)[1];new vm.Script(script);assert.equal(html.includes('innerHTML'),false);}
+  for(const login of [false,true]){const html=renderTherapistWorkspace(login);for(const [,script] of html.matchAll(/<script>([\s\S]*?)<\/script>/g))new vm.Script(script);assert.equal(html.includes('innerHTML'),false);}
 });
 test('mobile login keeps MMS branding, access guidance, and functional LINE controls',async()=>{
   const response=await maybeHandleTherapistWorkspace(new Request(origin+path+'/login'),{MMS_THERAPIST_UI_SOURCE:'native'});
   const html=await response.text();
-  for(const marker of ['class="auth-page"','class="auth-shell"','LINE Seed Sans TH','data:image/svg+xml;base64,',THERAPIST_AI_LOGO_PATH,'alt="Male Massage AI"','Online / Offline','เลือกเขตบริการ','ดูงานใกล้คุณ','id="line-login"','id="notice"','.auth-card #notice.error{background:#271612;color:#ffe0d2','id="retry"','https://liff.line.me/2011425652-YqK1F6y8','data-login="true"'])assert.ok(html.includes(marker),marker);
+  for(const marker of ['class="auth-page"','class="auth-shell"','LINE Seed Sans TH','6a8605ce469f1080c3c57ebe_mms-logo-horizontal-light.svg',THERAPIST_AI_LOGO_PATH,'alt="Male Massage AI"','Online / Offline','เลือกเขตบริการ','ดูงานใกล้คุณ','id="line-login"','id="notice"','.auth-card #notice.error{background:#271612;color:#ffe0d2','id="retry"','https://liff.line.me/2011425652-YqK1F6y8','data-login="true"'])assert.ok(html.includes(marker),marker);
+  const navigation = html.match(/<nav class="mms-therapist-destinations"[^>]*>([\s\S]*?)<\/nav>/)?.[1] || "";
+  assert.deepEqual([...navigation.matchAll(/<a href="([^"]+)"/g)].map(([, route]) => route), [
+    "/therapists",
+    "/apply/mms-therapist-benefits",
+    "/apply/mms-therapist-rules",
+    "/male-massage/apply/mms-fast-track",
+    "/apply/mms-therapist",
+    "/male-massage/therapists/login",
+  ]);
+  assert.match(navigation, /href="\/male-massage\/therapists\/login" aria-current="page">เข้า MY THERAPIST/);
   assert.equal(html.includes('คุยกับพี่เปอร์'),false);
   assert.match(response.headers.get('content-security-policy'),/font-src data: https:\/\/cdn\.prod\.website-files\.com/);
   const profile=await maybeHandleTherapistWorkspace(new Request(origin+path+'/me'),{MMS_THERAPIST_UI_SOURCE:'native'});
