@@ -1,3 +1,4 @@
+import { createPublicRateCatalog } from './public-rate-catalog.js';
 import { validMarker, signMarker } from '../../shared/member-booking-marker.mjs';
 import { readPublicBookingDetails } from '../../shared/member-public-booking.mjs';
 import { resolveDiscoveryViewer } from './customer-discovery-policy.js';
@@ -64,8 +65,11 @@ export async function handleMemberBookingService(request,env,delegate){
   if(!model)return reject('selected_model_unavailable');
   if (scope === 'public') {
     if (!publicDetails.public_format) return reject('public_booking_details_required');
-    const catalog = env.MMD_PUBLIC_RATE_CATALOG;
-    if (!catalog?.lookup) return reject('approved_rate_unavailable',503);
+    const configuredCatalog = env.MMD_PUBLIC_RATE_CATALOG;
+    const catalog = Array.isArray(configuredCatalog)
+      ? createPublicRateCatalog(configuredCatalog)
+      : configuredCatalog;
+    if (typeof catalog?.lookup !== 'function') return reject('approved_rate_unavailable',503);
     let rate;
     try {
       rate = await catalog.lookup(model.model_id, publicDetails.public_format, publicDetails.duration_minutes);

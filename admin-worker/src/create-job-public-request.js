@@ -27,8 +27,13 @@ export async function readCreateJobPublicRequest(request, env, actor) {
     const {records} = await response.json();
     const items=[];
     for(const row of records){
-    const f=row.fields;
-    const meta = f && JSON.parse(f.resolver_payload_json || '{}').my_mmd_owner;
+    const f=row?.fields;
+    let meta;
+    try {
+      meta = JSON.parse(f?.resolver_payload_json || '{}')?.my_mmd_owner;
+    } catch {
+      continue;
+    }
     if (/^mmdreq_[a-f0-9]{64}$/.test(f?.booking_ref) && (!ref || (records.length===1 && f.booking_ref===ref)) && f.lane === 'public' && meta?.scope === 'public' &&
         meta.state === 'submitted' && meta.client_id === client && f.line_or_member_id &&
         await validMarker(secret, f.booking_ref, meta)) {
