@@ -1,3 +1,4 @@
+import { readPublicBookingDetails } from '../../shared/member-public-booking.mjs';
 import { resolveDiscoveryViewer } from './customer-discovery-policy.js';
 import { currentPrivateContext } from './current-private-access.js';
 const PATH='/__internal/member-booking';
@@ -43,11 +44,13 @@ export async function handleMemberBookingService(request,env,delegate){
    for(const row of rows){
     const f=row.fields||{},meta=parse(f.resolver_payload_json).my_mmd_owner,ref=String(f.booking_ref||f['Request ID']||'');
     if(!REF.test(ref)||meta?.owner!==input.owner||!await validMarker(secret,ref,meta)||meta.state!=='submitted')continue;
-    items.push({request_ref:ref,status:requestStatus(f['Request Status']||f.request_status),scope:meta.scope,date:String(f['Preferred Date']||''),time:String(f['Preferred Time']||''),model_name:'นายแบบที่เลือก'});
+    items.push({request_ref:ref,status:requestStatus(f['Request Status']||f.request_status),scope:meta.scope,date:String(f['Preferred Date']||''),time:String(f['Preferred Time']||''),model_name:'นายแบบที่เลือก',...(meta.publicDetails || {})});
    }
    return json({ok:true,items,...(REF.test(input.reference||'')?{active_request_ref:input.reference}:{})});
   }
   if(!REF.test(input.reference||'')||!input.payload||!/^rec[A-Za-z0-9]{14,24}$/.test(input.payload.model_id||''))return reject('invalid_request',400);
+  const publicDetails=readPublicBookingDetails(input.payload);
+  if (!publicDetails) return reject('invalid_request',400);
   const fingerprint=await hash(JSON.stringify(input.payload));
   const existing=await read(env,`{booking_ref}='${input.reference}'`);
   if(existing.length){
@@ -59,12 +62,22 @@ export async function handleMemberBookingService(request,env,delegate){
   const model=(await search(input.payload.model_id)).find(i=>i.model_id===input.payload.model_id);
   if(!model)return reject('selected_model_unavailable');
   const meta={schema:'member_booking_owner_v2',owner:input.owner,scope,fingerprint,state:'submitted'};
+  if (publicDetails.public_format) {
+    meta.publicDetails=publicDetails;
+    if (/^rec[A-Za-z0-9]{14,30}$/.test(input.client_id || '')) meta.client_id=input.client_id;
+  }
   meta.signature=await sign(secret,markerValue(input.reference,meta));
   intakeStarted=true;
   const res=await delegate(new Request('https://sigil-booking.internal/sigil/api/booking/intake',{
    method:'POST',headers:{'content-type':'application/json',cookie:request.headers.get('cookie')||''},body:JSON.stringify({
     booking_ref:input.reference,source:'my_mmd_member_booking',source_path:'/member/liff',lane:scope,model_scope:scope,
     selected_model_id:model.model_id,resolved_model_key:model.model_id,selected_model_name:model.display_name,
+    ...(meta.publicDetails ? {
+      budget_thb:publicDetails.budget_thb,
+      duration_minutes:publicDetails.duration_minutes,
+      service_context:publicDetails.public_format,
+      preference_text:'หมวดงาน Public: '+publicDetails.public_format
+    } : {}),
     preferred_date:input.payload.date,preferred_time:input.payload.time,city:input.payload.area,
     client_notes:['พื้นที่: '+input.payload.area,input.payload.note].filter(Boolean).join('\n'),search_mode:'booking',line_or_member_id:input.member_id
    })
@@ -74,7 +87,7 @@ export async function handleMemberBookingService(request,env,delegate){
   return json({ok:true,request_ref:input.reference,status:'request_pending_admin_review'},201);
  }catch{return json({ok:false,error:'booking_unavailable',...(input.operation==='submit'&&!intakeStarted?{outcome:'not_started',request_ref:input.reference}:{})},503);}
 }
-function markerValue(ref,m){return [m.schema,m.owner,ref,m.scope,m.fingerprint].join(':');}
+function markerValue(ref,m){const parts=[m.schema,m.owner,ref,m.scope,m.fingerprint];if(m.publicDetails!==undefined)parts.push(JSON.stringify(m.publicDetails));if(m.client_id)parts.push(m.client_id);return parts.join(':');}
 async function validMarker(secret,ref,m){return m?.schema==='member_booking_owner_v2'&&['public','private'].includes(m.scope)&&OWNER.test(m.fingerprint||'')&&m.signature===await sign(secret,markerValue(ref,m));}
 export function requestStatus(value){
  const status=String(value||'').trim().toLowerCase().replace(/[ -]+/g,'_');

@@ -1,3 +1,4 @@
+import { PUBLIC_REQUEST_PATH, readCreateJobPublicRequest } from './create-job-public-request.js';
 import { handlePartnerCoModelRead } from './co-model-partner-read.js';
 import { CO_MODEL_PATH } from '../../shared/co-model-service.mjs';
 import { allowAdminConsoleFrame } from "../../webflow/global/admin-console-views.mjs";
@@ -391,6 +392,11 @@ const adminLoginHeroWorker = {
       const gate = await applyCredentialBoundAdminGate(request, runtimeEnv, normalizedPath, method);
       if (gate.response) return gate.response;
       return handleModelJobPreview(gate.request, runtimeEnv);
+    }
+
+    if (normalizedPath === PUBLIC_REQUEST_PATH && method === 'GET') {
+      const actor = await readCredentialBoundAdminActor(request, runtimeEnv);
+      return readCreateJobPublicRequest(request, runtimeEnv, actor);
     }
 
     if (normalizedPath === JOB_PREFLIGHT_PATH && method === 'POST') {

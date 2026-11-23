@@ -18,7 +18,7 @@ export class MemberBookingCoordinator {
       try{
         const res=await this.env.SIGIL_BOOKING_WORKER.fetch(new Request('https://sigil-booking.internal/__internal/member-booking',{
           method:'POST',headers:{'content-type':'application/json','x-mmd-member-booking-secret':this.env.AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES,cookie:input.cookie || ''},
-          body:JSON.stringify({operation:'submit',owner:input.owner,reference:input.reference,member_id:input.member_id,payload:input.payload}),signal:AbortSignal.timeout(10000)
+          body:JSON.stringify({operation:'submit',owner:input.owner,reference:input.reference,member_id:input.member_id,client_id:input.client_id,payload:input.payload}),signal:AbortSignal.timeout(10000)
         }));
         const body=await res.json().catch(()=>null);
         if(!res.ok&&body?.outcome==='not_started'&&body.request_ref===input.reference){

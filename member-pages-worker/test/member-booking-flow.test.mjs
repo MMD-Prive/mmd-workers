@@ -69,21 +69,68 @@ test('service delegates actual SIGIL search/media policy and actual intake with 
   if((init.method||'GET')!=='GET'){assert.equal(table,'Bookings');writes++;const fields=JSON.parse(init.body).fields;const row={id:'recBookingFixture',fields};rows.push(row);return Response.json(row);}
   if(table==='Members'){const member={id:'recMemberFixture01',fields:{member_id:'member_a',status:'active','MMD — Member Entitlements':['recEntitlement0001']}};return Response.json(url.pathname.endsWith('/recMemberFixture01')?member:{records:[member]});}
   if(table==='Entitlements')return Response.json({records:[{id:'recEntitlement0001',fields:{member:['recMemberFixture01'],capability:'public_member',member_lifecycle_status:'active',access_status:'active'}}]});
-  if(table==='Models')return Response.json({records:[{id:model,fields:{working_name:'Fixture',status:'active',can_work_public:true,orientation:'straight',private_tier:'premium'}}]});
+  if(table==='Models')return Response.json({records:[{id:model,fields:{working_name:'White',status:'active',can_work_public:true,orientation:'straight',private_tier:'premium'}}]});
   if(table==='Bookings')return Response.json({records:rows});
   return Response.json({records:[]});
  };
  try{
-  const owner=await digest('my-mmd-booking-owner-v1:client_line_a:member_a'),reference='mmdreq_'+'a'.repeat(64);
-  const call=operation=>runtime.fetch(new Request('https://sigil-booking.internal/__internal/member-booking',{method:'POST',headers:{cookie:'__Host-mmd_liff_session=a','x-mmd-member-booking-secret':secret,'content-type':'application/json'},body:JSON.stringify({operation,owner,member_id:'member_a',reference,payload:{model_id:model,date:'2099-01-01',time:'18:00',area:'Bangkok',note:'fixture'}})}),env);
+  const clientId='recPublicClient0001';
+  const owner=await digest('my-mmd-booking-owner-v1:'+clientId+':member_a'),reference='mmdreq_'+'a'.repeat(64);
+  const call=operation=>runtime.fetch(new Request('https://sigil-booking.internal/__internal/member-booking',{method:'POST',headers:{cookie:'__Host-mmd_liff_session=a','x-mmd-member-booking-secret':secret,'content-type':'application/json'},body:JSON.stringify({operation,owner,member_id:'member_a',client_id:clientId,reference,payload:{model_id:model,date:'2099-01-01',time:'18:00',area:'Bangkok',note:'fixture',public_format:'dining',duration_minutes:90,budget_thb:10000}})}),env);
   const search=await call('search');assert.equal(search.status,200);assert.equal((await search.json()).items[0]?.model_id,model);
   const submit=await call('submit');assert.equal(submit.status,201,JSON.stringify(await submit.clone().json()));assert.equal(writes,1);
   assert.equal(JSON.parse(rows[0].fields.resolver_payload_json).my_mmd_owner.owner,owner);
   const publicOwner=JSON.parse(rows[0].fields.resolver_payload_json).public_booking_owner;
   assert.equal(publicOwner.member_id,'member_a');assert.equal(publicOwner.schema,'public_booking_owner_v1');assert.match(publicOwner.signature,/^[a-f0-9]{64}$/);
   assert.equal(rows[0].fields['Client Notes'],'พื้นที่: Bangkok\nfixture');
-  const list=await call('list');assert.equal((await list.json()).items[0].request_ref,reference);
-  await call('submit');assert.equal(writes,1);
+  const stored=JSON.parse(rows[0].fields.resolver_payload_json);
+  assert.equal(rows[0].fields['Preference Text'],'หมวดงาน Public: dining');
+  assert.equal(stored.customer_search.service_context,'dining');
+  assert.equal(stored.customer_search.duration_minutes,90);
+  assert.equal(stored.customer_search.budget.max_thb,10000);
+  const list=await call('list');const {items}=await list.json();
+  assert.equal(items.length,1);assert.equal(items[0].request_ref,reference);
+  assert.equal(items[0].public_format,'dining');
+  assert.equal(items[0].duration_minutes,90);
+  assert.equal(items[0].budget_thb,10000);
+  const {readCreateJobPublicRequest}=await import('../../admin-worker/src/create-job-public-request.js');
+  const endpoint='https://local.test/internal/admin/jobs/create-job/public-request?client_id=';
+  const lookup=(client,ref='',actor={role:'owner'})=>readCreateJobPublicRequest(new Request(endpoint+client+(ref?'&ref='+ref:'')),env,actor);
+  assert.equal((await lookup(clientId,'',{})).status,403);
+  assert.deepEqual((await (await lookup('recPublicClient0002')).json()).items,[]);
+  const options=(await (await lookup(clientId)).json()).items;
+  assert.equal(options.length,1);assert.equal(options[0].ref,reference);
+  const chosen=await (await lookup(clientId,options[0].ref)).json();
+  assert.equal(chosen.work_type,'dining');assert.equal(chosen.budget_thb,10000);
+  assert.equal(chosen.duration_minutes,90);assert.equal(chosen.model_name,'White');
+  const {JSDOM}=await import('jsdom');
+  const {handleCreateJobWorkerPage}=await import('../../admin-worker/src/create-job-worker-page.js');
+  const pageUrl='https://local.test/internal/admin/jobs/create-job';
+  const html=await handleCreateJobWorkerPage(new Request(pageUrl)).text();
+  const dom=new JSDOM(html,{url:pageUrl,runScripts:'outside-only'});
+  const w=dom.window,doc=w.document,el=id=>doc.getElementById(id);
+  const operations=[];
+  w.scrollTo=()=>{};
+  try{
+    w.fetch=async(path,init={})=>{
+      operations.push(path);
+      if(path.includes('lineage-lookup'))return Response.json({ok:true,records:[{client_id:clientId,client_name:'Fixture'}]});
+      if(path.includes('public-request'))return readCreateJobPublicRequest(new Request(new URL(path,pageUrl)),env,{role:'owner'});
+      return Response.json({ok:true});
+    };
+    for(const script of doc.scripts)if(!script.src)w.eval(script.textContent);
+    el('cq').value=clientId;await el('cs').onclick();el('clients').querySelector('.result').click();
+    doc.querySelector('input[name=visibility][value=public]').click();
+    await el('showBookings').onclick();assert.equal(el('bookingOptions').options.length,2);
+    el('bookingOptions').value=reference;el('bookingOptions').onchange();
+    for(let n=0;n<20 && !el('publicFormat').value;n++)await new Promise(resolve=>setTimeout(resolve,5));
+    assert.equal(el('publicFormat').value,'dining');
+    assert.match(el('bookingSummary').textContent,/White.*dining.*90.*10,000/);
+    assert.equal(el('amount').value,'');
+    assert.equal(operations.some(path=>path.includes('create-session')||path.includes('preflight')),false);
+  }finally{dom.window.close()}
+  const retry=await call('submit');assert.equal(retry.status,200);
+  assert.equal((await retry.json()).request_ref,reference);assert.equal(writes,1);
  }finally{globalThis.fetch=native;}
 });
 test('actual Private flow reuses exact session/member lookup and current entitlement; no search writes or EMs/GWs reveal',async()=>{
@@ -139,4 +186,25 @@ test('past dates and blank areas are definite pre-write failures and corrected r
  }
  assert.equal(writes.length,0);assert.equal(calls.length,0);
  const corrected=await handleMemberBooking(request('a','requests',input()),env,deps);assert.equal(corrected.status,201);assert.equal(writes.length,1);
+}));
+
+test('White Public details round-trip and retries do not create another booking',async()=>fixture(async({env,deps,writes,calls})=>{
+ const fields={public_format:'dining',duration_minutes:90,budget_thb:10000};
+ const payload={...input(),...fields};
+ const first=await handleMemberBooking(request('a','requests',payload),env,deps);
+ assert.equal(first.status,201,JSON.stringify(await first.clone().json()));
+ const saved=await first.json();
+ const retry=await handleMemberBooking(request('a','requests',payload),env,deps);
+ assert.equal(retry.status,200);assert.equal((await retry.json()).request_ref,saved.request_ref);
+ assert.equal((await handleMemberBooking(request('a','requests',{...payload,budget_thb:11000}),env,deps)).status,409);
+ assert.equal(writes.length,1);
+ const {items}=await (await handleMemberBooking(request('a'),env,deps)).json();
+ assert.equal(items.length,1);
+ for(const [key,value] of Object.entries(fields))assert.equal(items[0][key],value);
+ for(const bad of [{public_format:'pn'},{duration_minutes:0},{budget_thb:4999},{scope:'private'}]){
+  const response=await handleMemberBooking(request('a','requests',{...payload,...bad}),env,deps);
+  assert.equal(response.status,400);
+  assert.equal((await response.json()).outcome,'not_started');
+ }
+ assert.deepEqual(calls,['/sigil/api/models/search','/sigil/api/booking/intake']);
 }));
