@@ -1,0 +1,14 @@
+name = "mmd-co-model-3243-partner-staging"
+main = ".build/partner.mjs"
+compatibility_date = "2026-04-27"
+workers_dev = false
+preview_urls = false
+routes = []
+
+[[durable_objects.bindings]]
+name = "CO_MODEL_INTAKE"
+class_name = "CoModelIntakeObject"
+
+[[migrations]]
+tag = "co-model-3243-fixture-v1"
+new_sqlite_classes = ["CoModelIntakeObject"]

@@ -1,0 +1,11 @@
+name = "mmd-co-model-3243-owner-staging"
+main = ".build/owner.mjs"
+compatibility_date = "2026-04-27"
+workers_dev = false
+preview_urls = false
+routes = []
+
+[[services]]
+binding = "CO_MODEL_OWNER"
+service = "mmd-co-model-3243-partner-staging"
+entrypoint = "CoModelOwnerService"
