@@ -876,8 +876,8 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
         (continuity.identity_status === "unlinked" && continuity.available === true &&
           continuity.matrix?.relationship_context === "new_contact" &&
           /^(?:อยากดู(?:น้อง|นายแบบ)|ดูนายแบบ)[\s?!]*(?:ครับ|ค่ะ|คะ)?$/i.test(text(rawText))));
-    const statusTruth = statusInChat ? await resolveKenjiLineLiveTruth({ env, event, intent: "membership_status" }) : null;
-    const statusDecision = statusTruth ? resolveMembershipStatusReply(statusTruth, { inChatOnly: true }) : null;
+    const statusTruth = statusInChat ? await resolveKenjiLineLiveTruth({ env, event, intent: myStatus ? "my_status" : "membership_status" }) : null;
+    const statusDecision = statusTruth ? resolveMembershipStatusReply(statusTruth, { inChatOnly: true, includeSummary: myStatus }) : null;
     const scopedDecision = statusDecision || contextualDecision || (publicDiscovery ? {
       ...entryTopicReply("models"), intent: "model_browse", reply_source: "public_model_discovery",
     } : null);

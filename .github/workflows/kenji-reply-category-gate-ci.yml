@@ -5,6 +5,9 @@ on:
     paths:
       - 'member-dashboard-chat-worker/src/**'
       - 'member-dashboard-chat-worker/test/**'
+      - 'member-pages-worker/src/kenji-line-member-truth.js'
+      - 'member-pages-worker/src/member-app-client-history.js'
+      - 'member-pages-worker/test/kenji-line-rights-truth.test.mjs'
       - 'payments-worker/canonical-confirm-link*'
       - '.github/workflows/kenji-reply-category-gate-ci.yml'
 permissions:
@@ -37,4 +40,5 @@ jobs:
           member-dashboard-chat-worker/test/kenji-svip-photo-reveal.test.mjs
           member-dashboard-chat-worker/test/kenji-svip-photo-hype-alert.test.mjs
           member-dashboard-chat-worker/test/mms-membership-front-gate.test.mjs
+          member-pages-worker/test/kenji-line-rights-truth.test.mjs
           payments-worker/canonical-confirm-link.test.mjs

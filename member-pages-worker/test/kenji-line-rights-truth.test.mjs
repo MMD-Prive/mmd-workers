@@ -1,8 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { handleKenjiLineMemberTruth } from "../src/kenji-line-member-truth.js";
+import { runApprovedCategoryTurn } from "../../member-dashboard-chat-worker/src/kenji-category-turn.mjs";
 const uid = `U${"3".repeat(32)}`;
-function request() { return new Request("https://member-pages-worker.internal/__internal/kenji/member-truth", { method:"POST", headers:{"content-type":"application/json","x-mmd-internal-call":"true","x-mmd-service-binding":"member-dashboard-chat-worker"}, body:JSON.stringify({line_user_id:uid,intent:"rights_check"}) }); }
+function request(intent = "rights_check") { return new Request("https://member-pages-worker.internal/__internal/kenji/member-truth", { method:"POST", headers:{"content-type":"application/json","x-mmd-internal-call":"true","x-mmd-service-binding":"member-dashboard-chat-worker"}, body:JSON.stringify({line_user_id:uid,intent}) }); }
 function fixture({level="private_premium", lifecycle="active", expire="2028-10-01", corrupt=false, category="service", otherMember=false, duplicatePayment=false, recovery="reconciled"}={}) {
   const now = new Date().toISOString(); const amount = corrupt ? 6132082 : 10000; const points = corrupt ? 61320 : 100;
   const snapshot = { schema_version:"my_mmd_entitlement_resolver_v1",source_status:"verified",fail_closed:true,evaluated_at:now,member_blocked:false,
@@ -27,4 +28,87 @@ test("expired within 90 days shows November bonus while checkout remains reviewe
  const RealDate=globalThis.Date;const fixed=RealDate.parse("2026-11-01T12:00:00+07:00");
  globalThis.Date=class extends RealDate{constructor(...args){super(...(args.length?args:[fixed]));}static now(){return fixed;}};
  try{const f=fixture({lifecycle:"expired",expire:new Date(Date.now()-30*86400000).toISOString()});const data=await(await handleKenjiLineMemberTruth(request(),f.env)).json();assert.equal(data.points.active_points,100);assert.equal(data.renewal.status,"review_required");assert.equal(data.renewal.reason,"payment_term_policy_alignment_required");assert.equal(data.promotion.total_years,1);assert.equal(data.promotion.promotion_months,6);assert.equal(data.promotion.promotion_years,0);}finally{globalThis.Date=RealDate;}
+});
+
+const fixtureClient = "recFixtureClient";
+const linkedSessions = [
+  {id:"verified",fields:{Client:[fixtureClient],job_date:"2025-08-12","Session Status":"completed"}},
+  {id:"cross-account",fields:{Client:["recOther"],job_date:"2025-08-13","Session Status":"completed"}},
+  {id:"ambiguous-owner",fields:{Client:[fixtureClient,"recOther"],job_date:"2025-08-19","Session Status":"completed"}},
+  {id:"cancelled",fields:{Client:[fixtureClient],job_date:"2025-08-14","Session Status":"cancelled"}},
+  {id:"pending-import",fields:{Client:[fixtureClient],job_date:"2025-08-15","Session Status":"completed",import_review_status:"review_required"}},
+  {id:"missing-service-date",fields:{Client:[fixtureClient],created_at:"2025-08-16","Session Status":"completed"}},
+];
+function statusFixture(state, {prospectConfirmed = true, recovery = "reconciled"} = {}) {
+  const f = fixture({lifecycle:state, expire:state === "expired" ? "2025-05-03" : "2028-10-01", recovery});
+  const upstream = f.env.AIRTABLE_HTTP;
+  f.env.AIRTABLE_HTTP = {fetch(req) {
+    const table = decodeURIComponent(new URL(req.url).pathname.split("/").pop());
+    if (table === "tblVv58TCbwh5j1fS") return Response.json({records:[{
+      id:fixtureClient, fields:{line_user_id:uid, "Contact Email":"owner-fixture@example.invalid",
+        "Membership Status":state === "prospect" && prospectConfirmed ? "interested" : "" },
+    }]});
+    if (table === "Sessions") return Response.json({records:linkedSessions});
+    if (table === "MMD — Member Entitlements") return Response.json({records:[]});
+    return upstream.fetch(req);
+  }};
+  f.env.AIRTABLE_TABLE_CLIENTS = "tblVv58TCbwh5j1fS";
+  if (state === "prospect") f.env.MEMBER_STATUS_RESOLVER = {fetch:async () =>
+    Response.json({ok:true,data:{member_exists:false}})};
+  return f.env;
+}
+
+async function lineMyStatus(env, phrase = "MY STATUS") {
+  const sent = [];
+  const event = {type:"message",mode:"active",timestamp:Date.now(),replyToken:"fixture-only",
+    source:{type:"user",userId:uid},message:{type:"text",text:phrase}};
+  const runtime = {ok:true,controls:{}};
+  const result = await runApprovedCategoryTurn({
+    LINE_AUTO_REPLY_ENABLED:"true", LINE_KENJI_AI_ENABLED:"true",
+    MEMBER_PAGES_WORKER:{fetch:async req => {
+      const body = await req.clone().json();
+      assert.equal(body.intent,"my_status");
+      assert.equal(body.line_user_id,uid);
+      return handleKenjiLineMemberTruth(req,env);
+    }},
+  },event,runtime,{
+    runtime:async()=>runtime,owner:async()=>({ok:true,active:false}),continuity:async()=>({available:true}),
+    send:async (_env,token,text) => {
+      assert.equal(token,"fixture-only");
+      sent.push(text);
+      return {ok:true,status:200};
+    },
+  });
+  return {result,sent};
+}
+
+for (const [state, status, balance] of [
+  ["active", /สมาชิกปัจจุบัน\nหมดอายุวันที่ 2028-10-01/, /Points: ใช้ได้ 100 แต้ม/],
+  ["expired", /หมดอายุ\nหมดอายุตั้งแต่วันที่ 2025-05-03/, /Points: ใช้ได้ 100 แต้ม/],
+  ["prospect", /สถานะลูกค้า: ลูกค้าที่สนใจ/, /Points: รอตรวจสอบ/],
+]) test(`LINE MY STATUS delivers verified ${state} summary only for the sending account`,async()=>{
+  const {result,sent} = await lineMyStatus(statusFixture(state));
+  assert.equal(result.delivered,true);
+  assert.equal(sent.length,1);
+  assert.match(sent[0],status);
+  assert.match(sent[0],balance);
+  assert.match(sent[0],/ประวัติการใช้บริการ: รายการที่ยืนยันล่าสุด 2025-08-12/);
+  assert.doesNotMatch(sent[0],/2025-08-1[3-69]|61,320|61320|https?:/);
+});
+
+test("LINE MY STATUS distinguishes unknown identity and retains verified history when Points are pending",async()=>{
+  const unknown = await lineMyStatus(statusFixture("prospect",{prospectConfirmed:false}));
+  assert.match(unknown.sent[0],/ยังยืนยันบัญชีไม่ได้/);
+  assert.doesNotMatch(unknown.sent[0],/ลูกค้าที่สนใจ|2025-08-12/);
+  const pending = await lineMyStatus(statusFixture("active",{recovery:"review_required"}));
+  assert.match(pending.sent[0],/Points: รอตรวจสอบ/);
+  assert.match(pending.sent[0],/2025-08-12/);
+});
+
+test("retired Checkpts produces no LINE reply",async()=>{
+  for (const phrase of ["Checkpts","  CHECKPTS  "]) {
+    const {result,sent} = await lineMyStatus(statusFixture("active"),phrase);
+    assert.equal(result.delivered,false);
+    assert.deepEqual(sent,[]);
+  }
 });
