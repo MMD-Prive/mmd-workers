@@ -191,15 +191,21 @@ test("checkpts stops advertising the October pre-renewal CTA after the campaign 
   assert.match(afterCutoff.text, /promotion\/6-years-care-back/);
 });
 
-test("Guest/Public SUPPORT offers My Status and answers with two in-chat fields", async () => {
+test("Guest/Public SUPPORT offers My Status and protects private fields on unresolved accounts", async () => {
   for (const menu of ["guest", "public"]) await conversation(async ({ tap, send, replies, env }) => {
     env.LINE_AUTO_REPLY_ENABLED = "false";
     await tap(`mmd_action=rich_menu&menu=${menu}&button=5`);
     assert.match(replies.at(-1).messages[0].text, /My Status/);
     const result = await send(textEvent(menu === "guest" ? "My Status" : "สถานะสมาชิก"));
     assert.equal(result.body.saved[0].reply_source, "deterministic");
-    assert.match(replies.at(-1).messages[0].text, /สถานะสมาชิก:.*\nวันหมดอายุ:/);
-    assert.doesNotMatch(replies.at(-1).messages[0].text, /https?:|Points|CARE BACK|promotion\/6-years-care-back|CTA:/);
+    const reply = replies.at(-1).messages[0].text;
+    if (menu === "guest") {
+      assert.match(reply, /สถานะลูกค้า: ยังยืนยันบัญชีไม่ได้/);
+      assert.match(reply, /กรุณายืนยันบัญชี LINE ใน MY MMD/);
+    } else {
+      assert.match(reply, /สถานะสมาชิก:.*\nวันหมดอายุ:/);
+    }
+    assert.doesNotMatch(reply, /https?:|Points:|ประวัติการใช้บริการ:|CARE BACK|promotion\/6-years-care-back|CTA:/);
     assert.doesNotMatch(replies.at(-1).messages[0].text, /\d[\d,]*\s*(?:Points|แต้ม)/);
   });
 });
