@@ -389,7 +389,7 @@ test('bare LIFF endpoint and callbacks use native login', async () => {
     assert.equal(res.status,200);assert.match(await res.text(),/data-login="true"/);
   }
 });
-function loginHarness({url=origin+path+'/login?invite=test-invite', saved=null, loggedIn=true, token='valid-token', error=null, unavailableStorage=false, initNever=false, fastTimeout=false, initError=false, authResponse=null, networkError=false}={}) {
+function loginHarness({url=origin+path+'/login?invite=test-invite', saved=null, loggedIn=true, token='valid-token', error=null, unavailableStorage=false, initNever=false, fastTimeout=false, initError=false, authResponse=null, networkError=false, pressVerify=true}={}) {
   const ids=['notice','entry','workspace','line-login','greeting','readiness','availability','save-availability','refresh','retry','offers','jobs','profile','offer-list','job-list','profile-form','display-name','intro','base-zone','coverage-zones','zone-status','visibility','courses','photos','upload','save-photos','add-course','logout','detail','save-profile','profile-save-status','verified-services','profile-info','profile-courses','profile-zones','profile-photos','zone-search','zone-summary','retry-zones','course-empty'];
   const els=Object.fromEntries(ids.map(id=>[id,new Element()]));
   const data=new Map(saved||[]), requests=[], redirects=[];let logouts=0;
@@ -399,6 +399,7 @@ function loginHarness({url=origin+path+'/login?invite=test-invite', saved=null, 
     window:{sessionStorage:{getItem(k){if(unavailableStorage)throw Error();return data.get(k)||null;},setItem(k,v){if(unavailableStorage)throw Error();data.set(k,v);},removeItem(k){data.delete(k);}},liff:{async init(){if(initError)throw new Error('private SDK detail must not be displayed');if(initNever)await new Promise(()=>{});},isLoggedIn:()=>loggedIn,getIDToken:()=>token,logout(){logouts++;},login(o){redirects.push(o.redirectUri);}}},
     location:{href:url,hash:parsed.hash,pathname:parsed.pathname,assign(u){redirects.push(u);},replace(u){redirects.push(u);}},history:{replaceState(){}},URL,URLSearchParams,Response,Date,Map,Set,Array,Object,Number,String,JSON,AbortController,DOMException,setTimeout:fastTimeout?(fn,ms)=>ms===12000?setImmediate(fn):setTimeout(fn,ms):setTimeout,clearTimeout,crypto:globalThis.crypto};
   vm.runInNewContext('('+therapistClient.toString()+')(45)',context);
+  if (pressVerify && !parsed.searchParams.has('logout') && !(parsed.searchParams.has('code') && parsed.searchParams.has('state'))) void els['line-login'].click();
   return {els,data,requests,redirects,get logouts(){return logouts;}};
 }
 test('query invite reaches backend and is removed only after success',async()=>{
@@ -424,7 +425,18 @@ test('expired saved invitation is never used and failed access keeps current inv
   const h=loginHarness({error:'THERAPIST_ACCESS_DENIED'});await settle();assert.ok(h.data.has('mms-therapist-invite-v1'));assert.equal(h.redirects.length,0);
   const expired=loginHarness({url:origin+path+'/login',saved:[['mms-therapist-invite-v1',JSON.stringify({token:'expired',until:Date.now()-1})]]});await settle();assert.equal(JSON.parse(expired.requests.at(-1).options.body).invite_token,undefined);
 });
-test('LIFF primary and secondary redirects each initialize without another tap',async()=>{
+test('fresh Therapist login waits for Verify before authentication or navigation', async () => {
+  for (const url of [origin + path, origin + path + '/login', origin + path + '/login?invite=test-invite']) {
+    const h = loginHarness({ url, pressVerify: false });
+    await settle();
+    assert.deepEqual(h.requests, []);
+    assert.deepEqual(h.redirects, []);
+    assert.equal(h.els['line-login'].disabled, false);
+    await h.els['line-login'].click();
+    assert.equal(h.redirects.at(-1), path + '/app');
+  }
+});
+test('Verify works from both Therapist LIFF entry paths',async()=>{
   for(const url of [origin+path,origin+path+'/login']){
     const h=loginHarness({url});await settle();assert.equal(h.redirects.at(-1),path+'/app');assert.equal(h.els['line-login'].disabled,false);
   }
