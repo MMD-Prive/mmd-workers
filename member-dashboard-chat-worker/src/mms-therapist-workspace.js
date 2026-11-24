@@ -662,7 +662,7 @@ export function therapistClient() {
     let explicitLogout = url.searchParams.get("logout") === "1";
     const hash = new URLSearchParams(url.hash.slice(1));
     const nested = url.searchParams.get("liff.state") || url.searchParams.get("liff_state") || "";
-    const primary = url.pathname.replace(/\/$/, "") === P || ["code", "liff.state", "liff_state"].some(key => url.searchParams.has(key));
+    const returningFromLine = url.searchParams.has("code") && url.searchParams.has("state");
     const state = new URL(nested || P + "/login", url.origin);
     let invite = url.searchParams.get("invite") || hash.get("invite") || state.searchParams.get("invite") || new URLSearchParams(state.hash.slice(1)).get("invite") || "";
     const storage = {
@@ -674,7 +674,6 @@ export function therapistClient() {
     else {
       try { const saved = JSON.parse(storage.get(storageKey)); if (saved?.until > Date.now()) invite = saved.token || ""; else storage.remove(storageKey); } catch (_) { storage.remove(storageKey); }
     }
-    if (!explicitLogout && !invite && !primary) { try { await api(P + "/api/auth/me"); location.replace(P + "/app"); return; } catch (_) {} }
     // Keep the invitation in the redirect too if browser storage is unavailable.
     const redirect = new URL(P + "/login", url.origin);
     if (invite) redirect.hash = new URLSearchParams({ invite }).toString();
@@ -685,7 +684,7 @@ export function therapistClient() {
       window.liff.logout();
       window.liff.login({ redirectUri: redirect.href });
     }
-    notice("ยืนยันผ่าน LINE เพื่อเข้าพื้นที่ Therapist ครับ");
+    notice("กดยืนยันผ่าน LINE เพื่อเข้าพื้นที่ Therapist ครับ");
     async function authenticate() {
       const progress = window.MmsGraphics; const step = progress?.begin("กำลังยืนยันผ่าน LINE ครับ");
       if (!window.liff) { const e = new Error("LIFF_UNAVAILABLE"); e.code = "LIFF_UNAVAILABLE"; throw e; }
@@ -722,8 +721,10 @@ export function therapistClient() {
       storage.remove(storageKey); storage.remove(recoveryKey);
       history.replaceState(null, "", P + "/login"); location.replace(P + "/app");
     }
-    $("line-login").onclick = () => busy($("line-login"), authenticate);
-    await busy($("line-login"), authenticate);
+    const verify = () => busy($("line-login"), authenticate);
+    $("line-login").onclick = verify;
+    $("retry").onclick = verify;
+    if (returningFromLine || explicitLogout) await verify();
   }
   let leftPage = false;
   document.addEventListener?.("visibilitychange", () => {
