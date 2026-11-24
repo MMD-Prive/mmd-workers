@@ -46,7 +46,7 @@
   function safePay(value){
     try{
       var url=new URL(value,location.origin);
-      var keys=[].slice.call(url.searchParams.keys());
+      var keys=Array.from(url.searchParams.keys());
       if(url.protocol!=="https:")return null;
       if(url.hostname!=="mmdbkk.com")return null;
       if(url.pathname!=="/pay/checkout")return null;
@@ -123,7 +123,9 @@
       show("เรียบร้อยครับ กำลังพาไปหน้าชำระของ "+name+"…","soft");
       location.assign(pay.toString());
     }catch(error){
-      if(error&&error.name==="AbortError"){
+      if(error&&error.message==="red_card_terms_unconfirmed"){
+        show("ยังยืนยันเงื่อนไข Red Card 2 ปีไม่ได้ครับ กรุณาอย่าเพิ่งชำระ ลองใหม่ภายหลังหรือทัก MMD ทาง LINE","error");
+      }else if(error&&error.name==="AbortError"){
         show("ใช้เวลานานกว่าปกติครับ ลองอีกครั้งได้เลย หรือทักผมทาง LINE แล้วผมช่วยต่อให้","error");
       }else{
         show("ตอนนี้ผมยังพาไปหน้าชำระไม่ได้ครับ ลองอีกครั้ง หรือทักผมทาง LINE ได้เลย","error");

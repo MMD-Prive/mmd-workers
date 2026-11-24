@@ -76,7 +76,7 @@ test('Compact checkout does not auto-purchase on return and handles linked-accou
     if(!denial)return Response.json({ok:true,package:{package_code:'red_card',amount_thb:11499,duration_days:termDays},redirect_to:'https://mmdbkk.com/pay/checkout?t=offline-placeholder'});
     return Response.json({ok:false,error:{code:denial===409?'RED_CARD_ACCOUNT_VERIFICATION_REQUIRED':'LINE_SESSION_REQUIRED'}},{status:denial});
   };
-  const location={href:'https://mmdbkk.com/pay/membership?package=red_card',pathname:'/pay/membership',search:'?package=red_card&ignored=1',assign:uri=>moves.push(uri)};
+  const location={origin:'https://mmdbkk.com',href:'https://mmdbkk.com/pay/membership?package=red_card',pathname:'/pay/membership',search:'?package=red_card&ignored=1',assign:uri=>moves.push(uri)};
   vm.runInNewContext(source,{URL,URLSearchParams,document,fetch,location,window:{},setTimeout,clearTimeout});
   const flush=()=>new Promise(resolve=>setImmediate(resolve));
   await flush();

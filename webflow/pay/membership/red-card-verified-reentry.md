@@ -1,7 +1,7 @@
 # Red Card verify before checkout (staging handoff)
 
 The serving Webflow Designer page uses a page-level LV Max footer. The Compact V9
-source in this directory is maintained separately. Apply the following three scoped
+source in this directory is maintained separately. Apply the following scoped
 changes to the existing LV Max runtime, in the same release as the Red Card server
 gate and LIFF re-entry. Preserve the LV Max template/style, existing URLs, and the
 other packages' flows. Do not substitute the Compact V9 runtime for the footer.
@@ -42,6 +42,19 @@ if(code==="red_card"&&(!payload.package||payload.package.package_code!=="red_car
   payload.package.amount_thb!==11499||payload.package.duration_days!==730)){
   throw new Error("red_card_terms_unconfirmed");
 }
+```
+
+4. In LV Max `safePay`, use `var keys=Array.from(url.searchParams.keys());`.
+   The current slice call returns an empty array for an iterator, including
+   legitimate single-token links. Keep all existing URL validation checks.
+5. In the LV Max purchase catch, name the caught error. After resetting busy
+   and calling `syncButtons()`, show the following message and return for
+   `error?.message === "red_card_terms_unconfirmed"`; leave the existing generic
+   message as fallback. The POST may already have produced a pending intent:
+   this UI guard only withholds navigation and does not claim it was rolled back.
+
+```text
+ยังยืนยันเงื่อนไข Red Card 2 ปีไม่ได้ครับ กรุณาอย่าเพิ่งชำระ ลองใหม่ภายหลังหรือทัก MMD ทาง LINE
 ```
 
 The verification URL uses the existing LINE mini app with
