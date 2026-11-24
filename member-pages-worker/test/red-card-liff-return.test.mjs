@@ -64,7 +64,7 @@ test('Compact checkout does not auto-purchase on return and handles linked-accou
   const source=fs.readFileSync(new URL('../../webflow/pay/membership/membership.js',import.meta.url),'utf8');
   let click;
   const calls=[], moves=[], links=[];
-  let memberChoice='red_card', denial=409;
+  let memberChoice='red_card', denial=409, termDays=365;
   const button={setAttribute(){},getAttribute(){return memberChoice;},addEventListener(_event,callback){click=callback;}};
   const card={scrollIntoView(){}};
   const status={setAttribute(){},removeAttribute(){},append(_space,link){links.push(link);}};
@@ -73,6 +73,7 @@ test('Compact checkout does not auto-purchase on return and handles linked-accou
   const fetch=async (endpoint,options)=>{
     calls.push([endpoint,options]);
     if(endpoint.endsWith('/catalog'))return Response.json({ok:true,packages:[{package_code:'red_card',amount_thb:11499,duration_days:730}]});
+    if(!denial)return Response.json({ok:true,package:{package_code:'red_card',amount_thb:11499,duration_days:termDays},redirect_to:'https://mmdbkk.com/pay/checkout?t=offline-placeholder'});
     return Response.json({ok:false,error:{code:denial===409?'RED_CARD_ACCOUNT_VERIFICATION_REQUIRED':'LINE_SESSION_REQUIRED'}},{status:denial});
   };
   const location={href:'https://mmdbkk.com/pay/membership?package=red_card',pathname:'/pay/membership',search:'?package=red_card&ignored=1',assign:uri=>moves.push(uri)};
@@ -89,4 +90,9 @@ test('Compact checkout does not auto-purchase on return and handles linked-accou
   memberChoice='elite'; denial=401; click(); await flush();
   assert.equal(links.length,1);
   assert.equal(new URL(moves[0]).searchParams.get('return_to'),'/pay/membership?package=elite&ignored=1');
+  memberChoice='red_card'; denial=0;
+  button.disabled=false; click(); await flush();
+  assert.equal(moves.length,1); // A legacy 365-day response must not open checkout.
+  termDays=730; click(); await flush();
+  assert.equal(moves[1],'https://mmdbkk.com/pay/checkout?t=offline-placeholder');
 });

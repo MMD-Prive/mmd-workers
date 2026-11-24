@@ -114,6 +114,10 @@
         return;
       }
       if(!response.ok||!payload||payload.ok!==true)throw new Error(payload&&payload.error&&payload.error.code||"payment_unavailable");
+      if(code==="red_card"&&(!payload.package||payload.package.package_code!=="red_card"||
+        payload.package.amount_thb!==11499||payload.package.duration_days!==730)){
+        throw new Error("red_card_terms_unconfirmed");
+      }
       var pay=safePay(payload.redirect_to||payload.customer_payment_url);
       if(!pay)throw new Error("payment_link_invalid");
       show("เรียบร้อยครับ กำลังพาไปหน้าชำระของ "+name+"…","soft");

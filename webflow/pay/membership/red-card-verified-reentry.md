@@ -1,7 +1,7 @@
 # Red Card verify before checkout (staging handoff)
 
 The serving Webflow Designer page uses a page-level LV Max footer. The Compact V9
-source in this directory is maintained separately. Apply the following two scoped
+source in this directory is maintained separately. Apply the following three scoped
 changes to the existing LV Max runtime, in the same release as the Red Card server
 gate and LIFF re-entry. Preserve the LV Max template/style, existing URLs, and the
 other packages' flows. Do not substitute the Compact V9 runtime for the footer.
@@ -31,6 +31,16 @@ if(code==="red_card"&&((response.status===401&&errorCode==="LINE_SESSION_REQUIRE
     status.append(document.createTextNode(" "),link);
   }
   return;
+}
+```
+
+3. After the existing `!response.ok || !payload || payload.ok!==true` failure
+   check and before `safePay`, reject a legacy or incomplete Red Card response.
+
+```js
+if(code==="red_card"&&(!payload.package||payload.package.package_code!=="red_card"||
+  payload.package.amount_thb!==11499||payload.package.duration_days!==730)){
+  throw new Error("red_card_terms_unconfirmed");
 }
 ```
 
