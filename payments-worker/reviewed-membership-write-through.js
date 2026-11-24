@@ -79,7 +79,8 @@ export async function reconcileReviewedMembershipEntitlement(request, response, 
       return withReceipt(response, payload, failedReceipt("prospective_resolver_rejected_entitlement", plan));
     }
 
-    const created = await airtableCreate(env, entitlementsTable(env), fields);
+    const boundRedCard = plan.package_code === "red_card" && Boolean(body.member_record_id && body.member_id);
+    const created = await airtableCreate(env, entitlementsTable(env), fields, { typecast: !boundRedCard });
     const freshRows = await loadMemberEntitlements(env, plan.member_id, plan.member_email);
     const fresh = resolveMemberEntitlements(freshRows, { now: plan.verified_at });
     const createdNormalized = fresh.entitlements.find((item) => item.entitlement_id === plan.entitlement_id);
@@ -467,7 +468,7 @@ async function airtableList(env, tableName, params = {}) {
   return payload.records;
 }
 
-async function airtableCreate(env, tableName, fields) {
+async function airtableCreate(env, tableName, fields, { typecast = true } = {}) {
   const renewal = String(fields.notes || "").includes("action=renewal;");
   const response = await airtableFetch(env, new Request(airtableUrl(env, tableName).toString(), {
     method: renewal ? "PATCH" : "POST",
@@ -476,7 +477,8 @@ async function airtableCreate(env, tableName, fields) {
     // package/amount policy validation, and exact member resolution.
     // This permits policy-owned Public Membership values to extend legacy
     // Airtable single-select choices without giving the browser schema authority.
-    body: JSON.stringify({ ...(renewal ? { performUpsert: { fieldsToMergeOn: ["payment_ref"] } } : {}), records: [{ fields }], typecast: true }),
+    // Account-bound Red Card explicitly requires the prepared release schema.
+    body: JSON.stringify({ ...(renewal ? { performUpsert: { fieldsToMergeOn: ["payment_ref"] } } : {}), records: [{ fields }], typecast }),
   }));
   const payload = await response.json().catch(() => ({}));
   const row = payload?.records?.[0];

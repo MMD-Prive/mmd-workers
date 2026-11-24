@@ -173,6 +173,9 @@ test("linked signup uses signed checkout, captures evidence, and materializes on
     assert.equal(fx.tables.proofs.length, 1);
     assert.equal([...fx.r2.keys()].filter(key => key.endsWith("/original.png")).length, 1);
     assert.equal(fx.tables.entitlements.length, 0);
+    const afterProof = await fx.checkout();
+    assert.equal(afterProof.status, 409);
+    assert.deepEqual(await afterProof.json(), { ok: false, error: { code: "red_card_order_proof_already_received" } });
 
     const [proof] = fx.tables.proofs;
     proof.fields.paid_at = issuedAt; // Mock trusted bank/owner-confirmed transfer timestamp at the evidence boundary.
@@ -205,8 +208,10 @@ test("linked signup uses signed checkout, captures evidence, and materializes on
     const replay = await approve("fixture-admin-1");
     assert.equal(replay.status, 200);
     assert.equal(fx.tables.entitlements.length, 1);
-    const afterPaid = await (await fx.checkout()).json();
-    assert.equal(afterPaid.payment_ref, order.payment_ref);
+    const afterPaid = await fx.checkout();
+    assert.equal(afterPaid.status, 409);
+    assert.deepEqual(await afterPaid.json(), { ok: false, error: { code: "red_card_order_already_paid" } });
+    assert.equal(fx.writes.find(write => write.table === "entitlements").body.typecast, false);
     assert.equal(fx.tables.payments[0].fields["Payment Status"], "Paid");
   } finally {
     globalThis.fetch = orig;

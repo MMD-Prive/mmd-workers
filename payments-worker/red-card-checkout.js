@@ -53,6 +53,8 @@ function canonicalFields(env) {
     session: [env.AT_PAYMENTS__SESSION_ID || "session_id", "session_id"],
     notes: [env.AT_PAYMENTS__NOTES || "Notes", "Notes"],
     member: ["Member", "Member"],
+    status: [env.AT_PAYMENTS__PAYMENT_STATUS || "Payment Status", "Payment Status"],
+    verification: [env.AT_PAYMENTS__VERIFICATION_STATUS || "Verification Status", "Verification Status"],
   };
 }
 
@@ -71,9 +73,28 @@ async function ensurePendingLinkedOrder(env, sessionId, ref, memberRecordId, pri
   const url = "https://api.airtable.com/v0/" + encodeURIComponent(env.AIRTABLE_BASE_ID) + "/" +
     encodeURIComponent(env.AIRTABLE_TABLE_PAYMENTS_ID || env.AIRTABLE_TABLE_PAYMENTS || "tblWGGJJOx5eBvBZJ");
   const fields = canonicalFields(env);
+  const proofUrl = "https://api.airtable.com/v0/" + encodeURIComponent(env.AIRTABLE_BASE_ID) + "/" +
+    encodeURIComponent(env.AIRTABLE_TABLE_PAYMENT_PROOFS || env.AIRTABLE_TABLE_PAYMENT_PROOFS_ID || "tblfJfM4Sqag9zrLi");
+  const cell = (row, key) => row?.fields?.[fields[key][0]] ?? row?.fields?.[fields[key][1]];
+  const reviewNeeded = error => Object.assign(new Error(error), { status: 409 });
+  async function assertCanIssue(row) {
+    const state = String(cell(row, "status") || "").trim().toLowerCase();
+    const verification = String(cell(row, "verification") || "").trim().toLowerCase();
+    if (["paid", "verified", "success", "confirmed"].includes(state) || verification === "verified") {
+      throw reviewNeeded("red_card_order_already_paid");
+    }
+    if ((state && state !== "pending") ||
+      (verification && !["pending", "pending_review", "pending_verification"].includes(verification))) {
+      throw reviewNeeded("red_card_order_review_required");
+    }
+    const query = new URLSearchParams({ filterByFormula: "{payment_ref}='" + ref + "'", maxRecords: "1" });
+    const proof = await airtable(env, proofUrl + "?" + query, { method: "GET" });
+    if (!Array.isArray(proof.records)) throw new Error("red_card_proof_unavailable");
+    if (proof.records.length || proof.offset) throw reviewNeeded("red_card_order_proof_already_received");
+  }
   const truth = { ref, amount: packageItem.amount_thb, package: "red_card", stage: "membership", session: sessionId, notes: RED_CARD_CHECKOUT_MARKER, member: [memberRecordId] };
   const matches = row => row?.id && Object.entries(truth).every(([key, expected]) => {
-    const actual = row.fields?.[fields[key][0]] ?? row.fields?.[fields[key][1]];
+    const actual = cell(row, key);
     // Notes also acquire operational annotations later; the dedicated field for
     // identity is the Member relation, never free text.
     if (key === "notes") return true; // Official Verify replaces notes; the Member link survives.
@@ -95,6 +116,7 @@ async function ensurePendingLinkedOrder(env, sessionId, ref, memberRecordId, pri
   if (!Array.isArray(before.records) || before.offset || before.records.length > 1) throw conflict();
   if (before.records.length) {
     if (!matches(before.records[0])) throw conflict();
+    await assertCanIssue(before.records[0]);
     return;
   }
   const write = Object.fromEntries(Object.entries(truth).map(([key, value]) => [fields[key][0], value]));
@@ -105,6 +127,7 @@ async function ensurePendingLinkedOrder(env, sessionId, ref, memberRecordId, pri
   }) });
   const after = await read();
   if (!Array.isArray(after.records) || after.offset || after.records.length !== 1 || !matches(after.records[0])) throw conflict();
+  await assertCanIssue(after.records[0]);
 }
 
 // This is called only after reviewed-proof service authentication and canonical
