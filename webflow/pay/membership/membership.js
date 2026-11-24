@@ -30,6 +30,7 @@
     });
   }
   function returnPath(code){
+    if(code==="red_card")return "/pay/membership?package=red_card";
     var params=new URLSearchParams(location.search);
     params.delete("t");
     params.set("package",code);
@@ -94,6 +95,19 @@
       },15000);
       var response=result.response;
       var payload=result.payload;
+      var errorCode=payload&&payload.error&&payload.error.code;
+      if(code==="red_card"&&((response.status===401&&errorCode==="LINE_SESSION_REQUIRED")||
+        (response.status===409&&errorCode==="RED_CARD_ACCOUNT_VERIFICATION_REQUIRED"))){
+        setBusy(false);
+        show("ยืนยันบัญชี MY MMD ก่อนสมัคร Red Card ครับ เมื่อยืนยันแล้วจะกลับมาเลือก Red Card ได้อีกครั้ง","soft");
+        if(status){
+          var link=document.createElement("a");
+          link.href=authUrl(code);
+          link.textContent="ยืนยันบัญชี MY MMD";
+          status.append(document.createTextNode(" "),link);
+        }
+        return;
+      }
       if(response.status===401&&payload&&payload.error&&payload.error.code==="LINE_SESSION_REQUIRED"){
         show("ขอยืนยัน LINE ครั้งเดียวครับ แล้วผมจะพากลับมาต่อที่ "+name,"soft");
         location.assign(authUrl(code));
