@@ -165,7 +165,7 @@ test("Red Card inference agrees with the two-year Public catalog without changin
 });
 
 
-test("deployed entrypoint uses one canonical policy for catalog and Red Card purchase", async () => {
+test("deployed entrypoint uses one canonical policy for catalog and an unaffected Elite purchase", async () => {
   // Node 20/22 CI both support the async loader API; the test process is isolated.
   register("data:text/javascript," + encodeURIComponent(`
     export async function resolve(specifier, context, nextResolve) {
@@ -184,11 +184,12 @@ test("deployed entrypoint uses one canonical policy for catalog and Red Card pur
   assert.deepEqual(packages.map(({ package_code, amount_thb, duration_days }) => [package_code, amount_thb, duration_days]), [
     ["mmd_member", 690, 365], ["elite", 4990, 730], ["red_card", 11499, 730],
   ]);
+  // Red Card purchase eligibility is covered separately by the account gate.
   const fx = await envWithSession();
   const request = (cookie) => new Request("https://mmdbkk.com/member/api/liff/public-membership/purchase", {
     method: "POST",
     headers: { origin: "https://mmdbkk.com", "content-type": "application/json", ...(cookie ? { cookie } : {}) },
-    body: JSON.stringify({ package_code: "red_card" }),
+    body: JSON.stringify({ package_code: "elite" }),
   });
   const signedOut = await liveEntrypoint.fetch(request(), fx.env);
   assert.equal(signedOut.status, 401);
@@ -196,13 +197,13 @@ test("deployed entrypoint uses one canonical policy for catalog and Red Card pur
   const response = await liveEntrypoint.fetch(request("__Host-mmd_liff_session=" + fx.token), fx.env);
   assert.equal(response.status, 200);
   const payload = await response.json();
-  assert.equal(payload.package.amount_thb, 11499);
+  assert.equal(payload.package.amount_thb, 4990);
   assert.equal(payload.package.duration_days, 730);
   assert.equal(payload.redirect_to, "https://mmdbkk.com/pay/checkout?t=signed_public");
   assert.equal(payload.entitlement_granted, false);
   assert.equal(fx.calls.length, 1);
-  assert.equal(fx.calls[0].amount, 11499);
-  assert.equal(fx.calls[0].package_code, "red_card");
+  assert.equal(fx.calls[0].amount, 4990);
+  assert.equal(fx.calls[0].package_code, "elite");
   assert.equal(fx.calls[0].payment_stage, "membership");
   assert.equal(Object.hasOwn(fx.calls[0], "payment_method"), false);
 });
