@@ -1,4 +1,5 @@
 import {doubleMomentTestDeadline} from './double-moment-test-access.js';
+import { validateExistingPublicMembershipOrder } from './reviewed-proof.js';
 import { requestSessionPaidProjection } from './session-paid-projection.js';
 /**
  * =========================================================
@@ -549,6 +550,15 @@ export function reviewedMembershipSchemaTypecast(payload = {}, options = {}) {
 async function createOrUpdatePaymentIntent(env, payload, options = {}) {
   const table = getPaymentsTable(env);
   const existing = await findPaymentByPaymentRef(env, payload.payment_ref);
+  if (existing && options.allow_membership_schema_typecast === true) {
+    validateExistingPublicMembershipOrder(env, existing, {
+      paymentRef: payload.payment_ref,
+      paymentStage: payload.payment_stage,
+      sessionId: payload.session_id,
+      packageCode: payload.package_code,
+      amountThb: payload.amount,
+    });
+  }
   const typecast = reviewedMembershipSchemaTypecast(payload, options);
 
   // Canonical Payments writes use only schema-backed fields. Do not write to
