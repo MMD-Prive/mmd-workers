@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { registerHooks } from "node:module";
+import { register } from "node:module";
 import { inferMembershipPayment } from "../../shared/payment-intelligence.mjs";
 import {
   handlePublicMembershipPayment,
@@ -166,21 +166,17 @@ test("Red Card inference agrees with the two-year Public catalog without changin
 
 
 test("deployed entrypoint uses one canonical policy for catalog and Red Card purchase", async () => {
-  const hooks = registerHooks({
-    resolve(specifier, context, nextResolve) {
+  // Node 20/22 CI both support the async loader API; the test process is isolated.
+  register("data:text/javascript," + encodeURIComponent(`
+    export async function resolve(specifier, context, nextResolve) {
       if (specifier === "cloudflare:workers") return {
         url: "data:text/javascript,export class WorkerEntrypoint {};export class DurableObject {}",
         shortCircuit: true,
       };
       return nextResolve(specifier, context);
-    },
-  });
-  let liveEntrypoint;
-  try {
-    ({ default: liveEntrypoint } = await import("../src/model-console-live-entrypoint.js"));
-  } finally {
-    hooks.deregister();
-  }
+    }
+  `));
+  const { default: liveEntrypoint } = await import("../src/model-console-live-entrypoint.js");
   const catalog = await liveEntrypoint.fetch(new Request("https://mmdbkk.com/member/api/liff/public-membership/catalog"), {});
   assert.equal(catalog.status, 200);
   assert.equal(catalog.headers.get("cache-control"), "no-store");
