@@ -42,6 +42,7 @@ on:
       - "payments-worker/historical-cancellation-credit-recovery.test.mjs"
       - "payments-worker/reviewed-proof.js"
       - "payments-worker/reviewed-proof-line-recovery.test.mjs"
+      - "payments-worker/reviewed-proof-public-membership.test.mjs"
       - "payments-worker/reviewed-proof-canonical-money-truth.js"
       - "payments-worker/reviewed-proof-canonical-money-truth.test.mjs"
       - "payments-worker/reviewed-membership-write-through.js"
@@ -120,7 +121,7 @@ jobs:
       - name: Email-less LINE renewal recovery contract
         run: |
           set -euo pipefail
-          node --test payments-worker/reviewed-proof-line-recovery.test.mjs
+          node --test payments-worker/reviewed-proof-line-recovery.test.mjs payments-worker/reviewed-proof-public-membership.test.mjs
 
       - name: Canonical recovery Money Truth contract
         run: |
