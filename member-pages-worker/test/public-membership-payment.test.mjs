@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { registerHooks } from "node:module";
 import { inferMembershipPayment } from "../../shared/payment-intelligence.mjs";
 import {
   handlePublicMembershipPayment,
@@ -161,4 +162,51 @@ test("Red Card inference agrees with the two-year Public catalog without changin
     assert.equal(inference.inferred_package_code, package_code);
     assert.equal(inference.inferred_term_days, days);
   }
+});
+
+
+test("deployed entrypoint uses one canonical policy for catalog and Red Card purchase", async () => {
+  const hooks = registerHooks({
+    resolve(specifier, context, nextResolve) {
+      if (specifier === "cloudflare:workers") return {
+        url: "data:text/javascript,export class WorkerEntrypoint {};export class DurableObject {}",
+        shortCircuit: true,
+      };
+      return nextResolve(specifier, context);
+    },
+  });
+  let liveEntrypoint;
+  try {
+    ({ default: liveEntrypoint } = await import("../src/model-console-live-entrypoint.js"));
+  } finally {
+    hooks.deregister();
+  }
+  const catalog = await liveEntrypoint.fetch(new Request("https://mmdbkk.com/member/api/liff/public-membership/catalog"), {});
+  assert.equal(catalog.status, 200);
+  assert.equal(catalog.headers.get("cache-control"), "no-store");
+  const { packages } = await catalog.json();
+  assert.deepEqual(packages.map(({ package_code, amount_thb, duration_days }) => [package_code, amount_thb, duration_days]), [
+    ["mmd_member", 690, 365], ["elite", 4990, 730], ["red_card", 11499, 730],
+  ]);
+  const fx = await envWithSession();
+  const request = (cookie) => new Request("https://mmdbkk.com/member/api/liff/public-membership/purchase", {
+    method: "POST",
+    headers: { origin: "https://mmdbkk.com", "content-type": "application/json", ...(cookie ? { cookie } : {}) },
+    body: JSON.stringify({ package_code: "red_card" }),
+  });
+  const signedOut = await liveEntrypoint.fetch(request(), fx.env);
+  assert.equal(signedOut.status, 401);
+  assert.equal(fx.calls.length, 0);
+  const response = await liveEntrypoint.fetch(request("__Host-mmd_liff_session=" + fx.token), fx.env);
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.package.amount_thb, 11499);
+  assert.equal(payload.package.duration_days, 730);
+  assert.equal(payload.redirect_to, "https://mmdbkk.com/pay/checkout?t=signed_public");
+  assert.equal(payload.entitlement_granted, false);
+  assert.equal(fx.calls.length, 1);
+  assert.equal(fx.calls[0].amount, 11499);
+  assert.equal(fx.calls[0].package_code, "red_card");
+  assert.equal(fx.calls[0].payment_stage, "membership");
+  assert.equal(Object.hasOwn(fx.calls[0], "payment_method"), false);
 });
