@@ -1,3 +1,4 @@
+import { AIRTABLE_RECORD, RED_CARD_CHECKOUT_MARKER, RED_CARD_SESSION } from "../../shared/red-card-purchase-contract.mjs";
 import { previewProofSessionBinding, bindProofSession, bindingNote } from "./payment-proof-session-binding.js";
 import { paymentSessionProofs } from "./payment-session-proofs.js";
 import { paymentJobSlipSummary } from "./payment-job-slip-summary.js";
@@ -479,6 +480,20 @@ async function buildApprovalContext(env, proof, item, actor, operatorContext = {
   }
   let memberEmail = normalizeEmail(paymentFields.member_email || paymentFields["Member Email"] || fields.member_email || item.member_email);
   const packageCode = canonicalPackageCode(paymentFields.package_code || paymentFields["Package Code"] || fields.package_code);
+  let redCardMember = null;
+  const originalPayment = paymentRecord?.fields || {};
+  const originalLinks = linkedRecordIds(originalPayment.Member || originalPayment.member);
+  if (paymentStage === "membership" && packageCode === "red_card" && RED_CARD_SESSION.test(sessionId)
+    && (originalLinks.length || String(originalPayment.Notes || "").includes(RED_CARD_CHECKOUT_MARKER))) {
+    if (originalLinks.length !== 1 || !AIRTABLE_RECORD.test(originalLinks[0])) throw httpError(409, "red_card_order_member_link_invalid");
+    const row = await airtableGet(env, membersTable(env), originalLinks[0]);
+    const stableId = safeText(row.fields?.member_id, 120);
+    const canonicalEmail = memberEmailFromRedCardOrder(row.fields);
+    if (row.id !== originalLinks[0] || !stableId || !canonicalEmail) throw httpError(409, "canonical_member_context_missing");
+    if (memberEmail && memberEmail !== canonicalEmail) throw httpError(409, "canonical_member_email_mismatch");
+    redCardMember = { member_record_id: row.id, member_id: stableId };
+    memberEmail = canonicalEmail;
+  }
   if (paymentStage === "membership" && !memberEmail && paymentRecord) {
     const renewalIds = uniqueStrings(linkedRecordIds(fields["MMD — LIFF Renewal Sessions"]));
     if (renewalIds.length > 1) throw httpError(409, "liff_renewal_context_ambiguous");
@@ -546,6 +561,7 @@ async function buildApprovalContext(env, proof, item, actor, operatorContext = {
     payment_stage: paymentStage,
     session_id: sessionId || null,
     member_email: memberEmail || null,
+    ...(redCardMember || {}),
     package_code: packageCode || null,
     payment_method: customerSelectedMethod(fields) || safeText(paymentFields["Payment Method"] || paymentFields.payment_method || fields.payment_method, 80) || "",
     context_source: contextSource,
@@ -1304,4 +1320,10 @@ function httpError(status, message) {
   const error = new Error(message);
   error.status = status;
   return error;
+}
+
+
+function memberEmailFromRedCardOrder(fields = {}) {
+  const candidates = [...new Set([fields["Contact Email"], fields.email].filter(Boolean).map(normalizeEmail))];
+  return candidates.length === 1 ? candidates[0] : "";
 }

@@ -1,0 +1,26 @@
+name: Red Card checkout CI
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/red-card-checkout-ci.yml'
+      - 'admin-worker/src/payment-review-runtime.js'
+      - 'member-pages-worker/src/booking-member-binding.js'
+      - 'member-pages-worker/src/public-membership-payment.js'
+      - 'member-pages-worker/src/model-console-live-entrypoint.js'
+      - 'member-pages-worker/test/public-membership-payment.test.mjs'
+      - 'payments-worker/**'
+      - 'shared/red-card-purchase-contract.mjs'
+      - 'shared/payment-intelligence.mjs'
+permissions:
+  contents: read
+jobs:
+  fixture-only:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: |
+          node --test member-pages-worker/test/public-membership-payment.test.mjs payments-worker/red-card-checkout.test.mjs
+          node --test payments-worker/reviewed-proof-public-membership.test.mjs payments-worker/reviewed-membership-write-through.test.mjs payments-worker/reviewed-proof-line-recovery.test.mjs

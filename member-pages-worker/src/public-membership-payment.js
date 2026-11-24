@@ -1,3 +1,5 @@
+import { verifyBookingMemberBinding } from "./booking-member-binding.js";
+import { RED_CARD_INTENT_PATH } from "../../shared/red-card-purchase-contract.mjs";
 import { getPublicMembershipPackage, PUBLIC_MEMBERSHIP_CATALOG } from "../../shared/payment-intelligence.mjs";
 import { readMemberAppSession, rememberMemberPaymentSnapshot } from "./member-app-api.js";
 
@@ -43,10 +45,10 @@ async function hmacHex(secret, value) {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-async function purchaseSessionId(env, lineUserId, packageCode) {
+async function purchaseSessionId(env, lineUserId, packageCode, memberRecordId = "") {
   const secret = clean(env.LIFF_SESSION_SECRET, 5000);
   if (secret.length < 32) throw new Error("public_membership_session_secret_unavailable");
-  const digest = await hmacHex(secret, "public-membership:" + lineUserId + ":" + packageCode);
+  const digest = await hmacHex(secret, "public-membership:" + lineUserId + ":" + packageCode + (memberRecordId ? ":account-v1:" + memberRecordId : ""));
   return "publicmem_" + packageCode + "_" + digest.slice(0, 24);
 }
 
@@ -72,21 +74,24 @@ function canonicalPublicPaymentUrl(value) {
   }
 }
 
-async function createPaymentIntent(env, { sessionId, packageItem }) {
+async function createPaymentIntent(env, { sessionId, packageItem, memberRecordId, previousSessionId }) {
   if (!env.PAYMENTS_WORKER?.fetch) throw new Error("payments_worker_not_configured");
-  const request = new Request("https://payments.internal/v1/pay/verify", {
+  const red = packageItem.package_code === "red_card";
+  if (red && clean(env.AUTH_SERVICE_MEMBER_TO_PAYMENTS, 5000).length < 32) throw new Error("red_card_payments_service_auth_unavailable");
+  const request = new Request("https://payments.internal" + (red ? RED_CARD_INTENT_PATH : "/v1/pay/verify"), {
     method: "POST",
     headers: {
       accept: "application/json",
       "content-type": "application/json",
       "x-mmd-source": "member-pages-worker",
+      ...(red && { "x-internal-token": clean(env.AUTH_SERVICE_MEMBER_TO_PAYMENTS, 5000) }),
     },
     body: JSON.stringify({
       session_id: sessionId,
       payment_stage: "membership",
       amount: packageItem.amount_thb,
       package_code: packageItem.package_code,
-      notes: "source=public_membership;official_verify_required=true",
+      ...(red ? { member_record_id: memberRecordId, previous_session_id: previousSessionId } : { notes: "source=public_membership;official_verify_required=true" }),
     }),
   });
   const response = await env.PAYMENTS_WORKER.fetch(request);
@@ -136,8 +141,24 @@ async function handlePurchase(request, env) {
   }
 
   try {
-    const sessionId = await purchaseSessionId(env, session.lineUserId, packageItem.package_code);
-    const payment = await createPaymentIntent(env, { sessionId, packageItem });
+    let memberRecordId;
+    if (packageItem.package_code === "red_card") {
+      const binding = session.memberExists && !session.readGraceOnly ? await verifyBookingMemberBinding(
+        env, session.lineUserId, session.memberId, { requirePaymentMember: true },
+      ) : null;
+      if (binding?.status === 503) return json({ ok: false, error: { code: "RED_CARD_IDENTITY_UNAVAILABLE" } }, 503);
+      if (!binding?.memberRecordId) return json({
+        ok: false,
+        error: { code: "RED_CARD_ACCOUNT_VERIFICATION_REQUIRED" },
+        account_verification_required: true,
+      }, 409);
+      memberRecordId = binding.memberRecordId;
+    }
+    const sessionId = await purchaseSessionId(env, session.lineUserId, packageItem.package_code, memberRecordId);
+    const previousSessionId = memberRecordId
+      ? await purchaseSessionId(env, session.lineUserId, packageItem.package_code)
+      : undefined;
+    const payment = await createPaymentIntent(env, { sessionId, packageItem, memberRecordId, previousSessionId });
     const remembered = await rememberMemberPaymentSnapshot(request, env, {
       payment_ref: payment.payment_ref,
       session_id: payment.session_id,
@@ -145,7 +166,7 @@ async function handlePurchase(request, env) {
       package_code: packageItem.package_code,
       amount_thb: packageItem.amount_thb,
       customer_payment_url: payment.customer_payment_url,
-    });
+    }, memberRecordId ? session : null);
     if (!remembered) {
       const error = new Error("PUBLIC_MEMBERSHIP_PAYMENT_STATE_PERSIST_FAILED");
       error.status = 503;
