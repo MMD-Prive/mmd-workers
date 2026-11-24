@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { handleReviewedProof, REVIEWED_PROOF_PATH } from "./reviewed-proof.js";
+import { handleReviewedProof, REVIEWED_PROOF_PATH, validateExistingPublicMembershipOrder } from "./reviewed-proof.js";
 
 async function review(tier, amount, { packageCode = tier, rows, body = {} } = {}) {
   const ref = "synthetic_reference";
@@ -49,7 +49,7 @@ for (const [label, options, error] of [
   ["duplicate orders", { rows: o => [o, o] }, "public_membership_order_ambiguous"],
   ["stored amount disagreement", { rows: o => [{ ...o, fields: { ...o.fields, Amount: 1 } }] }, "public_membership_order_amount_mismatch"],
   ["different session", { body: { session_id: "publicmem_elite_" + "b".repeat(24) } }, "public_membership_order_context_mismatch"],
-  ["cross-stage review", { body: { payment_stage: "deposit", session_id: "job_session" } }, "public_membership_order_context_mismatch"],
+  ["cross-stage review", { body: { payment_stage: "deposit", session_id: "publicmem_elite_" + "a".repeat(24) } }, "public_membership_order_context_mismatch"],
   ["missing canonical email", { body: { member_email: "" } }, "member_email_required_for_membership_payment"],
 ]) {
   test("stops before settlement and proof mutation: " + label, async () => {
@@ -67,3 +67,11 @@ for (const [packageCode, expected, amount] of [["standard", "standard", 1199], [
     assert.equal(r.calls[0].package_code, expected);
   });
 }
+
+test("trusted writer's existing-order check rejects a service stage without a Public request marker", () => {
+  const session = "publicmem_elite_" + "a".repeat(24);
+  const row = { fields: { "Payment Reference": "test_ref", "Package Code": "elite", Amount: 4990, payment_stage: "membership", session_id: session } };
+  assert.throws(() => validateExistingPublicMembershipOrder({}, row, {
+    paymentRef: "test_ref", paymentStage: "deposit", sessionId: "job_session", packageCode: "", amountThb: 4990,
+  }), /public_membership_order_context_mismatch/);
+});
