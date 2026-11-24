@@ -1,5 +1,20 @@
+import candidateHtml from "./artifacts/candidate.html";
+import rollbackHtml from "./artifacts/rollback.html";
+
 const WEBFLOW_ORIGIN = "https://mmdprive.webflow.io";
 const CANONICAL_PATH = "/sigil/model/console";
+const PRODUCTION_HOSTS = new Set(["mmdbkk.com", "www.mmdbkk.com"]);
+const RELEASES = new Map([
+  ["candidate", {
+    html: candidateHtml,
+    sha256: "4aff4a31b418a92501349e446af8ac893b9ff17183355ed20df623c41a4be739",
+  }],
+  ["rollback", {
+    html: rollbackHtml,
+    sha256: "7dd6e42b4a4dcb292fb4830c8abd134b94ca356a8a9a3d4b5dba51128eae8965",
+  }],
+]);
+const verifiedReleases = new Map();
 const LEGACY_PATHS = new Set(["/model/console", "/model/console/"]);
 
 function normalizePath(pathname) {
@@ -13,7 +28,7 @@ function withOwnershipHeaders(response, origin) {
   headers.set("x-mmd-route-owner", "model-console-page-worker");
   headers.set("x-mmd-page", "sigil-model-console");
   headers.set("x-mmd-origin", origin);
-  headers.set("x-mmd-route-version", "20260726-model-console-webflow-owner-v1");
+  headers.set("x-mmd-route-version", "model-console-pinned-html-v1");
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,
@@ -27,6 +42,34 @@ function canonicalRedirect(request, url) {
   target.hostname = "mmdbkk.com";
   target.pathname = CANONICAL_PATH;
   return withOwnershipHeaders(Response.redirect(target.toString(), 301), "canonical-redirect");
+}
+
+async function servePinnedPage(method, releaseName) {
+  const release = RELEASES.get(releaseName);
+  if (release && !verifiedReleases.has(releaseName)) {
+    const bytes = new TextEncoder().encode(release.html);
+    verifiedReleases.set(releaseName, crypto.subtle.digest("SHA-256", bytes).then(
+      (digest) => Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("") === release.sha256,
+      () => false,
+    ));
+  }
+
+  if (!release || !(await verifiedReleases.get(releaseName))) {
+    return withOwnershipHeaders(new Response(
+      method === "HEAD" ? null : "Model Console unavailable",
+      { status: 503, headers: { "cache-control": "no-store" } },
+    ), "pinned-artifact");
+  }
+
+  const response = new Response(method === "HEAD" ? null : release.html, {
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store",
+      "content-security-policy": "frame-ancestors 'self' https://*.webflow.com http://*.webflow.com http://*.webflow.io http://webflow.com https://webflow.com",
+      "x-mmd-console-html-sha256": release.sha256,
+    },
+  });
+  return withOwnershipHeaders(response, "pinned-artifact");
 }
 
 async function fetchWebflowPage(request, url) {
@@ -50,7 +93,7 @@ async function fetchWebflowPage(request, url) {
 }
 
 export default {
-  async fetch(request) {
+  async fetch(request, env) {
     const url = new URL(request.url);
     const method = request.method.toUpperCase();
     const path = normalizePath(url.pathname);
@@ -80,6 +123,10 @@ export default {
         }),
         "route-guard"
       );
+    }
+
+    if (PRODUCTION_HOSTS.has(url.hostname)) {
+      return servePinnedPage(method, env?.CONSOLE_HTML_RELEASE ?? "candidate");
     }
 
     return fetchWebflowPage(request, url);
