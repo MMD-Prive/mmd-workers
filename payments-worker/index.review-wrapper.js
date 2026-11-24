@@ -1,3 +1,4 @@
+import { handleRedCardCheckout, isRedCardCheckoutPath } from "./red-card-checkout.js";
 import { runBlackCardPreferenceMaintenance, handleBlackCardRetentionAdmin, BLACKCARD_RETENTION_ADMIN_PATH } from "./blackcard-preference-lifecycle.js";
 import { handleKbankSandbox } from "./kbank-sandbox.mjs";
 export { KbankSandboxCoordinator } from "./kbank-sandbox.mjs";
@@ -215,7 +216,14 @@ export default {
       return handlePartnerModelLink(request, env);
     }
 
+    if (isRedCardCheckoutPath(path, method)) return handleRedCardCheckout(request, env);
+
     if (isUnifiedPaymentIntentRequest(path, method)) {
+      const intent = await request.clone().json().catch(() => null);
+      if (String(intent?.session_id || "").trim().startsWith("publicmem_red_card_") ||
+        String(intent?.package_code || intent?.package || "").trim().toLowerCase() === "red_card") {
+        return Response.json({ ok: false, error: "red_card_verified_account_required" }, { status: 409 });
+      }
       return handleUnifiedPaymentIntent(request, env, (nextRequest) => phase1Worker.fetch(nextRequest, env, ctx));
     }
 

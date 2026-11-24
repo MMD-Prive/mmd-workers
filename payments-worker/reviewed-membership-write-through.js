@@ -143,6 +143,12 @@ export async function resolveWriteThroughPlan(env = {}, body = {}, options = {})
   }
 
   const member = members[0];
+  // Where the Red Card order carried a verified account binding, never grant
+  // to another row found by a stale/reassigned email or compatibility alias.
+  if (packageCode === "red_card" && (body.member_record_id || body.member_id) &&
+    (member.id !== body.member_record_id || text(member.fields?.member_id, 120) !== body.member_id)) {
+    return review("canonical_member_binding_mismatch", { package_code: packageCode, capability: policy.capability });
+  }
   if (isProtectedPrivateMembership(member.fields?.["Membership Tier"] || member.fields?.tier)) return review("protected_membership_manual_review_required", {package_code:packageCode});
   const memberId = text(member.fields?.member_id, 120);
   if (!memberId) {

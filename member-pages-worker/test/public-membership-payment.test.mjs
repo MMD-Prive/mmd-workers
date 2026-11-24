@@ -138,7 +138,7 @@ test("SIGIL payment URL fails closed for public membership purchase", async () =
       cookie: "__Host-mmd_liff_session=" + fx.token,
       "content-type": "application/json",
     },
-    body: JSON.stringify({ package_code: "red_card" }),
+    body: JSON.stringify({ package_code: "elite" }),
   }), fx.env);
   assert.equal(response.status, 502);
   assert.equal((await response.json()).error.code, "payments_worker_public_surface_contract_invalid");

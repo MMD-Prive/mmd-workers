@@ -1,3 +1,4 @@
+import { RED_CARD_CHECKOUT_MARKER, RED_CARD_SESSION } from "../shared/red-card-purchase-contract.mjs";
 import baseWorker from "./index.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
@@ -194,6 +195,15 @@ async function writeEvidencePendingReview(env, payload) {
 
   const lookup = await findPaymentByPaymentRef(env, payload.payment_ref);
   const record = lookup.record;
+  const original = record?.fields || {};
+  const accountBoundRedCard = RED_CARD_SESSION.test(original.session_id || "") &&
+    String(original.Notes || "").split("; ").includes(RED_CARD_CHECKOUT_MARKER);
+  if (accountBoundRedCard) {
+    // The canonical unified intake writes the separate proof record. This
+    // legacy compatibility write would replace the checkout binding marker
+    // and can reset an already Paid order if a different slip is uploaded.
+    return { ok: true, skipped: true, reason: "account_bound_red_card_order_preserved", record_id: record.id };
+  }
   const fullFields = buildAirtableFields(env, payload, lookup, false);
   const minimalFields = buildAirtableFields(env, payload, lookup, true);
 

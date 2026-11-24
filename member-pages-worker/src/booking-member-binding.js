@@ -38,7 +38,7 @@ function configured(env, name, fallback) {
   return value.trim();
 }
 
-export async function verifyBookingMemberBinding(env, verifiedLineUserId, sessionMemberId) {
+export async function verifyBookingMemberBinding(env, verifiedLineUserId, sessionMemberId, { requirePaymentMember = false } = {}) {
   const memberId = normalizedMemberId(sessionMemberId);
   // LINE IDs are checked without lowercasing, trimming or taking a browser hint.
   if (typeof verifiedLineUserId !== "string" || !/^U[0-9a-f]{32}$/i.test(verifiedLineUserId) || !memberId) return reviewRequired();
@@ -49,14 +49,14 @@ export async function verifyBookingMemberBinding(env, verifiedLineUserId, sessio
     // Race the complete operation, including response bodies and all pages. An
     // AbortSignal alone does not bound a service binding that ignores aborts.
     return await Promise.race([
-      readCurrentBinding(env, verifiedLineUserId, memberId, controller.signal),
+      readCurrentBinding(env, verifiedLineUserId, memberId, controller.signal, requirePaymentMember),
       new Promise(resolve => { timer = setTimeout(() => { controller.abort(); resolve(unavailable()); }, DEADLINE_MS); }),
     ]);
   } catch { return unavailable(); }
   finally { clearTimeout(timer); controller.abort(); }
 }
 
-async function readCurrentBinding(env, uid, memberId, signal) {
+async function readCurrentBinding(env, uid, memberId, signal, requirePaymentMember) {
   const table = env.AIRTABLE_TABLE_MEMBERS_ID === undefined
     ? configured(env, "AIRTABLE_TABLE_MEMBERS", "Members")
     : configured(env, "AIRTABLE_TABLE_MEMBERS_ID", "Members");
@@ -88,7 +88,29 @@ async function readCurrentBinding(env, uid, memberId, signal) {
       // Even duplicate rows pointing at the same member are not a unique result.
       if (rows.length > 1) return reviewRequired();
     }
-    if (!Object.hasOwn(page, "offset")) return rows.length === 1 ? { ok: true, memberId } : reviewRequired();
+    if (!Object.hasOwn(page, "offset")) {
+      if (rows.length !== 1) return reviewRequired();
+      if (!requirePaymentMember) return { ok: true, memberId };
+      const { id, fields } = rows[0];
+      // An Auth-generated fallback ID or a masked/absent contact cannot pass
+      // the current membership write-through contract.
+      const emails = [...new Set([fields["Contact Email"], fields.email].filter(Boolean).map(value => String(value).trim().toLowerCase()))];
+      if (fields.member_id !== memberId || emails.length !== 1 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emails[0])) return reviewRequired();
+      // The settlement path resolves by either canonical contact alias.
+      // Check both together; two rows with the same email are not payable.
+      const address = JSON.stringify(emails[0]);
+      const query = new URLSearchParams({
+        filterByFormula: `OR(LOWER({Contact Email}&"")=${address},LOWER({email}&"")=${address})`,
+        maxRecords: "2",
+      });
+      const url = `https://api.airtable.com/v0/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${encodeURIComponent(table)}?${query}`;
+      const init = { method: "GET", headers: { authorization: "Bearer " + env.AIRTABLE_API_KEY }, signal, redirect: "error" };
+      const response = await (env.AIRTABLE_HTTP?.fetch ? env.AIRTABLE_HTTP.fetch(new Request(url, init)) : fetch(url, init));
+      if (!response.ok) throw Error("identity_unavailable");
+      const result = await response.json();
+      if (!Array.isArray(result?.records) || result.offset || result.records.length !== 1 || result.records[0]?.id !== id) return reviewRequired();
+      return { ok: true, memberId, memberRecordId: id };
+    }
     offset = page.offset;
     if (offsets.has(offset)) throw Error("identity_incomplete");
     offsets.add(offset);

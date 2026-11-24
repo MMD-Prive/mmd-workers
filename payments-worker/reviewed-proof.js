@@ -1,3 +1,5 @@
+import { verifyBoundRedCardReview } from "./red-card-checkout.js";
+import { RED_CARD_CHECKOUT_MARKER } from "../shared/red-card-purchase-contract.mjs";
 import { addBangkokCalendarYears, applyMembershipPromotion, currentPrivateMembershipPromotion, isProtectedPrivateMembership, privateRenewalTiming, privateRenewalBaseYears } from "../shared/membership-promotion-policy.mjs";
 import { constantTimeEqual, formulaValue, httpError } from "./lib/payment-primitives.js";
 import { PUBLIC_MEMBERSHIP_CATALOG } from "../shared/payment-intelligence.mjs";
@@ -105,9 +107,13 @@ export async function handleReviewedProof(request, env = {}, ctx = null, notifyT
     if (proofRef !== paymentRef) throw httpError(409, "payment_proof_reference_mismatch");
     if (Math.abs(proofAmount - amountThb) > 0.009) throw httpError(409, "payment_proof_amount_mismatch");
 
+    let boundRedCard = false;
     if (!emailLessRecovery && (paymentStage === "membership" || isPublicPackage(packageCode) || isPublicSession(sessionId))) {
-      const publicOrder = await verifyPublicReviewedOrder(env, { paymentRef, paymentStage, sessionId, packageCode, amountThb });
-      if (publicOrder) sessionId = publicOrder.sessionId;
+      const publicOrder = await verifyPublicReviewedOrder(env, { paymentRef, paymentStage, sessionId, packageCode, amountThb, memberId, memberRecordId, memberEmail });
+      if (publicOrder) {
+        sessionId = publicOrder.sessionId;
+        boundRedCard = publicOrder.boundRedCard;
+      }
     }
 
     let recovery = null;
@@ -141,7 +147,7 @@ export async function handleReviewedProof(request, env = {}, ctx = null, notifyT
       paid_at: text(fields.paid_at || fields["Payment Date"], 80) || undefined,
       notes: recovery
         ? `${source} proof_id=${proofId}; reviewed_by=${reviewActor}; recovered_member_id=${recovery.member_id}; line_identity=${recovery.line_user_id}`
-        : `${source} proof_id=${proofId}; reviewed_by=${reviewActor}`,
+        : `${source} proof_id=${proofId}; reviewed_by=${reviewActor}${boundRedCard ? `; ${RED_CARD_CHECKOUT_MARKER}` : ""}`,
     };
 
     const response = await notifyTrusted(notifyBody, { request, env, ctx });
@@ -463,7 +469,8 @@ async function verifyPublicReviewedOrder(env, input) {
   }
   const result = validateExistingPublicMembershipOrder(env, records[0], input);
   if (!result) throw httpError(409, "public_membership_order_context_mismatch");
-  return result;
+  const boundRedCard = await verifyBoundRedCardReview(env, records[0], input);
+  return { ...result, boundRedCard };
 }
 
 async function loadProof(env, proofId) {
