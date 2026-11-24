@@ -421,7 +421,14 @@ function isPublicPackage(value) { return Object.hasOwn(PUBLIC_MEMBERSHIP_CATALOG
 function isPublicSession(value) { return value.startsWith("publicmem_"); }
 
 function publicOrderFields(env, record) {
-  const field = (key, fallback) => record?.fields?.[clean(env[`AT_PAYMENTS__${key}`] || fallback)];
+  // Configured field IDs are used for writes. Airtable's default GET
+  // responses name the same columns by display name. Both reviewed-proof and
+  // the trusted writer's existing-row read use that default response mode.
+  const field = (key, displayName) => {
+    const fields = record?.fields;
+    const configured = clean(env[`AT_PAYMENTS__${key}`]);
+    return (configured ? fields?.[configured] : undefined) ?? fields?.[displayName];
+  };
   return {
     paymentRef: field("PAYMENT_REF", "Payment Reference") || record?.fields?.payment_ref,
     packageCode: canonicalPackage(field("PACKAGE_CODE", "Package Code")),
