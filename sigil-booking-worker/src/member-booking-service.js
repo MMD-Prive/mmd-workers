@@ -1,6 +1,6 @@
-import { createPublicRateCatalog } from './public-rate-catalog.js';
+import { createPublicRateCatalog, listPublicBookingOffers } from './public-rate-catalog.js';
 import { validMarker, signMarker } from '../../shared/member-booking-marker.mjs';
-import { readPublicBookingDetails } from '../../shared/member-public-booking.mjs';
+import { readPublicBookingDetails, isSupportedPublicBookingLocationAndDuration } from '../../shared/member-public-booking.mjs';
 import { resolveDiscoveryViewer } from './customer-discovery-policy.js';
 import { currentPrivateContext } from './current-private-access.js';
 const PATH='/__internal/member-booking';
@@ -34,7 +34,7 @@ export async function handleMemberBookingService(request,env,delegate){
   };
   if(input.operation==='search'){
    const items=await search(String(input.q||'').slice(0,80));
-   return json({ok:true,scope,items:items.slice(0,50).map(i=>({model_id:i.model_id,scope,display_name:String(i.display_name||i.working_name||'Model').slice(0,80),media_id:scope==='public'&&/^media_[a-zA-Z0-9_-]{8,100}$/.test(i.primary_media_id||'')?i.primary_media_id:null}))});
+   return json({ok:true,scope,items:items.slice(0,50).map(i=>({model_id:i.model_id,scope,display_name:String(i.display_name||i.working_name||'Model').slice(0,80),...(scope==='public'?{public_offers:listPublicBookingOffers(env.MMD_PUBLIC_RATE_CATALOG,i.model_id)}:{}),media_id:scope==='public'&&/^media_[a-zA-Z0-9_-]{8,100}$/.test(i.primary_media_id||'')?i.primary_media_id:null}))});
   }
   if(input.operation==='list'){
    const rows=await read(env,`FIND('${input.owner}',{resolver_payload_json}&'')>0`);
@@ -51,6 +51,7 @@ export async function handleMemberBookingService(request,env,delegate){
    return json({ok:true,items,...(REF.test(input.reference||'')?{active_request_ref:input.reference}:{})});
   }
   if(!REF.test(input.reference||'')||!input.payload||!/^rec[A-Za-z0-9]{14,24}$/.test(input.payload.model_id||''))return reject('invalid_request',400);
+  if (scope === 'public' && !isSupportedPublicBookingLocationAndDuration(input.payload)) return reject('public_booking_bangkok_3_to_5_hours',400);
   const publicDetails=readPublicBookingDetails(input.payload);
   if (!publicDetails) return reject('invalid_request',400);
   const fingerprint=await hash(JSON.stringify(input.payload));
@@ -78,9 +79,8 @@ export async function handleMemberBookingService(request,env,delegate){
     }
     if (rate?.status !== 'approved' || rate.model_id !== model.model_id ||
         rate.public_format !== publicDetails.public_format || rate.duration_minutes !== publicDetails.duration_minutes ||
-        !Number.isSafeInteger(rate.model_fee_thb) || rate.model_fee_thb <= 0 ||
-        (rate.duration_minutes === 90 && rate.model_fee_thb < 4500)) return reject('approved_rate_unavailable');
-    if (publicDetails.budget_thb < rate.model_fee_thb) return reject('budget_below_approved_rate');
+        !Number.isSafeInteger(rate.customer_rate_thb) || rate.customer_rate_thb <= 0) return reject('approved_rate_unavailable');
+    if (publicDetails.budget_thb < rate.customer_rate_thb) return reject('budget_below_approved_rate');
   }
   const meta={schema:'member_booking_owner_v2',owner:input.owner,scope,fingerprint,state:'submitted'};
   if (publicDetails.public_format) {

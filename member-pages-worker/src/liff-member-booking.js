@@ -1,6 +1,6 @@
 import { PUBLIC_BOOKING_FORMATS, PUBLIC_BOOKING_MINIMUM_BUDGET } from '../../shared/member-public-booking.mjs';
 
-export function renderMemberBooking(){return `<section id="member-booking" class="card" aria-label="ค้นหาและส่งคำขอจอง"><h2>ค้นหาและส่งคำขอจอง</h2><p data-booking-scope-copy>Public Models · ส่งคำขอให้ MMD ตรวจคิวและรายละเอียดก่อนยืนยัน</p><form data-booking-search><label data-booking-scope hidden>ประเภท<select name="scope"><option value="public">Public Models</option></select></label><label>ชื่อนายแบบ<input name="query" type="search" maxlength="80" placeholder="พิมพ์ชื่อ หรือดูทั้งหมด"></label><button type="submit">ค้นหานายแบบ</button></form><p data-booking-message role="status"></p><div data-booking-results class="member-services"></div><form data-booking-details hidden><strong data-booking-selected></strong><label>วันที่<input name="date" type="date" required></label><label>เวลา<input name="time" type="time" required></label><label>พื้นที่<input name="area" maxlength="120" required></label><fieldset data-booking-public hidden disabled><label>หมวดงาน<select name="public_format" required><option value="">เลือกหมวดงาน</option>${Object.entries(PUBLIC_BOOKING_FORMATS).map(([key,label])=>`<option value="${key}">${label}</option>`).join('')}</select></label><label>ระยะเวลา (นาที)<input name="duration_minutes" type="number" min="1" step="1" required></label><label>งบประมาณของลูกค้า (ขั้นต่ำ 5,000 บาท)<input name="budget_thb" type="number" min="${PUBLIC_BOOKING_MINIMUM_BUDGET}" step="1" required></label></fieldset><label>รายละเอียดเพิ่มเติม<textarea name="note" maxlength="700"></textarea></label><button type="submit">ส่งคำขอจอง</button><button type="button" data-booking-change>เปลี่ยนนายแบบ</button></form><button type="button" data-booking-new hidden>เริ่มคำขอใหม่</button><h3>คำขอจองของฉัน</h3><button type="button" data-booking-refresh>ตรวจสถานะอีกครั้ง</button><div data-booking-list></div></section>`;}
+export function renderMemberBooking(){return `<section id="member-booking" class="card" aria-label="ค้นหาและส่งคำขอจอง"><h2>ค้นหาและส่งคำขอจอง</h2><p data-booking-scope-copy>Public Models · ส่งคำขอให้ MMD ตรวจคิวและรายละเอียดก่อนยืนยัน</p><form data-booking-search><label data-booking-scope hidden>ประเภท<select name="scope"><option value="public">Public Models</option></select></label><label>ชื่อนายแบบ<input name="query" type="search" maxlength="80" placeholder="พิมพ์ชื่อ หรือดูทั้งหมด"></label><button type="submit">ค้นหานายแบบ</button></form><p data-booking-message role="status"></p><div data-booking-results class="member-services"></div><form data-booking-details hidden><strong data-booking-selected></strong><label>วันที่<input name="date" type="date" required></label><label>เวลา<input name="time" type="time" required></label><p data-booking-public-policy hidden>Public Booking · กรุงเทพฯ · 3–5 ชั่วโมง · ระบุสถานที่นัดหมายในรายละเอียดเพิ่มเติม</p><label>พื้นที่<input name="area" maxlength="120" required></label><fieldset data-booking-public hidden disabled><label>หมวดงาน<select name="public_format" required><option value="">เลือกหมวดงาน</option>${Object.entries(PUBLIC_BOOKING_FORMATS).map(([key,label])=>`<option value="${key}">${label}</option>`).join('')}</select></label><label>ชั่วโมงและราคาที่อนุมัติ<select name="duration_minutes" required><option value="">รอเปอร์ตรวจ</option></select></label><label>งบประมาณของลูกค้า (ขั้นต่ำ 5,000 บาท)<input name="budget_thb" type="number" min="${PUBLIC_BOOKING_MINIMUM_BUDGET}" step="1" required></label></fieldset><label>รายละเอียดเพิ่มเติม<textarea name="note" maxlength="700"></textarea></label><button type="submit">ส่งคำขอจอง</button><button type="button" data-booking-change>เปลี่ยนนายแบบ</button></form><button type="button" data-booking-new hidden>เริ่มคำขอใหม่</button><h3>คำขอจองของฉัน</h3><button type="button" data-booking-refresh>ตรวจสถานะอีกครั้ง</button><div data-booking-list></div></section>`;}
 export function createMemberBookingUI(root,api,getBinding,returnModel="",returnScope="public"){
  if(!root)return {load(){},reset(){},leave(){}};
  const search=root.querySelector('[data-booking-search]'),details=root.querySelector('[data-booking-details]'),message=root.querySelector('[data-booking-message]'),results=root.querySelector('[data-booking-results]'),list=root.querySelector('[data-booking-list]');
@@ -41,6 +41,23 @@ export function createMemberBookingUI(root,api,getBinding,returnModel="",returnS
    if(resumeModel&&!pending){search.elements.query.value=resumeModel;await searchModels({preventDefault(){}});}
   }catch{if(current(g,b))list.textContent='ยังตรวจสถานะคำขอไม่ได้ ลองตรวจอีกครั้งได้ครับ';}
  }
+ function updatePublicOffers(){
+  if(!selected||selected.scope==='private')return;
+  const minutes=details.elements.duration_minutes;
+  minutes.replaceChildren();
+  const waiting=node('option','รอเปอร์ตรวจ');waiting.value='';minutes.append(waiting);
+  const offers=Array.isArray(selected.public_offers)?selected.public_offers:[];
+  for(const offer of offers){
+   if(offer.public_format!==details.elements.public_format.value||!Number.isSafeInteger(offer.duration_minutes)||offer.duration_minutes<180||offer.duration_minutes>300||!Number.isSafeInteger(offer.customer_rate_thb)||offer.customer_rate_thb<=0)continue;
+   const option=node('option',(offer.duration_minutes/60).toLocaleString('th-TH')+' ชั่วโมง · '+offer.customer_rate_thb.toLocaleString('th-TH')+' บาท');
+   option.value=String(offer.duration_minutes);minutes.append(option);
+  }
+  const ready=minutes.options.length>1;
+  minutes.disabled=!ready;
+  details.querySelector('button[type="submit"]').disabled=!ready;
+  message.textContent=ready?'เลือกระยะเวลาแล้วระบุวัน เวลา พื้นที่ และงบประมาณของคุณ':'รอเปอร์ตรวจราคาและระยะเวลาของโมเดลกับหมวดงานนี้';
+ }
+ details.elements.public_format.addEventListener('change',updatePublicOffers);
  async function searchModels(e){
   e.preventDefault();if(sending||pending)return;const g=++generation,b=getBinding();if(!b)return;
   const button=search.querySelector('button');button.disabled=true;message.textContent='กำลังค้นหา';selected=null;details.hidden=true;results.replaceChildren();
@@ -49,22 +66,22 @@ export function createMemberBookingUI(root,api,getBinding,returnModel="",returnS
    for(const item of body.items){if(!/^rec[A-Za-z0-9]{14,24}$/.test(item.model_id||''))continue;
     const choose=node('button',item.display_name||'Model');choose.type='button';choose.style.minHeight='48px';
     if(/^media_[a-zA-Z0-9_-]{8,100}$/.test(item.media_id||'')){const image=root.ownerDocument.createElement('img');image.src='https://sigil.mmdbkk.com/sigil/api/models/media/'+encodeURIComponent(item.media_id);image.alt=item.display_name||'Model';image.style.width='100%';image.style.maxHeight='180px';image.style.objectFit='cover';choose.prepend(image);}
-    choose.addEventListener('click',()=>{selected={...item,scope:search.elements.scope.value};const fields=details.querySelector('[data-booking-public]');fields.hidden=fields.disabled=selected.scope!=='public';details.hidden=false;root.querySelector('[data-booking-selected]').textContent='เลือก: '+item.display_name;message.textContent='เลือกวัน เวลา และพื้นที่ แล้วส่งให้ MMD ตรวจสอบ';});results.append(choose);if(resumeModel===item.model_id){choose.click();resumeModel='';}
+    choose.addEventListener('click',()=>{selected={...item,scope:search.elements.scope.value};const fields=details.querySelector('[data-booking-public]');fields.hidden=fields.disabled=selected.scope!=='public';details.hidden=false;root.querySelector('[data-booking-public-policy]').hidden=selected.scope!=='public';details.elements.area.readOnly=selected.scope==='public';if(selected.scope==='public')details.elements.area.value='กรุงเทพมหานคร';details.elements.duration_minutes.disabled=selected.scope==='private';details.querySelector('button[type=submit]').disabled=false;updatePublicOffers();root.querySelector('[data-booking-selected]').textContent='เลือก: '+item.display_name;if(selected.scope==='private')message.textContent='เลือกวัน เวลา และพื้นที่ แล้วส่งให้ MMD ตรวจสอบ';});results.append(choose);if(resumeModel===item.model_id){choose.click();resumeModel='';}
    }message.textContent=results.children.length?'เลือกนายแบบที่สนใจ':'ยังไม่พบคนที่ตรง ลองค้นหาใหม่ได้';
   }catch{if(current(g,b))message.textContent='ยังค้นหาไม่ได้ กรุณาลองอีกครั้ง';}
   finally{if(current(g,b))button.disabled=false;}
  }
  search.addEventListener('submit',searchModels);
  details.addEventListener('submit',async e=>{
-  e.preventDefault();if(sending||pending||!selected||!details.reportValidity())return;
+  e.preventDefault();if(sending||pending||!selected||!details.reportValidity())return;if(selected.scope!=='private'&&details.elements.duration_minutes.disabled){message.textContent='รอเปอร์ตรวจราคาและระยะเวลาของโมเดลกับหมวดงานนี้';return;}
   const g=generation,b=getBinding();if(!b)return;sending=true;const button=details.querySelector('button[type="submit"]');button.disabled=true;
   message.textContent='กำลังส่งคำขอ';const model=selected,attemptId=token(),attemptKey=key();
   try{const res=await api('/member/api/liff/booking/requests',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({request_id:attemptId,model_id:model.model_id,date:details.elements.date.value,time:details.elements.time.value,area:details.elements.area.value,note:details.elements.note.value,scope:model.scope||'public',...(model.scope!=='private'?{
      public_format:details.elements.public_format.value,
-     duration_minutes:details.elements.duration_minutes.valueAsNumber,
+     duration_minutes:Number(details.elements.duration_minutes.value),
      budget_thb:details.elements.budget_thb.valueAsNumber
     }:{})})},()=>current(g,b));const body=await res.json();if(!current(g,b))return;
-   if(!res.ok||body?.ok!==true){if(body?.outcome==='not_started'){clearAttempt();message.textContent=body.error==='booking_submission_not_ready'?'กำลังเตรียมระบบส่งคำขอ กรุณาติดต่อเปอร์ก่อนครับ':'ยังไม่ได้ส่งคำขอ กรุณาตรวจการเลือกแล้วลองใหม่';return;}pending=true;throw Error();}
+   if(!res.ok||body?.ok!==true){if(body?.outcome==='not_started'){clearAttempt();if(body.error==='public_booking_bangkok_3_to_5_hours'){message.textContent='งาน Public จัดในกรุงเทพฯ ระยะเวลา 3–5 ชั่วโมงครับ';return;}if(body.error==='approved_rate_unavailable'){message.textContent='ยังไม่มีราคาอนุมัติสำหรับนายแบบ หมวดงาน และระยะเวลานี้ กรุณาติดต่อเปอร์เพื่อตรวจราคาและเงื่อนไขก่อนครับ';return;}message.textContent=body.error==='booking_submission_not_ready'?'กำลังเตรียมระบบส่งคำขอ กรุณาติดต่อเปอร์ก่อนครับ':'ยังไม่ได้ส่งคำขอ กรุณาตรวจการเลือกแล้วลองใหม่';return;}pending=true;throw Error();}
    pending=true;ackRef=body.request_ref;root.querySelector('[data-booking-new]').hidden=false;message.textContent='รับคำขอแล้ว · '+refLabel(body.request_ref)+' · รอ MMD ตรวจสอบ ยังไม่ใช่การยืนยันงาน';details.hidden=true;await load();
   }catch(error){if(error?.code==='member_request_not_started'){try{if(sessionStorage.getItem(attemptKey)===attemptId)sessionStorage.removeItem(attemptKey);}catch{}if(getBinding()===b&&requestId===attemptId){requestId='';pending=false;sending=false;button.disabled=false;message.textContent='ยังไม่ได้ส่งคำขอ เลือกแล้วส่งใหม่ได้ครับ';}return;}if(current(g,b)){pending=true;message.textContent='ยังยืนยันผลการส่งไม่ได้ กรุณาตรวจสถานะหรือติดต่อเปอร์ก่อนส่งใหม่';}}
   finally{if(current(g,b)){sending=false;button.disabled=pending;}}

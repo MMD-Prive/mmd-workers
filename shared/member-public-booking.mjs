@@ -21,3 +21,9 @@ export function readPublicBookingDetails(input) {
       !Number.isSafeInteger(budget_thb) || budget_thb < PUBLIC_BOOKING_MINIMUM_BUDGET) return null;
   return { public_format, duration_minutes, budget_thb };
 }
+
+export function isSupportedPublicBookingLocationAndDuration(input) {
+  const area = typeof input.area === 'string' ? input.area.trim().toLowerCase() : '';
+  return ['bangkok', 'bkk', 'กรุงเทพมหานคร', 'กรุงเทพฯ', 'กรุงเทพ', 'กทม', 'กทม.'].includes(area) &&
+    Number.isSafeInteger(input.duration_minutes) && input.duration_minutes >= 180 && input.duration_minutes <= 300;
+}

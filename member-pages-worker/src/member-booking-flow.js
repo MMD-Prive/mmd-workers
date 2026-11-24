@@ -1,4 +1,4 @@
-import { readPublicBookingDetails } from '../../shared/member-public-booking.mjs';
+import { readPublicBookingDetails, isSupportedPublicBookingLocationAndDuration } from '../../shared/member-public-booking.mjs';
 import { readBoundedJsonObject } from './bounded-json.js';
 import { readMemberAppSession } from './member-app-api-runtime.js';
 import { resolveCanonicalClientForLine } from './member-app-client-history.js';
@@ -54,6 +54,7 @@ export async function handleMemberBooking(request, env, deps = {}) {
       || !/^rec[A-Za-z0-9]{14,24}$/.test(input.model_id || '') || !validDate(input.date) || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(input.time || '')
       || typeof input.area !== 'string' || !input.area.trim() || input.area.length>120 || input.note != null && (typeof input.note!=='string'||input.note.length>700)) return reply({ok:false,error:'invalid_request',outcome:'not_started'},400);
     // A stable key is opaque correlation only. The account comes from the session.
+    if ((input.scope || 'public') === 'public' && !isSupportedPublicBookingLocationAndDuration(input)) return reply({ok:false,error:'public_booking_bangkok_3_to_5_hours',outcome:'not_started'},400);
     const publicDetails=readPublicBookingDetails(input);
     if (!publicDetails) return reply({ok:false,error:'invalid_request',outcome:'not_started'},400);
     const payload={model_id:input.model_id,date:input.date,time:input.time,area:input.area.trim(),note:input.note || '',scope:input.scope || 'public',...publicDetails};

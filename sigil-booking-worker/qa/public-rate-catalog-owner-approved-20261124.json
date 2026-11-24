@@ -1,0 +1,142 @@
+[
+  {
+    "model_id": "recNvTOpeNI3W4m5d",
+    "model_name": "Boss Y",
+    "public_format": "dining",
+    "duration_minutes": 240,
+    "customer_rate_thb": 6000,
+    "price_visibility": "customer",
+    "status": "approved",
+    "approved_by": "Per",
+    "approved_at": "2026-11-24",
+    "approval_ref": "owner-chat-historical-rates-20261124",
+    "evidence_refs": [
+      "f22b7d3bb0c7:758",
+      "03b02dd1ea11:806"
+    ],
+    "area_context": "Bangkok only",
+    "final_job_review_required": true
+  },
+  {
+    "model_id": "recNvTOpeNI3W4m5d",
+    "model_name": "Boss Y",
+    "public_format": "dining",
+    "duration_minutes": 300,
+    "customer_rate_thb": 7500,
+    "price_visibility": "customer",
+    "status": "approved",
+    "approved_by": "Per",
+    "approved_at": "2026-11-24",
+    "approval_ref": "owner-chat-historical-rates-20261124",
+    "evidence_refs": [
+      "f22b7d3bb0c7:758",
+      "03b02dd1ea11:806"
+    ],
+    "area_context": "Bangkok only",
+    "final_job_review_required": true
+  },
+  {
+    "model_id": "recL022qMyRLnG9nR",
+    "model_name": "Big C",
+    "public_format": "dining",
+    "duration_minutes": 240,
+    "customer_rate_thb": 8000,
+    "price_visibility": "customer",
+    "status": "approved",
+    "approved_by": "Per",
+    "approved_at": "2026-11-24",
+    "approval_ref": "owner-chat-historical-rates-20261124",
+    "evidence_refs": [
+      "099ff51cd968:197",
+      "7e6a202b716f:266"
+    ],
+    "area_context": "Bangkok only",
+    "final_job_review_required": true
+  },
+  {
+    "model_id": "recL022qMyRLnG9nR",
+    "model_name": "Big C",
+    "public_format": "city_companion",
+    "duration_minutes": 240,
+    "customer_rate_thb": 8000,
+    "price_visibility": "customer",
+    "status": "approved",
+    "approved_by": "Per",
+    "approved_at": "2026-11-24",
+    "approval_ref": "owner-chat-historical-rates-20261124",
+    "evidence_refs": [
+      "099ff51cd968:197",
+      "7e6a202b716f:266"
+    ],
+    "area_context": "Bangkok only",
+    "final_job_review_required": true
+  },
+  {
+    "model_id": "recobFtNZZq5WphGf",
+    "model_name": "Arow",
+    "public_format": "dining",
+    "duration_minutes": 240,
+    "customer_rate_thb": 5500,
+    "price_visibility": "customer",
+    "status": "approved",
+    "approved_by": "Per",
+    "approved_at": "2026-11-24",
+    "approval_ref": "owner-chat-historical-rates-20261124",
+    "evidence_refs": [
+      "f22b7d3bb0c7:766"
+    ],
+    "area_context": "Bangkok only",
+    "final_job_review_required": true
+  },
+  {
+    "model_id": "recobFtNZZq5WphGf",
+    "model_name": "Arow",
+    "public_format": "dining",
+    "duration_minutes": 300,
+    "customer_rate_thb": 7000,
+    "price_visibility": "customer",
+    "status": "approved",
+    "approved_by": "Per",
+    "approved_at": "2026-11-24",
+    "approval_ref": "owner-chat-historical-rates-20261124",
+    "evidence_refs": [
+      "f22b7d3bb0c7:766"
+    ],
+    "area_context": "Bangkok only",
+    "final_job_review_required": true
+  },
+  {
+    "model_id": "recobFtNZZq5WphGf",
+    "model_name": "Arow",
+    "public_format": "city_companion",
+    "duration_minutes": 240,
+    "customer_rate_thb": 5500,
+    "price_visibility": "customer",
+    "status": "approved",
+    "approved_by": "Per",
+    "approved_at": "2026-11-24",
+    "approval_ref": "owner-chat-historical-rates-20261124",
+    "evidence_refs": [
+      "f22b7d3bb0c7:766"
+    ],
+    "area_context": "Bangkok only",
+    "final_job_review_required": true
+  },
+  {
+    "model_id": "recobFtNZZq5WphGf",
+    "model_name": "Arow",
+    "public_format": "city_companion",
+    "duration_minutes": 300,
+    "customer_rate_thb": 7000,
+    "price_visibility": "customer",
+    "status": "approved",
+    "approved_by": "Per",
+    "approved_at": "2026-11-24",
+    "approval_ref": "owner-chat-historical-rates-20261124",
+    "evidence_refs": [
+      "f22b7d3bb0c7:766"
+    ],
+    "area_context": "Bangkok only",
+    "final_job_review_required": true
+  }
+]

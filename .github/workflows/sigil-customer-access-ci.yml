@@ -45,6 +45,10 @@ jobs:
         env:
           NODE_PATH: ${{ runner.temp }}/booking-dom/node_modules
         run: node --test sigil-booking-worker/public-booking*.test.mjs sigil-booking-worker/booking-telegram-formatter.test.mjs member-pages-worker/test/booking-customer-identity.test.mjs member-pages-worker/test/member-app-session.test.mjs member-pages-worker/test/member-booking-flow.test.mjs
+      - name: Bangkok Public booking three-to-five-hour smoke
+        env:
+          NODE_PATH: ${{ runner.temp }}/booking-dom/node_modules
+        run: node --test admin-worker/create-job-public-request.test.mjs admin-worker/create-job-preflight.test.mjs member-pages-worker/test/member-booking-flow.test.mjs member-pages-worker/test/liff-member-booking.test.mjs
       - name: Identity binding freshness and read-only recovery
         run: node --test member-pages-worker/test/booking-member-binding.test.mjs auth-worker/test/my-mmd-line-identity-bridge.test.mjs
       - name: Public booking budget and interrupted login UX

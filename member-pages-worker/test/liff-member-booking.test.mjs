@@ -5,6 +5,7 @@ import {runInNewContext} from 'node:vm';
 import {renderMemberBooking,createMemberBookingUI} from '../src/liff-member-booking.js';
 const require=createRequire(import.meta.url),{JSDOM}=require('jsdom');
 const model='recEligible0000001';
+const fixtureOffers=[{public_format:'dining',duration_minutes:240,customer_rate_thb:6000}];
 const tick=()=>new Promise(resolve=>setTimeout(resolve,0));
 function fixture(api,returnModel="",seed={}){
  const dom=new JSDOM(renderMemberBooking(),{url:'https://mmdbkk.com/member/liff?view=jobs',runScripts:'outside-only'});
@@ -16,22 +17,22 @@ function fixture(api,returnModel="",seed={}){
 test('search, select, submit once and readback render customer-safe text; changing model does not submit',async()=>{
  let posts=0;const f=fixture(async(path,init={},isCurrent)=>{
   assert.equal(isCurrent(),true);
-  if(path.includes('/search'))return Response.json({ok:true,items:[{model_id:model,display_name:'<script>fixture</script>'}]});
-  if(init.method==='POST'){posts++;const {public_format,duration_minutes,budget_thb}=JSON.parse(init.body);assert.deepEqual({public_format,duration_minutes,budget_thb},{public_format:'dining',duration_minutes:90,budget_thb:10000});return Response.json({ok:true,request_ref:'fixture_reference',status:'request_pending_admin_review'});}
-  return Response.json({ok:true,items:[{request_ref:'fixture_reference',date:'2099-01-01',time:'18:00',public_format:'dining',duration_minutes:90,budget_thb:10000}]});
+  if(path.includes('/search'))return Response.json({ok:true,items:[{model_id:model,public_offers:fixtureOffers,display_name:'<script>fixture</script>'}]});
+  if(init.method==='POST'){posts++;const {public_format,duration_minutes,budget_thb}=JSON.parse(init.body);assert.deepEqual({public_format,duration_minutes,budget_thb},{public_format:'dining',duration_minutes:240,budget_thb:10000});return Response.json({ok:true,request_ref:'fixture_reference',status:'request_pending_admin_review'});}
+  return Response.json({ok:true,items:[{request_ref:'fixture_reference',date:'2099-01-01',time:'18:00',public_format:'dining',duration_minutes:240,budget_thb:10000}]});
  });
  try{
  const search=f.d.querySelector('[data-booking-search]');search.dispatchEvent(new f.dom.window.Event('submit',{cancelable:true}));await tick();
  assert.equal(f.d.querySelectorAll('script').length,0);f.d.querySelector('[data-booking-results] button').click();
  f.d.querySelector('[data-booking-change]').click();assert.equal(f.d.querySelector('[data-booking-details]').hidden,true);assert.equal(posts,0);
- f.d.querySelector('[data-booking-results] button').click();const details=f.d.querySelector('[data-booking-details]');Object.assign(details.elements.date,{value:'2099-01-01'});details.elements.time.value='18:00';details.elements.area.value='Bangkok';details.elements.public_format.value='dining';details.elements.duration_minutes.value='90';details.elements.budget_thb.value='10000';
+ f.d.querySelector('[data-booking-results] button').click();const details=f.d.querySelector('[data-booking-details]');Object.assign(details.elements.date,{value:'2099-01-01'});details.elements.time.value='18:00';details.elements.area.value='Bangkok';details.elements.public_format.value='dining';details.elements.public_format.dispatchEvent(new f.dom.window.Event('change'));details.elements.duration_minutes.value='240';details.elements.budget_thb.value='10000';
  details.dispatchEvent(new f.dom.window.Event('submit',{cancelable:true}));details.dispatchEvent(new f.dom.window.Event('submit',{cancelable:true}));await tick();await tick();
- assert.equal(posts,1);assert.match(f.d.querySelector('[data-booking-list]').textContent,/fixture_reference.*ร่วมมื้ออาหาร.*90 นาที.*10,000 บาท/);assert.match(f.d.querySelector('[data-booking-message]').textContent,/ยังไม่ใช่การยืนยันงาน/);
+ assert.equal(posts,1);assert.match(f.d.querySelector('[data-booking-list]').textContent,/fixture_reference.*ร่วมมื้ออาหาร.*240 นาที.*10,000 บาท/);assert.match(f.d.querySelector('[data-booking-message]').textContent,/ยังไม่ใช่การยืนยันงาน/);
  }finally{f.dom.window.close();}
 });
 test('stale account search response cannot restore models or old account details',async()=>{
  let release;const f=fixture(()=>new Promise(resolve=>release=resolve));
- try{f.d.querySelector('[data-booking-search]').dispatchEvent(new f.dom.window.Event('submit',{cancelable:true}));f.switchAccount();release(Response.json({ok:true,items:[{model_id:model,display_name:'Account A'}]}));await tick();assert.equal(f.d.querySelector('[data-booking-results]').children.length,0);assert.equal(f.d.querySelector('[data-booking-details]').hidden,true);}finally{f.dom.window.close();}
+ try{f.d.querySelector('[data-booking-search]').dispatchEvent(new f.dom.window.Event('submit',{cancelable:true}));f.switchAccount();release(Response.json({ok:true,items:[{model_id:model,public_offers:fixtureOffers,display_name:'Account A'}]}));await tick();assert.equal(f.d.querySelector('[data-booking-results]').children.length,0);assert.equal(f.d.querySelector('[data-booking-details]').hidden,true);}finally{f.dom.window.close();}
 });
 test('search failure and no results remain distinct and no synthetic percent appears',async()=>{
  let good=false;const f=fixture(async()=>good?Response.json({ok:true,items:[]}):Response.json({ok:false},{status:503}));
@@ -40,20 +41,20 @@ test('search failure and no results remain distinct and no synthetic percent app
 
 test('approved model selector resumes after authentication and remains subject to search visibility',async()=>{
  for(const allowed of [true,false]){
-  const f=fixture(async path=>Response.json(path.includes('/search')?{ok:true,items:allowed?[{model_id:model,display_name:'Resumed'}]:[]}:{ok:true,items:[]}),model);
+  const f=fixture(async path=>Response.json(path.includes('/search')?{ok:true,items:allowed?[{model_id:model,public_offers:fixtureOffers,display_name:'Resumed'}]:[]}:{ok:true,items:[]}),model);
   try{await f.ui.load();assert.equal(f.d.querySelector('[data-booking-details]').hidden,!allowed);if(allowed)assert.match(f.d.querySelector('[data-booking-selected]').textContent,/Resumed/);}finally{f.dom.window.close();}
  }
 });
 
 test('leaving the view invalidates a queued submit before network execution',async()=>{
  let submitGuard,release;const f=fixture(async(path,init={},valid)=>{
-  if(path.includes('/search'))return Response.json({ok:true,items:[{model_id:model,display_name:'Fixture'}]});
+  if(path.includes('/search'))return Response.json({ok:true,items:[{model_id:model,public_offers:fixtureOffers,display_name:'Fixture'}]});
   if(init.method==='POST'){submitGuard=valid;return new Promise(resolve=>release=resolve);}
   return Response.json({ok:true,items:[]});
  });
  try{
   f.d.querySelector('[data-booking-search]').dispatchEvent(new f.dom.window.Event('submit',{cancelable:true}));await tick();f.d.querySelector('[data-booking-results] button').click();
-  const form=f.d.querySelector('[data-booking-details]');form.elements.date.value='2099-01-01';form.elements.time.value='18:00';form.elements.area.value='Bangkok';form.elements.public_format.value='dining';form.elements.duration_minutes.value='90';form.elements.budget_thb.value='10000';
+  const form=f.d.querySelector('[data-booking-details]');form.elements.date.value='2099-01-01';form.elements.time.value='18:00';form.elements.area.value='Bangkok';form.elements.public_format.value='dining';form.elements.public_format.dispatchEvent(new f.dom.window.Event('change'));form.elements.duration_minutes.value='240';form.elements.budget_thb.value='10000';
   form.dispatchEvent(new f.dom.window.Event('submit',{cancelable:true}));assert.equal(submitGuard(),true);f.ui.leave();assert.equal(submitGuard(),false);
   release(Response.json({ok:true,request_ref:'stale'}));await tick();assert.doesNotMatch(f.d.querySelector('[data-booking-message]').textContent,/รับคำขอแล้ว/);
  }finally{f.dom.window.close();}
@@ -61,15 +62,15 @@ test('leaving the view invalidates a queued submit before network execution',asy
 
 test('reload reconciles the exact previous request, permits explicit new only after owned readback, and renders closed status',async()=>{
  const ref='mmdreq_'+'e'.repeat(64);let token='';
- const api=async(path,init={})=>{if(path.includes('/context'))return Response.json({ok:true,scopes:['public']});if(path.includes('/search'))return Response.json({ok:true,items:[{model_id:model,display_name:'Fixture'}]});if(init.method==='POST'){token=JSON.parse(init.body).request_id;return Response.json({ok:true,request_ref:ref});}return Response.json({ok:true,active_request_ref:ref,items:[{request_ref:ref,status:'closed'}]});};
+ const api=async(path,init={})=>{if(path.includes('/context'))return Response.json({ok:true,scopes:['public']});if(path.includes('/search'))return Response.json({ok:true,items:[{model_id:model,public_offers:fixtureOffers,display_name:'Fixture'}]});if(init.method==='POST'){token=JSON.parse(init.body).request_id;return Response.json({ok:true,request_ref:ref});}return Response.json({ok:true,active_request_ref:ref,items:[{request_ref:ref,status:'closed'}]});};
  const f=fixture(api);let seed;
- try{f.d.querySelector('[data-booking-search]').dispatchEvent(new f.dom.window.Event('submit',{cancelable:true}));await tick();f.d.querySelector('[data-booking-results] button').click();const form=f.d.querySelector('[data-booking-details]');form.elements.date.value='2099-01-01';form.elements.time.value='18:00';form.elements.area.value='Bangkok';form.elements.public_format.value='dining';form.elements.duration_minutes.value='90';form.elements.budget_thb.value='10000';form.dispatchEvent(new f.dom.window.Event('submit',{cancelable:true}));await tick();await tick();seed=f.storage();assert.ok(Object.values(seed).includes(token));}finally{f.dom.window.close();}
+ try{f.d.querySelector('[data-booking-search]').dispatchEvent(new f.dom.window.Event('submit',{cancelable:true}));await tick();f.d.querySelector('[data-booking-results] button').click();const form=f.d.querySelector('[data-booking-details]');form.elements.date.value='2099-01-01';form.elements.time.value='18:00';form.elements.area.value='Bangkok';form.elements.public_format.value='dining';form.elements.public_format.dispatchEvent(new f.dom.window.Event('change'));form.elements.duration_minutes.value='240';form.elements.budget_thb.value='10000';form.dispatchEvent(new f.dom.window.Event('submit',{cancelable:true}));await tick();await tick();seed=f.storage();assert.ok(Object.values(seed).includes(token));}finally{f.dom.window.close();}
  const reloaded=fixture(api,'',seed);try{await reloaded.ui.load();assert.equal(reloaded.d.querySelector('[data-booking-new]').hidden,false);assert.match(reloaded.d.querySelector('[data-booking-list]').textContent,/ปิดคำขอแล้ว/);reloaded.d.querySelector('[data-booking-new]').click();await tick();assert.deepEqual(reloaded.storage(),{});}finally{reloaded.dom.window.close();}
  const wrong=fixture(async()=>Response.json({ok:true,scopes:['public'],active_request_ref:ref,items:[{request_ref:'other',status:'closed'}]}),'',seed);try{await wrong.ui.load();assert.equal(wrong.d.querySelector('[data-booking-new]').hidden,true);}finally{wrong.dom.window.close();}
 });
 test('definite no-write rejection clears only that attempt and allows corrected retry',async()=>{
- const bodies=[];const f=fixture(async(path,init={})=>{if(path.includes('/search'))return Response.json({ok:true,items:[{model_id:model,display_name:'Fixture'}]});if(init.method==='POST'){bodies.push(JSON.parse(init.body));return Response.json({ok:false,error:'selected_model_unavailable',outcome:'not_started'},{status:422});}return Response.json({ok:true,items:[]});});
- try{f.d.querySelector('[data-booking-search]').dispatchEvent(new f.dom.window.Event('submit',{cancelable:true}));await tick();f.d.querySelector('[data-booking-results] button').click();const form=f.d.querySelector('[data-booking-details]');form.elements.date.value='2099-01-01';form.elements.time.value='18:00';form.elements.area.value='Bangkok';form.elements.public_format.value='dining';form.elements.duration_minutes.value='90';form.elements.budget_thb.value='10000';for(let i=0;i<2;i++){form.dispatchEvent(new f.dom.window.Event('submit',{cancelable:true}));await tick();}assert.equal(bodies.length,2);assert.notEqual(bodies[0].request_id,bodies[1].request_id);assert.deepEqual(f.storage(),{});}finally{f.dom.window.close();}
+ const bodies=[];const f=fixture(async(path,init={})=>{if(path.includes('/search'))return Response.json({ok:true,items:[{model_id:model,public_offers:fixtureOffers,display_name:'Fixture'}]});if(init.method==='POST'){bodies.push(JSON.parse(init.body));return Response.json({ok:false,error:'selected_model_unavailable',outcome:'not_started'},{status:422});}return Response.json({ok:true,items:[]});});
+ try{f.d.querySelector('[data-booking-search]').dispatchEvent(new f.dom.window.Event('submit',{cancelable:true}));await tick();f.d.querySelector('[data-booking-results] button').click();const form=f.d.querySelector('[data-booking-details]');form.elements.date.value='2099-01-01';form.elements.time.value='18:00';form.elements.area.value='Bangkok';form.elements.public_format.value='dining';form.elements.public_format.dispatchEvent(new f.dom.window.Event('change'));form.elements.duration_minutes.value='240';form.elements.budget_thb.value='10000';for(let i=0;i<2;i++){form.dispatchEvent(new f.dom.window.Event('submit',{cancelable:true}));await tick();}assert.equal(bodies.length,2);assert.notEqual(bodies[0].request_id,bodies[1].request_id);assert.deepEqual(f.storage(),{});}finally{f.dom.window.close();}
 });
 test('Private selector comes only from backend context and disappears when access is revoked',async()=>{
  let allowed=true;const f=fixture(async path=>Response.json(path.includes('/context')?{ok:true,scopes:allowed?['public','private']:['public']}:{ok:true,items:[]}));
@@ -78,23 +79,98 @@ test('Private selector comes only from backend context and disappears when acces
 
 test('definite queued cancellation clears only its own stored attempt and allows booking after return',async()=>{
  let rejectPost,posts=0;const f=fixture(async(path,init={})=>{
-  if(path.includes('/search'))return Response.json({ok:true,items:[{model_id:model,display_name:'Fixture'}]});
+  if(path.includes('/search'))return Response.json({ok:true,items:[{model_id:model,public_offers:fixtureOffers,display_name:'Fixture'}]});
   if(init.method==='POST'){posts++;return new Promise((_,reject)=>rejectPost=reject);}
   return Response.json({ok:true,scopes:['public'],items:[]});
  });
  try{
   f.d.querySelector('[data-booking-search]').dispatchEvent(new f.dom.window.Event('submit',{cancelable:true}));await tick();f.d.querySelector('[data-booking-results] button').click();
-  const form=f.d.querySelector('[data-booking-details]');form.elements.date.value='2099-01-01';form.elements.time.value='18:00';form.elements.area.value='Bangkok';form.elements.public_format.value='dining';form.elements.duration_minutes.value='90';form.elements.budget_thb.value='10000';form.dispatchEvent(new f.dom.window.Event('submit',{cancelable:true}));
+  const form=f.d.querySelector('[data-booking-details]');form.elements.date.value='2099-01-01';form.elements.time.value='18:00';form.elements.area.value='Bangkok';form.elements.public_format.value='dining';form.elements.public_format.dispatchEvent(new f.dom.window.Event('change'));form.elements.duration_minutes.value='240';form.elements.budget_thb.value='10000';form.dispatchEvent(new f.dom.window.Event('submit',{cancelable:true}));
   assert.equal(Object.keys(f.storage()).length,1);f.ui.leave();rejectPost(Object.assign(Error('stale'),{code:'member_request_not_started'}));await tick();
   assert.deepEqual(f.storage(),{});await f.ui.load();assert.equal(form.querySelector('button[type=submit]').disabled,false);assert.equal(posts,1);
   form.dispatchEvent(new f.dom.window.Event('submit',{cancelable:true}));assert.equal(posts,2);rejectPost(Object.assign(Error('stale'),{code:'member_request_not_started'}));await tick();
  }finally{f.dom.window.close();}
 });
 test('cancelled old account attempt cannot clear a newer account token',async()=>{
- let rejectPost;const f=fixture(async(path,init={})=>{if(path.includes('/search'))return Response.json({ok:true,items:[{model_id:model,display_name:'Fixture'}]});if(init.method==='POST')return new Promise((_,reject)=>rejectPost=reject);return Response.json({ok:true,scopes:['public'],items:[]});});
+ let rejectPost;const f=fixture(async(path,init={})=>{if(path.includes('/search'))return Response.json({ok:true,items:[{model_id:model,public_offers:fixtureOffers,display_name:'Fixture'}]});if(init.method==='POST')return new Promise((_,reject)=>rejectPost=reject);return Response.json({ok:true,scopes:['public'],items:[]});});
  try{
-  f.d.querySelector('[data-booking-search]').dispatchEvent(new f.dom.window.Event('submit',{cancelable:true}));await tick();f.d.querySelector('[data-booking-results] button').click();const form=f.d.querySelector('[data-booking-details]');form.elements.date.value='2099-01-01';form.elements.time.value='18:00';form.elements.area.value='Bangkok';form.elements.public_format.value='dining';form.elements.duration_minutes.value='90';form.elements.budget_thb.value='10000';form.dispatchEvent(new f.dom.window.Event('submit',{cancelable:true}));
+  f.d.querySelector('[data-booking-search]').dispatchEvent(new f.dom.window.Event('submit',{cancelable:true}));await tick();f.d.querySelector('[data-booking-results] button').click();const form=f.d.querySelector('[data-booking-details]');form.elements.date.value='2099-01-01';form.elements.time.value='18:00';form.elements.area.value='Bangkok';form.elements.public_format.value='dining';form.elements.public_format.dispatchEvent(new f.dom.window.Event('change'));form.elements.duration_minutes.value='240';form.elements.budget_thb.value='10000';form.dispatchEvent(new f.dom.window.Event('submit',{cancelable:true}));
   f.switchAccount();f.dom.window.sessionStorage.setItem('mmd-booking-request:account_b','bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');rejectPost(Object.assign(Error('stale'),{code:'member_request_not_started'}));await tick();
   assert.deepEqual(f.storage(),{'mmd-booking-request:account_b':'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'});assert.equal(form.hidden,true);
  }finally{f.dom.window.close();}
 });
+
+test('unavailable approved pricing is explained without acknowledging a request', async () => {
+  const f = fixture(async (path, init = {}) => {
+    if (path.includes('/search')) return Response.json({ok: true, items: [{model_id: model, public_offers: fixtureOffers, display_name: 'Fixture'}]});
+    if (init.method === 'POST') return Response.json({ok: false, error: 'approved_rate_unavailable', outcome: 'not_started'}, {status: 503});
+    return Response.json({ok: true, items: []});
+  });
+  try {
+    f.d.querySelector('[data-booking-search]').dispatchEvent(new f.dom.window.Event('submit', {cancelable: true}));
+    await tick();
+    f.d.querySelector('[data-booking-results] button').click();
+    const form = f.d.querySelector('[data-booking-details]');
+    form.elements.date.value = '2099-01-01';
+    form.elements.time.value = '18:00';
+    form.elements.area.value = 'Bangkok';
+    form.elements.public_format.value = 'dining';
+    form.elements.public_format.dispatchEvent(new f.dom.window.Event('change'));
+    form.elements.duration_minutes.value = '240';
+    form.elements.budget_thb.value = '10000';
+    form.dispatchEvent(new f.dom.window.Event('submit', {cancelable: true}));
+    await tick();
+    assert.match(f.d.querySelector('[data-booking-message]').textContent, /ยังไม่มีราคาอนุมัติ/);
+    assert.equal(form.hidden, false);
+    assert.equal(form.querySelector('button[type=submit]').disabled, false);
+    assert.equal(Object.keys(f.storage()).length, 0);
+  } finally { f.dom.window.close(); }
+});
+
+const publicCategories=['dining','event','party','travel','guest_care','social_appearance','brand_guest','city_companion','other'];
+for(const category of publicCategories){
+ test(`hour selection ${category}: approved quotes and pending model remain distinct`,async()=>{
+  let posts=0;
+  const f=fixture(async(path,init={})=>{
+   if(path.includes('/search'))return Response.json({ok:true,items:[
+    {model_id:model,display_name:'Approved fixture',public_offers:[
+     {public_format:category,duration_minutes:240,customer_rate_thb:6000},
+     {public_format:category,duration_minutes:300,customer_rate_thb:7500},
+    ]},
+    {model_id:'recPending00000001',display_name:'Pending fixture',public_offers:[]},
+   ]});
+   if(init.method==='POST'){
+    posts++;
+    const body=JSON.parse(init.body);
+    assert.equal(body.public_format,category);
+    assert.equal(body.duration_minutes,300);
+    assert.equal(body.budget_thb,10000);
+    assert.equal(body.customer_rate_thb,undefined);
+    return Response.json({ok:true,request_ref:'fixture_reference'});
+   }
+   return Response.json({ok:true,items:[]});
+  });
+  try{
+   f.d.querySelector('[data-booking-search]').dispatchEvent(new f.dom.window.Event('submit',{cancelable:true}));await tick();
+   const buttons=f.d.querySelectorAll('[data-booking-results] button');
+   buttons[0].click();
+   const form=f.d.querySelector('[data-booking-details]');
+   form.elements.public_format.value=category;
+   form.elements.public_format.dispatchEvent(new f.dom.window.Event('change'));
+   assert.match(form.elements.duration_minutes.textContent,/4 ชั่วโมง · 6,000 บาท/);
+   assert.match(form.elements.duration_minutes.textContent,/5 ชั่วโมง · 7,500 บาท/);
+   assert.deepEqual(Array.from(form.elements.duration_minutes.options,x=>x.value),['','240','300']);
+   buttons[1].click();
+   assert.equal(form.elements.duration_minutes.disabled,true);
+   assert.equal(form.querySelector('button[type=submit]').disabled,true);
+   assert.match(f.d.querySelector('[data-booking-message]').textContent,/รอเปอร์ตรวจ/);
+   assert.doesNotMatch(form.elements.duration_minutes.textContent,/6,000|7,500/);
+   buttons[0].click();
+   form.elements.duration_minutes.value='300';
+   form.elements.date.value='2099-01-01';form.elements.time.value='18:00';form.elements.area.value='Bangkok';form.elements.budget_thb.value='10000';
+   form.dispatchEvent(new f.dom.window.Event('submit',{cancelable:true}));
+   form.dispatchEvent(new f.dom.window.Event('submit',{cancelable:true}));
+   await tick();await tick();assert.equal(posts,1);
+  }finally{f.dom.window.close();}
+ });
+}
