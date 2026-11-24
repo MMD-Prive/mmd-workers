@@ -30,6 +30,7 @@
     });
   }
   function returnPath(code){
+    if(code==="red_card")return "/pay/membership?package=red_card";
     var params=new URLSearchParams(location.search);
     params.delete("t");
     params.set("package",code);
@@ -42,10 +43,10 @@
     url.searchParams.set("return_to",returnPath(code));
     return url.toString();
   }
-  function safePay(value){
+  function safePay(value,code){
     try{
       var url=new URL(value,location.origin);
-      var keys=[].slice.call(url.searchParams.keys());
+      var keys=code==="red_card"?Array.from(url.searchParams.keys()):[].slice.call(url.searchParams.keys());
       if(url.protocol!=="https:")return null;
       if(url.hostname!=="mmdbkk.com")return null;
       if(url.pathname!=="/pay/checkout")return null;
@@ -94,18 +95,54 @@
       },15000);
       var response=result.response;
       var payload=result.payload;
+      var errorCode=payload&&payload.error&&payload.error.code;
+      var existingRedOrder=code==="red_card"&&response.status===409?{
+        red_card_order_already_paid:["รายการ Red Card นี้ชำระแล้วครับ ดูสถานะได้ใน MY MMD โดยไม่ต้องชำระซ้ำ","/my-mmd/","เปิด MY MMD"],
+        red_card_order_proof_already_received:["เราได้รับหลักฐานชำระ Red Card แล้วครับ กำลังตรวจสอบ ยังไม่ต้องชำระซ้ำ","/my-mmd/","ดูสถานะใน MY MMD"],
+        red_card_prior_order_review_required:["มีรายการ Red Card เดิมที่ต้องตรวจสอบก่อนครับ ติดต่อ MMD เพื่อเช็กสถานะ และยังไม่ต้องชำระซ้ำ","https://lin.ee/xRqsALs","ติดต่อ MMD ทาง LINE"]
+      }:null;
+      if(existingRedOrder&&Object.prototype.hasOwnProperty.call(existingRedOrder,errorCode)){
+        setBusy(false);
+        var review=existingRedOrder[errorCode];
+        show(review[0],"soft");
+        if(status){
+          var reviewLink=document.createElement("a");
+          reviewLink.href=review[1];
+          reviewLink.textContent=review[2];
+          status.append(document.createTextNode(" "),reviewLink);
+        }
+        return;
+      }
+      if(code==="red_card"&&((response.status===401&&errorCode==="LINE_SESSION_REQUIRED")||
+        (response.status===409&&errorCode==="RED_CARD_ACCOUNT_VERIFICATION_REQUIRED"))){
+        setBusy(false);
+        show("ยืนยันบัญชี MY MMD ก่อนสมัคร Red Card ครับ เมื่อยืนยันแล้วจะกลับมาเลือก Red Card ได้อีกครั้ง","soft");
+        if(status){
+          var link=document.createElement("a");
+          link.href=authUrl(code);
+          link.textContent="ยืนยันบัญชี MY MMD";
+          status.append(document.createTextNode(" "),link);
+        }
+        return;
+      }
       if(response.status===401&&payload&&payload.error&&payload.error.code==="LINE_SESSION_REQUIRED"){
         show("ขอยืนยัน LINE ครั้งเดียวครับ แล้วผมจะพากลับมาต่อที่ "+name,"soft");
         location.assign(authUrl(code));
         return;
       }
       if(!response.ok||!payload||payload.ok!==true)throw new Error(payload&&payload.error&&payload.error.code||"payment_unavailable");
-      var pay=safePay(payload.redirect_to||payload.customer_payment_url);
+      if(code==="red_card"&&(!payload.package||payload.package.package_code!=="red_card"||
+        payload.package.amount_thb!==11499||payload.package.duration_days!==730)){
+        throw new Error("red_card_terms_unconfirmed");
+      }
+      var pay=safePay(payload.redirect_to||payload.customer_payment_url,code);
       if(!pay)throw new Error("payment_link_invalid");
       show("เรียบร้อยครับ กำลังพาไปหน้าชำระของ "+name+"…","soft");
       location.assign(pay.toString());
     }catch(error){
-      if(error&&error.name==="AbortError"){
+      if(error&&error.message==="red_card_terms_unconfirmed"){
+        show("ยังยืนยันเงื่อนไข Red Card 2 ปีไม่ได้ครับ กรุณาอย่าเพิ่งชำระ ลองใหม่ภายหลังหรือทัก MMD ทาง LINE","error");
+      }else if(error&&error.name==="AbortError"){
         show("ใช้เวลานานกว่าปกติครับ ลองอีกครั้งได้เลย หรือทักผมทาง LINE แล้วผมช่วยต่อให้","error");
       }else{
         show("ตอนนี้ผมยังพาไปหน้าชำระไม่ได้ครับ ลองอีกครั้ง หรือทักผมทาง LINE ได้เลย","error");

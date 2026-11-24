@@ -1,4 +1,5 @@
 import {loadDoubleMomentCard} from './liff-promotion-client.js';
+import {applyRedCardLiffReturn} from './red-card-liff-return.js';
 import {resolveDoubleMomentJobReturn} from '../../shared/double-moment-navigation.mjs';
 
 function replaceOnce(html,anchor,replacement) {
@@ -23,7 +24,7 @@ export async function applyConsolePresentation(request,response) {
     const target=resolveDoubleMomentJobReturn(url.searchParams,state);
     if(target)updated=replaceOnce(updated,'profileReady = true;','profileReady = true;\n    window.location.replace('+JSON.stringify(target)+'); return;');
     const headers=new Headers(response.headers);headers.delete('content-length');headers.delete('etag');headers.set('cache-control','no-store, private');
-    return new Response(updated,{status:response.status,headers});
+    return applyRedCardLiffReturn(request,new Response(updated,{status:response.status,headers}));
   }catch{
     return Response.json({ok:false,error:'console_presentation_unavailable'},{status:503,headers:{'cache-control':'no-store, private'}});
   }
