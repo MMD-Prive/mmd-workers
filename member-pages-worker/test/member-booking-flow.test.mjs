@@ -1,4 +1,5 @@
 import {createPublicRateCatalog} from '../../sigil-booking-worker/src/public-rate-catalog.js';
+import {PUBLIC_BOOKING_FORMATS} from '../../shared/member-public-booking.mjs';
 import {createRequire} from 'node:module';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -8,11 +9,11 @@ import {handleMemberBookingService,protectMemberBookingReference} from '../../si
 const secret='fixture-only-booking-service-secret-123456789';
 const model='recEligible0000001';
 const sessions={a:{lineUserId:'line_a',memberId:'member_a',memberExists:true,memberProfile:{membership_status:'active'}},b:{lineUserId:'line_b',memberId:'member_b',memberExists:true,memberProfile:{membership_status:'active'}}};
-const approvedRate={status:'approved',model_id:model,public_format:'dining',duration_minutes:90,model_fee_thb:4500};
+const approvedRate={status:'approved',model_id:model,public_format:'dining',duration_minutes:240,model_fee_thb:4500};
 const mockCatalog={lookup:async()=>({...approvedRate})};
-const input=()=>({scope:'public',public_format:'dining',duration_minutes:90,budget_thb:5000,request_id:'12345678-1234-1234-1234-123456789abc',model_id:model,date:'2099-01-01',time:'18:30',area:'Bangkok',note:'fixture only'});
+const input=()=>({scope:'public',public_format:'dining',duration_minutes:240,budget_thb:5000,request_id:'12345678-1234-1234-1234-123456789abc',model_id:model,date:'2099-01-01',time:'18:30',area:'Bangkok',note:'fixture only'});
 const request=(account,action='requests',body)=>new Request('https://mmdbkk.com/member/api/liff/booking/'+action,{method:body?'POST':'GET',headers:{origin:'https://mmdbkk.com',cookie:'__Host-mmd_liff_session='+account,'content-type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});
-async function fixture(run){
+async function fixture(run, chosenModel = {id:model,name:'Fixture'}){
  const rows=[],actors=new Map(),writes=[],calls=[];let uncertain=false,available=true,searchOk=true;
  const native=globalThis.fetch;
  globalThis.fetch=async(url,init={})=>{assert.equal(init.method||'GET','GET','test must not call a real write');assert.equal(new URL(url).hostname,'api.airtable.com');return Response.json({records:rows});};
@@ -20,7 +21,7 @@ async function fixture(run){
  env.MEMBER_PAGES_WORKER={fetch:async r=>{const s=sessions[r.headers.get('cookie')?.split('=').at(-1)];return s?Response.json({ok:true,identity_binding_verified:true,memberRef:await digest('mmd-discovery-member-v1:'+s.memberId)}):Response.json({ok:false},{status:401});}};
  const delegate=async (r,context)=>{
   calls.push(new URL(r.url).pathname);
-  if(new URL(r.url).pathname.endsWith('/search'))return Response.json({ok:searchOk,discovery_scope:'public',visibility_enforced:searchOk,items:available?[{model_id:model,scope:'public',display_name:'Fixture',primary_media_id:''}]:[]});
+  if(new URL(r.url).pathname.endsWith('/search'))return Response.json({ok:searchOk,discovery_scope:'public',visibility_enforced:searchOk,items:available?[{model_id:chosenModel.id,scope:'public',display_name:chosenModel.name,primary_media_id:''}]:[]});
   const body=await r.json();body.resolver_payload_json={...body.resolver_payload_json,my_mmd_owner:context?.ownerMetadata};writes.push(body);rows.push({id:'recFixture',fields:{booking_ref:body.booking_ref,resolver_payload_json:JSON.stringify(body.resolver_payload_json),'Preferred Date':body.preferred_date,'Preferred Time':body.preferred_time}});
   if(uncertain)throw Error('lost response after write');return Response.json({ok:true,booking_ref:body.booking_ref});
  };
@@ -63,10 +64,11 @@ test('unsigned ownership injection and existing member request overwrite are den
  const list=await (await handleMemberBooking(request('a'),env,deps)).json();assert.equal(list.items.length,1);
  const noSecret=new Request('https://sigil-booking.internal/__internal/member-booking',{method:'POST',body:'{}'});assert.equal((await handleMemberBookingService(noSecret,env,()=>{throw Error('must not call');})).status,401);
 }));
-test('service delegates actual SIGIL search/media policy and actual intake with signed ownership retained',async()=>{
+for (const publicFormat of Object.keys(PUBLIC_BOOKING_FORMATS)) {
+test(`Public fixture smoke ${publicFormat}: actual intake → own readback → Create Job, signed ownership and replay`,async()=>{
  const {default:runtime}=await import('../../sigil-booking-worker/src/runtime-index.js');
  const rows=[],native=globalThis.fetch;let writes=0;
- const env={MMD_PUBLIC_RATE_CATALOG:mockCatalog,AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES:secret,AIRTABLE_API_KEY:'fixture',AIRTABLE_BASE_ID:'fixture',AIRTABLE_TABLE_BOOKING_REQUESTS_ID:'Bookings',AIRTABLE_TABLE_MODELS_ID:'Models',AIRTABLE_TABLE_MODEL_OFFER_RULES:'Rules',AIRTABLE_TABLE_MODEL_MEDIA_ID:'Media',AIRTABLE_TABLE_MEMBERS_ID:'Members',AIRTABLE_TABLE_ENTITLEMENTS_ID:'Entitlements',TELEGRAM_NOTIFY_ENABLED:'false'};
+ const env={MMD_PUBLIC_RATE_CATALOG:[{...approvedRate,public_format:publicFormat,duration_minutes:240,customer_rate_thb:6000,price_visibility:'customer',approved_by:'MMD-MOCK',approved_at:'2099-01-01',approval_ref:'MOCK-ONLY-'+publicFormat}],AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES:secret,AIRTABLE_API_KEY:'fixture',AIRTABLE_BASE_ID:'fixture',AIRTABLE_TABLE_BOOKING_REQUESTS_ID:'Bookings',AIRTABLE_TABLE_MODELS_ID:'Models',AIRTABLE_TABLE_MODEL_OFFER_RULES:'Rules',AIRTABLE_TABLE_MODEL_MEDIA_ID:'Media',AIRTABLE_TABLE_MEMBERS_ID:'Members',AIRTABLE_TABLE_ENTITLEMENTS_ID:'Entitlements',TELEGRAM_NOTIFY_ENABLED:'false'};
  env.MEMBER_PAGES_WORKER={fetch:async()=>Response.json({ok:true,identity_binding_verified:true,memberId:'member_a',memberRef:await digest('mmd-discovery-member-v1:member_a')})};
  globalThis.fetch=async(input,init={})=>{
   const url=new URL(input instanceof URL?input:typeof input==='string'?input:input.url);assert.equal(url.hostname,'api.airtable.com');const table=decodeURIComponent(url.pathname.split('/')[3]||'');
@@ -80,22 +82,22 @@ test('service delegates actual SIGIL search/media policy and actual intake with 
  try{
   const clientId='recPublicClient0001';
   const owner=await digest('my-mmd-booking-owner-v1:'+clientId+':member_a'),reference='mmdreq_'+'a'.repeat(64);
-  const call=operation=>runtime.fetch(new Request('https://sigil-booking.internal/__internal/member-booking',{method:'POST',headers:{cookie:'__Host-mmd_liff_session=a','x-mmd-member-booking-secret':secret,'content-type':'application/json'},body:JSON.stringify({operation,owner,member_id:'member_a',client_id:clientId,reference,payload:{model_id:model,date:'2099-01-01',time:'18:00',area:'Bangkok',note:'fixture',public_format:'dining',duration_minutes:90,budget_thb:10000}})}),env);
-  const search=await call('search');assert.equal(search.status,200);assert.equal((await search.json()).items[0]?.model_id,model);
+  const call=operation=>runtime.fetch(new Request('https://sigil-booking.internal/__internal/member-booking',{method:'POST',headers:{cookie:'__Host-mmd_liff_session=a','x-mmd-member-booking-secret':secret,'content-type':'application/json'},body:JSON.stringify({operation,owner,member_id:'member_a',client_id:clientId,reference,payload:{model_id:model,date:'2099-01-01',time:'18:00',area:'Bangkok',note:'fixture',public_format:publicFormat,duration_minutes:240,budget_thb:10000}})}),env);
+  const search=await call('search');assert.equal(search.status,200);const found=(await search.json()).items[0];assert.equal(found.model_id,model);assert.deepEqual(found.public_offers,[{public_format:publicFormat,duration_minutes:240,customer_rate_thb:6000}]);
   const submit=await call('submit');assert.equal(submit.status,201,JSON.stringify(await submit.clone().json()));assert.equal(writes,1);
   assert.equal(JSON.parse(rows[0].fields.resolver_payload_json).my_mmd_owner.owner,owner);
   const publicOwner=JSON.parse(rows[0].fields.resolver_payload_json).public_booking_owner;
   assert.equal(publicOwner.member_id,'member_a');assert.equal(publicOwner.schema,'public_booking_owner_v1');assert.match(publicOwner.signature,/^[a-f0-9]{64}$/);
   assert.equal(rows[0].fields['Client Notes'],'พื้นที่: Bangkok\nfixture');
   const stored=JSON.parse(rows[0].fields.resolver_payload_json);
-  assert.equal(rows[0].fields['Preference Text'],'หมวดงาน Public: dining');
-  assert.equal(stored.customer_search.service_context,'dining');
-  assert.equal(stored.customer_search.duration_minutes,90);
+  assert.equal(rows[0].fields['Preference Text'],'หมวดงาน Public: '+publicFormat);
+  assert.equal(stored.customer_search.service_context,publicFormat);
+  assert.equal(stored.customer_search.duration_minutes,240);
   assert.equal(stored.customer_search.budget.max_thb,10000);
   const list=await call('list');const {items}=await list.json();
   assert.equal(items.length,1);assert.equal(items[0].request_ref,reference);
-  assert.equal(items[0].public_format,'dining');
-  assert.equal(items[0].duration_minutes,90);
+  assert.equal(items[0].public_format,publicFormat);
+  assert.equal(items[0].duration_minutes,240);
   assert.equal(items[0].budget_thb,10000);
   const {readCreateJobPublicRequest}=await import('../../admin-worker/src/create-job-public-request.js');
   const endpoint='https://local.test/internal/admin/jobs/create-job/public-request?client_id=';
@@ -105,7 +107,7 @@ test('service delegates actual SIGIL search/media policy and actual intake with 
   assert.equal((await lookup('recPublicClient0002',reference)).status,404);
   const fields=rows[0].fields, original=fields.resolver_payload_json;
   const altered=JSON.parse(original);
-  altered.my_mmd_owner.publicDetails.public_format='travel';
+  altered.my_mmd_owner.publicDetails.public_format=publicFormat==='travel'?'dining':'travel';
   fields.resolver_payload_json=JSON.stringify(altered);
   assert.equal((await lookup(clientId,reference)).status,404);
   fields.resolver_payload_json=original;
@@ -114,9 +116,11 @@ test('service delegates actual SIGIL search/media policy and actual intake with 
   fields.lane='public';
   const options=(await (await lookup(clientId)).json()).items;
   assert.equal(options.length,1);assert.equal(options[0].ref,reference);
-  const chosen=await (await lookup(clientId,options[0].ref)).json();
-  assert.equal(chosen.work_type,'dining');assert.equal(chosen.budget_thb,10000);
-  assert.equal(chosen.duration_minutes,90);assert.equal(chosen.model_name,'White');
+  const chosenResponse=await lookup(clientId,options[0].ref);
+  assert.equal(chosenResponse.status,200);
+  const chosen=await chosenResponse.json();
+  assert.equal(chosen.work_type,publicFormat);assert.equal(chosen.budget_thb,10000);
+  assert.equal(chosen.duration_minutes,240);assert.equal(chosen.model_name,'White');
   const {JSDOM}=createRequire(import.meta.url)('jsdom');
   const {handleCreateJobWorkerPage}=await import('../../admin-worker/src/create-job-worker-page.js');
   const pageUrl='https://local.test/internal/admin/jobs/create-job';
@@ -146,15 +150,23 @@ test('service delegates actual SIGIL search/media policy and actual intake with 
     await el('showBookings').onclick();assert.equal(el('bookingOptions').options.length,2);
     el('bookingOptions').value=reference;el('bookingOptions').onchange();
     for(let n=0;n<20 && !el('publicFormat').value;n++)await new Promise(resolve=>setTimeout(resolve,5));
-    assert.equal(el('publicFormat').value,'dining');
-    assert.match(el('bookingSummary').textContent,/White.*dining.*90.*10,000/);
+    assert.equal(el('publicFormat').value,publicFormat);
+    assert.match(el('bookingSummary').textContent,new RegExp('White.*'+publicFormat+'.*240.*10,000'));
     assert.equal(el('amount').value,'');
     assert.equal(operations.some(path=>path.includes('create-session')||path.includes('preflight')),false);
   }finally{dom.window.close()}
   const retry=await call('submit');assert.equal(retry.status,200);
   assert.equal((await retry.json()).request_ref,reference);assert.equal(writes,1);
+  const afterRetry=await (await call('list')).json();
+  assert.equal(afterRetry.items.length,1);
+  assert.equal(afterRetry.items[0].request_ref,reference);
+  assert.equal(afterRetry.items[0].public_format,publicFormat);
+  assert.equal(afterRetry.items[0].budget_thb,10000);
+  assert.equal((await lookup(clientId,reference)).status,200);
+  assert.equal((await lookup('recPublicClient0002',reference)).status,404);
  }finally{globalThis.fetch=native;}
 });
+}
 test('actual Private flow reuses exact session/member lookup and current entitlement; no search writes or EMs/GWs reveal',async()=>{
  const {default:runtime}=await import('../../sigil-booking-worker/src/runtime-index.js');
  const rows=[],native=globalThis.fetch,recordId='recMemberFixture01',entId='recEntitlement0001';let capability='private_premium',lifecycle='active',writes=0,blockedModel=false;
@@ -211,7 +223,7 @@ test('past dates and blank areas are definite pre-write failures and corrected r
 }));
 
 test('White Public details round-trip and retries do not create another booking',async()=>fixture(async({env,deps,writes,calls})=>{
- const fields={public_format:'dining',duration_minutes:90,budget_thb:10000};
+ const fields={public_format:'dining',duration_minutes:240,budget_thb:10000};
  const payload={...input(),...fields};
  const first=await handleMemberBooking(request('a','requests',payload),env,deps);
  assert.equal(first.status,201,JSON.stringify(await first.clone().json()));
@@ -233,10 +245,10 @@ test('White Public details round-trip and retries do not create another booking'
 
 test('public rate requires exact approved model, category and duration before intake',async()=>{
  for(const override of [{status:'pending'},{model_id:'recOtherModel00001'},{public_format:'event'},
-   {duration_minutes:120},{model_fee_thb:4499},{model_fee_thb:5001}]) {
+   {duration_minutes:300},{model_fee_thb:0},{model_fee_thb:5001}]) {
   await fixture(async({env,deps,writes})=>{
    env.MMD_PUBLIC_RATE_CATALOG={lookup:async(id,format,minutes)=>{
-    assert.deepEqual([id,format,minutes],[model,'dining',90]);
+    assert.deepEqual([id,format,minutes],[model,'dining',240]);
     return {...approvedRate,...override};
    }};
    const response=await handleMemberBooking(request('a','requests',input()),env,deps);
@@ -245,10 +257,10 @@ test('public rate requires exact approved model, category and duration before in
  }
 });
 
-test('120-minute approved fee uses its own record and does not become customer budget',async()=>fixture(async({env,deps,writes})=>{
- env.MMD_PUBLIC_RATE_CATALOG={lookup:async()=>({...approvedRate,duration_minutes:120,model_fee_thb:5500})};
- const response=await handleMemberBooking(request('a','requests',{...input(),duration_minutes:120,budget_thb:6000}),env,deps);
- assert.equal(response.status,201);assert.equal(writes[0].duration_minutes,120);
+test('300-minute approved fee uses its own record and does not become customer budget',async()=>fixture(async({env,deps,writes})=>{
+ env.MMD_PUBLIC_RATE_CATALOG={lookup:async()=>({...approvedRate,duration_minutes:300,model_fee_thb:5500})};
+ const response=await handleMemberBooking(request('a','requests',{...input(),duration_minutes:300,budget_thb:6000}),env,deps);
+ assert.equal(response.status,201);assert.equal(writes[0].duration_minutes,300);
  assert.equal(writes[0].budget_thb,6000);
 }));
 test('missing mock catalog stops before intake',async()=>fixture(async({env,deps,writes})=>{
@@ -298,7 +310,7 @@ test('Public register rejects unmatched, unapproved, undocumented or ambiguous r
   const cases = [
     [{...registerRate, model_id: 'recOtherModel00001'}],
     [{...registerRate, public_format: 'event'}],
-    [{...registerRate, duration_minutes: 120}],
+    [{...registerRate, duration_minutes: 300}],
     [{...registerRate, status: 'draft'}],
     [{...registerRate, status: 'retired'}],
     [{...registerRate, approval_ref: '  '}],
@@ -316,7 +328,7 @@ test('Public register rejects unmatched, unapproved, undocumented or ambiguous r
 
 test('Booking reads White dining from a server-side JSON catalog binding', async () => fixture(async ({env, deps, writes}) => {
   env.MMD_PUBLIC_RATE_CATALOG = [registerRate];
-  const payload = {...input(), public_format: 'dining', duration_minutes: 90, budget_thb: 10000};
+  const payload = {...input(), public_format: 'dining', duration_minutes: 240, budget_thb: 10000};
   const submit = () => handleMemberBooking(request('a', 'requests', payload), env, deps);
   const first = await submit();
   assert.equal(first.status, 201);
@@ -327,3 +339,132 @@ test('Booking reads White dining from a server-side JSON catalog binding', async
   assert.equal(writes.length, 1);
   assert.equal(writes[0].budget_thb, 10000);
 }));
+
+// These values exercise record matching only. They are not published rates.
+test('approved catalog determines the fee without an inferred duration floor', async () => fixture(async ({env, deps, writes}) => {
+  env.MMD_PUBLIC_RATE_CATALOG = [{...registerRate, model_fee_thb: 4200}];
+  const response = await handleMemberBooking(request('a', 'requests', {...input(), budget_thb: 10000}), env, deps);
+  assert.equal(response.status, 201);
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].budget_thb, 10000);
+}));
+
+test('each duration uses its exact approved record without prorating or rounding', async () => {
+  const rates = [
+    {...registerRate, duration_minutes: 300, model_fee_thb: 6000},
+    {...registerRate, duration_minutes: 240, model_fee_thb: 11000},
+  ];
+  for (const [minutes, budget, expectedStatus] of [
+    [300, 6000, 201], [300, 5999, 422],
+    [240, 11000, 201], [240, 10000, 422],
+    [180, 10000, 422],
+  ]) {
+    await fixture(async ({env, deps, writes}) => {
+      env.MMD_PUBLIC_RATE_CATALOG = rates;
+      const response = await handleMemberBooking(request('a', 'requests', {
+        ...input(), duration_minutes: minutes, budget_thb: budget,
+      }), env, deps);
+      assert.equal(response.status, expectedStatus);
+      assert.equal(writes.length, expectedStatus === 201 ? 1 : 0);
+    });
+  }
+});
+
+for (const publicFormat of Object.keys(PUBLIC_BOOKING_FORMATS)) {
+  test(`Public ${publicFormat} waits for approved pricing when evidence is missing`, async () => {
+    for (const catalog of [undefined, [], [{...registerRate, public_format: publicFormat, approval_ref: ''}]]) {
+      await fixture(async ({env, deps, writes}) => {
+        env.MMD_PUBLIC_RATE_CATALOG = catalog;
+        const response = await handleMemberBooking(request('a', 'requests', {
+          ...input(), public_format: publicFormat, budget_thb: 10000,
+        }), env, deps);
+        assert.equal(response.status, catalog === undefined ? 503 : 422);
+        const body = await response.json();
+        assert.equal(body.error, 'approved_rate_unavailable');
+        assert.equal(body.outcome, 'not_started');
+        assert.equal(writes.length, 0);
+        const jobs = await (await handleMemberBooking(request('a'), env, deps)).json();
+        assert.equal(jobs.items.length, 0);
+      });
+    }
+  });
+}
+
+test('customer quotes are bounded and internal or pending prices stay off search',async()=>{
+ const {listPublicBookingOffers}=await import('../../sigil-booking-worker/src/public-rate-catalog.js');
+ const quote={...registerRate,duration_minutes:240,customer_rate_thb:6000,price_visibility:'customer'};
+ assert.deepEqual(listPublicBookingOffers([quote],model),[{public_format:'dining',duration_minutes:240,customer_rate_thb:6000}]);
+ for(const rows of [[{...quote,status:'pending_review'}],[{...quote,approval_ref:''}],[{...quote,price_visibility:'internal'}],[{...quote,customer_rate_thb:undefined}],[quote,{...quote}],[{...quote,model_id:'recOtherModel00001'}]]){
+  assert.deepEqual(listPublicBookingOffers(rows,model),[]);
+ }
+ await fixture(async({env,deps,writes})=>{
+  env.MMD_PUBLIC_RATE_CATALOG=[quote];
+  const response=await handleMemberBooking(request('a','requests',{...input(),duration_minutes:240,budget_thb:5500}),env,deps);
+  assert.equal(response.status,422);assert.equal(writes.length,0);
+ });
+});
+
+test('owner-selected historical customer quotes work without inventing model payout fees',async()=>{
+ const {readFile}=await import('node:fs/promises');
+ const rows=JSON.parse(await readFile(new URL('../../sigil-booking-worker/qa/public-rate-catalog-owner-approved-20261124.json',import.meta.url),'utf8'));
+ for(const quote of rows){
+  assert.equal(quote.model_fee_thb,undefined);
+  await fixture(async({env,deps,writes})=>{
+   env.MMD_PUBLIC_RATE_CATALOG=rows;
+   const payload={...input(),model_id:quote.model_id,public_format:quote.public_format,duration_minutes:quote.duration_minutes,budget_thb:quote.customer_rate_thb};
+   const first=await handleMemberBooking(request('a','requests',payload),env,deps);
+   assert.equal(first.status,201,JSON.stringify(await first.clone().json()));
+   const saved=await first.json();
+   const retry=await handleMemberBooking(request('a','requests',payload),env,deps);
+   assert.equal(retry.status,200);assert.equal((await retry.json()).request_ref,saved.request_ref);
+   assert.equal(writes.length,1);assert.equal(writes[0].budget_thb,quote.customer_rate_thb);
+   const jobs=await (await handleMemberBooking(request('a'),env,deps)).json();
+   assert.equal(jobs.items.length,1);assert.equal(jobs.items[0].duration_minutes,quote.duration_minutes);
+  },{id:quote.model_id,name:quote.model_name});
+ }
+ const {listPublicBookingOffers}=await import('../../sigil-booking-worker/src/public-rate-catalog.js');
+ for(const format of Object.keys(PUBLIC_BOOKING_FORMATS)){
+  const quote=rows.find(row=>row.public_format===format)||{...rows[0],public_format:format};
+  await fixture(async({env,deps,writes})=>{
+   env.MMD_PUBLIC_RATE_CATALOG=rows;
+   const response=await handleMemberBooking(request('a','requests',{
+    ...input(),model_id:quote.model_id,public_format:format,duration_minutes:quote.duration_minutes,budget_thb:10000,
+   }),env,deps);
+   if(rows.some(row=>row.public_format===format)){
+    assert.equal(response.status,201);assert.equal(writes.length,1);
+   }else{
+    assert.equal(response.status,422);
+    assert.equal((await response.json()).error,'approved_rate_unavailable');
+    assert.equal(writes.length,0);
+   }
+  },{id:quote.model_id,name:quote.model_name});
+ }
+ assert.deepEqual(listPublicBookingOffers(rows,'recWhite000000001'),[]);
+});
+
+for(const publicFormat of Object.keys(PUBLIC_BOOKING_FORMATS)){
+ test(`Bangkok 3–5 hour policy ${publicFormat} is enforced before writing`,async()=>{
+  for(const minutes of [179,301,360]){
+   await fixture(async({env,deps,writes})=>{
+    const response=await handleMemberBooking(request('a','requests',{...input(),public_format:publicFormat,duration_minutes:minutes}),env,deps);
+    assert.equal(response.status,400);assert.equal((await response.json()).error,'public_booking_bangkok_3_to_5_hours');assert.equal(writes.length,0);
+   });
+  }
+  for(const minutes of [180,300]){
+   await fixture(async({env,deps,writes})=>{
+    env.MMD_PUBLIC_RATE_CATALOG=[{...registerRate,public_format:publicFormat,duration_minutes:minutes}];
+    const response=await handleMemberBooking(request('a','requests',{...input(),public_format:publicFormat,duration_minutes:minutes}),env,deps);
+    assert.equal(response.status,201);assert.equal(writes.length,1);
+   });
+  }
+  await fixture(async({env,deps,writes})=>{
+   const response=await handleMemberBooking(request('a','requests',{...input(),public_format:publicFormat,area:'Pattaya'}),env,deps);
+   assert.equal(response.status,400);assert.equal(writes.length,0);
+   const direct=await handleMemberBookingService(new Request('https://sigil-booking.internal/__internal/member-booking',{
+    method:'POST',headers:{cookie:'__Host-mmd_liff_session=a','x-mmd-member-booking-secret':secret,'content-type':'application/json'},
+    body:JSON.stringify({operation:'submit',owner:await digest('local-owner'),member_id:'member_a',reference:'mmdreq_'+'a'.repeat(64),payload:{...input(),public_format:publicFormat,area:'Pattaya'}}),
+   }),env,()=>{throw Error('intake must stay blocked');});
+   assert.equal(direct.status,400);assert.equal(writes.length,0);
+  });
+ });
+}
