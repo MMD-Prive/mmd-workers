@@ -105,7 +105,7 @@ export async function handleReviewedProof(request, env = {}, ctx = null, notifyT
     if (proofRef !== paymentRef) throw httpError(409, "payment_proof_reference_mismatch");
     if (Math.abs(proofAmount - amountThb) > 0.009) throw httpError(409, "payment_proof_amount_mismatch");
 
-    if (!emailLessRecovery) {
+    if (!emailLessRecovery && (paymentStage === "membership" || isPublicPackage(packageCode) || isPublicSession(sessionId))) {
       const publicOrder = await verifyPublicReviewedOrder(env, { paymentRef, paymentStage, sessionId, packageCode, amountThb });
       if (publicOrder) sessionId = publicOrder.sessionId;
     }
@@ -417,39 +417,53 @@ function activationBlocked(fields = {}, includeRevoked = false) {
     .some(value => ["blocked", "suspended", ...(includeRevoked ? ["revoked"] : [])].includes(code(value)));
 }
 
-async function verifyPublicReviewedOrder(env, input) {
-  const table = clean(env.AIRTABLE_TABLE_PAYMENTS || "payments");
-  const refField = clean(env.AT_PAYMENTS__PAYMENT_REF || "Payment Reference");
-  const records = await airtableList(env, table, { filterByFormula: `{payment_ref}='${formulaValue(input.paymentRef)}'`, maxRecords: 2 });
-  const field = (record, key, fallback) => record.fields?.[clean(env[`AT_PAYMENTS__${key}`] || fallback)];
-  const storedPackage = (record) => canonicalPackage(field(record, "PACKAGE_CODE", "Package Code"));
-  const storedSession = (record) => text(field(record, "SESSION_ID", "session_id"), 180);
-  const isPublic = (pkg) => Object.hasOwn(PUBLIC_MEMBERSHIP_CATALOG, pkg);
-  const fromPublicSession = (session) => session.startsWith("publicmem_");
-  if (!isPublic(input.packageCode) && !fromPublicSession(input.sessionId) &&
-      !records.some(record => isPublic(storedPackage(record)) || fromPublicSession(storedSession(record)))) {
-    return null;
-  }
-  if (records.length !== 1) {
-    throw httpError(409, records.length ? "public_membership_order_ambiguous" : "public_membership_order_not_found");
-  }
-  const order = records[0];
-  const packageCode = storedPackage(order);
-  const sessionId = storedSession(order);
-  const catalog = isPublic(packageCode) ? PUBLIC_MEMBERSHIP_CATALOG[packageCode] : null;
-  if (!catalog || packageCode !== input.packageCode ||
+function isPublicPackage(value) { return Object.hasOwn(PUBLIC_MEMBERSHIP_CATALOG, value); }
+function isPublicSession(value) { return value.startsWith("publicmem_"); }
+
+function publicOrderFields(env, record) {
+  const field = (key, fallback) => record?.fields?.[clean(env[`AT_PAYMENTS__${key}`] || fallback)];
+  return {
+    paymentRef: field("PAYMENT_REF", "Payment Reference") || record?.fields?.payment_ref,
+    packageCode: canonicalPackage(field("PACKAGE_CODE", "Package Code")),
+    sessionId: text(field("SESSION_ID", "session_id"), 180),
+    paymentStage: code(field("PAYMENT_STAGE", "payment_stage")),
+    amountThb: positiveAmount(field("AMOUNT", "Amount")),
+  };
+}
+
+export function validateExistingPublicMembershipOrder(env, record, input) {
+  const order = publicOrderFields(env, record);
+  if (!isPublicPackage(order.packageCode) && !isPublicSession(order.sessionId)) return null;
+  const { packageCode, sessionId, amountThb } = order;
+  if (!isPublicPackage(packageCode) ||
+      packageCode !== input.packageCode ||
       /^publicmem_(mmd_member|elite|red_card)_[a-f0-9]{24}$/.exec(sessionId)?.[1] !== packageCode ||
       (input.sessionId && input.sessionId !== sessionId) ||
-      (order.fields?.[refField] || order.fields?.payment_ref) !== input.paymentRef ||
-      input.paymentStage !== "membership" ||
-      code(field(order, "PAYMENT_STAGE", "payment_stage")) !== "membership") {
+      order.paymentRef !== input.paymentRef ||
+      input.paymentStage !== "membership" || order.paymentStage !== "membership") {
     throw httpError(409, "public_membership_order_context_mismatch");
   }
-  const amount = positiveAmount(field(order, "AMOUNT", "Amount"));
-  if (amount !== input.amountThb || amount !== catalog.amount_thb) {
+  if (amountThb !== input.amountThb || amountThb !== PUBLIC_MEMBERSHIP_CATALOG[packageCode].amount_thb) {
     throw httpError(409, "public_membership_order_amount_mismatch");
   }
   return { sessionId };
+}
+
+async function verifyPublicReviewedOrder(env, input) {
+  const table = clean(env.AIRTABLE_TABLE_PAYMENTS || "payments");
+  const records = await airtableList(env, table, { filterByFormula: `{payment_ref}='${formulaValue(input.paymentRef)}'`, maxRecords: 2 });
+  const looksPublic = isPublicPackage(input.packageCode) || isPublicSession(input.sessionId) ||
+    records.some(record => {
+      const order = publicOrderFields(env, record);
+      return isPublicPackage(order.packageCode) || isPublicSession(order.sessionId);
+    });
+  if (!looksPublic) return null;
+  if (records.length !== 1) {
+    throw httpError(409, records.length ? "public_membership_order_ambiguous" : "public_membership_order_not_found");
+  }
+  const result = validateExistingPublicMembershipOrder(env, records[0], input);
+  if (!result) throw httpError(409, "public_membership_order_context_mismatch");
+  return result;
 }
 
 async function loadProof(env, proofId) {
