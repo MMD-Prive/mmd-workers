@@ -1,0 +1,436 @@
+<style>#mmd-membership-lvmax{--paper:#f7f5f0;--ink:#35212a;--muted:#68525b;--wine:#761e35;--edge:#e0cec4;--panel:#fffaf3;background:radial-gradient(ellipse at 20% 0,#edddd1,transparent 38%),var(--paper);color:var(--ink);font:400 16px/1.55 "LINE Seed Sans TH","Noto Sans Thai",Tahoma,sans-serif}
+#mmd-membership-lvmax *{box-sizing:border-box}
+#mmd-membership-lvmax :is(h1,h2,h3,p){margin:0;line-height:inherit}
+#mmd-membership-lvmax a{color:var(--wine)}
+#mmd-membership-lvmax :focus-visible{outline:3px solid #9c552a;outline-offset:3px}
+#mmd-membership-lvmax [hidden]{display:none!important}
+#mmd-membership-lvmax .lv-hero{position:relative;overflow:hidden;isolation:isolate;max-width:1440px;margin:auto;min-height:clamp(235px,40vw,475px);background:#e8cdb8}
+#mmd-membership-lvmax .lv-hero picture,#mmd-membership-lvmax .lv-hero picture img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:64% 0%;z-index:-2}
+#mmd-membership-lvmax .lv-hero::before{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(90deg,#f3e3d5 0%,#f3e3d5e8 25%,#f3e3d56b 48%,transparent 65%)}
+#mmd-membership-lvmax .lv-hero-copy{padding:clamp(22px,5vw,75px) max(18px,calc((100% - 1100px)/2));color:#501323}
+#mmd-membership-lvmax .lv-brand{display:flex;align-items:center;gap:7px;font:500 clamp(20px,4vw,34px)/1 Georgia,serif;letter-spacing:.04em;margin-bottom:19px}
+#mmd-membership-lvmax .lv-brand img{object-fit:contain}
+#mmd-membership-lvmax .lv-label{font:700 11px/1.5 "Outfit",system-ui,sans-serif;letter-spacing:.13em;color:var(--wine)}
+#mmd-membership-lvmax h1{font-size:clamp(24px,5vw,65px);line-height:1.25;letter-spacing:-.035em;margin-top:8px}
+#mmd-membership-lvmax .lv-wave{position:absolute;inset:auto 0 -1px;width:100%;height:clamp(38px,6vw,85px)}
+#mmd-membership-lvmax .lv-wrap{max-width:1140px;margin:auto;padding:0 clamp(14px,4vw,26px)}
+#mmd-membership-lvmax .lv-intro{padding:14px 0 26px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+#mmd-membership-lvmax .lv-intro p{max-width:36ch;color:var(--muted)}
+#mmd-membership-lvmax .lv-primary,#mmd-membership-lvmax [data-buy-package]{border:1px solid transparent;min-height:46px;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:8px 15px;border-radius:9px;background:var(--wine);color:white;text-decoration:none;font:inherit;font-size:15px;font-weight:700;transition:background .18s ease}
+#mmd-membership-lvmax .lv-primary:hover,#mmd-membership-lvmax [data-buy-package]:enabled:hover{background:#561226}
+#mmd-membership-lvmax h2{font-size:clamp(24px,4vw,42px);line-height:1.3;margin:.3em 0 .45em}
+#mmd-membership-lvmax #membership{scroll-margin-top:90px}
+#mmd-membership-lvmax .lv-feedback{min-height:11px;display:flex;align-items:center;flex-wrap:wrap;gap:5px 14px;margin:0 0 12px;color:var(--muted);font-size:14px}
+#mmd-membership-lvmax [data-tone=error]{color:var(--wine)}
+#mmd-membership-lvmax [data-retry]{background:none;color:var(--wine);border:0;text-decoration:underline;min-height:44px;padding:0;font:inherit;cursor:pointer}
+#mmd-membership-lvmax .lv-plans{display:grid;gap:12px}
+#mmd-membership-lvmax .lv-card{min-width:0;border:1px solid var(--edge);border-radius:15px;padding:14px;background:linear-gradient(137deg,#fffdf8,var(--panel));box-shadow:0 6px 18px #4522190b;display:flex;flex-direction:column;gap:8px}
+#mmd-membership-lvmax .lv-red_card{background:linear-gradient(145deg,#480e20,#761e35);border-color:#761e35;color:#fff7ee;--muted:#ffdfd8;--edge:#ae7180}
+#mmd-membership-lvmax .lv-card.is-focus{outline:2px solid #9c552a;outline-offset:2px}
+#mmd-membership-lvmax .lv-card-top{display:flex;gap:7px;align-items:center}
+#mmd-membership-lvmax h3{font-family:Georgia,serif;font-weight:500;font-size:22px}
+#mmd-membership-lvmax .lv-index,#mmd-membership-lvmax .lv-avg{color:var(--muted);font-size:13px}
+#mmd-membership-lvmax .lv-term{margin-left:auto;border:1px solid var(--edge);border-radius:100px;padding:1px 9px;font-size:13px;white-space:nowrap}
+#mmd-membership-lvmax .lv-card-main{display:grid;grid-template-columns:minmax(0,1fr) minmax(70px,32%);gap:8px;align-items:center}
+#mmd-membership-lvmax .lv-card-main img{width:100%;height:auto;object-fit:contain}
+#mmd-membership-lvmax .lv-card-title{font-weight:700}
+#mmd-membership-lvmax .lv-price strong{font:500 clamp(29px,6vw,43px)/1.2 Georgia,serif;font-variant-numeric:lining-nums tabular-nums}
+#mmd-membership-lvmax .lv-price span{font-size:11px}
+#mmd-membership-lvmax .lv-desc,#mmd-membership-lvmax details p{color:var(--muted);font-size:15px}
+#mmd-membership-lvmax details{border-top:1px solid var(--edge)}
+#mmd-membership-lvmax details p{padding-bottom:10px}
+#mmd-membership-lvmax summary{min-height:44px;padding:10px 0;cursor:pointer;font-weight:700}
+#mmd-membership-lvmax [data-buy-package]{width:100%;font-family:inherit;margin-top:auto;text-align:left;cursor:pointer}
+#mmd-membership-lvmax .lv-red_card [data-buy-package]{background:#f7e7d6;color:#501323}
+#mmd-membership-lvmax .lv-red_card [data-buy-package]:enabled:hover{background:#fff7ee}
+#mmd-membership-lvmax [data-buy-package]:disabled{background:#e9ddd7;color:#65535a;cursor:default}
+#mmd-membership-lvmax .lv-note{margin-top:11px;color:var(--muted);font-size:13px}
+#mmd-membership-lvmax .lv-next{padding:30px 0}
+#mmd-membership-lvmax ol{padding:0;list-style:none;counter-reset:lv;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:12px 0 18px}
+#mmd-membership-lvmax ol li{counter-increment:lv;border:1px solid var(--edge);border-radius:9px;padding:9px;background:var(--panel)}
+#mmd-membership-lvmax ol li::before{content:"0" counter(lv);display:block;color:var(--wine);font-size:12px;font-weight:700}
+#mmd-membership-lvmax .lv-footer{border-top:1px solid var(--edge);padding:17px 0 max(15px,env(safe-area-inset-bottom));color:var(--muted)}
+#mmd-membership-lvmax .lv-footer nav{display:flex;flex-wrap:wrap;gap:4px 18px}
+#mmd-membership-lvmax .lv-footer a{display:inline-flex;align-items:center;min-height:44px;font-weight:700}
+@media(min-width:820px){#mmd-membership-lvmax .lv-plans{grid-template-columns:repeat(3,minmax(0,1fr))}#mmd-membership-lvmax ol{grid-template-columns:repeat(4,minmax(0,1fr))}#mmd-membership-lvmax .lv-intro{justify-content:space-between}#mmd-membership-lvmax .lv-intro p{max-width:none}}
+@media(prefers-reduced-motion:reduce){#mmd-membership-lvmax *{transition:none!important;scroll-behavior:auto!important}}
+#mmd-membership-lvmax .lv-brand img{width:clamp(46px,8vw,64px);height:auto;border-radius:4px}
+#mmd-membership-lvmax .lv-cast{margin-top:24px;border:1px solid var(--edge);border-radius:14px;padding:3px 14px 8px;background:var(--panel)}
+#mmd-membership-lvmax .lv-cast-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+#mmd-membership-lvmax .lv-cast-grid figure{margin:0;overflow:hidden;border-radius:9px;background:#eee0d4}
+#mmd-membership-lvmax .lv-cast-grid img{display:block;width:100%;height:auto;aspect-ratio:4/5;object-fit:cover;object-position:center 20%}
+#mmd-membership-lvmax .lv-cast-grid figcaption{padding:6px 9px;color:var(--wine);font-size:13px;font-weight:700;letter-spacing:.09em}
+#mmd-membership-lvmax .lv-cast>a{display:inline-flex;align-items:center;min-height:44px;margin-top:6px;font-weight:700}
+@media(max-width:540px){
+ #mmd-membership-lvmax .lv-hero picture{left:auto;width:56%}
+ #mmd-membership-lvmax .lv-hero picture img{object-position:52% 13%}
+ #mmd-membership-lvmax .lv-hero::before{background:linear-gradient(90deg,#f3e3d5 40%,#f3e3d5e0 44%,#f3e3d540 53%,transparent 60%)}
+ #mmd-membership-lvmax .lv-brand{gap:5px;font-size:clamp(15px,4.2vw,21px)}
+}
+@media(min-width:640px){#mmd-membership-lvmax .lv-cast-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+#mmd-membership-lvmax .lv-jump{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}#mmd-membership-lvmax .lv-jump a{display:inline-flex;align-items:center;min-height:44px;padding:0 12px;border:1px solid var(--edge);border-radius:100px;text-decoration:none;font-weight:700;font-size:14px}#mmd-membership-lvmax h3{scroll-margin-top:95px}#mmd-membership-lvmax .lv-red-note{font-size:14px;color:#ffdfd8}#mmd-membership-lvmax [data-public-status] a{font-weight:700}</style>
+<template id="mmd-lv-template">
+<main id="mmd-membership-lvmax" data-api="/member/api/liff/public-membership" data-miniapp="https://miniapp.line.me/2010862595-yT4DCEMc/" aria-labelledby="lv-title">
+<header class="lv-hero">
+ <picture><source media="(max-width:540px)" srcset="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6ae26f917b40684098262ee8_Boss%20Public%20Master%20Mob-p-800.webp"><img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6af41b13b3401232e4de84e8_MY-MMD-Curated-Hero-16x9-p-1600.png" alt="" width="1672" height="941" fetchpriority="high"></picture>
+ <div class="lv-hero-copy"><div class="lv-brand"><img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa585f049fe53fce80a3ced_02-horizontal-lockup-256px.webp" alt="MMD Privé" width="256" height="172"><span>MY MMD</span></div><p class="lv-label">PUBLIC MEMBERSHIP</p><h1 id="lv-title">กรุงเทพฯ<br>ในแบบที่คุณเลือก</h1></div>
+ <svg class="lv-wave" viewBox="0 0 1200 100" preserveAspectRatio="none" aria-hidden="true"><path d="M0 12C350 0 530 125 1200 42V100H0Z" fill="#791e36"/><path d="M0 36C400 8 505 130 1200 56V100H0Z" fill="#b4727b"/><path d="M0 55C400 21 540 153 1200 67V100H0Z" fill="#f7f5f0"/></svg>
+</header>
+<div class="lv-wrap">
+<section class="lv-intro" aria-label="แนะนำ Membership"><p>ถ้าเพิ่งรู้จัก MMD ลองดู Member ก่อนครับ ถ้ามีแผนใช้บ่อยขึ้น ค่อยเทียบ Elite กับ Red Card ได้ตรงนี้เลย</p><a class="lv-primary" href="#membership">ดูแพ็กเกจ <span aria-hidden="true">↓</span></a></section>
+<section id="membership" aria-labelledby="lv-plans">
+ <p class="lv-label">01 / MEMBERSHIP</p><h2 id="lv-plans">เลือกสมาชิกแบบที่ใช้จริง</h2><nav class="lv-jump" aria-label="ไปที่แพ็กเกจ"><a href="#lv-plan-1">Member</a><a href="#lv-plan-2">Elite</a><a href="#lv-plan-3">Red Card</a></nav>
+ <div class="lv-feedback"><p data-public-status role="status" aria-live="polite" tabindex="-1">กำลังตรวจสอบแพ็กเกจล่าสุดครับ…</p><button type="button" data-retry hidden>ลองโหลดอีกครั้ง</button></div>
+ <div class="lv-plans">
+<article class="lv-card lv-mmd_member" data-package-card data-package="mmd_member" aria-labelledby="lv-plan-1">
+ <div class="lv-card-top"><span class="lv-index">01 /</span><h3 id="lv-plan-1">Member</h3><span class="lv-term" data-card-term>1 ปี</span></div>
+ <div class="lv-card-main"><div><p class="lv-card-title">เริ่มรู้จัก MMD</p><p class="lv-price"><strong data-card-price>690</strong> <span>THB</span></p><p class="lv-avg">เฉลี่ย <span data-card-monthly>58 THB / เดือน</span></p></div><img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa6cb3dcc91556149c67c47_99ed17ff789cec831ad138da39b8c9b0_Public%20Member.webp" alt="" width="400" height="252" loading="lazy"></div>
+ <p class="lv-desc">สำหรับคนที่อยากลองใช้ Public Access ดูก่อนครับ</p><details class="nx-more"><summary>ดูสิทธิ์เพิ่มเติม</summary><p>เลือก Companion, outing หรือบริการที่เปิดรับในช่วงนั้น ตามรายละเอียดของแต่ละคนครับ</p></details>
+ <button type="button" data-buy-package="mmd_member" disabled><span>เลือก Member</span><span aria-hidden="true">→</span></button>
+ </article><article class="lv-card lv-elite" data-package-card data-package="elite" aria-labelledby="lv-plan-2">
+ <div class="lv-card-top"><span class="lv-index">02 /</span><h3 id="lv-plan-2">Elite</h3><span class="lv-term" data-card-term>2 ปี</span></div>
+ <div class="lv-card-main"><div><p class="lv-card-title">มีตัวเลือกมากขึ้น</p><p class="lv-price"><strong data-card-price>4,990</strong> <span>THB</span></p><p class="lv-avg">เฉลี่ย <span data-card-monthly>208 THB / เดือน</span></p></div><img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa6cb3d319a799fcab5b6aa_136e977f00415247676fd142a0061373_Elite%20Card.webp" alt="" width="400" height="252" loading="lazy"></div>
+ <p class="lv-desc">สำหรับคนที่อยากมีตัวเลือกเพิ่มเวลาวางแผนครับ</p><details class="nx-more"><summary>ดูสิทธิ์เพิ่มเติม</summary><p>เพิ่มโอกาสเข้าถึง Premium, Super, selected Influencers และกิจกรรมอย่าง dining หรือ appearance ตามรอบที่เปิดครับ</p></details>
+ <button type="button" data-buy-package="elite" disabled><span>เลือก Elite</span><span aria-hidden="true">→</span></button>
+ </article><article class="lv-card lv-red_card" data-package-card data-package="red_card" aria-labelledby="lv-plan-3">
+ <div class="lv-card-top"><span class="lv-index">03 /</span><h3 id="lv-plan-3">Red Card</h3><span class="lv-term" data-card-term>2 ปี</span></div>
+ <div class="lv-card-main"><div><p class="lv-card-title">ให้เราช่วยจัดลำดับก่อน</p><p class="lv-price"><strong data-card-price>11,499</strong> <span>THB</span></p><p class="lv-avg">เฉลี่ย <span data-card-monthly>479 THB / เดือน</span></p></div><img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa6cb3d1796b28dfb192c4e_e015d3ed1ff4a9bc696bbccedee1881f_Red%20Card.webp" alt="" width="400" height="252" loading="lazy"></div>
+ <p class="lv-desc">สำหรับคนที่อยากให้เราดูแลเรื่อง Priority และโอกาสพิเศษครับ</p><details class="nx-more"><summary>ดูสิทธิ์เพิ่มเติม</summary><p>รวม Priority access, Public Model Meet และ TMIB extras ตามรอบที่เปิด สิทธิ์ขึ้นอยู่กับรายละเอียดของแต่ละรอบครับ</p></details>
+ <p class="lv-red-note" data-red-note hidden>ผมกำลังรอให้ระบบยืนยันราคาและระยะเวลา 2 ปีครับ ตอนนี้ยังเลือกชำระ Red Card ไม่ได้</p><button type="button" data-buy-package="red_card" disabled><span>เลือก Red Card</span><span aria-hidden="true">→</span></button>
+ </article>
+ </div><p class="lv-note">ราคาเฉลี่ยต่อเดือนมีไว้ให้เทียบกันครับ ชำระเต็มตามแพ็กเกจที่เลือก โดยยึดยอดที่ระบบยืนยันก่อนชำระ</p>
+</section>
+<details class="lv-cast"><summary>รู้จัก 4 คนจาก Trust Me in Bangkok</summary><p>ถ้าอยากรู้จักโลกของ MMD ก่อน ผมชวนเริ่มจากเรื่องของทั้งสี่คนนี้ครับ</p><div class="lv-cast-grid"><figure><img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6af41b1456600211efa9af94_HITO-Curated-p-500.png" width="500" height="625" loading="lazy" decoding="async" alt=""><figcaption>HITO</figcaption></figure><figure><img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6af41b1561c8e25d8da34678_HIMA-Curated-p-500.png" width="500" height="625" loading="lazy" decoding="async" alt=""><figcaption>HIMA</figcaption></figure><figure><img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6af41b15980589698464bb4f_HIRO-Curated-p-500.png" width="500" height="625" loading="lazy" decoding="async" alt=""><figcaption>HIRO</figcaption></figure><figure><img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6af41b132dd19c5e06fbea9b_HIEI-Curated-p-500.png" width="500" height="625" loading="lazy" decoding="async" alt=""><figcaption>HIEI</figcaption></figure></div><a href="/tmib">ไปที่ Trust Me in Bangkok <span aria-hidden="true">↗</span></a></details>
+<section class="lv-next" aria-labelledby="lv-next-title"><p class="lv-label">02 / NEXT STEP</p><h2 id="lv-next-title">เลือกแล้ว ไปต่อยังไง</h2>
+<ol><li>เลือกแพ็กเกจ</li><li>เชื่อม LINE</li><li>ตรวจยอดและชำระ</li><li>รอยืนยันสิทธิ์</li></ol>
+<div class="nx-faq"><details><summary>ครั้งแรกเลือกอะไรดีครับ?</summary><p>ถ้าอยากเริ่มรู้จักเรา ลองดู Member ก่อนครับ ถ้าคุณมีแผนใช้บ่อยขึ้น ค่อยเทียบสิทธิ์ Elite และ Red Card ตามที่ใช้จริง</p></details><details><summary>สมัครแล้วเริ่มใช้ได้เมื่อไหร่?</summary><p>เริ่มใช้สิทธิ์ได้หลัง MMD ยืนยันรายการครับ ใช้บัญชี LINE เดิมเพื่อกลับมาเช็กสถานะใน MY MMD</p></details></div>
+</section>
+<footer class="lv-footer"><p class="lv-label">MY MMD · BANGKOK</p><p>ถ้ายังไม่แน่ใจว่าแบบไหนเหมาะ ทักมาให้เราช่วยดูได้ครับ</p><nav aria-label="ลิงก์สมาชิก"><a href="/my-mmd/">MY MMD</a><a href="https://lin.ee/xRqsALs">คุยกับ MMD</a><a href="/rules/customer">กติกา</a></nav></footer>
+</div></main></template>
+<script>(function(){
+ const template=document.getElementById('mmd-lv-template');
+ const original=document.querySelector('#mmd-public-membership #mmd-membership-nx');
+ if(template && original) original.replaceWith(template.content.cloneNode(true));
+})();
+
+(function(){
+  "use strict";
+
+  var outer=document.getElementById("mmd-public-membership");
+  if(!outer)return;
+
+  var root=outer.querySelector("#mmd-membership-lvmax");
+  if(!root||root.dataset.init==="1")return;
+
+  root.dataset.init="1";
+  root.classList.add("is-enhanced");
+
+  var API=root.getAttribute("data-api")||"/member/api/liff/public-membership";
+  var MINIAPP=root.getAttribute("data-miniapp")||"https://miniapp.line.me/2010862595-yT4DCEMc/";
+
+  var status=root.querySelector("[data-public-status]");
+  var cards=[].slice.call(root.querySelectorAll("[data-package-card]"));
+  var buttons=[].slice.call(root.querySelectorAll("[data-buy-package]"));
+  var cardDetails=[].slice.call(root.querySelectorAll(".nx-more"));
+  var faq=[].slice.call(root.querySelectorAll(".nx-faq details"));
+  var reduced=window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  var catalogReady=false;
+  var busy=false;
+  var redTermsOK=false;
+  var availableCodes=[];
+
+  function money(value){
+    var n=Number(value);
+    return Number.isFinite(n)?n.toLocaleString("th-TH"):"";
+  }
+
+  function monthsFromDays(days){
+    var d=Number(days);
+    if(!Number.isFinite(d)||d<=0)return 12;
+    return Math.max(1,Math.round(d/30.4375));
+  }
+
+  function thaiTerm(months){
+    var m=Number(months)||12;
+    return m%12===0?(m/12)+" ปี":m+" เดือน";
+  }
+
+  function monthly(amount,months){
+    var a=Number(amount),m=Number(months);
+    if(!Number.isFinite(a)||!Number.isFinite(m)||m<=0)return null;
+    return Math.round(a/m);
+  }
+
+
+  function show(message,tone){
+    if(!status)return;
+    status.hidden=!message;
+    status.textContent=message||"";
+    if(tone)status.setAttribute("data-tone",tone);
+    else status.removeAttribute("data-tone");
+  }
+
+  function syncButtons(){
+    buttons.forEach(function(btn){
+      var enabled=catalogReady&&availableCodes.indexOf(btn.dataset.buyPackage)>=0&&!busy;
+      btn.disabled=!enabled;
+      btn.setAttribute("aria-busy",busy?"true":"false");
+    });
+  }
+
+  function returnPath(code){
+    return "/pay/membership?package="+encodeURIComponent(code);
+  }
+
+  function authUrl(code){
+    var url=new URL(MINIAPP);
+    url.searchParams.set("intent","status");
+    url.searchParams.set("return_to",returnPath(code));
+    return url.toString();
+  }
+
+  function safePay(value){
+    if(typeof value!=="string"||!value.trim())return null;
+    try{
+      var url=new URL(value,"https://mmdbkk.com");
+      var keys=Array.from(url.searchParams.keys());
+      if(url.protocol!=="https:"||url.hostname!=="mmdbkk.com")return null;
+      if(url.port||url.username||url.password||url.hash)return null;
+      if(url.pathname!=="/pay/checkout")return null;
+      if(keys.length!==1||keys[0]!=="t"||!url.searchParams.get("t").trim())return null;
+      return url;
+    }catch(_error){return null;}
+  }
+
+  async function fetchJson(url,options,timeoutMs){
+    var controller="AbortController" in window?new AbortController():null;
+    var timer=controller?setTimeout(function(){controller.abort();},timeoutMs):null;
+    var opts=Object.assign({},options||{});
+
+    if(controller)opts.signal=controller.signal;
+
+    try{
+      var response=await fetch(url,opts);
+      var payload=await response.json().catch(function(){return null;});
+      return {response:response,payload:payload};
+    }finally{
+      if(timer)clearTimeout(timer);
+    }
+  }
+
+  function updateCard(item){
+    var code=String(item&&item.package_code||"");
+    if(code==="red_card"&&!redTermsOK)return;
+    if(!code)return;
+
+    var card=cards.find(function(node){return node.dataset.package===code;});
+    if(!card)return;
+
+    var amount=Number(item.amount_thb);
+    var months=monthsFromDays(item.duration_days);
+    var avg=monthly(amount,months);
+
+    var priceNode=card.querySelector("[data-card-price]");
+    var termNode=card.querySelector("[data-card-term]");
+    var monthlyNode=card.querySelector("[data-card-monthly]");
+    var button=card.querySelector("[data-buy-package]");
+    var fact=root.querySelector('[data-package-fact="'+code+'"] [data-fact-price]');
+
+    if(priceNode&&Number.isFinite(amount))priceNode.textContent=money(amount);
+    if(termNode)termNode.textContent=thaiTerm(months);
+    if(monthlyNode&&avg!==null)monthlyNode.textContent=money(avg)+" THB / เดือน";
+    if(fact&&Number.isFinite(amount))fact.textContent=money(amount)+" THB · "+thaiTerm(months);
+
+    if(code==="mmd_member"&&Number.isFinite(amount)){
+      var dockPrice=root.querySelector("[data-dock-price]");
+      if(dockPrice)dockPrice.textContent=money(amount);
+    }
+
+    if(button&&Number.isFinite(amount)){
+      var small=button.querySelector("small");
+      if(small)small.textContent=money(amount)+" THB · "+thaiTerm(months);
+    }
+  }
+
+  function focusCard(code,scroll){
+    var card=cards.find(function(node){return node.dataset.package===code;});
+    if(!card)return;
+
+    card.classList.remove("is-focus");
+    void card.offsetWidth;
+    card.classList.add("is-focus");
+
+    if(scroll){
+      card.scrollIntoView({behavior:reduced?"auto":"smooth",block:"center"});
+    }
+
+    setTimeout(function(){card.classList.remove("is-focus");},900);
+  }
+
+  async function loadCatalog(){
+    catalogReady=false;
+    busy=false;
+    availableCodes=[];
+    syncButtons();
+    show("กำลังอัปเดต Membership ล่าสุด…","soft");
+
+    var result=await fetchJson(
+      API+"/catalog",
+      {credentials:"include",headers:{accept:"application/json"},cache:"no-store"},
+      10000
+    );
+
+    if(!result.response.ok||!result.payload||result.payload.ok!==true||!Array.isArray(result.payload.packages)){
+      throw new Error("catalog_unavailable");
+    }
+
+    redTermsOK=result.payload.packages.some(function(item){return item&&item.package_code==="red_card"&&item.amount_thb===11499&&item.duration_days===730;});
+    var redNote=root.querySelector("[data-red-note]");
+    if(redNote)redNote.hidden=redTermsOK;
+    result.payload.packages.forEach(updateCard);
+    availableCodes=result.payload.packages.map(function(item){
+      return String(item.package_code||"");
+    }).filter(function(code){return code&&(code!=="red_card"||redTermsOK);});
+
+    catalogReady=true;
+    syncButtons();
+    show("Membership ล่าสุดพร้อมแล้วครับ","soft");
+    setTimeout(function(){show("");},1400);
+
+    var requested=new URLSearchParams(location.search).get("package");
+    if(requested&&availableCodes.indexOf(requested)>=0){
+      setTimeout(function(){focusCard(requested,true);},160);
+    }
+  }
+
+  async function purchase(code){
+    if(!catalogReady||busy||availableCodes.indexOf(code)<0)return;
+
+    busy=true;
+    syncButtons();
+    show("กำลังเตรียมรายการ Membership ของคุณครับ","soft");
+
+    try{
+      var result=await fetchJson(
+        API+"/purchase",
+        {
+          method:"POST",
+          credentials:"include",
+          headers:{accept:"application/json","content-type":"application/json"},
+          body:JSON.stringify({package_code:code})
+        },
+        15000
+      );
+
+      var response=result.response;
+      var payload=result.payload;
+
+      var errorCode=payload&&payload.error&&payload.error.code;
+      var existingRedOrder=code==="red_card"&&response.status===409?{
+        red_card_order_already_paid:["รายการ Red Card นี้ชำระแล้วครับ ดูสถานะได้ใน MY MMD โดยไม่ต้องชำระซ้ำ","/my-mmd/","เปิด MY MMD"],
+        red_card_order_proof_already_received:["เราได้รับหลักฐานชำระ Red Card แล้วครับ กำลังตรวจสอบ ยังไม่ต้องชำระซ้ำ","/my-mmd/","ดูสถานะใน MY MMD"],
+        red_card_prior_order_review_required:["มีรายการ Red Card เดิมที่ต้องตรวจสอบก่อนครับ ติดต่อ MMD เพื่อเช็กสถานะ และยังไม่ต้องชำระซ้ำ","https://lin.ee/xRqsALs","ติดต่อ MMD ทาง LINE"]
+      }:null;
+      if(existingRedOrder&&Object.prototype.hasOwnProperty.call(existingRedOrder,errorCode)){
+        busy=false;
+        syncButtons();
+        var review=existingRedOrder[errorCode];
+        show(review[0],"soft");
+        if(status){
+          var reviewLink=document.createElement("a");
+          reviewLink.href=review[1];
+          reviewLink.textContent=review[2];
+          status.append(document.createTextNode(" "),reviewLink);
+          status.focus();
+        }
+        return;
+      }
+      if(code==="red_card"&&((response.status===401&&errorCode==="LINE_SESSION_REQUIRED")||
+        (response.status===409&&errorCode==="RED_CARD_ACCOUNT_VERIFICATION_REQUIRED"))){
+        busy=false;
+        syncButtons();
+        show("ยืนยันบัญชี MY MMD ก่อนสมัคร Red Card ครับ เมื่อยืนยันแล้วจะกลับมาเลือก Red Card ได้อีกครั้ง","soft");
+        if(status){
+          var link=document.createElement("a");
+          link.href=authUrl(code);
+          link.textContent="ยืนยันบัญชี MY MMD";
+          status.append(document.createTextNode(" "),link);
+          status.focus();
+        }
+        return;
+      }
+      if(response.status===401&&payload&&payload.error&&payload.error.code==="LINE_SESSION_REQUIRED"){
+        location.assign(authUrl(code));
+        return;
+      }
+
+      if(!response.ok||!payload||payload.ok!==true){
+        throw new Error(payload&&payload.error&&payload.error.code||"payment_unavailable");
+      }
+
+      if(code==="red_card"&&(!payload.package||payload.package.package_code!=="red_card"||
+        payload.package.amount_thb!==11499||payload.package.duration_days!==730)){
+        availableCodes=availableCodes.filter(function(item){return item!=="red_card";});
+        var note=root.querySelector("[data-red-note]");
+        if(note)note.hidden=false;
+        throw new Error("red_card_terms_unconfirmed");
+      }
+      var pay=safePay(payload.redirect_to||payload.customer_payment_url);
+      if(!pay)throw new Error("payment_link_invalid");
+
+      show("รายการพร้อมแล้วครับ กำลังเปิดหน้าชำระของคุณ…","soft");
+      location.assign(pay.toString());
+    }catch(_error){
+      busy=false;
+      syncButtons();
+      show(_error.message==="red_card_terms_unconfirmed"?"ผมยังยืนยันเงื่อนไข Red Card 2 ปีไม่ได้ครับ ยังไม่ต้องชำระ ทัก MMD ให้ช่วยเช็กได้เลย":"ผมยังพาไปหน้าชำระไม่ได้ครับ ลองอีกครั้งหรือทัก MMD ทาง LINE ได้เลย","error");
+      if(status)status.focus();
+    }
+  }
+
+  function bindExclusiveDetails(items){
+    items.forEach(function(item){
+      item.addEventListener("toggle",function(){
+        if(!item.open)return;
+        items.forEach(function(other){
+          if(other!==item&&other.open)other.open=false;
+        });
+      });
+    });
+  }
+
+  buttons.forEach(function(button){
+    button.addEventListener("click",function(){
+      purchase(button.dataset.buyPackage);
+    });
+  });
+
+  bindExclusiveDetails(cardDetails);
+  bindExclusiveDetails(faq);
+
+  var redLink=root.querySelector("[data-focus-red]");
+  if(redLink){
+    redLink.addEventListener("click",function(){
+      setTimeout(function(){focusCard("red_card",true);},70);
+    });
+  }
+
+  var retry=root.querySelector("[data-retry]");
+  function refreshCatalog(){
+    if(retry)retry.hidden=true;
+    loadCatalog().catch(function(){
+    catalogReady=false;
+    busy=false;
+    availableCodes=[];
+    syncButtons();
+    show("ตอนนี้เราตรวจสอบแพ็กเกจล่าสุดไม่ได้ครับ ตัวเลขด้านล่างมีไว้ดูเบื้องต้น ลองโหลดอีกครั้งหรือทักเราใน LINE ได้เลย","error");
+    if(retry)retry.hidden=false;
+    });
+  }
+  if(retry)retry.addEventListener("click",refreshCatalog);
+  refreshCatalog();
+
+  requestAnimationFrame(function(){root.classList.add("is-ready");});
+})();
+</script>
