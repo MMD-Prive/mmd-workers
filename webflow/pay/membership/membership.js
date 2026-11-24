@@ -43,16 +43,17 @@
     url.searchParams.set("return_to",returnPath(code));
     return url.toString();
   }
-  function safePay(value,code){
+  function safePay(value){
+    if(typeof value!=="string"||!value.trim())return null;
     try{
-      var url=new URL(value,location.origin);
-      var keys=code==="red_card"?Array.from(url.searchParams.keys()):[].slice.call(url.searchParams.keys());
-      if(url.protocol!=="https:")return null;
-      if(url.hostname!=="mmdbkk.com")return null;
+      var url=new URL(value,"https://mmdbkk.com");
+      var keys=Array.from(url.searchParams.keys());
+      if(url.protocol!=="https:"||url.hostname!=="mmdbkk.com")return null;
+      if(url.port||url.username||url.password||url.hash)return null;
       if(url.pathname!=="/pay/checkout")return null;
-      if(keys.length!==1||keys[0]!=="t"||!url.searchParams.get("t"))return null;
+      if(keys.length!==1||keys[0]!=="t"||!url.searchParams.get("t").trim())return null;
       return url;
-    }catch(error){return null;}
+    }catch(_error){return null;}
   }
   async function fetchJson(url,options,timeoutMs){
     var controller="AbortController" in window?new AbortController():null;
@@ -135,7 +136,7 @@
         payload.package.amount_thb!==11499||payload.package.duration_days!==730)){
         throw new Error("red_card_terms_unconfirmed");
       }
-      var pay=safePay(payload.redirect_to||payload.customer_payment_url,code);
+      var pay=safePay(payload.redirect_to||payload.customer_payment_url);
       if(!pay)throw new Error("payment_link_invalid");
       show("เรียบร้อยครับ กำลังพาไปหน้าชำระของ "+name+"…","soft");
       location.assign(pay.toString());
