@@ -9,7 +9,7 @@ import {handleMemberBookingService,protectMemberBookingReference} from '../../si
 const secret='fixture-only-booking-service-secret-123456789';
 const model='recEligible0000001';
 const sessions={a:{lineUserId:'line_a',memberId:'member_a',memberExists:true,memberProfile:{membership_status:'active'}},b:{lineUserId:'line_b',memberId:'member_b',memberExists:true,memberProfile:{membership_status:'active'}}};
-const approvedRate={status:'approved',model_id:model,public_format:'dining',duration_minutes:240,model_fee_thb:4500};
+const approvedRate={status:'approved',model_id:model,public_format:'dining',duration_minutes:240,customer_rate_thb:4500,price_visibility:'customer'};
 const mockCatalog={lookup:async()=>({...approvedRate})};
 const input=()=>({scope:'public',public_format:'dining',duration_minutes:240,budget_thb:5000,request_id:'12345678-1234-1234-1234-123456789abc',model_id:model,date:'2099-01-01',time:'18:30',area:'Bangkok',note:'fixture only'});
 const request=(account,action='requests',body)=>new Request('https://mmdbkk.com/member/api/liff/booking/'+action,{method:body?'POST':'GET',headers:{origin:'https://mmdbkk.com',cookie:'__Host-mmd_liff_session='+account,'content-type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});
@@ -245,7 +245,7 @@ test('White Public details round-trip and retries do not create another booking'
 
 test('public rate requires exact approved model, category and duration before intake',async()=>{
  for(const override of [{status:'pending'},{model_id:'recOtherModel00001'},{public_format:'event'},
-   {duration_minutes:300},{model_fee_thb:0},{model_fee_thb:5001}]) {
+   {duration_minutes:300},{customer_rate_thb:0},{customer_rate_thb:5001}]) {
   await fixture(async({env,deps,writes})=>{
    env.MMD_PUBLIC_RATE_CATALOG={lookup:async(id,format,minutes)=>{
     assert.deepEqual([id,format,minutes],[model,'dining',240]);
@@ -258,7 +258,7 @@ test('public rate requires exact approved model, category and duration before in
 });
 
 test('300-minute approved fee uses its own record and does not become customer budget',async()=>fixture(async({env,deps,writes})=>{
- env.MMD_PUBLIC_RATE_CATALOG={lookup:async()=>({...approvedRate,duration_minutes:300,model_fee_thb:5500})};
+ env.MMD_PUBLIC_RATE_CATALOG={lookup:async()=>({...approvedRate,duration_minutes:300,customer_rate_thb:5500})};
  const response=await handleMemberBooking(request('a','requests',{...input(),duration_minutes:300,budget_thb:6000}),env,deps);
  assert.equal(response.status,201);assert.equal(writes[0].duration_minutes,300);
  assert.equal(writes[0].budget_thb,6000);
@@ -296,8 +296,8 @@ const registerRate = {
 
 test('Public register supplies the exact approved rate to Booking', async () => fixture(async ({env, deps, writes}) => {
   env.MMD_PUBLIC_RATE_CATALOG = createPublicRateCatalog([
-    {...registerRate, status: 'retired', model_fee_thb: 7000},
-    {...registerRate, public_format: 'event', model_fee_thb: 8000},
+    {...registerRate, status: 'retired', customer_rate_thb: 7000},
+    {...registerRate, public_format: 'event', customer_rate_thb: 8000},
     registerRate,
   ]);
   const response = await handleMemberBooking(request('a', 'requests', input()), env, deps);
@@ -342,7 +342,7 @@ test('Booking reads White dining from a server-side JSON catalog binding', async
 
 // These values exercise record matching only. They are not published rates.
 test('approved catalog determines the fee without an inferred duration floor', async () => fixture(async ({env, deps, writes}) => {
-  env.MMD_PUBLIC_RATE_CATALOG = [{...registerRate, model_fee_thb: 4200}];
+  env.MMD_PUBLIC_RATE_CATALOG = [{...registerRate, customer_rate_thb: 4200}];
   const response = await handleMemberBooking(request('a', 'requests', {...input(), budget_thb: 10000}), env, deps);
   assert.equal(response.status, 201);
   assert.equal(writes.length, 1);
@@ -351,8 +351,8 @@ test('approved catalog determines the fee without an inferred duration floor', a
 
 test('each duration uses its exact approved record without prorating or rounding', async () => {
   const rates = [
-    {...registerRate, duration_minutes: 300, model_fee_thb: 6000},
-    {...registerRate, duration_minutes: 240, model_fee_thb: 11000},
+    {...registerRate, duration_minutes: 300, customer_rate_thb: 6000},
+    {...registerRate, duration_minutes: 240, customer_rate_thb: 11000},
   ];
   for (const [minutes, budget, expectedStatus] of [
     [300, 6000, 201], [300, 5999, 422],
@@ -468,3 +468,11 @@ for(const publicFormat of Object.keys(PUBLIC_BOOKING_FORMATS)){
   });
  });
 }
+
+test('Public submit rejects an internal model fee without an approved customer quote', async () => fixture(async ({env, deps, writes}) => {
+  env.MMD_PUBLIC_RATE_CATALOG = [{...registerRate, price_visibility: 'internal', model_fee_thb: 4500}];
+  const response = await handleMemberBooking(request('a', 'requests', input()), env, deps);
+  assert.equal(response.status, 422);
+  assert.equal((await response.json()).error, 'approved_rate_unavailable');
+  assert.equal(writes.length, 0);
+}));

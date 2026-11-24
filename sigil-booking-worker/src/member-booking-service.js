@@ -79,8 +79,8 @@ export async function handleMemberBookingService(request,env,delegate){
     }
     if (rate?.status !== 'approved' || rate.model_id !== model.model_id ||
         rate.public_format !== publicDetails.public_format || rate.duration_minutes !== publicDetails.duration_minutes ||
-        !Number.isSafeInteger(rate.customer_rate_thb ?? rate.model_fee_thb) || (rate.customer_rate_thb ?? rate.model_fee_thb) <= 0) return reject('approved_rate_unavailable');
-    if (publicDetails.budget_thb < (rate.customer_rate_thb ?? rate.model_fee_thb)) return reject('budget_below_approved_rate');
+        !Number.isSafeInteger(rate.customer_rate_thb) || rate.customer_rate_thb <= 0) return reject('approved_rate_unavailable');
+    if (publicDetails.budget_thb < rate.customer_rate_thb) return reject('budget_below_approved_rate');
   }
   const meta={schema:'member_booking_owner_v2',owner:input.owner,scope,fingerprint,state:'submitted'};
   if (publicDetails.public_format) {
