@@ -60,6 +60,31 @@ if(code==="red_card"&&(!payload.package||payload.package.package_code!=="red_car
 ยังยืนยันเงื่อนไข Red Card 2 ปีไม่ได้ครับ กรุณาอย่าเพิ่งชำระ ลองใหม่ภายหลังหรือทัก MMD ทาง LINE
 ```
 
+6. Immediately after reading `errorCode` in step 2, handle confirmed Red Card
+   existing-order states without attempting checkout. Keep the nested
+   `payload.error.code` extraction and HTTP 409 check.
+
+```js
+var existingRedOrder=code==="red_card"&&response.status===409?{
+  red_card_order_already_paid:["รายการ Red Card นี้ชำระแล้วครับ ดูสถานะได้ใน MY MMD โดยไม่ต้องชำระซ้ำ","/my-mmd/","เปิด MY MMD"],
+  red_card_order_proof_already_received:["เราได้รับหลักฐานชำระ Red Card แล้วครับ กำลังตรวจสอบ ยังไม่ต้องชำระซ้ำ","/my-mmd/","ดูสถานะใน MY MMD"],
+  red_card_prior_order_review_required:["มีรายการ Red Card เดิมที่ต้องตรวจสอบก่อนครับ ติดต่อ MMD เพื่อเช็กสถานะ และยังไม่ต้องชำระซ้ำ","https://lin.ee/xRqsALs","ติดต่อ MMD ทาง LINE"]
+}:null;
+if(existingRedOrder&&Object.prototype.hasOwnProperty.call(existingRedOrder,errorCode)){
+  busy=false;
+  syncButtons();
+  var review=existingRedOrder[errorCode];
+  show(review[0],"soft");
+  if(status){
+    var reviewLink=document.createElement("a");
+    reviewLink.href=review[1];
+    reviewLink.textContent=review[2];
+    status.append(document.createTextNode(" "),reviewLink);
+  }
+  return;
+}
+```
+
 The verification URL uses the existing LINE mini app with
 `intent=status&return_to=%2Fpay%2Fmembership%3Fpackage%3Dred_card`.
 The Worker returns to the selector only after a successful authenticated profile

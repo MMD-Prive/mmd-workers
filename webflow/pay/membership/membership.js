@@ -96,6 +96,23 @@
       var response=result.response;
       var payload=result.payload;
       var errorCode=payload&&payload.error&&payload.error.code;
+      var existingRedOrder=code==="red_card"&&response.status===409?{
+        red_card_order_already_paid:["รายการ Red Card นี้ชำระแล้วครับ ดูสถานะได้ใน MY MMD โดยไม่ต้องชำระซ้ำ","/my-mmd/","เปิด MY MMD"],
+        red_card_order_proof_already_received:["เราได้รับหลักฐานชำระ Red Card แล้วครับ กำลังตรวจสอบ ยังไม่ต้องชำระซ้ำ","/my-mmd/","ดูสถานะใน MY MMD"],
+        red_card_prior_order_review_required:["มีรายการ Red Card เดิมที่ต้องตรวจสอบก่อนครับ ติดต่อ MMD เพื่อเช็กสถานะ และยังไม่ต้องชำระซ้ำ","https://lin.ee/xRqsALs","ติดต่อ MMD ทาง LINE"]
+      }:null;
+      if(existingRedOrder&&Object.prototype.hasOwnProperty.call(existingRedOrder,errorCode)){
+        setBusy(false);
+        var review=existingRedOrder[errorCode];
+        show(review[0],"soft");
+        if(status){
+          var reviewLink=document.createElement("a");
+          reviewLink.href=review[1];
+          reviewLink.textContent=review[2];
+          status.append(document.createTextNode(" "),reviewLink);
+        }
+        return;
+      }
       if(code==="red_card"&&((response.status===401&&errorCode==="LINE_SESSION_REQUIRED")||
         (response.status===409&&errorCode==="RED_CARD_ACCOUNT_VERIFICATION_REQUIRED"))){
         setBusy(false);

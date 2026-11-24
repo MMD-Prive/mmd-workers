@@ -64,7 +64,7 @@ test('Compact checkout does not auto-purchase on return and handles linked-accou
   const source=fs.readFileSync(new URL('../../webflow/pay/membership/membership.js',import.meta.url),'utf8');
   let click;
   const calls=[], moves=[], links=[];
-  let memberChoice='red_card', denial=409, termDays=365, suffix='';
+  let memberChoice='red_card', denial=409, termDays=365, suffix='', orderError='';
   const button={setAttribute(){},getAttribute(){return memberChoice;},addEventListener(_event,callback){click=callback;}};
   const card={scrollIntoView(){}};
   const status={setAttribute(){},removeAttribute(){},append(_space,link){links.push(link);}};
@@ -74,7 +74,7 @@ test('Compact checkout does not auto-purchase on return and handles linked-accou
     calls.push([endpoint,options]);
     if(endpoint.endsWith('/catalog'))return Response.json({ok:true,packages:[{package_code:'red_card',amount_thb:11499,duration_days:730}]});
     if(!denial)return Response.json({ok:true,package:{package_code:'red_card',amount_thb:11499,duration_days:termDays},redirect_to:'https://mmdbkk.com/pay/checkout?t=offline-placeholder'+suffix});
-    return Response.json({ok:false,error:{code:denial===409?'RED_CARD_ACCOUNT_VERIFICATION_REQUIRED':'LINE_SESSION_REQUIRED'}},{status:denial});
+    return Response.json({ok:false,error:{code:orderError||(denial===409?'RED_CARD_ACCOUNT_VERIFICATION_REQUIRED':'LINE_SESSION_REQUIRED')}},{status:denial});
   };
   const location={origin:'https://mmdbkk.com',href:'https://mmdbkk.com/pay/membership?package=red_card',pathname:'/pay/membership',search:'?package=red_card&ignored=1',assign:uri=>moves.push(uri)};
   vm.runInNewContext(source,{URL,URLSearchParams,document,fetch,location,window:{},setTimeout,clearTimeout});
@@ -87,8 +87,25 @@ test('Compact checkout does not auto-purchase on return and handles linked-accou
   assert.equal(links.length,1);
   assert.equal(new URL(links[0].href).searchParams.get('return_to'),destination);
   assert.deepEqual(moves,[]);
-  memberChoice='elite'; denial=401; click(); await flush();
-  assert.equal(links.length,1);
+  for (const [code, text, href] of [
+    ['red_card_order_already_paid', /ชำระแล้ว/, '/my-mmd/'],
+    ['red_card_order_proof_already_received', /กำลังตรวจสอบ/, '/my-mmd/'],
+    ['red_card_prior_order_review_required', /รายการ Red Card เดิม/, 'https://lin.ee/xRqsALs'],
+  ]) {
+    orderError=code; const priorCalls=calls.length;
+    click(); await flush();
+    assert.equal(calls.length,priorCalls+1); // One user click; no automatic retry.
+    assert.match(status.textContent,text);
+    assert.doesNotMatch(status.textContent,/ลองอีกครั้ง/);
+    assert.equal(links.at(-1).href,href);
+    assert.deepEqual(moves,[]);
+  }
+  assert.equal(links.length,4);
+  orderError='RED_CARD_ORDER_ALREADY_PAID'; click(); await flush();
+  assert.match(status.textContent,/ลองอีกครั้ง/); // Exact nested lowercase code only.
+  assert.equal(links.length,4);
+  orderError=''; memberChoice='elite'; denial=401; click(); await flush();
+  assert.equal(links.length,4);
   assert.equal(new URL(moves[0]).searchParams.get('return_to'),'/pay/membership?package=elite&ignored=1');
   memberChoice='red_card'; denial=0;
   button.disabled=false; click(); await flush();
