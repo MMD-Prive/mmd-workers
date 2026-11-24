@@ -43,10 +43,10 @@
     url.searchParams.set("return_to",returnPath(code));
     return url.toString();
   }
-  function safePay(value){
+  function safePay(value,code){
     try{
       var url=new URL(value,location.origin);
-      var keys=Array.from(url.searchParams.keys());
+      var keys=code==="red_card"?Array.from(url.searchParams.keys()):[].slice.call(url.searchParams.keys());
       if(url.protocol!=="https:")return null;
       if(url.hostname!=="mmdbkk.com")return null;
       if(url.pathname!=="/pay/checkout")return null;
@@ -118,7 +118,7 @@
         payload.package.amount_thb!==11499||payload.package.duration_days!==730)){
         throw new Error("red_card_terms_unconfirmed");
       }
-      var pay=safePay(payload.redirect_to||payload.customer_payment_url);
+      var pay=safePay(payload.redirect_to||payload.customer_payment_url,code);
       if(!pay)throw new Error("payment_link_invalid");
       show("เรียบร้อยครับ กำลังพาไปหน้าชำระของ "+name+"…","soft");
       location.assign(pay.toString());

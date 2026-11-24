@@ -44,9 +44,12 @@ if(code==="red_card"&&(!payload.package||payload.package.package_code!=="red_car
 }
 ```
 
-4. In LV Max `safePay`, use `var keys=Array.from(url.searchParams.keys());`.
-   The current slice call returns an empty array for an iterator, including
-   legitimate single-token links. Keep all existing URL validation checks.
+4. In LV Max use `safePay(value,code)`, passing `code` at the purchase call
+   site. Replace the `keys` line with
+   `var keys=code==="red_card"?Array.from(url.searchParams.keys()):[].slice.call(url.searchParams.keys());`.
+   The current slice call returns an empty array for an iterator even for valid
+   links. This release fixes Red only; track the pre-existing other-tier defect
+   separately. Keep the remaining URL validation checks unchanged.
 5. In the LV Max purchase catch, name the caught error. After resetting busy
    and calling `syncButtons()`, show the following message and return for
    `error?.message === "red_card_terms_unconfirmed"`; leave the existing generic
