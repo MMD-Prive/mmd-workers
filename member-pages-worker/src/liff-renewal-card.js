@@ -85,19 +85,41 @@ function promoLabel(promotion) {
   return "";
 }
 
-async function resolveOffer(request, env) {
+const PHASE_2_DISPLAY_START = Date.parse("2026-11-25T00:00:00+07:00");
+const PHASE_2_DISPLAY_END = "2026-12-01T00:00:00+07:00";
+const OCTOBER_DISPLAY_END = "2026-11-01T00:00:00+07:00";
+
+// Public presentation only. Never project a paid-time honor boundary or alter
+// the promotion object used to compute the quote and its preview expiration.
+function announcementEndsBefore(promotion, now) {
+  const code = promotion?.code;
+  const at = now.getTime();
+  if (typeof code !== "string" || !Number.isFinite(at)) return null;
+  if (/^reconfirmed_care_back_private_(standard|premium)_2026$/.test(code)) {
+    return at >= PHASE_2_DISPLAY_START && at < Date.parse(PHASE_2_DISPLAY_END)
+      ? PHASE_2_DISPLAY_END : null;
+  }
+  if (/^november_returning_(standard|premium)_2026$/.test(code))
+    return at < Date.parse(PHASE_2_DISPLAY_END) ? PHASE_2_DISPLAY_END : null;
+  if (/^october_prepaid_(standard|premium)_2026$/.test(code))
+    return at < Date.parse(OCTOBER_DISPLAY_END) ? OCTOBER_DISPLAY_END : null;
+  return null;
+}
+
+async function resolveOffer(request, env, quoteAt) {
   const session = env[RENEWAL_VERIFIED_SESSION] || await readMemberAppSession(request, env);
   if (!session?.lineUserId) return { error: json({ ok: false, error: { code: "LINE_SESSION_REQUIRED" }, auth_required: true }, 401) };
   if (session.readGraceOnly) return { error: json({ ok: false, error: { code: "LINE_SESSION_REFRESH_REQUIRED" }, auth_required: true }, 401) };
   let offer;
-  try { offer = await resolveCanonicalRenewalOffer(env, sessionForOffer(session)); }
+  try { offer = await resolveCanonicalRenewalOffer(env, sessionForOffer(session), quoteAt); }
   catch { offer = { status: "review_required", reason: "renewal_offer_resolution_failed" }; }
   return { session, offer };
 }
 
 async function handleOffer(request, env) {
   if (request.method !== "GET") return json({ ok: false, error: { code: "METHOD_NOT_ALLOWED" } }, 405);
-  const { session, offer, error } = await resolveOffer(request, env);
+  const quoteAt = new Date();
+  const { session, offer, error } = await resolveOffer(request, env, quoteAt);
   if (error) return error;
   if (offer.status !== "ready") {
     // new_signup => send to signup; anything else => talk to the owner. Never a payment button.
@@ -125,7 +147,7 @@ async function handleOffer(request, env) {
     bonus_days: Number(offer.promotion?.bonus_days || 0),
     bonus_months: Number(offer.promotion?.bonus_months || 0),
     bonus_years: Number(offer.promotion?.bonus_years || 0),
-    promotion_ends_before: offer.promotion?.ends_before || null,
+    promotion_ends_before: announcementEndsBefore(offer.promotion, quoteAt),
     price_rule: offer.price_rule,
     entitlement_granted: false,
     official_verification_required: true,
