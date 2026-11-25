@@ -17,7 +17,13 @@ export function careBackPosterMessages(text, extraMessages, approvedReply, poste
   if (now >= end) {
     // The October artwork remains retired. The approved November wave is
     // text plus its existing URI button, with no substitute or stale image.
-    if (now < Date.parse('2026-12-01T00:00:00+07:00') &&
+    if (now >= Date.parse('2026-11-25T00:00:00+07:00') && now < Date.parse('2026-12-01T00:00:00+07:00') &&
+        approvedReply.text === '6 YEARS CARE BACK · PHASE 2\nตรวจสอบข้อเสนอและสิทธิ์ตามสถานะสมาชิกได้ถึง 30 พ.ย. 2569 ครับ\nโปรดตรวจจากบัญชี LINE เดิมก่อนชำระ' &&
+        approvedReply.route === 'https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=overview' &&
+        approvedReply.label === 'ตรวจข้อเสนอล่าสุด') {
+      return { text: approvedReply.text, extra_messages: [ctaMessage] };
+    }
+    if (now < Date.parse('2026-11-25T00:00:00+07:00') &&
         approvedReply.text === 'CARE BACK ต่อโปรถึง 30 พ.ย. 2569 ครับ 🖤\nสมาชิกปัจจุบันต่ออายุล่วงหน้า รับเพิ่ม 6 เดือน\nหมดอายุไม่เกิน 6 เดือน สมัครแล้วรับเพิ่ม 6 เดือน\nหมดอายุเกิน 6 เดือน รับเพิ่ม 6 เดือนเช่นกัน\nตรวจรายการจากบัญชีเดิมก่อนชำระครับ' &&
         approvedReply.route === 'https://miniapp.line.me/2010862595-yT4DCEMc/?intent=signup&view=signup&world=private' &&
         approvedReply.label === 'สมัคร / เช็กสิทธิ์') {

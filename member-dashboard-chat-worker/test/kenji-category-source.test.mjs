@@ -157,8 +157,8 @@ test('post announcement promo uses neutral approved navigation at Bangkok bounda
     assert.equal(r.delivered,true);assert.match(r.decision.text,/ตรวจข้อเสนอและสิทธิ์ล่าสุด/);assert.doesNotMatch(r.decision.text,/31 ต.ค.|สิ้นสุด|วันสุดท้าย|เพิ่ม.*เดือน/);
   }
 });
-test('November category turn delivers canonical three-cohort announcement and CTA once',async()=>{
-  for(const date of ['2026-11-01T00:00:00+07:00','2026-11-30T23:59:59.999+07:00']){
+test('Early November category turn preserves the three-cohort announcement and CTA once',async()=>{
+  for(const date of ['2026-11-01T00:00:00+07:00','2026-11-24T23:59:59.999+07:00']){
     const now=Date.parse(date),x=io({now});
     const r=await runApprovedCategoryTurn(env,{...event('มีโปรอะไร'),timestamp:now},runtime,x);
     assert.equal(r.delivered,true);assert.equal(x.sent.length,1);
@@ -168,6 +168,22 @@ test('November category turn delivers canonical three-cohort announcement and CT
     assert.equal(url.origin,'https://miniapp.line.me');assert.equal(url.searchParams.get('intent'),'signup');
     assert.equal(url.searchParams.get('view'),'signup');assert.equal(url.searchParams.get('world'),'private');
     assert.doesNotMatch(r.decision.text,/วันนี้วันสุดท้าย|31 ต.ค.|คุณได้รับสิทธิ์แล้ว/);
+  }
+});
+test('November Phase 2 category turn sends one dated status reply without stale offers or media',async()=>{
+  for (const date of ['2026-11-25T00:00:00+07:00','2026-11-26T12:00:00+07:00','2026-11-30T23:59:59.999+07:00']) {
+    const now=Date.parse(date),x=io({now});
+    const result=await runApprovedCategoryTurn(env,{...event('มีโปรอะไร'),timestamp:now},runtime,x);
+    assert.equal(result.delivered,true);
+    assert.equal(x.sent.length,1);
+    assert.match(result.decision.text,/6 YEARS CARE BACK · PHASE 2/);
+    assert.match(result.decision.text,/30 พ.ย. 2569/);
+    assert.doesNotMatch(result.decision.text,/180 วัน|6 เดือน|รับเพิ่ม|66 คะแนน|คุณได้รับสิทธิ์แล้ว/);
+    const url=new URL(result.decision.text.split(' → ').at(-1));
+    assert.equal(url.origin,'https://miniapp.line.me');
+    assert.equal(url.searchParams.get('intent'),'status');
+    assert.equal(url.searchParams.get('view'),'overview');
+    assert.doesNotMatch(JSON.stringify(x.sent),/originalContentUrl|previewImageUrl|"type":"image"/);
   }
 });
 test('promo switch off stays silent without disabling explicit commands',async()=>{
