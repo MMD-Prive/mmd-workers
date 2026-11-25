@@ -200,7 +200,7 @@ function renderPartnerSystemPage(request: Request, url: URL, route: PartnerPubli
     renderSystemActions(page, tokenQuery, reviewHref, termsHref, dashboardHref) + "</div>" +
     "<aside class=\"mmdp-card\"><small lang='en'>MMD REVIEW</small><strong>" + escapeHtml(copy.card) + "</strong><span lang='en'>Partner Control Layer</span></aside></section>") +
     renderDashboardPanel(page, token) +
-    (page === "dashboard" ? "<div class=\"pcr-dashboard-links\"><a href=\"" + escapeHtml(termsHref) + "\">Partner Terms</a><a href=\"/partner/dashboard/relax-spa" + escapeHtml(tokenQuery) + "\">Relax Spa by 9</a></div>" : "<section class=\"mmdp-grid\"><article><span>01</span><h2>Intake</h2><p>ส่งข้อมูลที่จำเป็นต่อ Partner Review พร้อมกำหนดขอบเขตความเป็นส่วนตัวของแต่ละเคส</p></article>" +
+    (page === "dashboard" ? "<div class=\"pcr-dashboard-links\"><a href=\"/partner/models\">ค้นหาโมเดล</a><a href=\"" + escapeHtml(termsHref) + "\">Partner Terms</a><a href=\"/partner/dashboard/relax-spa" + escapeHtml(tokenQuery) + "\">Relax Spa by 9</a></div>" : "<section class=\"mmdp-grid\"><article><span>01</span><h2>Intake</h2><p>ส่งข้อมูลที่จำเป็นต่อ Partner Review พร้อมกำหนดขอบเขตความเป็นส่วนตัวของแต่ละเคส</p></article>" +
     "<article><span>02</span><h2>Review</h2><p>MMD Partner Desk จัด lane จากบทบาท แหล่งที่มา ความพร้อม และรูปแบบความร่วมมือที่เหมาะสม</p></article>" +
     "<article><span>03</span><h2>Recognition</h2><p>เมื่อสถานะพร้อมเดินต่อ ให้ยืนยันผ่าน LINE แล้วเข้าสู่ Partner Terms และ Dashboard</p></article></section>") +
     "</main><footer class=\"mmd-partner-canon-footer\"><span>MMD PRIVÉ · BANGKOK</span><span>Private by design.</span></footer>" + renderDashboardScript(page) + "</body></html>";

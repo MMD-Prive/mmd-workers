@@ -145,7 +145,7 @@ async function save(env, entry, next) {
   return next;
 }
 function shareUrl(request, id, token) {
-  return new URL("/partner/model-selection", request.url).href + "#s=" + id + "&t=" + token;
+  return new URL("/partner/models", request.url).href + "#s=" + id + "&t=" + token;
 }
 function ownerView(value) {
   return { id: value.id, title: value.title, revision: value.revision, state: value.state,
