@@ -1,0 +1,52 @@
+{
+  "base_git_sha": "7248b47428069477522e35f94fd6b3c0acb71df4",
+  "scope": "Private Handoff modules only; read from active QA deployment",
+  "workers": [
+    {
+      "worker": "mmd-isolated-qa-staging",
+      "versions": [
+        {
+          "version_id": "db96f9e8-6efa-4c53-a755-2dabf896fd2d",
+          "percentage": 100
+        }
+      ],
+      "files": {
+        "private-handoff/served-adapter.mjs": "bdbc02825858dd52531b6a25cec161156fcc0dd76ec513602ce1b1a140692d3a",
+        "private-handoff/surface.mjs": "7f44e2593cf5d6bf9d8b5feb88109f594aee3aadeb409c2da0ed47de7dc5c79e",
+        "private-handoff/worker.mjs": "fdec953da77ab62bfb07d0c7803ec00e6f90bc87531926c1a9b42fc8b366f5d6",
+        "private-handoff/private-binding.mjs": "06e89beb1b9692b5f58970221c370de8df27ee3575c5022b96ef9c616327c3f1",
+        "identity-verification.mjs": "04dbbf55fa9c42606b3ae46d78a485e180f708a6a5db7f82bdba03c40d849cb6",
+        "gateway.mjs": "7825faba1405e4ae6ab80a44e32a53c231eeb5ec70d8c0d5fe8724d4a1e0c0fd",
+        "ui.mjs": "674dea039a96fd021f59189e81dcf2bc54c78643e5aff876ee01ce1a410aab69"
+      }
+    },
+    {
+      "worker": "mmd-admin-console-3143-staging",
+      "versions": [
+        {
+          "version_id": "9cc75d4a-8e11-48f7-b6d8-1f2574fd2ba7",
+          "percentage": 100
+        }
+      ],
+      "files": {
+        "private-handoff/served-adapter.mjs": "c4096ebe2c2456d3ac96972770b48d903989d8cb92e0adfa97000ed36442377d",
+        "private-handoff/surface.mjs": "47b040175682298ed5c2f41902590f45855be7473d0b7291c9ca0ecf64f178a0",
+        "private-handoff/worker.mjs": "4c5a62d2c76d1febe76362a05b5ee26e796f3b09b2bd3cdee0c86a86a350aa10"
+      }
+    },
+    {
+      "worker": "my-model-developing-console-qa",
+      "versions": [
+        {
+          "version_id": "edf7ffa8-67ab-4cef-94aa-6a5102904907",
+          "percentage": 100
+        }
+      ],
+      "files": {
+        "private-handoff/served-adapter.mjs": "00e9df461c8c23de5aa3ace69fe87d2db35fb375f6ed54aa26b13a37bb6e4053",
+        "private-handoff/surface.mjs": "8632abb43fefcf0d3beb285b05ab4d6fca6778b54d1becebd4023b6471301574",
+        "private-handoff/worker.mjs": "4c5a62d2c76d1febe76362a05b5ee26e796f3b09b2bd3cdee0c86a86a350aa10"
+      }
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+name: Private Handoff QA baseline
+on:
+  pull_request:
+    paths:
+      - 'qa-private-handoff/**'
+      - '.github/workflows/private-handoff-qa.yml'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Verify deployed source hashes
+        run: node qa-private-handoff/verify.mjs
+      - name: Check syntax of saved modules
+        run: |
+          for module in qa-private-handoff/deployed/*/*.mjs qa-private-handoff/deployed/*/private-handoff/*.mjs qa-private-handoff/candidate/*.mjs qa-private-handoff/candidate/private-handoff/*.mjs; do
+            node --check "$module"
+          done
+      - name: Verify Private Handoff access and idempotency
+        run: node --test qa-private-handoff/*.test.mjs
