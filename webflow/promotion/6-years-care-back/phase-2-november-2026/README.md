@@ -42,6 +42,12 @@ Do not force `action=signup` in the existing renewal path to make the copy match
 
 Use dated copy only within the announcement window and return to neutral membership-status guidance afterward. Do not use copy visibility to decide a customer's eligibility.
 
+## LINE destination acceptance before any announcement
+
+- As of November 25, the active Chat Worker version `c44c54a7-9359-48b6-aa06-f8f8652a1b31` serves 100%. Read-only version binding evidence confirms the approved-promo category is enabled and LINE auto-replies are on. Offline checks against the [deployed-source reply](https://github.com/MMD-Prive/mmd-workers/blob/a021cd821b6c9c5d810f45c2a8b245a4c8fe88c6/member-dashboard-chat-worker/src/kenji-care-back-october.mjs) and [category gate](https://github.com/MMD-Prive/mmd-workers/blob/a021cd821b6c9c5d810f45c2a8b245a4c8fe88c6/member-dashboard-chat-worker/src/kenji-reply-category-gate.mjs) return the older six-month copy for generic `โปร` / `มีโปรอะไร` through November 30 Bangkok. This makes the source path reachable; it does not verify which reply is seen on a customer's handset.
+- Before using @mmdprive even in the neutral broadcast, inspect overlapping LINE OA Manager keyword replies and smoke generic promotion and personal eligibility separately with an approved test account. Do not send a real customer message as a test.
+- Candidate public behavior while benefits are unresolved: number-free guidance to check member status, using the existing December status wording and CTA after destination validation. Preserve account-specific response gates and December behavior. Treat any bot reply change as its own reviewed release; leave the older poster attachment wrapper and routing guarded, and verify no dated image leaks into a neutral reply.
+
 ## Before updating Webflow or posting the numeric artwork
 
 1. Compare each panel above against the intended signed-in offer for at least one eligible and one ineligible account per applicable cohort. Compare first-term total and promo increment independently. No payment submission as part of this check.
