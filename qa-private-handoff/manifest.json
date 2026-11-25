@@ -16,7 +16,8 @@
         "private-handoff/worker.mjs": "fdec953da77ab62bfb07d0c7803ec00e6f90bc87531926c1a9b42fc8b366f5d6",
         "private-handoff/private-binding.mjs": "06e89beb1b9692b5f58970221c370de8df27ee3575c5022b96ef9c616327c3f1",
         "identity-verification.mjs": "04dbbf55fa9c42606b3ae46d78a485e180f708a6a5db7f82bdba03c40d849cb6",
-        "gateway.mjs": "7825faba1405e4ae6ab80a44e32a53c231eeb5ec70d8c0d5fe8724d4a1e0c0fd"
+        "gateway.mjs": "7825faba1405e4ae6ab80a44e32a53c231eeb5ec70d8c0d5fe8724d4a1e0c0fd",
+        "ui.mjs": "674dea039a96fd021f59189e81dcf2bc54c78643e5aff876ee01ce1a410aab69"
       }
     },
     {

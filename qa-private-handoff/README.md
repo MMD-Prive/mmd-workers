@@ -59,3 +59,8 @@ The original candidate requires an approved LINE subject before login. To obtain
 The reference addresses a private R2 record under private-qa/v1/customer-registration/. The record contains the verified subject and a ten-minute expiry. It contains no LINE token. Repeated registration by the same subject updates one record. The response and identity audit contain no raw LINE subject. No public reference-resolution endpoint is added.
 
 After the owner identifies the test account, retrieve its reference record through the existing owner storage tools, require an unexpired record and a subject distinct from QA_LINE_SUBJECT, and add it to the server-side customer mapping with a new QA-only customer ID. Disable registration after linkage and remove the registration record through the approved QA data path. The reference itself confers no membership or job access. This follow-up remains local until separately approved for Booking QA deployment.
+
+
+## Explicit QA LINE account switch
+
+The original ui.mjs is also captured in the manifest. candidate/account-switch.mjs adds an opt-in switch_line=1 branch to its SDK-ready handler. Applying patchQaAccountSwitch to the saved UI enables the existing QA /member/liff entry to sign out LIFF and request a fresh LINE login. Access cookies remain under the browser's existing policy. The LINE page provides its own alternate-account link. The ordinary return URI omits switch_line to avoid a sign-out loop. This serves the second-account test in the Chrome session where Access is already verified.
