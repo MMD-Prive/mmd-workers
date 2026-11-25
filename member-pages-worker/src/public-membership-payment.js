@@ -204,13 +204,18 @@ export async function handlePublicMembershipPayment(request, env = {}) {
   const path = normalizePath(new URL(request.url).pathname);
   if (path === CATALOG_PATH) {
     if (request.method !== "GET") return json({ ok: false, error: { code: "METHOD_NOT_ALLOWED" } }, 405);
-    return json({
+    const response = json({
       ok: true,
       schema: "mmd_public_membership_catalog_v1",
       packages: publicCatalog(),
       payment_surface: "/pay/checkout",
       official_verification_required: true,
     });
+    response.headers.set("Vary", "Origin");
+    if (request.headers.get("Origin") === "https://mmdprive.webflow.io") {
+      response.headers.set("Access-Control-Allow-Origin", "https://mmdprive.webflow.io");
+    }
+    return response;
   }
   if (path === PURCHASE_PATH) return handlePurchase(request, env);
   return json({ ok: false, error: { code: "PUBLIC_MEMBERSHIP_ROUTE_NOT_FOUND" } }, 404);

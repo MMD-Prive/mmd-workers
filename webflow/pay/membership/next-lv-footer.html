@@ -126,6 +126,8 @@
   root.classList.add("is-enhanced");
 
   var API=root.getAttribute("data-api")||"/member/api/liff/public-membership";
+  var isWebflowStaging=location.hostname==="mmdprive.webflow.io";
+  var catalogURL=isWebflowStaging?"https://mmdbkk.com/member/api/liff/public-membership/catalog":API+"/catalog";
   var MINIAPP=root.getAttribute("data-miniapp")||"https://miniapp.line.me/2010862595-yT4DCEMc/";
 
   var status=root.querySelector("[data-public-status]");
@@ -276,8 +278,8 @@
     show("กำลังอัปเดต Membership ล่าสุด…","soft");
 
     var result=await fetchJson(
-      API+"/catalog",
-      {credentials:"include",headers:{accept:"application/json"},cache:"no-store"},
+      catalogURL,
+      {credentials:isWebflowStaging?"omit":"include",headers:{accept:"application/json"},cache:"no-store"},
       10000
     );
 
