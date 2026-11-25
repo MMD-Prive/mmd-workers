@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="th" data-liff="__DEVELOPING_LIFF_ID__">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MY MODEL · งานทดสอบ</title>
+<style>
+  :root{color-scheme:light;font:16px/1.55 system-ui,sans-serif;color:#25221e;background:#f8f5ee}
+  main{max-width:34rem;margin:8vh auto;padding:1.25rem}h1{font-size:2rem;line-height:1.2}
+  section{background:#fff;border:1px solid #ddd6c6;border-radius:1rem;padding:1rem}
+  dl{display:grid;grid-template-columns:auto 1fr;gap:.5rem 1rem}dd{margin:0;overflow-wrap:anywhere}
+  button{font:inherit;border:1px solid #8f7760;border-radius:.7rem;padding:.6rem 1rem;background:#fff;cursor:pointer}
+  button+button{margin-inline-start:.4rem}button:focus-visible{outline:3px solid #8d3a49}
+</style>
+<main>
+  <small>พื้นที่ทดสอบ · งานจำลอง</small>
+  <h1 id="title">งานที่ได้รับมอบหมาย</h1>
+  <p role="status" id="status">กำลังตรวจสิทธิ์</p>
+  <button id="login" hidden>เข้าสู่ระบบด้วย LINE</button>
+  <section id="job" hidden>
+    <dl><dt>รหัสงาน</dt><dd id="sid"></dd><dt>โมเดล</dt><dd id="model"></dd>
+    <dt>รอบงาน</dt><dd id="generation"></dd><dt>สถานะ</dt><dd id="state"></dd>
+    <dt>วันและเวลาเริ่มงาน</dt><dd id="starts-at"></dd><dt>ระยะเวลา</dt><dd id="duration"></dd></dl>
+    <div id="owner" hidden><button id="review">ตรวจข้อตกลงทดสอบ</button><button id="replace" disabled>เปลี่ยนโมเดล</button></div>
+  </section>
+  <p><button id="refresh" hidden>ตรวจงานอีกครั้ง</button></p>
+</main>
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js" defer></script>
+<script src="./participant-ui.js" defer></script>
+</html>
