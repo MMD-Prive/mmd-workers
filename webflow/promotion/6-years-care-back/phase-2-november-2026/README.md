@@ -13,6 +13,17 @@ November-only content specification, aligned to the owner’s artwork direction.
 
 The public campaign page currently describes a two-year Premium base and references a qualifying promotion; neither that page nor the design verifies the first-time signup allocation. The desired first-time total here remains two years, not three. Copy is a specification for November only, not a change to checkout, package definitions, December settlement, historical entitlements, or Phase 3.
 
+## Current behavior observed in source, not customer acceptance
+
+Ten read-only fixtures evaluated the [exact shared policy at the reviewed main commit](https://github.com/MMD-Prive/mmd-workers/blob/a021cd821b6c9c5d810f45c2a8b245a4c8fe88c6/shared/membership-promotion-policy.mjs), with the transaction clock set to November 25, 2026 Bangkok:
+
+- Active renewal selects Standard +180 days and Premium +1 year.
+- A first-time Standard signup returns no promotional adjustment in this helper; its November +180 days is not verified as configured. First-time Premium returns a two-year total with no bonus.
+- Expired-member **renewal** selects the tier renewal bonus after November 4. A separate **signup** with verified prior membership and an expired term selects the six-month adjustment; an active member cannot use that returning-signup branch. These are different pathways and the helper does not approve either a charge or an entitlement. Keep the existing delayed-return review gate intact; the renewal price helper rejects more than 90 days since expiry.
+- The shared November announcement predicate was already true on November 24 and turns false at Bangkok midnight on December 1. It is not the start gate for this particular Nov 25–30 creative. Do not change the shared predicate to force this poster into old consumers.
+
+None of these observations verifies a hosted Webflow embed, a signed-in offer, or a payment.
+
 ## Neutral public copy while numeric artwork is held
 
 > **6 YEARS CARE BACK · PHASE 2**  
