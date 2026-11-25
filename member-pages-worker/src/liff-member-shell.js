@@ -1916,7 +1916,7 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
       priceBox.hidden = false;
       if (offer.promotion_label) { promo.textContent = String(offer.promotion_label); promo.hidden = false; }
       note.textContent = "กดแล้วไปหน้าชำระเงินใน LINE ต่อทันที · สิทธิ์จะอัปเดตหลัง MMD ตรวจสอบการชำระเรียบร้อยแล้ว";
-      if (offer.promotion_ends_before) note.textContent += " · โปรประกาศถึง " + renewalDate(new Date(Date.parse(offer.promotion_ends_before) - 1).toISOString()) + " โดยยึดวันชำระที่ยืนยันแล้ว";
+      if (offer.promotion_ends_before) note.textContent += " · โปรประกาศถึง " + renewalDate(new Date(Date.parse(offer.promotion_ends_before) - 1).toISOString());
       action.textContent = "ชำระ " + new Intl.NumberFormat("th-TH").format(offer.amount_thb) + " บาท →";
       action.hidden = false;
       action.onclick = () => purchaseRenewal(String(offer.package_code || ""));
