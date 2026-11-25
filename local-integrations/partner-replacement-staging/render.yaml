@@ -1,0 +1,20 @@
+# Candidate only. Repo layout and external hostname must be confirmed before import.
+services:
+  - type: web
+    runtime: node
+    name: partner-replacement-staging
+    plan: 0.5c-512mb
+    numInstances: 1
+    autoDeployTrigger: 'off'
+    buildCommand: node --test local-integrations/partner-replacement-staging/*.test.mjs
+    startCommand: node local-integrations/partner-replacement-staging/render-entry.mjs
+    healthCheckPath: /healthz
+    disk:
+      name: partner-replacement-sqlite
+      mountPath: /var/data/partner-replacement
+      sizeGB: 1
+    envVars:
+      - key: NODE_VERSION
+        value: 24.14.0
+      - key: REPLACEMENT_STAGING_ENABLED
+        value: 'false'
