@@ -212,11 +212,17 @@ test('explicit model requests route to the right authenticated MY MMD view', asy
 });
 
 test('My Status asks an unverified account to verify without revealing personal information', async () => {
- const r = await runApprovedCategoryTurn(env, event('My Status'), runtime, io());
+ const x = io();
+ const r = await runApprovedCategoryTurn(env, event('My Status'), runtime, x);
  assert.equal(r.delivered, true);
  assert.equal(r.decision.reply_source, 'category_my_status');
  assert.match(r.decision.text, /สถานะลูกค้า: ยังยืนยันบัญชีไม่ได้/);
  assert.match(r.decision.text, /กรุณายืนยันบัญชี LINE ใน MY MMD/);
- assert.doesNotMatch(r.decision.text, /https?:|Points:|ประวัติการใช้บริการ:|ลูกค้าที่สนใจ/i);
+ const url = 'https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=overview';
+ assert.equal(x.sent.length, 1);
+ assert.equal(x.sent[0].split('\n').at(-1), `ยืนยันตัวตนใน MY MMD → ${url}`);
+ assert.deepEqual(x.sent[0].match(/https?:\/\/\S+/g), [url]);
+ assert.equal(r.decision.cta_route, url);
+ assert.doesNotMatch(r.decision.text, /Points:|ประวัติการใช้บริการ:|ลูกค้าที่สนใจ|intent=renew/i);
  assert.equal((await runApprovedCategoryTurn(env, event('Checkpts'), runtime, io())).delivered, false);
 });
