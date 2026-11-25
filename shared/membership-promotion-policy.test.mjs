@@ -156,3 +156,19 @@ test('pinned pre-November signup and renewal policy objects retain their histori
 });
 
 
+
+test('Phase 2 advance renewal preserves prior CARE BACK expiry in 2027 and adds a new purchased term and bonus',()=>{
+ const paid_at='2026-11-25T20:00:00+07:00';
+ const prior_expire_at='2027-06-30T20:00:00+07:00';
+ const term=timing(prior_expire_at,paid_at);
+ assert.equal(term.active,true);
+ assert.equal(privateRenewalPriceEligible(term),true);
+ assert.equal(term.start_at,'2027-06-30T13:00:00.000Z');
+ for(const [code,expected] of [['standard','2028-12-27T13:00:00.000Z'],['premium','2029-06-30T13:00:00.000Z']]){
+  const offer=promo({...renewal(code,paid_at),prior_expire_at});
+  assert.equal(privateRenewalBaseYears(code),1);
+  assert.equal(offer.bonus_days,code==='standard'?180:0);
+  assert.equal(offer.bonus_years,code==='premium'?1:0);
+  assert.equal(apply('2028-06-30T13:00:00.000Z',offer).toISOString(),expected);
+ }
+});
