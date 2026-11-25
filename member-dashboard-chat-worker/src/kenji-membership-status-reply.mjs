@@ -31,11 +31,21 @@ export function resolveMembershipStatusReply(truth = {}, { inChatOnly = false, i
   const prospect = includeSummary && resolved && truth.customer_status === 'prospect';
   const verified = resolved && Object.hasOwn(LABELS,m.level) && Object.hasOwn(STATES,m.lifecycle);
   const verifiedSummary = includeSummary && (verified || prospect);
+  const needsAccountVerification = includeSummary && truth.ok === false && truth.authority === AUTHORITY &&
+    truth.failure_class === 'identity_unresolved';
   let route = inChatOnly ? '' : STATUS_ENTRY;
   let text = 'ตอนนี้ยังตรวจยืนยันสถานะสมาชิกจากระบบไม่ได้ครับ ข้อความนี้ไม่ได้หมายความว่าสมาชิกหมดอายุ ไม่ต้องยืนยัน LINE หรือส่งหลักฐานเดิมซ้ำ ฝากข้อความให้เปอร์ตรวจต่อในแชตนี้ได้ครับ';
   let handoff = true;
   if (inChatOnly) text = 'สถานะสมาชิก: ยังตรวจสอบไม่ได้ครับ\nวันหมดอายุ: ยังตรวจสอบไม่ได้ครับ\nเดี๋ยวเปอร์ขอตรวจให้ก่อนนะครับ';
-  if (includeSummary) text = 'สถานะลูกค้า: ยังยืนยันบัญชีไม่ได้ครับ\nกรุณายืนยันบัญชี LINE ใน MY MMD เพื่อดู Points และประวัติการใช้บริการครับ';
+  if (includeSummary && !verifiedSummary) {
+    route = needsAccountVerification ? STATUS_ENTRY : '';
+    handoff = false;
+    text = needsAccountVerification
+      ? 'ยังไม่ได้ยืนยันตัวตนครับ กดลิงก์ด้านล่างเพื่อยืนยันและดูสถานะสมาชิกใน MY MMD ได้เลยครับ'
+      : resolved
+        ? 'ยืนยันตัวตนแล้วครับ แต่ตอนนี้ยังแสดงสถานะสมาชิกไม่ได้'
+        : 'ตอนนี้ยังตรวจสอบสถานะสมาชิกไม่ได้ครับ กรุณาลองพิมพ์ MY STATUS ใหม่ภายหลัง';
+  }
   if (prospect) {
     text = 'สถานะลูกค้า: ลูกค้าที่สนใจ';
     handoff = false;
@@ -65,8 +75,6 @@ export function resolveMembershipStatusReply(truth = {}, { inChatOnly = false, i
     }
   }
   if (verifiedSummary) text += '\n' + summaryLines(truth);
-  const needsAccountVerification = includeSummary && !resolved;
-  if (needsAccountVerification) route = STATUS_ENTRY;
   const ctaLabel = needsAccountVerification ? 'ยืนยันตัวตนใน MY MMD' : 'เปิด My MMD';
   return {text:route ? `${text}\n${ctaLabel} → ${route}` : text,intent:'membership_status',inferred_intent:'membership_status',
     truth_authority:AUTHORITY,truth_status:(verified || prospect)?'verified':'unavailable',

@@ -194,14 +194,15 @@ test("checkpts stops advertising the October pre-renewal CTA after the campaign 
 test("Guest/Public SUPPORT offers My Status and protects private fields on unresolved accounts", async () => {
   for (const menu of ["guest", "public"]) await conversation(async ({ tap, send, replies, env }) => {
     env.LINE_AUTO_REPLY_ENABLED = "false";
+    env.MEMBER_PAGES_WORKER = { fetch: async () => Response.json({ ok: false,
+      authority: "my_mmd_entitlement_resolver_v1", failure_class: "identity_unresolved" }) };
     await tap(`mmd_action=rich_menu&menu=${menu}&button=5`);
     assert.match(replies.at(-1).messages[0].text, /My Status/);
     const result = await send(textEvent(menu === "guest" ? "My Status" : "สถานะสมาชิก"));
     assert.equal(result.body.saved[0].reply_source, "deterministic");
     const reply = replies.at(-1).messages[0].text;
     if (menu === "guest") {
-      assert.match(reply, /สถานะลูกค้า: ยังยืนยันบัญชีไม่ได้/);
-      assert.match(reply, /กรุณายืนยันบัญชี LINE ใน MY MMD/);
+      assert.match(reply, /ยังไม่ได้ยืนยันตัวตน/);
       assert.deepEqual(reply.match(/https?:\/\/\S+/g), ['https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=overview']);
       assert.match(reply, /ยืนยันตัวตนใน MY MMD → https:\/\//);
     } else {
@@ -210,6 +211,25 @@ test("Guest/Public SUPPORT offers My Status and protects private fields on unres
     }
     assert.doesNotMatch(reply, /Points:|ประวัติการใช้บริการ:|CARE BACK|promotion\/6-years-care-back|CTA:|intent=renew/);
     assert.doesNotMatch(replies.at(-1).messages[0].text, /\d[\d,]*\s*(?:Points|แต้ม)/);
+  });
+});
+
+test("Guest SUPPORT My Status does not reverify or hand off incomplete and unavailable accounts", async () => {
+  const authority = "my_mmd_entitlement_resolver_v1";
+  for (const [payload, status, expected] of [
+    [{ ok: true, authority, identity_status: "resolved" }, 200, /ยืนยันตัวตนแล้ว/],
+    [{ ok: false, authority, failure_class: "no_entitlement" }, 200, /ยังตรวจสอบสถานะสมาชิกไม่ได้/],
+    [null, 503, /ยังตรวจสอบสถานะสมาชิกไม่ได้/],
+  ]) await conversation(async ({ tap, send, replies, env }) => {
+    env.LINE_AUTO_REPLY_ENABLED = "false";
+    env.MEMBER_PAGES_WORKER = { fetch: async () => Response.json(payload, { status }) };
+    await tap("mmd_action=rich_menu&menu=guest&button=5");
+    const before = replies.length;
+    await send(textEvent("MY STATUS"));
+    assert.equal(replies.length, before + 1);
+    const reply = replies.at(-1).messages[0].text;
+    assert.match(reply, expected);
+    assert.doesNotMatch(reply, /https?:|เปอร์|Points:|ประวัติการใช้บริการ:|วันหมดอายุ|ต่ออายุ/);
   });
 });
 

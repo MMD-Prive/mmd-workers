@@ -213,11 +213,13 @@ test('explicit model requests route to the right authenticated MY MMD view', asy
 
 test('My Status asks an unverified account to verify without revealing personal information', async () => {
  const x = io();
- const r = await runApprovedCategoryTurn(env, event('My Status'), runtime, x);
+ const e = {...env, MEMBER_PAGES_WORKER:{fetch:async () => Response.json({ok:false,
+   authority:'my_mmd_entitlement_resolver_v1', failure_class:'identity_unresolved'})}};
+ const r = await runApprovedCategoryTurn(e, event('My Status'), runtime, x);
  assert.equal(r.delivered, true);
  assert.equal(r.decision.reply_source, 'category_my_status');
- assert.match(r.decision.text, /สถานะลูกค้า: ยังยืนยันบัญชีไม่ได้/);
- assert.match(r.decision.text, /กรุณายืนยันบัญชี LINE ใน MY MMD/);
+ assert.match(r.decision.text, /ยังไม่ได้ยืนยันตัวตน/);
+ assert.equal(r.decision.handoff_required, false);
  const url = 'https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=overview';
  assert.equal(x.sent.length, 1);
  assert.equal(x.sent[0].split('\n').at(-1), `ยืนยันตัวตนใน MY MMD → ${url}`);
@@ -225,4 +227,26 @@ test('My Status asks an unverified account to verify without revealing personal 
  assert.equal(r.decision.cta_route, url);
  assert.doesNotMatch(r.decision.text, /Points:|ประวัติการใช้บริการ:|ลูกค้าที่สนใจ|intent=renew/i);
  assert.equal((await runApprovedCategoryTurn(env, event('Checkpts'), runtime, io())).delivered, false);
+});
+
+test('My Status sends no verification link or Per handoff for incomplete or unavailable truth', async () => {
+ const authority = 'my_mmd_entitlement_resolver_v1';
+ const failed = failure_class => ({ok:false, authority, failure_class});
+ for (const [payload, status, expected] of [
+   [{ok:true, authority, identity_status:'resolved', points:{status:'verified', active_points:123}}, 200, /ยืนยันตัวตนแล้ว/],
+   [failed('no_entitlement'), 200, /ยังตรวจสอบสถานะสมาชิกไม่ได้/],
+   [failed('upstream_error'), 503, /ยังตรวจสอบสถานะสมาชิกไม่ได้/],
+   [failed('projection_invalid'), 503, /ยังตรวจสอบสถานะสมาชิกไม่ได้/],
+   [null, 0, /ยังตรวจสอบสถานะสมาชิกไม่ได้/],
+   [{...failed('identity_unresolved'), authority:'untrusted'}, 200, /ยังตรวจสอบสถานะสมาชิกไม่ได้/],
+ ]) {
+   const x = io();
+   const e = {...env, MEMBER_PAGES_WORKER:{fetch:async () =>
+     status ? Response.json(payload,{status}) : new Promise(() => {})}};
+   const r = await runApprovedCategoryTurn(e,event('MY STATUS'),runtime,x);
+   assert.equal(r.decision.handoff_required,false);
+   assert.equal(x.sent.length,1);
+   assert.match(x.sent[0],expected);
+   assert.doesNotMatch(x.sent[0],/https?:|เปอร์|Points:|123|ประวัติการใช้บริการ:|วันหมดอายุ|ต่ออายุ/);
+ }
 });
