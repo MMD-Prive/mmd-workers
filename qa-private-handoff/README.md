@@ -51,3 +51,11 @@ The gateway passes the LINE-verified subject into the private session linkage. T
 Configure PRIVATE_QA_CLIENT_BY_SUBJECT only through the existing approved server-side configuration channel after both test identities are verified. Preserve the owner's existing client ID for the Uri reference and choose a separate QA-only client ID for the second account. This change has no actual second-subject configuration or credentials. Explicit owner approval is still required for a QA configuration change and deployment.
 
 Run node --test qa-private-handoff/*.test.mjs. The customer-session tests assemble a temporary copy of the captured gateway and candidate adapter. LINE verification, Auth's fixture resolver, R2 and page rendering are mocked. Tests exercise /qa/session, session cookies and the served Private Handoff reader for both identities, including denied identities, spoofed body fields, revoked links and expired sessions. These local results do not establish authenticated LINE QA acceptance.
+
+## Optional verified registration reference (local candidate)
+
+The original candidate requires an approved LINE subject before login. To obtain that subject through the existing login flow, a local follow-up adds PRIVATE_QA_CUSTOMER_REGISTRATION_ENABLED. It defaults to off and applies only with both QA and Private Handoff enabled. A verified but unlisted LINE identity receives a registrationRef while its login remains HTTP 403 and no session is issued. Invalid tokens cannot register.
+
+The reference addresses a private R2 record under private-qa/v1/customer-registration/. The record contains the verified subject and a ten-minute expiry. It contains no LINE token. Repeated registration by the same subject updates one record. The response and identity audit contain no raw LINE subject. No public reference-resolution endpoint is added.
+
+After the owner identifies the test account, retrieve its reference record through the existing owner storage tools, require an unexpired record and a subject distinct from QA_LINE_SUBJECT, and add it to the server-side customer mapping with a new QA-only customer ID. Disable registration after linkage and remove the registration record through the approved QA data path. The reference itself confers no membership or job access. This follow-up remains local until separately approved for Booking QA deployment.

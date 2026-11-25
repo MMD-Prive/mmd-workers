@@ -25,7 +25,7 @@ export async function verifyQaCustomerIdentity(token,channel,env,verify) {
     return {allowed:false,reason:verified?.reason || 'token_verify_rejected',tokenVerified:false,subjectMatched:false};
   }
   const permitted = subject === env.QA_LINE_SUBJECT || qaCustomerLinks(env).some(([candidate]) => candidate === subject);
-  if (!permitted) return {allowed:false,reason:'identity_mismatch',tokenVerified:true,subjectMatched:false};
+  if (!permitted) return {allowed:false,reason:'identity_mismatch',tokenVerified:true,subjectMatched:false,subject};
   return {allowed:true,reason:'identity_verified',tokenVerified:true,subjectMatched:true,subject};
 }
 
@@ -39,4 +39,18 @@ export async function linkedCustomerId(env,session) {
     if (session?.id === id && session.subjectDigest === await subjectDigest(subject)) return id;
   }
   return null;
+}
+
+
+// A reference identifies a private, short-lived registration record only.
+export async function registerVerifiedQaCustomer(env,identity) {
+  if (env.PRIVATE_QA_CUSTOMER_REGISTRATION_ENABLED !== 'true' ||
+      env.QA_ENABLED !== 'true' || env.PRIVATE_HANDOFF_QA !== 'true' ||
+      identity.allowed || !identity.tokenVerified || identity.reason !== 'identity_mismatch' ||
+      !lineSubject.test(identity.subject ?? '')) return null;
+  const reference = (await subjectDigest(identity.subject)).slice(0,32);
+  await env.QA_STORAGE.put('private-qa/v1/customer-registration/'+reference,JSON.stringify({
+    reference,subject:identity.subject,expiresAt:Date.now()+10*60*1000,
+  }));
+  return reference;
 }
