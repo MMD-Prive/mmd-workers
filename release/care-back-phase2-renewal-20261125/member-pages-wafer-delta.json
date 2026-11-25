@@ -1,15 +1,15 @@
 {
   "schema": "care_back_november_policy_patch_v1",
   "worker": "member-pages-worker",
-  "baseline_version": "27f5f8f7-8d75-4a71-b4e1-01f1a8bf3121",
-  "baseline_deployment": "c66c140a-e436-4988-97d9-42c823e93c21",
+  "baseline_version": "36286240-1420-4643-a45c-a68f5f4c6f17",
+  "baseline_deployment": "83123498-5e84-4ca6-b421-0be30e7c4d0d",
   "main_module": "model-console-live-entrypoint.js",
   "modules": [
     {
       "name": "model-console-live-entrypoint.js",
       "type": "esm",
-      "before_sha256": "0bc3995cc9d081bbd04e9d849121bb1294a93a42bd27519d01cd1266a75ff560",
-      "after_sha256": "e5de2d82596323003bea54cdc5f0d96b790fc0996f2b91323936e1f96297345d",
+      "before_sha256": "0ec0dd3b2b15d28cc531c9a98515da18603d6005581f0a63cf06c257ed11566b",
+      "after_sha256": "99eca09cf9970e8f931164b60439dfe1e63795dfe8c1388f0cd4af90e917e19a",
       "patches": [
         {
           "id": "quote_adapter_baseline",
