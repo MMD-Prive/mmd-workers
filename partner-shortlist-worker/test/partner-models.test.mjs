@@ -29,5 +29,5 @@ test('Partner Models does not accept lookalike routes, dashboard tokens, or writ
   const html = await (await worker.fetch(new Request('https://mmdbkk.com/partner/models?t=dashboard-token'), {})).text();
   assert.doesNotMatch(html, /dashboard-token/);
   const source = await fs.readFile(new URL('../../partners-worker/src/public-index.ts', import.meta.url), 'utf8');
-  assert.match(source, /href=\\"\/partner\/models\\">ค้นหาโมเดล/);
+  assert.ok(source.includes('"#p=" + encodeURIComponent(token)'));
 });
