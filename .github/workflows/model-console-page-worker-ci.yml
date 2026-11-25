@@ -26,7 +26,7 @@ jobs:
       - name: Verify approved HTML artifact hashes
         run: |
           sha256sum -c - <<'SHA256'
-          4aff4a31b418a92501349e446af8ac893b9ff17183355ed20df623c41a4be739  model-console-page-worker/src/artifacts/candidate.html
+          df237c0b74a631bdfb9d176cc4297a1d9ecf3099705aaefe5c14ae761a9f985e  model-console-page-worker/src/artifacts/candidate.html
           7dd6e42b4a4dcb292fb4830c8abd134b94ca356a8a9a3d4b5dba51128eae8965  model-console-page-worker/src/artifacts/rollback.html
           SHA256
       - name: Run Console page Worker mock tests

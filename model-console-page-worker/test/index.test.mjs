@@ -22,7 +22,7 @@ const { default: worker } = await import("../src/index.js");
 hooks.deregister();
 
 const expected = {
-  candidate: "4aff4a31b418a92501349e446af8ac893b9ff17183355ed20df623c41a4be739",
+  candidate: "df237c0b74a631bdfb9d176cc4297a1d9ecf3099705aaefe5c14ae761a9f985e",
   rollback: "7dd6e42b4a4dcb292fb4830c8abd134b94ca356a8a9a3d4b5dba51128eae8965",
 };
 const hosts = ["mmdbkk.com", "www.mmdbkk.com"];
@@ -100,12 +100,18 @@ test("non-page methods and other paths remain guarded", async () => {
   }
 });
 
-test("both pinned releases have identical Console JavaScript and same-origin session API paths", () => {
+test("TarT additions preserve baseline Console JavaScript and same-origin session API paths", () => {
   const read = (release) => readFileSync(new URL("../src/artifacts/" + release + ".html", import.meta.url), "utf8");
   const candidate = read("candidate");
   const scripts = (html) => [...html.matchAll(/<script\b[^>]*>[\s\S]*?<\/script>/g)].map((m) => m[0]);
   assert.equal(scripts(candidate).length, 37);
-  assert.deepEqual(scripts(candidate), scripts(read("rollback")));
+  const withoutTart = scripts(candidate).map((script) => script
+    .replace(/\n\/\/ TarT reads the active view[\s\S]*?(?=function T\(\)\{)/, "")
+    .replace('if(t!=="work")clearTartCurrentJob();', "")
+    .replace(';renderTartCurrentJob(a[2])', ""));
+  assert.deepEqual(withoutTart, scripts(read("rollback")));
+  assert.match(candidate, /<details data-console-tart hidden/);
+  assert.match(candidate, /k\("\[data-tart-summary\]",/);
   assert.match(candidate, /data-current-endpoint="\/v1\/model\/session\/current"/);
   assert.match(candidate, /data-action-endpoint="\/v1\/model\/session\/action"/);
   assert.match(candidate, /allowed_actions\.includes\(/);
