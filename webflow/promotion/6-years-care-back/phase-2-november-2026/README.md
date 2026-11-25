@@ -24,6 +24,16 @@ Ten read-only fixtures evaluated the [exact shared policy at the reviewed main c
 
 None of these observations verifies a hosted Webflow embed, a signed-in offer, or a payment.
 
+## Rejoin acceptance cases before release
+
+| Case | Current source behavior | Required evidence before publishing |
+| --- | --- | --- |
+| Same-tier Premium, 30 days lapsed | The signed-in quote and canonical web settlement use the ordinary renewal path. At November 25 Bangkok, the helper returns +1 year for renewal, not +6 months. | Verify the approved rejoin entry separately from renewal, with matching quote and proposed expiry. |
+| Same-tier, exactly 90 days / just beyond 90 days, then 1 year or more | Keep the existing price and manual-review safeguards. The reviewed payment writer can stop beyond 90 days before the promo helper runs. | No automatic price, checkout, or entitlement for cases that require review. Verify the reviewed route separately. |
+| Cross-tier rejoin (e.g. former Premium, now Standard) | The reviewed Payments writer's prior-history flag is scoped to the selected package. That does not prove first-ever Private membership. | Separate first-ever membership from first purchase of the selected tier. Never grant both returning and first-time bonuses. |
+
+Do not force `action=signup` in the existing renewal path to make the copy match. Verify eligible and ineligible cases with synthetic or approved test accounts only, without submitting payment. A later shared-policy edit requires the existing Payments release approval; keep the Kenji evidence gate unchanged and refresh its policy attestation only if that promotion lane is separately approved.
+
 ## Neutral public copy while numeric artwork is held
 
 > **6 YEARS CARE BACK · PHASE 2**  
