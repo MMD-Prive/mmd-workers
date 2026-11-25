@@ -570,9 +570,10 @@ test("LINE conflicting membership/service wording stays in Confirm and also rais
   assert.equal(h.messages[1].message_thread_id, 9);
 });
 
-test("explicit payment context and failed OCR preserve review evidence, never create a payment proof", async () => {
+test("explicit payment context and failed OCR preserve review evidence and notify once without creating a payment proof", async () => {
   const r2 = memoryR2();
   const previousFetch = globalThis.fetch;
+  const ops = telegramHarness();
   let proofPost = null;
   let proofPatch = null;
   let extractorCalls = 0;
@@ -600,6 +601,12 @@ test("explicit payment context and failed OCR preserve review evidence, never cr
     throw new Error(`unexpected_airtable:${request.method}:${table}`);
   };
   const env = {
+    ...ops.env,
+    TELEGRAM_WORKER: { async fetch(request) {
+      assert.ok([...r2.store.keys()].some(key => key.startsWith("line-ofc/held-evidence-review/") && key.endsWith("original.png")));
+      assert.ok([...r2.store.keys()].some(key => key.startsWith("line-ofc/ops-outbox/")), "persist the alert before sending");
+      return ops.env.TELEGRAM_WORKER.fetch(request);
+    } },
     LINE_SLIP_EVIDENCE: r2,
     LINE_CHANNEL_ACCESS_TOKEN: "line-token",
     AIRTABLE_BASE_ID: "appTestBase000001",
@@ -622,6 +629,27 @@ test("explicit payment context and failed OCR preserve review evidence, never cr
     assert.equal(proofPost, null);
     assert.equal(proofPatch, null);
     assert.equal(extractorCalls, 2);
+    assert.equal(paymentsCalls, 0);
+    assert.equal(ops.messages.length, 1);
+    assert.equal(ops.messages[0].message_thread_id, 9);
+    const notice = JSON.stringify(ops.messages[0]);
+    assert.match(notice, /https:\/\/mmdbkk\.com\/internal\/admin\/payments\?view=held-images/);
+    assert.match(notice, new RegExp(result.proofId));
+    for (const privateValue of [lineUserId, "book@example.com", "img-1", "ต่ออายุสมาชิกครับ ส่งสลิปให้", "1000"]) {
+      assert.ok(!notice.includes(privateValue));
+    }
+    await captureDirectUserImageEvidence(env, event, { recentPaymentContext: true, paymentContextText: "ส่งสลิป" });
+    await LINE_GROUP_INGRESS_INTERNALS.notifyHeldEvidenceReview(env, { proof_id: result.proofId, source_type: "user", attempts: 5 });
+    assert.equal(ops.messages.length, 1, "webhook replay and terminal review share one notification");
+    const weak = { ...event, message: { ...event.message, id: "arbitrary-photo" } };
+    const candidate = await captureDirectUserImageEvidence(env, weak, { recentPaymentContext: false });
+    assert.equal(candidate.candidate, true);
+    assert.equal(ops.messages.length, 1, "no notice for a candidate without payment context");
+    const held = await captureDirectUserImageEvidence(env, weak, { recentPaymentContext: true, paymentContextText: "ขอเข้ากลุ่ม" });
+    assert.equal(held.held, true);
+    assert.equal(ops.messages.length, 1, "weak follow-up alone does not send a notice");
+    assert.equal(proofPost, null);
+    assert.equal(proofPatch, null);
     assert.equal(paymentsCalls, 0);
   } finally {
     globalThis.fetch = previousFetch;

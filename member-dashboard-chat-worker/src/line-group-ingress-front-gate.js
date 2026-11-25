@@ -707,18 +707,18 @@ async function notifyPaymentProofOps(env = {}, evidence = {}, result = {}) {
   };
 }
 
-// Bounded, hash-only operator notice raised when held evidence reaches terminal
-// review_required. It carries no image, no LINE identity and no amount.
+// Immediate and terminal notices share the same durable outbox identity. The
+// first successful delivery is enough; terminal processing must not ping twice.
+// Never send the image, LINE identity, customer text or an unverified amount.
 async function notifyHeldEvidenceReview(env = {}, audit = {}) {
   const chatId = paymentOpsChatId(env);
   if (!chatId) return { delivered: false, skipped: true, reason: "telegram_config_missing" };
   const text = [
-    "🟠 ภาพจาก LINE ต้องตรวจด้วยคน",
-    "สถานะ: ยังไม่ได้ลงเป็นสลิปชำระเงิน",
-    "ขั้นต่อไป: ค้นหารหัสภาพในหลังบ้านเพื่อตรวจหลักฐาน งดยืนยันเงินเข้าจนกว่าจะลงเป็นสลิปและตรวจยอดจริง",
+    "🟠 LINE OA · ภาพรอตรวจ",
+    "สถานะ: เก็บภาพแล้ว แต่ยังไม่ได้ลงเป็นสลิปชำระเงิน",
+    "เปิดคิวแล้วเทียบเลขอ้างอิงภาพ อย่ายืนยันเงินเข้าจนกว่าจะตรวจยอดจริง",
+    "https://mmdbkk.com/internal/admin/payments?view=held-images",
     `รหัสภาพ: ${asString(audit.proof_id)}`,
-    `สาเหตุ: ${asString(audit.hold_reason) || "uncertain_payment_image"}`,
-    `จำนวนครั้งที่ระบบตรวจซ้ำ: ${Number(audit.attempts) || 0}`,
     `ที่มา: ${audit.source_type === "user" ? "แชต LINE OA" : "กลุ่มชำระเงิน LINE"}`,
   ].join("\n");
   return sendOpsMessage(env, {
@@ -795,6 +795,20 @@ async function persistCapturedImage(env = {}, event = {}, options = {}) {
       imageClass: analysis.classification?.image_class,
       ...identity,
     });
+    // Do not announce an arbitrary DM image or an unfenced/terminal write.
+    // On redelivery reuse the same outbox key so a missed enqueue can recover.
+    if (hold.held === true && (source === "group" || (source === "user" && PAYMENT_EVIDENCE_FOLLOWUP_RE.test(contextText)))) {
+      try {
+        const delivery = await notifyHeldEvidenceReview(env, { proof_id: proofId, source_type: source });
+        if (!delivery.delivered && !delivery.durable) {
+          console.log(JSON.stringify({ line_held_review_alert: "not_queued" }));
+        }
+      } catch (_) {
+        // Preserve the held receipt even when the outbox cannot be written.
+        // Redelivery or terminal maintenance can still attempt this notice.
+        console.log(JSON.stringify({ line_held_review_alert: "enqueue_failed" }));
+      }
+    }
     return {
       captured: false,
       ignored: false,
