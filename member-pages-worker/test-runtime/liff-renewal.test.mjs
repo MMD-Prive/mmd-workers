@@ -29,8 +29,32 @@ describe('actual Worker runtime Renewal Standard/Premium activation readiness',(
     expect(offer[tier==='premium'?'bonus_years':'bonus_days']).toBe(tier==='premium'?1:180);
     expect(offer.bonus_months).toBe(0);
     expect(offer.entitlement_granted).toBe(false);
-    expect(offer.promotion_ends_before).toBe('2026-11-01T00:00:00+07:00');
+    expect(offer.promotion_ends_before).toBeNull();
   });
+  for(const tier of ['standard','premium']) {
+    for(const [at,publicEnd] of [
+      ['2026-11-24T23:59:59.999+07:00',null],
+      ['2026-11-25T00:00:00+07:00','2026-12-01T00:00:00+07:00'],
+      ['2026-11-30T23:59:59.999+07:00','2026-12-01T00:00:00+07:00'],
+      ['2026-12-01T00:00:00+07:00',null],
+      ['2026-12-31T23:59:59.999+07:00',null],
+    ]) it(`${tier}: separates public announcement from paid-time bonus at ${at}`,async()=>{
+      vi.setSystemTime(new Date(at));
+      const fx=await fixture(-30,tier);
+      const response=await worker.fetch(fx.request('offer'),fx.env);
+      expect(response.status).toBe(200);
+      const offer=await response.json();
+      expect(offer.status).toBe('ready');
+      expect(offer.promotion_ends_before).toBe(publicEnd);
+      expect(offer.bonus_days).toBe(tier==='standard'?180:0);
+      expect(offer.bonus_years).toBe(tier==='premium'?1:0);
+      expect(offer.renewal_starts_at).toBe(fx.state.member_profile.membership_expires_at);
+      expect(offer.entitlement_granted).toBe(false);
+      expect(offer.official_verification_required).toBe(true);
+      expect(offer).not.toHaveProperty('honored_before');
+      expect(fx.payments).toHaveLength(0);
+    });
+  }
   for(const [tier,amount] of [['standard',1000],['premium',2500]]) {
     for(const days of [-30,0,89,90]) it(`${tier} day ${days}: canonical offer and signed checkout while Promotion flag stays off`,async()=>{
       const fx=await fixture(days,tier);
