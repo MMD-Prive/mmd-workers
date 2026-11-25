@@ -7,7 +7,7 @@ const PRODUCTION_HOSTS = new Set(["mmdbkk.com", "www.mmdbkk.com"]);
 const RELEASES = new Map([
   ["candidate", {
     html: candidateHtml,
-    sha256: "4aff4a31b418a92501349e446af8ac893b9ff17183355ed20df623c41a4be739",
+    sha256: "df237c0b74a631bdfb9d176cc4297a1d9ecf3099705aaefe5c14ae761a9f985e",
   }],
   ["rollback", {
     html: rollbackHtml,
