@@ -141,7 +141,10 @@ test('existing Uri reference is private to its customer and repeat accept preser
   const {call,rows}=fixture();
   const ref='privateqa_d14f220b8e1533dd23843e34fb7068258b9ea6aa5c27019f844490ca4da0e53a';
   const job={ref,session_id:'job_'+ref,lane:'private',clientId:'qa-member',model:'Uri',modelId:'qa-model-uri',group:'GWs19',source:'new_request',through:'Kendo',status:'offered'};
+  rows.set('private-qa/v1/booking/'+ref,JSON.stringify(job));
   rows.set('private-qa/v1/job/'+ref,JSON.stringify(job));
+  const pendingRef='privateqa_'+'a'.repeat(64);
+  rows.set('private-qa/v1/booking/'+pendingRef,JSON.stringify({...job,ref:pendingRef}));
   rows.set('private-qa/v1/confirmation/'+ref,JSON.stringify({session_id:job.session_id}));
   const before=[...rows.entries()];
   for(const suffix of ['', '?booking_ref='+ref]) {
@@ -153,6 +156,10 @@ test('existing Uri reference is private to its customer and repeat accept preser
     const other=await call('other','my-jobs'+suffix);
     assert.equal(other.httpStatus,200);
     assert.deepEqual(other.jobs,[]);
+    if (!suffix) {
+      assert.deepEqual(owner.pending,[{booking_ref:pendingRef,model:'Uri',group:'GWs19'}]);
+      assert.deepEqual(other.pending,[]);
+    }
     assert.equal((await call('guest','my-jobs'+suffix)).httpStatus,403);
   }
   assert.equal((await call('mek','confirm-job',{booking_ref:ref})).httpStatus,404);
