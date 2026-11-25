@@ -1,26 +1,31 @@
 # 6 YEARS CARE BACK · Phase 2 · November 2026
 
-Review-only handoff for the November 25–30 announcement (Bangkok time). This document does not change the campaign page, make an offer available, schedule a send, or extend any membership. Phase 3 is separate.
+November-only content specification, aligned to the owner’s artwork direction. Announcement window: November 25 through November 30 inclusive, Asia/Bangkok (public display interval `2026-11-25T00:00:00+07:00` inclusive to `2026-12-01T00:00:00+07:00` exclusive). This is not a settlement deadline or a grant of entitlement.
 
-## Proposed public copy (text only)
+## November benefit panels for review
+
+| Audience | Proposed Thai display | Release condition |
+| --- | --- | --- |
+| Current eligible members | สมาชิกปัจจุบันที่เข้าเงื่อนไข: ต่ออายุล่วงหน้า Standard รับเพิ่ม **180 วัน** / Premium รับเพิ่ม **1 ปี** | Confirm both tier amounts and eligibility in the signed-in renewal offer. |
+| Eligible former members | สมาชิกที่หมดอายุ: สมัครกลับรับเพิ่ม **6 เดือน** เมื่อผ่านการตรวจสิทธิ์ตามประวัติสมาชิกเดิม | Confirm prior-member cohorts and exact rejoin duration; do not imply all expired members qualify. |
+| First-time Standard | สมาชิกใหม่ Standard: รับเพิ่ม **180 วัน** รวมประมาณ **1 ปีครึ่ง** | Confirm the new-member credit exists in the signup offer; 180 days is the exact increment, and “about 1½ years” is the display shorthand. |
+| First-time Premium | สมาชิกใหม่ Premium: อายุสมาชิก **รวม 2 ปี** | Show the total only. Do not promise an extra year atop a two-year base. Hold the artwork’s “รับเพิ่ม 1 ปี” wording until the first-term package and promotional allocation are reconciled. |
+
+The public campaign page currently describes a two-year Premium base and references a qualifying promotion; neither that page nor the design verifies the first-time signup allocation. The desired first-time total here remains two years, not three. Copy is a specification for November only, not a change to checkout, package definitions, December settlement, historical entitlements, or Phase 3.
+
+## Neutral public copy while numeric artwork is held
 
 > **6 YEARS CARE BACK · PHASE 2**  
 > เพราะทุกความไว้วางใจมีความหมาย  
 > ตรวจสอบสิทธิ์ตามสถานะสมาชิกของคุณได้ถึง **30 พ.ย. 2569** ทาง LINE Official **@mmdprive**
 
-Use this text only during the announcement window. After November 30, remove the dated announcement and return to neutral instructions to check current membership status. This is an announcement deadline, not a settlement or entitlement rule.
+Use dated copy only within the announcement window and return to neutral membership-status guidance afterward. Do not use copy visibility to decide a customer's eligibility.
 
-## Hold the numeric poster pending these checks
+## Before updating Webflow or posting the numeric artwork
 
-| Audience | Evidence required before publishing the poster |
-| --- | --- |
-| Current member | Verify advance-renewal eligibility and exact extension against the signed-in offer for each Standard and Premium tier. |
-| Former member | Verify rejoin eligibility, which expiry cohorts qualify, and whether the advertised extension actually appears for a qualifying returning member. |
-| New member | Show the exact first-term length. Distinguish base term from incremental campaign credit for each tier; do not market an ordinary base term as an added bonus. |
+1. Compare each panel above against the intended signed-in offer for at least one eligible and one ineligible account per applicable cohort. Compare first-term total and promo increment independently. No payment submission as part of this check.
+2. Scan the final exported QR on a phone. Verify the intended MMD account or approved status destination, no customer-specific token, and no account data on the in-phone screen.
+3. Compare the exact published/staged Webflow embed and hydration behavior before applying edits to the [campaign page](https://www.mmdbkk.com/promotion/6-years-care-back) or [Benefits page](https://www.mmdbkk.com/sigil/member/membership/benefits). Test anonymous rendering and signed-in offer separately. Test the start boundary, November 30 near midnight, and December 1 at 00:00 Bangkok.
+4. Record the final artwork version, approved destination, and actual send receipt separately. Do not reuse the October poster workflow or use this draft as permission to publish.
 
-1. In the sanctioned preview, compare the exact final artwork's three panels to the corresponding eligible and ineligible status cases. A mock, design approval, or public description is not evidence of what the system will grant.
-2. Scan the QR on the final exported artwork on a phone. Confirm it resolves to the intended MMD account or approved membership-status destination, without a customer-specific token. Verify any in-phone screenshot is the intended app screen and does not expose account data.
-3. Verify the review preview alongside [CARE BACK](https://www.mmdbkk.com/promotion/6-years-care-back) and [Membership Benefits](https://www.mmdbkk.com/sigil/member/membership/benefits). Signed-in entitlement and anonymous public rendering are separate checks. Do not submit a payment for this preflight.
-4. Record the approved artwork version, destination, Bangkok send time, and receipt separately. Do not reuse the October poster workflow, send to all contacts, or publish changed Webflow content from this documentation PR.
-
-This draft includes no artwork, QR, checkout changes, customer data, or send integration. If a numeric claim cannot be matched to the runtime, keep the artwork off the public channels and use neutral announcement copy only on a verified channel.
+This PR contains review copy only; no asset upload, runtime, offer, checkout, eligibility, or send integration changes. No unverified image or numeric offer is publicized by the PR.
