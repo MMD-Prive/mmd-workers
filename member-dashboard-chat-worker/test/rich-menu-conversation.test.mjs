@@ -202,10 +202,13 @@ test("Guest/Public SUPPORT offers My Status and protects private fields on unres
     if (menu === "guest") {
       assert.match(reply, /สถานะลูกค้า: ยังยืนยันบัญชีไม่ได้/);
       assert.match(reply, /กรุณายืนยันบัญชี LINE ใน MY MMD/);
+      assert.deepEqual(reply.match(/https?:\/\/\S+/g), ['https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=overview']);
+      assert.match(reply, /ยืนยันตัวตนใน MY MMD → https:\/\//);
     } else {
       assert.match(reply, /สถานะสมาชิก:.*\nวันหมดอายุ:/);
+      assert.doesNotMatch(reply, /https?:/);
     }
-    assert.doesNotMatch(reply, /https?:|Points:|ประวัติการใช้บริการ:|CARE BACK|promotion\/6-years-care-back|CTA:/);
+    assert.doesNotMatch(reply, /Points:|ประวัติการใช้บริการ:|CARE BACK|promotion\/6-years-care-back|CTA:|intent=renew/);
     assert.doesNotMatch(replies.at(-1).messages[0].text, /\d[\d,]*\s*(?:Points|แต้ม)/);
   });
 });

@@ -1,5 +1,6 @@
 const AUTHORITY = 'my_mmd_entitlement_resolver_v1';
 const ENTRY = 'https://miniapp.line.me/2010862595-yT4DCEMc/';
+const STATUS_ENTRY = `${ENTRY}?intent=status&view=overview`;
 const LABELS = Object.freeze({private_standard:'Standard',private_premium:'Premium',vip:'VIP',svip:'SVIP',black_card:'Black Card',red_card:'Red Card',public_member:'Public Member',guest_pass:'Guest Pass'});
 const STATES = Object.freeze({active:'ใช้งานอยู่',expiring_soon:'ใกล้หมดอายุ',grace:'อยู่ในช่วงผ่อนผัน',expired:'หมดอายุ',inactive:'ยังไม่ใช้งาน',pending:'รอตรวจสอบ',revoked:'ถูกเพิกถอน',blocked:'ระงับใช้งาน'});
 
@@ -30,7 +31,7 @@ export function resolveMembershipStatusReply(truth = {}, { inChatOnly = false, i
   const prospect = includeSummary && resolved && truth.customer_status === 'prospect';
   const verified = resolved && Object.hasOwn(LABELS,m.level) && Object.hasOwn(STATES,m.lifecycle);
   const verifiedSummary = includeSummary && (verified || prospect);
-  let route = inChatOnly ? '' : `${ENTRY}?intent=status&view=overview`;
+  let route = inChatOnly ? '' : STATUS_ENTRY;
   let text = 'ตอนนี้ยังตรวจยืนยันสถานะสมาชิกจากระบบไม่ได้ครับ ข้อความนี้ไม่ได้หมายความว่าสมาชิกหมดอายุ ไม่ต้องยืนยัน LINE หรือส่งหลักฐานเดิมซ้ำ ฝากข้อความให้เปอร์ตรวจต่อในแชตนี้ได้ครับ';
   let handoff = true;
   if (inChatOnly) text = 'สถานะสมาชิก: ยังตรวจสอบไม่ได้ครับ\nวันหมดอายุ: ยังตรวจสอบไม่ได้ครับ\nเดี๋ยวเปอร์ขอตรวจให้ก่อนนะครับ';
@@ -64,7 +65,10 @@ export function resolveMembershipStatusReply(truth = {}, { inChatOnly = false, i
     }
   }
   if (verifiedSummary) text += '\n' + summaryLines(truth);
-  return {text:route ? `${text}\nเปิด My MMD → ${route}` : text,intent:'membership_status',inferred_intent:'membership_status',
+  const needsAccountVerification = includeSummary && !resolved;
+  if (needsAccountVerification) route = STATUS_ENTRY;
+  const ctaLabel = needsAccountVerification ? 'ยืนยันตัวตนใน MY MMD' : 'เปิด My MMD';
+  return {text:route ? `${text}\n${ctaLabel} → ${route}` : text,intent:'membership_status',inferred_intent:'membership_status',
     truth_authority:AUTHORITY,truth_status:(verified || prospect)?'verified':'unavailable',
     live_truth_used:verified || prospect,live_truth_verified:verified || prospect,model_attempted:false,
     handoff_required:handoff,handoff_reason:handoff?'membership_status:per_review':'',
