@@ -507,7 +507,11 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
   const introContinue = document.getElementById("intro-continue");
   const resolveVerifiedCustomerBrand = ${resolveVerifiedCustomerBrand.toString()};
   const customerBrand = (${createCustomerBrand.toString()})(document.getElementById("customer-brand-v6"));
-  const resetCustomerBrand = () => customerBrand.reset();
+  function setNowHeading(audience) {
+    const title = document.getElementById("digital-news-title");
+    if (title) title.innerHTML = audience === "private" ? "<small>SĪGIL UPDATE</small>SĪGIL NOW" : "<small>MMD UPDATE</small>MMD NOW";
+  }
+  const resetCustomerBrand = () => { setNowHeading("unresolved"); customerBrand.reset(); };
   const accountUI = (${createAccountView.toString()})(document.getElementById("digital-account"), memberApiFetch, () => currentMemberRef, () => clearMemberProfile());
   const memberBookingUI = (${createMemberBookingUI.toString()})(document.getElementById("member-booking"), memberApiFetch, () => profileReady ? currentMemberRef : "", CONFIG.bookingModel, CONFIG.bookingScope);
   const personalMainUI = (${createPersonalMainUI.toString()})(document.getElementById("personal-main"), memberApiFetch);
@@ -1197,6 +1201,13 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
     digitalPersonalizedFeed = [];
     digitalUpdatesGeneration++;
     digitalUpdatesPending = null;
+    digitalUpdatesLoaded = false;
+    const staleNews = document.getElementById("digital-news-feed");
+    if (staleNews) staleNews.textContent = "";
+    const staleNewsCount = document.getElementById("digital-unread");
+    if (staleNewsCount) { staleNewsCount.hidden = true; staleNewsCount.textContent = ""; }
+    const staleNewsDetails = document.getElementById("digital-news-disclosure");
+    if (staleNewsDetails) staleNewsDetails.open = false;
     hydrateDigitalHome.generation = (hydrateDigitalHome.generation || 0) + 1;
     hydrateDigitalMission.generation = (hydrateDigitalMission.generation || 0) + 1;
     loadRenewalCard.generation = (loadRenewalCard.generation || 0) + 1;
@@ -1595,6 +1606,7 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
   function digitalFeedCategory(item, personalized = false) {
     if (personalized) return "FOR YOU";
     const raw = String(item?.category || item?.tag || "").trim().toUpperCase();
+    if (raw === "SIGIL UPDATE") return "SĪGIL UPDATE";
     if (/EDITORIAL|TMIB|CITY|ACADEMY|MMS|BEHIND/.test(raw)) return "EDITORIAL";
     return "MMD UPDATE";
   }
@@ -1764,10 +1776,15 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
       try {
         await digitalHomeReady;
         if (generation !== digitalUpdatesGeneration) return;
-        const response = await memberApiFetch("/api/member/app/updates?limit=10", { credentials:"same-origin", cache:"no-store", headers:{ accept:"application/json" } });
+        const privateNow = document.body?.dataset?.brandAudience === "private";
+        const response = privateNow
+          ? await memberApiFetch("/api/member/app/updates?limit=10&world=sigil", { credentials:"same-origin", cache:"no-store", headers:{ accept:"application/json" } })
+          : await memberApiFetch("/api/member/app/updates?limit=10", { credentials:"same-origin", cache:"no-store", headers:{ accept:"application/json" } });
         const body = await response.json().catch(() => null);
         if (generation !== digitalUpdatesGeneration) return;
         if (!response.ok || body?.ok === false || !Array.isArray(body?.items)) throw new Error("updates_unavailable");
+        if (privateNow && body.audience !== "sigil") throw new Error("updates_unavailable");
+        if (!privateNow && body.audience === "sigil") throw new Error("updates_unavailable");
         const items = body.items;
         const unread = Number(body.unread_count ?? body.unreadCount ?? 0);
         renderDigitalNews(digitalPersonalizedFeed, items, Number.isInteger(unread) ? unread : 0);
@@ -1795,6 +1812,7 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
     applyWorldTheme(data, authority);
     const verifiedAudience = customerBrand.render(resolveVerifiedCustomerBrand(data, brandAuthority));
     personalMainUI.setAudience(verifiedAudience);
+    setNowHeading(verifiedAudience);
     currentMemberRef = /^[a-f0-9]{64}$/.test(String(data?.member_binding || "")) ? data.member_binding : "";
     const view = data && typeof data.customer_360 === "object" ? data.customer_360 : legacyCustomerView(data);
     const member = view.member || {};

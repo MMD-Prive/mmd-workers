@@ -105,6 +105,12 @@ bucket_name = "mmd-models"
 binding = "PRIVATE_MODEL_MEDIA"
 bucket_name = "mmd-private-model-media"
 
+# SĪGIL NOW is an independent member-only editorial store. Never attach a
+# custom public domain or enable r2.dev access. Every cover is Worker-gated.
+[[r2_buckets]]
+binding = "SIGIL_NOW_PRIVATE_R2"
+bucket_name = "mmd-private-sigil-now"
+
 # Customer-submitted reference images are private intake evidence. They never
 # share the model-media buckets and are read only through the internal request
 # handoff after a verified member submits a request.

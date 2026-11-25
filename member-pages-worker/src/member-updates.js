@@ -1,3 +1,4 @@
+import { handleSigilNow } from "./sigil-now.js";
 // Published editorial projection only; no shared cache can retain withdrawn posts.
 const COLLECTION = '6ad1c108b1deb34b49019a10';
 const PATHS = new Set(['/api/v1/member/updates/list', '/api/member/app/updates']);
@@ -40,7 +41,7 @@ export async function listMmdNowItems(env, live) {
     items.push(...data.items);offset+=data.items.length;if(offset>=data.pagination.total)return items;if(!data.items.length)break;
   }throw Error('cms_incomplete');
 }
-export async function handleMemberUpdates(request, env, readSession) {
+export async function handleMemberUpdates(request, env, readSession, readEntitlement) {
   const respond=(body,status=200)=>{
     // Fixed vocabulary only: no session, CMS payload, exception text or URL.
     console.info('member_updates_read', {status, outcome:body.ok === true ? 'published_projection' : body.error.code});
@@ -49,10 +50,16 @@ export async function handleMemberUpdates(request, env, readSession) {
   if(request.method!=='GET')return respond({ok:false,error:{code:'METHOD_NOT_ALLOWED'}},405);
   const session=await readSession(request,env);
   if(!session?.lineUserId || session.memberExists!==true || !session.memberId)return respond({ok:false,error:{code:'MEMBER_SESSION_REQUIRED'}},401);
+  const selectors = new URL(request.url).searchParams;
+  if (selectors.has("world")) {
+    if (selectors.get("world") === "sigil") return handleSigilNow(request,env,session,readEntitlement);
+    if (selectors.getAll("world").length !== 1 || selectors.get("world") !== "public") return respond({ok:false,error:{code:'INVALID_SELECTOR'}},400);
+  }
+  if (selectors.has("cover")) return respond({ok:false,error:{code:'INVALID_SELECTOR'}},400);
   if(!env.WEBFLOW_CMS_TOKEN)return respond({ok:false,error:{code:'CMS_NOT_CONFIGURED'}},503);
   try {
     const [live,staged]=await Promise.all([listMmdNowItems(env,true),listMmdNowItems(env,false)]);
     const n=Number(new URL(request.url).searchParams.get('limit') || 10);const limit=Number.isInteger(n)?Math.max(1,Math.min(20,n)):10;
-    return respond({ok:true,items:projectPublishedUpdates(live,staged,limit),source:'webflow_mmd_now',checked_at:new Date().toISOString()});
+    return respond({ok:true,items:projectPublishedUpdates(live,staged,limit),source:'webflow_mmd_now',audience:'public',checked_at:new Date().toISOString()});
   } catch { return respond({ok:false,error:{code:'CMS_UNAVAILABLE'}},503); }
 }

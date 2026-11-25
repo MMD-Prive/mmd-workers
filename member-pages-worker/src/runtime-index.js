@@ -127,7 +127,7 @@ const worker = {
     if (new URL(request.url).pathname === DISCOVERY_VIEWER_PATH) return handleDiscoveryViewer(request, env);
     if (isPersonalMainRequest(request)) return handlePersonalMain(request, env, readMemberAppSession);
     if (isMemberAttentionRequest(request)) return handleMemberAttention(request, env);
-    if (isMemberUpdatesRequest(request)) return handleMemberUpdates(request, env, readMemberAppSession);
+    if (isMemberUpdatesRequest(request)) return handleMemberUpdates(request, env, readMemberAppSession, readEntitlementSnapshot);
     if (isMemberProfilesRequest(request)) return handleMemberProfiles(request, env, { readSession: readMemberAppSession, readEntitlement: readEntitlementSnapshot });
     request = normalizeCareBackWebViewOrigin(request);
     const runtimeUrl = new URL(request.url);
