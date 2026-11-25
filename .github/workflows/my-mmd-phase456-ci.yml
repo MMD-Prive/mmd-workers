@@ -4,6 +4,7 @@ on:
     paths:
       - 'member-pages-worker/src/**'
       - 'member-pages-worker/test/member-attention.test.mjs'
+      - 'member-pages-worker/test/sigil-now.test.mjs'
       - 'member-pages-worker/test/member-attention-entrypoint.test.mjs'
       - 'member-pages-worker/test/member-coupon-presentation.test.mjs'
       - 'admin-worker/src/my-mmd-operations-queue.js'
@@ -35,6 +36,7 @@ jobs:
           member-pages-worker/test/member-payments-bff.test.mjs
           member-pages-worker/test/member-app-session.test.mjs
           member-pages-worker/test/member-updates.test.mjs
+          member-pages-worker/test/sigil-now.test.mjs
           member-pages-worker/test/care-back-code-redemption.test.mjs
           member-pages-worker/test/care-back-claim-store.test.mjs
           member-pages-worker/test/care-back-phase1-recovery.test.mjs
