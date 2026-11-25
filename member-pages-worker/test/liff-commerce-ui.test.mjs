@@ -38,8 +38,15 @@ test("renewal card separates purchased year, CARE BACK bonus, expiry, promotion 
   const render = new Function("document", "CONFIG", "purchaseRenewal", source + "; return renderRenewalCard;")(document, {}, () => {});
   render(document.getElementById("renewal-card"), {status:"ready",payment_available:true,package_code:"premium",package_label:"Premium",amount_thb:2500,membership_years:1,bonus_years:1,current_expires_at:"2027-02-28",renewal_starts_at:"2027-02-28",new_expires_at:"2029-02-28",promotion_ends_before:"2026-11-01T00:00:00+07:00"});
   assert.match(elements.get("renewal-rows").children.map(row => row.children.map(x => x.textContent).join(":")).join("\n"), /ระยะเวลาที่ซื้อ:1 ปี[\s\S]*CARE BACK เพิ่ม:1 ปี/);
-  assert.match(elements.get("renewal-note").textContent, /31 ต.ค. 2026/);
+  assert.match(elements.get("renewal-note").textContent, /โปรประกาศถึง 31 ต.ค. 2026/);
+  assert.doesNotMatch(elements.get("renewal-note").textContent, /โดยยึดวันชำระที่ยืนยันแล้ว|31 ธ.ค.|สิ้นปี/);
   assert.match(elements.get("renewal-action").textContent, /2,500/);
+  const activeRenewal = {status:"ready",payment_available:true,package_code:"standard",package_label:"Standard",amount_thb:1000,membership_years:1,bonus_days:180,current_expires_at:"2027-02-28",renewal_starts_at:"2027-02-28",new_expires_at:"2028-08-26"};
+  render(document.getElementById("renewal-card"), {...activeRenewal,promotion_ends_before:"2026-12-01T00:00:00+07:00"});
+  assert.match(elements.get("renewal-note").textContent, /โปรประกาศถึง 30 พ.ย. 2026/);
+  assert.doesNotMatch(elements.get("renewal-note").textContent, /31 ต.ค.|31 ธ.ค.|สิ้นปี/);
+  render(document.getElementById("renewal-card"), {...activeRenewal,promotion_ends_before:null});
+  assert.doesNotMatch(elements.get("renewal-note").textContent, /โปรประกาศถึง|31 ธ.ค.|สิ้นปี/);
   render(document.getElementById("renewal-card"), {status:"contact_owner"});
   assert.equal(elements.get("renewal-action").hidden, true);
   assert.equal(elements.get("renewal-price").hidden, true);
