@@ -5,6 +5,8 @@ import { careBackOctoberReply } from '../src/kenji-care-back-october.mjs';
 import { careBackPosterMessages } from '../src/kenji-care-back-poster.mjs';
 
 const NOVEMBER_START = Date.parse('2026-11-01T00:00:00+07:00');
+const PHASE_2_START = Date.parse('2026-11-25T00:00:00+07:00');
+const PHASE_2_TEXT = '6 YEARS CARE BACK · PHASE 2\nตรวจสอบข้อเสนอและสิทธิ์ตามสถานะสมาชิกได้ถึง 30 พ.ย. 2569 ครับ\nโปรดตรวจจากบัญชี LINE เดิมก่อนชำระ';
 const NOVEMBER_END = Date.parse('2026-12-01T00:00:00+07:00');
 const OCTOBER = NOVEMBER_START - 1;
 const SIGNUP = 'https://miniapp.line.me/2010862595-yT4DCEMc/?intent=signup&view=signup&world=private';
@@ -24,7 +26,8 @@ test('November announcement begins at Bangkok midnight and preserves the histori
   assert.deepEqual(reply(NOVEMBER_START), {
     text: APPROVED_NOVEMBER, route: SIGNUP, label: 'สมัคร / เช็กสิทธิ์',
   });
-  assert.equal(reply(NOVEMBER_END - 1).text, APPROVED_NOVEMBER);
+  assert.equal(reply(PHASE_2_START - 1).text, APPROVED_NOVEMBER);
+  assert.equal(reply(NOVEMBER_END - 1).text, PHASE_2_TEXT);
 });
 
 test('December public navigation never implies that underlying eligibility has ended', () => {
@@ -63,15 +66,16 @@ test('November does not authorize personal, payment, special-tier or historical 
 });
 
 test('both real render formats produce exactly text plus the existing URI CTA throughout November', () => {
-  for (const now of [NOVEMBER_START, NOVEMBER_END - 1]) {
+  for (const now of [NOVEMBER_START, PHASE_2_START - 1, PHASE_2_START, NOVEMBER_END - 1]) {
     const answer = reply(now);
     for (const separator of ['\n', '\n\n']) {
       // The old poster may still be supplied by the unchanged carrier, but it is never used.
       for (const poster of [oldPoster, null]) {
         const result = careBackPosterMessages(render(answer, separator), [], answer, poster, now);
-        assert.deepEqual(result, { text: APPROVED_NOVEMBER, extra_messages: [{
-          type: 'text', text: answer.label + ' → ' + SIGNUP,
-          quickReply: { items: [{ type: 'action', action: { type: 'uri', label: answer.label, uri: SIGNUP } }] },
+        const expectedRoute = now >= PHASE_2_START ? STATUS : SIGNUP;
+        assert.deepEqual(result, { text: now >= PHASE_2_START ? PHASE_2_TEXT : APPROVED_NOVEMBER, extra_messages: [{
+          type: 'text', text: answer.label + ' → ' + expectedRoute,
+          quickReply: { items: [{ type: 'action', action: { type: 'uri', label: answer.label, uri: expectedRoute } }] },
         }] });
         assert.equal(result.extra_messages.some(message => message.type === 'image'), false);
       }
@@ -130,3 +134,14 @@ test('recovered production sender serializes November as two LINE messages and n
   assert.doesNotMatch(JSON.stringify(body), /originalContentUrl|previewImageUrl|20261031|31 ธ.ค.|สิ้นปี/);
 });
 
+
+test('Phase 2 rejects old promotional promises and personal intent; preserves status CTA only', () => {
+  const legacy = reply(PHASE_2_START - 1);
+  const phase2 = reply(PHASE_2_START);
+  assert.equal(careBackPosterMessages(render(legacy), [], legacy, oldPoster, PHASE_2_START), null);
+  assert.equal(careBackPosterMessages(render(phase2), [], phase2, oldPoster, PHASE_2_START - 1), null);
+  assert.equal(careBackPosterMessages(render(phase2), [], phase2, oldPoster, NOVEMBER_END), null);
+  assert.doesNotMatch(phase2.text, /180 วัน|6 เดือน|1 ปี|2 ปี|66 คะแนน/);
+  assert.equal(phase2.route, STATUS);
+  assert.equal(careBackOctoberReply('care_back_overview', 'CARE BACK ของผมได้ไหม', PHASE_2_START), null);
+});
