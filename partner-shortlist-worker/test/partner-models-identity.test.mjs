@@ -13,13 +13,13 @@ async function identity(reply, hash = '#p=account-token') {
 }
 test('identity shows only the verified account and removes fragment credentials',async()=>{
  const x=await identity({ok:true,partner_name:'TarT <test>',partner_id:'recTEST'});
- try{assert.equal(x.d.getElementById('partnerAccountName').textContent,'TarT <test>');assert.equal(x.d.getElementById('partnerAccountName').children.length,0);assert.match(x.d.getElementById('partnerAccountStatus').textContent,/ยืนยันบัญชีแล้ว/);assert.equal(x.w.location.hash,'');assert.equal(x.calls.length,1);assert.match(x.calls[0],/^\/v1\/partner\/verify\?t=/);assert.equal(x.d.getElementById('workspace').hidden,true);}finally{x.dom.window.close();}
+ try{assert.equal(x.d.getElementById('partnerAccountName').textContent,'TarT <test>');assert.equal(x.d.getElementById('partnerAccountName').children.length,0);assert.match(x.d.getElementById('partnerAccountStatus').textContent,/พร้อมใช้งาน/);assert.equal(x.w.location.hash,'');assert.equal(x.calls.length,1);assert.match(x.calls[0],/^\/v1\/partner\/verify\?t=/);assert.equal(x.d.getElementById('workspace').hidden,true);}finally{x.dom.window.close();}
 });
 test('invalid account is cleared without inventing a user or authorizing model access',async()=>{
  const x=await identity({ok:false,partner_name:'Untrusted'});
- try{assert.equal(x.d.getElementById('partnerAccountName').textContent,'ยังไม่ได้ยืนยันบัญชี');assert.equal(x.w.sessionStorage.getItem('mmd-partner-models-account'),null);assert.equal(x.d.getElementById('workspace').hidden,true);}finally{x.dom.window.close();}
+ try{assert.equal(x.d.getElementById('partnerAccountName').textContent,'ยังไม่ได้เข้าสู่บัญชี');assert.equal(x.w.sessionStorage.getItem('mmd-partner-models-account'),null);assert.equal(x.d.getElementById('workspace').hidden,true);}finally{x.dom.window.close();}
 });
 test('a job title or caller supplied name is not treated as account identity',async()=>{
  const x=await identity({ok:true},'#name=Pero');
- try{assert.equal(x.calls.length,0);assert.equal(x.d.getElementById('partnerAccountName').textContent,'ยังไม่ได้ยืนยันบัญชี');}finally{x.dom.window.close();}
+ try{assert.equal(x.calls.length,0);assert.equal(x.d.getElementById('partnerAccountName').textContent,'ยังไม่ได้เข้าสู่บัญชี');}finally{x.dom.window.close();}
 });
