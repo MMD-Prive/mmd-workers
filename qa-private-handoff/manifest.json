@@ -14,7 +14,9 @@
         "private-handoff/served-adapter.mjs": "bdbc02825858dd52531b6a25cec161156fcc0dd76ec513602ce1b1a140692d3a",
         "private-handoff/surface.mjs": "7f44e2593cf5d6bf9d8b5feb88109f594aee3aadeb409c2da0ed47de7dc5c79e",
         "private-handoff/worker.mjs": "fdec953da77ab62bfb07d0c7803ec00e6f90bc87531926c1a9b42fc8b366f5d6",
-        "private-handoff/private-binding.mjs": "06e89beb1b9692b5f58970221c370de8df27ee3575c5022b96ef9c616327c3f1"
+        "private-handoff/private-binding.mjs": "06e89beb1b9692b5f58970221c370de8df27ee3575c5022b96ef9c616327c3f1",
+        "identity-verification.mjs": "04dbbf55fa9c42606b3ae46d78a485e180f708a6a5db7f82bdba03c40d849cb6",
+        "gateway.mjs": "7825faba1405e4ae6ab80a44e32a53c231eeb5ec70d8c0d5fe8724d4a1e0c0fd"
       }
     },
     {

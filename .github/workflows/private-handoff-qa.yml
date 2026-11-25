@@ -21,8 +21,8 @@ jobs:
         run: node qa-private-handoff/verify.mjs
       - name: Check syntax of saved modules
         run: |
-          for module in qa-private-handoff/deployed/*/private-handoff/*.mjs; do
+          for module in qa-private-handoff/deployed/*/*.mjs qa-private-handoff/deployed/*/private-handoff/*.mjs qa-private-handoff/candidate/*.mjs qa-private-handoff/candidate/private-handoff/*.mjs; do
             node --check "$module"
           done
       - name: Verify Private Handoff access and idempotency
-        run: node --test qa-private-handoff/worker.test.mjs
+        run: node --test qa-private-handoff/*.test.mjs

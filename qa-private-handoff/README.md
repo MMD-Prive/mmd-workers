@@ -37,4 +37,17 @@ Check both session roles through the existing jobs menu and then through the sam
 | Second customer with Private entitlement | HTTP 200, zero Uri jobs or pending Uri requests | HTTP 200, zero jobs |
 | Customer without Private entitlement | HTTP 403 | HTTP 403 |
 
-Compare job and confirmation object counts before and after these GET-only reads. Any cross-customer result fails acceptance. Missing verified sessions keep this check NOT_PROVEN. The added workflow verifies source hashes, module syntax and the five focused tests. The Uri fixture includes an owner's pending request to check that its fields also remain scoped to that owner.
+Compare job and confirmation object counts before and after these GET-only reads. Any cross-customer result fails acceptance. Missing verified sessions keep this check NOT_PROVEN. The added workflow verifies source hashes, module syntax and the focused tests. The Uri fixture includes an owner's pending request to check that its fields also remain scoped to that owner.
+
+
+## Candidate for distinct verified customers
+
+The deployed snapshots remain the baseline. Two additional baseline modules, gateway.mjs and identity-verification.mjs, were retrieved from the same Booking QA version and added to the hash manifest. The candidate adapter and customer-identity module live under candidate/private-handoff. candidate/gateway-patch.mjs applies three exact replacements to the captured gateway and refuses an unexpected source.
+
+For a future reviewed QA build, apply patchGateway to gateway.mjs and overlay the two candidate Private Handoff modules onto the existing Booking QA module set. Keep the existing surface and core Worker. This repository's partial snapshots still require the rest of that Worker for deployment.
+
+The gateway passes the LINE-verified subject into the private session linkage. The adapter reads that linkage and validates its digest, customer ID and expiry against the active approved mapping before dispatching to the unchanged job reader. The primary QA subject retains its existing fixture customer ID when no explicit mapping is supplied. A second subject is accepted only when QA and Private Handoff are enabled, the mapping is valid, and the resulting customer ID differs from the primary. More than two effective customer identities, invalid subject or ID formats, and duplicate customer IDs are rejected.
+
+Configure PRIVATE_QA_CLIENT_BY_SUBJECT only through the existing approved server-side configuration channel after both test identities are verified. Preserve the owner's existing client ID for the Uri reference and choose a separate QA-only client ID for the second account. This change has no actual second-subject configuration or credentials. Explicit owner approval is still required for a QA configuration change and deployment.
+
+Run node --test qa-private-handoff/*.test.mjs. The customer-session tests assemble a temporary copy of the captured gateway and candidate adapter. LINE verification, Auth's fixture resolver, R2 and page rendering are mocked. Tests exercise /qa/session, session cookies and the served Private Handoff reader for both identities, including denied identities, spoofed body fields, revoked links and expired sessions. These local results do not establish authenticated LINE QA acceptance.
