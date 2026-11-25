@@ -1,0 +1,31 @@
+name: Partner replacement Render CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'local-integrations/partner-replacement-staging/**'
+      - 'shared/partner-replacement-flow.mjs'
+      - 'shared/job-update-view.mjs'
+      - '.github/workflows/partner-replacement-render-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'local-integrations/partner-replacement-staging/**'
+      - 'shared/partner-replacement-flow.mjs'
+      - 'shared/job-update-view.mjs'
+      - '.github/workflows/partner-replacement-render-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  render-mock:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.14.0'
+      - name: Run Partner replacement staging mock tests
+        run: node --test local-integrations/partner-replacement-staging/*.test.mjs
