@@ -466,3 +466,13 @@ test('unknown requester cannot create a record; self mode does not authenticate 
   input.ownerOnly.requester={kind:'self',filledBy:'model'};
   const saved=await (await f.owner(O,'POST',input)).json();assert.deepEqual(saved.item.ownerOnly.requester,{kind:'self',filledBy:'admin'});
 });
+
+test('multi-model service pricing validates totals and survives an older partner brief editor',async()=>{
+ const f=fixture(),input=initial();Object.assign(input.brief,{budget:15000,requestedCount:2,services:['VIP','MK'],pricing:{mode:'itemized',basis:'per_person',rates:{VIP:5000,MK:2500}}});
+ const r=await f.owner(O,'POST',input);assert.equal(r.status,201);const c=await r.json(),token=new URL(c.url).hash.split('&t=')[1];
+ const view=await (await f.partner(c.item.id,token)).json();assert.equal(view.brief.requestedCount,2);assert.deepEqual(view.brief.pricing,input.brief.pricing);
+ const legacy={...initial().brief,budget:15000,location:'Updated place'};
+ const update=await f.partner(c.item.id,token,'brief','POST',{revision:1,brief:legacy});assert.equal(update.status,200);const b=(await update.json()).brief;assert.equal(b.requestedCount,2);assert.deepEqual(b.services,['VIP','MK']);assert.deepEqual(b.pricing,input.brief.pricing);
+ for(const patch of [{requestedCount:0},{requestedCount:1.5},{services:['VIP','VIP']},{services:['unknown']},{budget:14999},{pricing:{mode:'itemized',basis:'all',rates:{VIP:15000}}}]){const bad=structuredClone(input);Object.assign(bad.brief,patch);const reply=await f.owner(O,'POST',bad);assert.equal(reply.status,400,JSON.stringify(patch));}
+ const all=structuredClone(input);all.brief.pricing={mode:'total',basis:'all',amount:15000};assert.equal((await f.owner(O,'POST',all)).status,201);
+});

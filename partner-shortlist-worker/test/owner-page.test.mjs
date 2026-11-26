@@ -297,3 +297,18 @@ test('self intake needs no model, rejects malformed money and shows local copy f
   assert.match(h.$('copyLink').textContent,/คัดลอกแล้ว/);assert.match(h.$('copyFeedback').textContent,/คัดลอกลิงก์แล้ว/);
   assert.equal(h.errors.length,0);h.dom.window.close();
 });
+
+test('two-person combined and itemized prices round-trip without confusing per-person and whole-job totals',async()=>{
+ let saved;const h=await harness({onRequest(path,opts){if(path===base&&opts.method==='POST'){saved=JSON.parse(opts.body);return {ok:true,item:{...fixture(),...saved}};}}});
+ const change=id=>h.$(id).dispatchEvent(new h.dom.window.Event('input',{bubbles:true}));
+ h.$('newJob').click();h.$('requesterKind').value='self';h.$('requesterKind').dispatchEvent(new h.dom.window.Event('change'));h.$('title').value='Two models';h.$('requestedCount').value='2';
+ for(const n of ['VIP','MK'])h.dom.window.document.querySelector('[name="jobService"][value="'+n+'"]').checked=true;
+ h.$('budget').value='15000';change('budget');
+ h.$('jobForm').dispatchEvent(new h.dom.window.Event('submit',{cancelable:true}));await flush();
+ assert.equal(saved.brief.requestedCount,2);assert.equal(saved.brief.budget,15000);assert.deepEqual(saved.brief.services,['VIP','MK']);assert.deepEqual(saved.brief.pricing,{mode:'total',basis:'all',amount:15000});
+ h.$('newJob').click();h.$('requesterKind').value='self';h.$('requesterKind').dispatchEvent(new h.dom.window.Event('change'));h.$('title').value='Split per model';h.$('requestedCount').value='2';h.$('priceMode').value='itemized';h.$('priceBasis').value='per_person';
+ for(const n of ['VIP','MK'])h.dom.window.document.querySelector('[name="jobService"][value="'+n+'"]').checked=true;
+ h.$('rateVIP').value='5000';change('rateVIP');h.$('rateMK').value='2500';change('rateMK');assert.match(h.$('priceSummary').textContent,/15,000/);assert.equal(h.$('budget').disabled,true);
+ h.$('jobForm').dispatchEvent(new h.dom.window.Event('submit',{cancelable:true}));await flush();
+ assert.equal(saved.brief.budget,15000);assert.deepEqual(saved.brief.pricing,{mode:'itemized',basis:'per_person',rates:{VIP:5000,MK:2500}});h.dom.window.close();
+});
