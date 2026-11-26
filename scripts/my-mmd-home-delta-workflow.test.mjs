@@ -37,7 +37,7 @@ test('401 reason release pins exact source, bytes and the unchanged Owner approv
  const raw=readFileSync(new URL('./liff-401-3232-delta-manifest.json',import.meta.url));
  const manifest=parseHomeManifest(raw,'557ca0a3cf5284ae2fbf8fb60f9129600950c23d7554df08d9768814574b857a','member-pages-worker');
  assert.equal(manifest.source_sha,'5595437dd72ef77f8d46de2ce2842b5afd25468c');
- assert.equal(manifest.source_sha,job.match(/APPROVED_SOURCE_SHA: ([a-f0-9]{40})/)[1]);
+ // Historical 401 manifest stays immutable; the active pin is checked below.
  assert.equal(manifest.baseline_version,'734d8b02-e4db-4e25-a0a3-108b5f928fff');
  assert.equal(manifest.baseline_deployment,'bbb82854-f2ec-439c-a60b-8ed8640cd1ab');
  assert.equal(manifest.modules.length,2);
@@ -164,4 +164,16 @@ test('checkout verifier retains tracked blob, clean checkout and main checks',()
  const cli=readFileSync(new URL('./my-mmd-home-delta-cli.mjs',import.meta.url),'utf8');
  assert.match(cli,/await verifyPolicyCheckout\(env,manifestPath\)/);
  assert.match(cli,/merge-base','--is-ancestor'/);
+});
+
+test('MMD NOW Public cover release pins PR #3282 and the reviewed CSS-only delta',()=>{
+ const raw=readFileSync(new URL('./mmd-now-public-3282-delta-manifest.json',import.meta.url));
+ const manifest=parseHomeManifest(raw,'0245f60db2b2f2548336930973d3743a38eb68a191d706cf4b4376352173561b','member-pages-worker');
+ assert.equal(manifest.source_sha,job.match(/APPROVED_SOURCE_SHA: ([a-f0-9]{40})/)[1]);
+ assert.equal(manifest.modules.length,1);
+ assert.equal(manifest.modules[0].patches.length,2);
+ for(const p of manifest.modules[0].patches){
+  assert.match(p.before,/digital-news-image\{width:80px;height:96px\}$/);
+  assert.equal(p.after,p.before.replace('height:96px}','height:100px}'));
+ }
 });
