@@ -25,7 +25,16 @@ export async function handleHeldDocumentRequest(request, env, renderPage) {
   const page = url.pathname === '/internal/admin/payments';
   if (request.headers.has('authorization') || request.headers.has('x-confirm-key')) return json({ ok: false, error: 'browser_admin_session_required' }, 403);
   const origin = request.headers.get('origin');
-  if ((origin && origin !== url.origin) || request.headers.get('sec-fetch-site') === 'cross-site') return json({ ok: false, error: 'forbidden_origin' }, 403);
+  // Allow Telegram to open the protected page as a top-level navigation.
+  // Cross-site requests for the queue data or images remain blocked.
+  const isPageNavigation = page
+    && url.searchParams.get('view') === 'held-images'
+    && request.method === 'GET'
+    && request.headers.get('sec-fetch-mode') === 'navigate'
+    && request.headers.get('sec-fetch-dest') === 'document';
+  if ((origin && origin !== url.origin) || (request.headers.get('sec-fetch-site') === 'cross-site' && !isPageNavigation)) {
+    return json({ ok: false, error: 'forbidden_origin' }, 403);
+  }
   const actor = await readCredentialBoundAdminActor(request, env);
   if (!actor) {
     if (!page || request.method === 'HEAD') return json({ ok: false, error: 'unauthorized' }, 401);
