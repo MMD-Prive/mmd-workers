@@ -447,3 +447,32 @@ test('Standard scope starts once, shows initial candidates and denies excluded m
  assert.equal((await f.partner(c.id,token,'view?search=1')).status,410);
  assert.equal((await f.partner(c.id,token,'media/'+photo+'?search=1','HEAD')).status,410);
 });
+
+test('requester attribution resolves canonical name, stays private and preserves itself on unrelated edits', async()=>{
+  const f=fixture(), original=f.env.ADMIN.fetch;
+  f.env.ADMIN.fetch=async request=>new URL(request.url).pathname==='/v1/admin/booking-models'?Response.json({ok:true,items:[{model_id:canonicalId,name:'Canonical requester'}]}):original(request);
+  const input=initial();input.ownerOnly.requester={kind:'model',modelId:canonicalId,name:'Spoofed name',filledBy:'model'};
+  const created=await f.owner(O,'POST',input);assert.equal(created.status,201);const r=await created.json();
+  assert.deepEqual(r.item.ownerOnly.requester,{kind:'model',modelId:canonicalId,name:'Canonical requester',filledBy:'admin'});
+  const shared=await (await f.partner(r.item.id,new URL(r.url).hash.split('&t=')[1])).json();
+  assert.doesNotMatch(JSON.stringify(shared),/Canonical requester|ownerOnly|filledBy/);
+  const patched=await (await f.owner(O+'/'+r.item.id,'PATCH',{revision:r.item.revision,ownerOnly:{payoutCap:5000}})).json();
+  assert.equal(patched.item.ownerOnly.requester.name,'Canonical requester');
+});
+
+test('unknown requester cannot create a record; self mode does not authenticate a recipient',async()=>{
+  const f=fixture(),input=initial();input.ownerOnly.requester={kind:'model',modelId:canonicalId,name:'Unverified'};
+  const missing=await f.owner(O,'POST',input);assert.equal(missing.status,503);assert.equal(f.bucket.writes,0);
+  input.ownerOnly.requester={kind:'self',filledBy:'model'};
+  const saved=await (await f.owner(O,'POST',input)).json();assert.deepEqual(saved.item.ownerOnly.requester,{kind:'self',filledBy:'admin'});
+});
+
+test('multi-model service pricing validates totals and survives an older partner brief editor',async()=>{
+ const f=fixture(),input=initial();Object.assign(input.brief,{budget:15000,requestedCount:2,services:['VIP','MK'],pricing:{mode:'itemized',basis:'per_person',rates:{VIP:5000,MK:2500}}});
+ const r=await f.owner(O,'POST',input);assert.equal(r.status,201);const c=await r.json(),token=new URL(c.url).hash.split('&t=')[1];
+ const view=await (await f.partner(c.item.id,token)).json();assert.equal(view.brief.requestedCount,2);assert.deepEqual(view.brief.pricing,input.brief.pricing);
+ const legacy={...initial().brief,budget:15000,location:'Updated place'};
+ const update=await f.partner(c.item.id,token,'brief','POST',{revision:1,brief:legacy});assert.equal(update.status,200);const b=(await update.json()).brief;assert.equal(b.requestedCount,2);assert.deepEqual(b.services,['VIP','MK']);assert.deepEqual(b.pricing,input.brief.pricing);
+ for(const patch of [{requestedCount:0},{requestedCount:1.5},{services:['VIP','VIP']},{services:['unknown']},{budget:14999},{pricing:{mode:'itemized',basis:'all',rates:{VIP:15000}}}]){const bad=structuredClone(input);Object.assign(bad.brief,patch);const reply=await f.owner(O,'POST',bad);assert.equal(reply.status,400,JSON.stringify(patch));}
+ const all=structuredClone(input);all.brief.pricing={mode:'total',basis:'all',amount:15000};assert.equal((await f.owner(O,'POST',all)).status,201);
+});

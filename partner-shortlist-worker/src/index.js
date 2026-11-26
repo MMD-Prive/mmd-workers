@@ -47,21 +47,57 @@ function expiry(value) {
   if (typeof value !== "string" || !Number.isFinite(date) || date <= Date.now() || date > Date.now() + 30 * 86400000) fail("invalid_expiry");
   return new Date(date).toISOString();
 }
+const SERVICE_TYPES = ["VIP", "PN", "MK", "Burn", "Live", "Group"];
 function brief(value) {
   if (!object(value)) fail("invalid_brief");
   const date = text(value.date, 10, true);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date + "T12:00:00Z")) || new Date(date + "T12:00:00Z").toISOString().slice(0, 10) !== date) fail("invalid_date");
   const time = text(value.time, 5);
   if (time && !/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) fail("invalid_time");
-  return { date, time, location: text(value.location, 160), duration: text(value.duration, 80),
+  const result = { date, time, location: text(value.location, 160), duration: text(value.duration, 80),
     budget: boundedNumber(value.budget, 1, 1000000), spec: text(value.spec, 500),
     format: text(value.format, 40), extra: text(value.extra, 1000) };
+  if (own(value, "requestedCount")) {
+    if (!Number.isInteger(value.requestedCount) || value.requestedCount < 1 || value.requestedCount > 30) fail("invalid_requested_count");
+    result.requestedCount = value.requestedCount;
+  }
+  if (own(value, "services")) {
+    if (!Array.isArray(value.services) || value.services.length > 6 || new Set(value.services).size !== value.services.length || value.services.some(x => !SERVICE_TYPES.includes(x))) fail("invalid_services");
+    result.services = [...value.services];
+  }
+  if (own(value, "pricing")) {
+    const p = value.pricing;
+    if (!object(p) || !["total", "itemized"].includes(p.mode) || !["all", "per_person"].includes(p.basis)) fail("invalid_pricing");
+    const multiplier = p.basis === "per_person" ? result.requestedCount || 1 : 1;
+    let amount;
+    if (p.mode === "total") {
+      amount = boundedNumber(p.amount, 1, 1000000);
+      result.pricing = { mode: p.mode, basis: p.basis, amount };
+    } else {
+      if (!object(p.rates) || !result.services?.length || Object.keys(p.rates).length !== result.services.length || Object.keys(p.rates).some(k => !result.services.includes(k))) fail("invalid_pricing");
+      const rates = {};
+      for (const name of result.services) rates[name] = boundedNumber(p.rates[name], 1, 1000000);
+      amount = Object.values(rates).reduce((a,b) => a+b, 0);
+      result.pricing = { mode: p.mode, basis: p.basis, rates };
+    }
+    const total = amount * multiplier;
+    if (total > 1000000 || Math.abs(result.budget - total) > 0.001) fail("pricing_total_mismatch");
+    result.budget = total;
+  }
+  return result;
 }
 function ownerOnly(value, previous = {}) {
   if (!object(value)) fail("invalid_owner_details");
   const exclusions = Object.prototype.hasOwnProperty.call(value,"excludedCanonicalModelIds") ? value.excludedCanonicalModelIds : previous.excludedCanonicalModelIds || [];
   if (!Array.isArray(exclusions) || exclusions.length > 50 || exclusions.some(id => !RECORD.test(id))) fail("invalid_exclusions");
-  return { payoutCap: boundedNumber(value.payoutCap, 0, 1000000, true), excludedCanonicalModelIds: [...new Set(exclusions)] };
+  const result = { payoutCap: boundedNumber(value.payoutCap, 0, 1000000, true), excludedCanonicalModelIds: [...new Set(exclusions)] };
+  const requester = own(value, "requester") ? value.requester : previous.requester;
+  if (requester != null) {
+    if (!object(requester) || !["model", "self"].includes(requester.kind)) fail("invalid_requester");
+    if (requester.kind === "model" && !RECORD.test(requester.modelId || "")) fail("invalid_requester");
+    result.requester = requester.kind === "self" ? { kind: "self", filledBy: "admin" } : { kind: "model", modelId: requester.modelId, name: text(requester.name, 100, true), filledBy: "admin" };
+  }
+  return result;
 }
 function display(value) {
   if (!object(value)) fail("invalid_display");
@@ -332,6 +368,22 @@ export async function buildRecord(input) {
   if (input.policy === 'standard-pn-60m') { record.policy=input.policy;record.activatedAt=null;record.brief.format='PN'; }
   return { record, token };
 }
+// This is brief attribution only, never a recipient authentication or media grant.
+async function resolveRequester(request, env, cookie, input, previous) {
+  if (!own(input.ownerOnly || {}, "requester")) return;
+  const who = input.ownerOnly.requester;
+  if (!object(who) || !["model", "self"].includes(who.kind)) fail("invalid_requester");
+  if (who.kind === "self") { input.ownerOnly.requester = { kind: "self" }; return; }
+  if (!RECORD.test(who.modelId || "")) fail("invalid_requester");
+  if (previous?.kind === "model" && previous.modelId === who.modelId) { input.ownerOnly.requester = previous; return; }
+  const response = await adminFetch(request, env, "/v1/admin/booking-models?q=" + encodeURIComponent(who.modelId), cookie);
+  if (response.status !== 200) fail("requester_lookup_unavailable", 503);
+  let data; try { data = await response.json(); } catch { fail("requester_lookup_unavailable", 503); }
+  if (data?.ok !== true || !Array.isArray(data.items)) fail("requester_lookup_unavailable", 503);
+  const matches = data.items.filter(m => m.model_id === who.modelId);
+  if (matches.length !== 1) fail("invalid_requester");
+  input.ownerOnly.requester = { kind: "model", modelId: who.modelId, name: text(matches[0].name, 100, true) };
+}
 async function ownerRoute(request, env, parts) {
   const cookie = await requireOwner(request, env), method = request.method;
   if (!parts.length) {
@@ -344,7 +396,9 @@ async function ownerRoute(request, env, parts) {
       return json({ ok: true, items: values.filter(value => value.schema === "partner_shortlist_v1").map(ownerView), nextCursor: list.truncated ? list.cursor : null });
     }
     if (method !== "POST") fail("method_not_allowed", 405);
-    const { record: value, token } = await buildRecord(await body(request));
+    const input = await body(request);
+    await resolveRequester(request, env, cookie, input);
+    const { record: value, token } = await buildRecord(input);
     const saved = await store(env).put(keyFor(value.id), JSON.stringify(value), { onlyIf: { etagDoesNotMatch: "*" }, httpMetadata: { contentType: "application/json" } });
     if (!saved) fail("create_conflict", 409);
     return json({ ok: true, item: ownerView(value), url: shareUrl(request, value.id, token) }, 201);
@@ -360,8 +414,8 @@ async function ownerRoute(request, env, parts) {
       next.tokenHash=await hash(randomToken()); // old wider links must stop; rotate explicitly to issue a new link
     }
     if (own(input, "title")) next.title = text(input.title, 100, true);
-    if (own(input, "brief")) next.brief = brief(input.brief);
-    if (own(input, "ownerOnly")) next.ownerOnly = ownerOnly(input.ownerOnly, value.ownerOnly);
+    if (own(input, "brief")) next.brief = brief({ ...value.brief, ...input.brief });
+    if (own(input, "ownerOnly")) { await resolveRequester(request, env, cookie, input, value.ownerOnly?.requester); next.ownerOnly = ownerOnly(input.ownerOnly, value.ownerOnly); }
     if (own(input, "expiresAt")) next.expiresAt = expiry(input.expiresAt);
     if (own(input, "state")) {
       if (!["active", "revoked"].includes(input.state)) fail("invalid_state");
@@ -403,7 +457,7 @@ async function partnerRoute(request, env, parts) {
   if (parts[1] === "media" && ID.test(parts[2] || "") && (parts.length === 3 || (parts.length === 4 && parts[3] === "download")) && ["GET", "HEAD"].includes(method)) return media(request, env, projected, parts[2], parts[3] === "download", false);
   if (parts[1] === "brief" && parts.length === 2 && method === "POST") {
     const input = await body(request); compareRevision(value, input);
-    const updatedBrief=brief(input.brief); if(scoped(value))updatedBrief.format="PN";
+    const updatedBrief=brief({ ...value.brief, ...input.brief }); if(scoped(value))updatedBrief.format="PN";
     const next = await save(env, entry, { ...value, brief: updatedBrief });
     return json({ ok: true, revision: next.revision, brief: next.brief });
   }
