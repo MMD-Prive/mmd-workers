@@ -1,10 +1,22 @@
 import {readRecentProfileAnchor} from './kenji-line-conversation-history.mjs';
+import {isEmsAlbumQuestion} from './my-mmd-ems-albums.mjs';
+import {isGwsAlbumQuestion} from './my-mmd-gws-albums.mjs';
 
 const URLS = Object.freeze({
   public: 'https://mmdbkk.com/profiles',
   ems: 'https://www.mmdbkk.com/my-mmd/ems',
   gws: 'https://www.mmdbkk.com/my-mmd/gws',
 });
+
+export function isProtectedAlbumQuestion(event) {
+  return event?.type === 'message' && event.source?.type === 'user' && event.message?.type === 'text' &&
+    (isEmsAlbumQuestion(event.message.text) || isGwsAlbumQuestion(event.message.text));
+}
+
+export function publicAlbumDiscoveryReply() {
+  return {text:`ดูโปรไฟล์ที่เปิดให้ชมได้ที่ ${URLS.public} ครับ ถ้าต้องการดูคนใดคนหนึ่ง พิมพ์ชื่อทำงานหรือรหัสเพื่อให้ระบบตรวจสิทธิ์ของบัญชีนี้ครับ`,
+    intent:'approved_command', reply_source:'category_models', model_attempted:false};
+}
 
 export function currentProfileQuery(event) {
   if (event?.type !== 'message' || event.message?.type !== 'text' || event.source?.type !== 'user') return null;
@@ -26,7 +38,7 @@ export async function resolveProfileLinkReply(env, event, {now = Date.now(), rea
   const followup = isProfileFollowup(event);
   const userId = event?.source?.userId;
   if (!/^(true|1|yes|on)$/i.test(String(env.LINE_KENJI_MODEL_ACCESS_ENABLED)) ||
-      !/^U[a-f0-9]{32}$/i.test(userId || '') || !env.ADMIN_WORKER?.fetch || !env.INTERNAL_TOKEN) return null;
+      !/^U[a-f0-9]{32}$/i.test(userId || '')) return null;
   const reply = (text, anchor = false) => ({text, intent:'approved_command', reply_source:'category_profile_link',
     model_attempted:false, ...(anchor && !followup ? {cta_type:'profile_anchor'} : {})});
   const clarify = () => reply('หมายถึงนายแบบคนไหนครับ พิมพ์ชื่อทำงานหรือรหัสอีกครั้งได้เลยครับ');
@@ -37,7 +49,7 @@ export async function resolveProfileLinkReply(env, event, {now = Date.now(), rea
     : currentProfileQuery(event);
   if (!query) return followup ? clarify() : null;
   let payload;
-  try {
+  if (env.ADMIN_WORKER?.fetch && env.INTERNAL_TOKEN) try {
     const response = await env.ADMIN_WORKER.fetch(new Request('https://admin-worker.local/v1/internal/kenji/model-access', {
       method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(2500),
       headers: {authorization: `Bearer ${env.INTERNAL_TOKEN}`, 'content-type': 'application/json',
@@ -50,7 +62,7 @@ export async function resolveProfileLinkReply(env, event, {now = Date.now(), rea
   const route = payload?.ok === true && payload.status === 'profile_link' && Object.hasOwn(URLS, payload.destination)
     ? payload.destination : null;
   if (route === 'ems' || route === 'gws') return reply(`เปิดอัลบั้มใน My MMD ได้ที่ ${URLS[route]} ครับ หน้าปลายทางจะตรวจสิทธิ์บัญชีอีกครั้ง`, true);
-  if (route === 'public' || (!followup && query.explicit)) return reply(`ดูโปรไฟล์ที่เปิดให้ชมได้ที่ ${URLS.public} ครับ ถ้าไม่เจอคนที่สนใจ ฝากให้เปอร์ช่วยดูต่อได้ครับ`, route === 'public');
+  if (route === 'public' || (!followup && query.explicit)) return reply(publicAlbumDiscoveryReply().text, route === 'public');
   if (followup) return clarify();
   return null;
 }

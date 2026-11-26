@@ -4,7 +4,7 @@ import vm from 'node:vm';
 import {emsAlbumsPage,isEmsAlbumQuestion,isEmsAlbumsPage,EMS_ALBUMS_URL} from '../src/my-mmd-ems-albums.mjs';
 import {createLineSignature} from "../src/index.js";
 import {resolveKenjiSeedDecision,handleKenjiSeedLineRequest} from '../src/kenji-seed-line-runtime.mjs';
-test('customer album request returns direct button and no entitlement claims',async()=>{const r=await resolveKenjiSeedDecision({type:'message',source:{type:'user'},message:{type:'text',text:'ขอดูอัลบั้ม EMS ได้มั้ยครับ'}});assert.equal(r.reply_button.uri,EMS_ALBUMS_URL);assert.doesNotMatch(r.text,/VIP|ดูได้ครบ|ทุกคน/);assert.equal(r.reply_source,'my_mmd_ems_albums_v1')});
+test('generic album request returns only the public directory',async()=>{const r=await resolveKenjiSeedDecision({type:'message',source:{type:'user'},message:{type:'text',text:'ขอดูอัลบั้ม EMS ได้มั้ยครับ'}});assert.deepEqual(r.text.match(/https?:\/\/\S+/g),['https://mmdbkk.com/profiles']);assert.ok(!r.reply_button);assert.doesNotMatch(r.text,/VIP|ดูได้ครบ|ทุกคน/);assert.equal(r.reply_source,'category_models')});
 test('specific bounded EMS intent',()=>{assert.equal(isEmsAlbumQuestion('EMS album'),true);assert.equal(isEmsAlbumQuestion('ขอดู EMS'),true);assert.equal(isEmsAlbumQuestion('EMS ส่งพัสดุ'),false);assert.equal(isEmsAlbumQuestion('ขอดูอัลบั้มคนอื่น'),false)});
 test('index/detail retain login return and render valid script',async()=>{for(const path of ['/my-mmd/ems','/my-mmd/ems/ems16-123456789abc']){const request=new Request('https://www.mmdbkk.com'+path);assert.equal(isEmsAlbumsPage(request),true);const response=emsAlbumsPage(request);const html=await response.text();assert.match(html,/miniapp.line.me/);assert.ok(html.includes('"kind":"ems"'));assert.match(html,/data\.photos/);const script=[...html.matchAll(/<script nonce="[^"]+">([\s\S]*?)<\/script>/g)][0][1];new vm.Script(script);assert.match(response.headers.get('content-security-policy'),/frame-ancestors 'none'/)}});
 
@@ -17,7 +17,7 @@ for (const mode of ["send", "takeover", "stop", "redelivery"]) test(`signed rech
   globalThis.fetch = async (input, init) => {
     const request = input instanceof Request ? input : new Request(input, init);
     const url = new URL(request.url);
-    if (url.hostname === "api.line.me") { sent++; const message=(await request.json()).messages[0]; assert.equal(message.quickReply.items[0].action.uri, EMS_ALBUMS_URL); return Response.json({}); }
+    if (url.hostname === "api.line.me") { sent++; const message=(await request.json()).messages[0]; assert.deepEqual(message.text.match(/https?:\/\/\S+/g),['https://mmdbkk.com/profiles']); assert.ok(!message.quickReply); return Response.json({}); }
     assert.equal(url.hostname, "api.airtable.com");
     if (request.method !== "GET") return Response.json({ id: "telemetry", records: [] });
     if ((url.searchParams.get("filterByFormula") || "").includes("processing")) return Response.json({ records: mode === "takeover" ? [{ id: "owner" }] : [] });

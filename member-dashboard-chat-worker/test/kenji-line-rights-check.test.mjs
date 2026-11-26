@@ -175,25 +175,26 @@ test("group interest and interest with switch off remain silent", async () => {
   f.env.KENJI_LINE_PRIVATE_INTEREST_ENABLED = "true"; f.event.source.type = "group";
   assert.equal(await handleLineRightsCheck(f), null); assert.equal(f.counters.truth, 0);
 });
-test("unknown membership receives general verified packages without asserting new-member eligibility", () => {
-  const reply = renderPrivateInterest({ private_signup_catalog: signupCatalog() });
+test("unknown membership receives only Public even with a verified catalog and an old OA note", () => {
+  const reply = renderPrivateInterest({ ok: true, identity_status: "owner_oa_linked",
+    owner_membership_context: { authority: "owner_per_rename_membership_context_v1", membership_known: true, level: "svip" },
+    private_signup_catalog: signupCatalog() });
   assert.equal(reply.audience, "unknown_general_information");
-  assert.match(reply.text, /Standard 1,199 บาท/); assert.match(reply.text, /Premium 2,999 บาท/); assert.match(reply.text, /Welcome Points 66/);
-  assert.match(reply.text, /ยังไม่ได้ยืนยันว่าบัญชีนี้เข้าเงื่อนไขสมาชิกใหม่/); assert.match(reply.text, /world=private&intent=signup/);
-  assert.doesNotMatch(reply.text, /บัญชีนี้ไม่ใช่สมาชิก|ได้สิทธิ์แล้ว|แต้มใช้ได้|3 ปี|690|4,990|11,499/);
+  assert.deepEqual(reply.text.match(/https?:\/\/\S+/g), ["https://mmdbkk.com/profiles"]);
+  assert.doesNotMatch(reply.text, /Standard|Premium|SVIP|Welcome Points|บัญชีนี้ไม่ใช่สมาชิก|ได้สิทธิ์แล้ว|สมัครใหม่/i);
 });
 for (const level of ["private_standard", "private_premium", "vip", "svip", "black_card", "public_member", "red_card"]) test(`known ${level} receives existing-account route, not new-member offer`, () => {
   const t = truth(); t.membership.level = level; t.membership.lifecycle = "expired"; t.private_signup_catalog = signupCatalog();
   const reply = renderPrivateInterest(t); assert.equal(reply.audience, "existing_member"); assert.match(reply.text, /เช็กสิทธิ์/); assert.doesNotMatch(reply.text, /1,199|2,999|Welcome/);
 });
 test("missing catalog never invents prices or old welcome points", () => {
-  const reply = renderPrivateInterest({}); assert.match(reply.text, /ราคาและระยะสิทธิ์.*รอตรวจ/); assert.doesNotMatch(reply.text, /1,199|2,999|Welcome Points/);
+  const reply = renderPrivateInterest({}); assert.match(reply.text, /mmdbkk\.com\/profiles/); assert.doesNotMatch(reply.text, /1,199|2,999|Welcome Points/);
 });
 test("interest uses exact sender's read-only catalog intent, general stop and concurrent dedupe", async () => {
   const f = commandFixture(await fixture()); f.env.KENJI_LINE_PRIVATE_INTEREST_ENABLED = "true"; f.event.message.text = "สนใจ\u200B";
   f.services.truth = async (env, id, intent) => { assert.equal(id, UID); assert.equal(intent, "private_interest"); f.counters.truth++; return { private_signup_catalog: signupCatalog() }; };
   const result = await Promise.all([handleLineRightsCheck(f), handleLineRightsCheck(f)]);
-  assert.equal(result.filter(row => row.replied).length, 1); assert.equal(f.counters.truth, 1); assert.equal(f.counters.cases, 0); assert.match(f.counters.replies[0], /Welcome Points 66/);
+  assert.equal(result.filter(row => row.replied).length, 1); assert.equal(f.counters.truth, 1); assert.equal(f.counters.cases, 0); assert.deepEqual(f.counters.replies[0].match(/https?:\/\/\S+/g), ["https://mmdbkk.com/profiles"]);
 });
 test("signed interest ingress answers once while general replies stay stopped", async () => {
   const { createLineSignature } = await import("../src/index.js");
@@ -207,7 +208,7 @@ test("signed interest ingress answers once while general replies stay stopped", 
   const previous = globalThis.fetch;
   globalThis.fetch = async (url, init = {}) => {
     if (String(url).includes("api.line.me")) {
-      const body = JSON.parse(init.body); assert.equal(body.replyToken, "mock-only"); assert.match(body.messages[0].text, /Welcome Points 66/); deliveries++; return Response.json({});
+      const body = JSON.parse(init.body); assert.equal(body.replyToken, "mock-only"); assert.deepEqual(body.messages[0].text.match(/https?:\/\/\S+/g), ["https://mmdbkk.com/profiles"]); assert.doesNotMatch(body.messages[0].text, /Welcome Points|intent=signup/); deliveries++; return Response.json({});
     }
     assert.match(String(url), /api.airtable.com/); assert.equal(init.method, "GET"); return Response.json({ records: [] });
   };

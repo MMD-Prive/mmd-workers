@@ -38,7 +38,22 @@ function fixture(name="เอก 25 สค 68", lineUserId=uid) {
 for (const name of ["เอก 25 สค 68","เอก 25 ส.ค. 2568","เอก 25 สิงหาคม 2568","เอก 25 สิงหาคม 2025"]) test(`Thai date ${name}`,()=>assert.equal(parsePerRenameStartDate(name),"2025-08-25"));
 for (const name of ["เอก 31 กพ 68","เอก 25 xx 68","เอก 25 สค 68 x2","เอก 25 สค","เอก 25 สค 168","เอก 25/8/68","เอก 25 สค 68 24 สค 69"]) test(`ambiguous/invalid suffix ${name}`,()=>assert.equal(parsePerRenameStartDate(name),null));
 for (const [start,years,expected] of [["2025-08-25",1,"2026-08-24"],["2025-08-25",2,"2027-08-24"],["2024-02-29",1,"2025-02-27"],["2023-03-01",1,"2024-02-29"],["2024-12-31",2,"2026-12-30"]]) test(`calendar ${start}/${years}`,()=>assert.equal(membershipExpiryFromStart(start,years),expected));
-test("known owner start and duration projects expired existing membership only",()=>{const c=projectOwnerMembershipContext(fixture());assert.equal(c.expire_at,"2026-08-24T16:59:59.999Z");assert.equal(c.lifecycle,"expired");assert.equal(c.level,"unknown");assert.equal(c.access_verified,false);assert.equal(c.canonical_sync,"pending");assert.equal(c.source_freshness,"import_timestamp_only");const truth={ok:true,owner_membership_context:c};const answer=renderLineRightsCheck(truth);assert.match(answer.text,/หมดอายุแล้ว/);assert.match(answer.text,/Member\/Entitlement/);assert.doesNotMatch(answer.text,/สถานะสมาชิกยังตรวจยืนยันไม่ครบ|แต้มที่ยืนยันและใช้ได้|ส่งเรื่องให้เปอร์ตรวจแล้ว/);const interest=renderPrivateInterest(truth);assert.equal(interest.audience,"existing_member");assert.doesNotMatch(interest.text,/Welcome|สมัครใหม่|1,199|2,999/);});
+test("historical Owner context stays available without granting current Private replies",()=>{
+ const c=projectOwnerMembershipContext(fixture());
+ assert.equal(c.expire_at,"2026-08-24T16:59:59.999Z");assert.equal(c.lifecycle,"expired");assert.equal(c.level,"unknown");
+ assert.equal(c.access_verified,false);assert.equal(c.canonical_sync,"pending");assert.equal(c.source_freshness,"import_timestamp_only");
+ const truth={ok:true,authority:"my_mmd_entitlement_resolver_v1",identity_status:"owner_oa_linked",owner_membership_context:c};
+ const answer=renderLineRightsCheck(truth);
+ assert.match(answer.text,/หมดอายุแล้ว/);assert.match(answer.text,/Member\/Entitlement/);
+ assert.doesNotMatch(answer.text,/สถานะสมาชิกยังตรวจยืนยันไม่ครบ|แต้มที่ยืนยันและใช้ได้|ส่งเรื่องให้เปอร์ตรวจแล้ว/);
+ assertPublicInterest(truth);
+});
+function assertPublicInterest(truth) {
+ const interest=renderPrivateInterest(truth);
+ assert.equal(interest.audience,"unknown_general_information");
+ assert.deepEqual(interest.text.match(/https?:\/\/\S+/g),["https://mmdbkk.com/profiles"]);
+ assert.doesNotMatch(interest.text,/Standard|Premium|VIP|Black Card|Welcome|สมัครใหม่|ต่ออายุ|หมดอายุ|1,199|2,999/i);
+}
 test("unknown actual duration does not guess one/two years from tier/x2",()=>{const f=fixture("Premium x2 25 สค 68",`U${"1".repeat(32)}`);const c=projectOwnerMembershipContext(f);assert.equal(c.expire_at,"");assert.equal(c.membership_known,true);});
 test("changed start conflicts with specific owner fact instead of extending",()=>{const c=projectOwnerMembershipContext(fixture("เอก 25 สค 69"));assert.equal(c.expire_at,"");assert.match(c.conflict,/conflicts/);});
 for (const tier of ["VIP","SVIP"]) test(`reliable ${tier} uses existing expiry reference only`,()=>{const c=projectOwnerMembershipContext(fixture(`${tier} 25 สค 68`,`U${"2".repeat(32)}`));assert.equal(c.level,tier.toLowerCase());assert.equal(c.expire_at,tier === "VIP" ? "2027-08-31T16:59:59.999Z" : "");assert.equal(c.non_expiring,tier === "SVIP");assert.equal(c.access_verified,false);});
@@ -49,7 +64,7 @@ test("scoped HTTP reads and missing canonical Member return owner context, witho
  const f=fixture(), reads=[];
  const env={AIRTABLE_API_KEY:"fixture",AIRTABLE_BASE_ID:"fixture",AIRTABLE_HTTP:{fetch:async req=>{assert.equal(req.method,"GET");const url=new URL(req.url);reads.push(url);assert.match(url.searchParams.get("filterByFormula"),new RegExp(uid));const table=url.pathname.split("/").pop();return Response.json({records:table==="tblVv58TCbwh5j1fS"?f.clients:table==="tblOs8yyLK09SKrCt"?f.staging:[]});}}};
  assert.equal((await readKenjiOwnerMembershipContext(env,uid)).membership_known,true);
- for(const intent of ["rights_check","private_interest"]){const req=new Request("https://member-pages-worker.internal/__internal/kenji/member-truth",{method:"POST",headers:{"content-type":"application/json","x-mmd-internal-call":"true","x-mmd-service-binding":"member-dashboard-chat-worker"},body:JSON.stringify({line_user_id:uid,intent})});const res=await handleKenjiLineMemberTruth(req,env);assert.equal(res.status,200);const data=await res.json();assert.equal(data.identity_status,"owner_oa_linked");assert.equal(data.owner_membership_context.membership_known,true);assert.equal(data.membership,undefined);assert.equal(data.points,undefined);}
+ for(const intent of ["rights_check","private_interest"]){const req=new Request("https://member-pages-worker.internal/__internal/kenji/member-truth",{method:"POST",headers:{"content-type":"application/json","x-mmd-internal-call":"true","x-mmd-service-binding":"member-dashboard-chat-worker"},body:JSON.stringify({line_user_id:uid,intent})});const res=await handleKenjiLineMemberTruth(req,env);assert.equal(res.status,200);const data=await res.json();assert.equal(data.identity_status,"owner_oa_linked");assert.equal(data.owner_membership_context.membership_known,true);assert.equal(data.owner_membership_context.access_verified,false);assert.equal(data.membership,undefined);assert.equal(data.points,undefined);if(intent==="private_interest") assertPublicInterest(data);}
  assert.ok(reads.every(url=>url.searchParams.get("maxRecords")));
 });
 test("incomplete paginated evidence fails closed",async()=>{const env={AIRTABLE_API_KEY:"fixture",AIRTABLE_BASE_ID:"fixture",AIRTABLE_HTTP:{fetch:async()=>Response.json({records:[],offset:"more"})}};assert.equal(await readKenjiOwnerMembershipContext(env,uid),null);});

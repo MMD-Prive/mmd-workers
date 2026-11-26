@@ -429,6 +429,29 @@ test("membership_status preserves unresolved identity and does not manufacture m
   });
 });
 
+test("private interest projects only the tier from the same LINE account's canonical entitlements", async () => {
+  for (const known of [true, false]) {
+    const response = await handleKenjiLineMemberTruth(request({}, {line_user_id: LINE_USER_ID, intent: "private_interest"}), {
+      AIRTABLE_API_KEY: "fixture", AIRTABLE_BASE_ID: "fixture", AIRTABLE_TABLE_MEMBER_ENTITLEMENTS: "entitlements",
+      AIRTABLE_HTTP: { async fetch(req) {
+        const url = new URL(req.url);
+        if (!url.pathname.endsWith("/entitlements")) return Response.json({records: []});
+        assert.ok(url.searchParams.get("filterByFormula").includes(LINE_USER_ID));
+        return Response.json({records: known ? [{id: "recFixture", fields: {
+          capability: "svip", line_user_id: LINE_USER_ID, member_lifecycle_status: "active", access_status: "active", expire_at: "2099-12-31T00:00:00Z",
+        }}] : []});
+      }},
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.identity_status, known ? "resolved" : "unresolved");
+    assert.equal(body.membership?.level, known ? "svip" : undefined);
+    assert.equal(body.points, undefined);
+    assert.equal(body.service_history, undefined);
+    assert.equal(body.resolver_snapshot, undefined);
+  }
+});
+
 test("membership_status distinguishes resolver upstream failure", async () => {
   const response = await handleKenjiLineMemberTruth(request(), {
     MEMBER_STATUS_RESOLVER_SECRET: TEST_KEY,

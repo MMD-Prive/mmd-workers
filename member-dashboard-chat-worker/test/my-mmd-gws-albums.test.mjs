@@ -12,7 +12,7 @@ test('GWs login bridge resumes its album, index or safe fallback on the current 
  assert.equal(r.headers.get('x-mmd-liff-return-target'),target);const html=await r.text();assert.match(html,/fetch\('\/api\/member\/app\/gws-albums'/);assert.ok(html.includes('const target='+JSON.stringify(target)));
  }
 });
-test('customer album request returns direct button and no entitlement claims',async()=>{const r=await resolveKenjiSeedDecision({type:'message',source:{type:'user'},message:{type:'text',text:'ขอดูอัลบั้ม GWS ได้มั้ยครับ'}});assert.equal(r.reply_button.uri,GWS_ALBUMS_URL);assert.doesNotMatch(r.text,/VIP|ดูได้ครบ|ทุกคน/);assert.equal(r.reply_source,'my_mmd_gws_albums_v1')});
+test('generic album request returns only the public directory',async()=>{const r=await resolveKenjiSeedDecision({type:'message',source:{type:'user'},message:{type:'text',text:'ขอดูอัลบั้ม GWS ได้มั้ยครับ'}});assert.deepEqual(r.text.match(/https?:\/\/\S+/g),['https://mmdbkk.com/profiles']);assert.ok(!r.reply_button);assert.doesNotMatch(r.text,/VIP|ดูได้ครบ|ทุกคน/);assert.equal(r.reply_source,'category_models')});
 test('specific bounded GWS intent',()=>{assert.equal(isGwsAlbumQuestion('GWS album'),true);assert.equal(isGwsAlbumQuestion('ขอดู GWS'),true);assert.equal(isGwsAlbumQuestion('GWS ส่งพัสดุ'),false);assert.equal(isGwsAlbumQuestion('ขอดูอัลบั้มคนอื่น'),false)});
 test('index/detail retain login return and render valid script',async()=>{for(const path of ['/my-mmd/gws','/my-mmd/gws/gws16-123456789abc']){const request=new Request('https://www.mmdbkk.com'+path);assert.equal(isGwsAlbumsPage(request),true);const response=gwsAlbumsPage(request);const html=await response.text();assert.match(html,/miniapp.line.me/);assert.ok(html.includes('"kind":"gws"'));assert.match(html,/data\.photos/);const script=[...html.matchAll(/<script nonce="[^"]+">([\s\S]*?)<\/script>/g)][0][1];new vm.Script(script);assert.match(response.headers.get('content-security-policy'),/frame-ancestors 'none'/)}});
 
@@ -25,7 +25,7 @@ for (const mode of ["send", "takeover", "stop", "redelivery"]) test(`signed rech
   globalThis.fetch = async (input, init) => {
     const request = input instanceof Request ? input : new Request(input, init);
     const url = new URL(request.url);
-    if (url.hostname === "api.line.me") { sent++; const message=(await request.json()).messages[0]; assert.equal(message.quickReply.items[0].action.uri, GWS_ALBUMS_URL); return Response.json({}); }
+    if (url.hostname === "api.line.me") { sent++; const message=(await request.json()).messages[0]; assert.deepEqual(message.text.match(/https?:\/\/\S+/g),['https://mmdbkk.com/profiles']); assert.ok(!message.quickReply); return Response.json({}); }
     assert.equal(url.hostname, "api.airtable.com");
     if (request.method !== "GET") return Response.json({ id: "telemetry", records: [] });
     if ((url.searchParams.get("filterByFormula") || "").includes("processing")) return Response.json({ records: mode === "takeover" ? [{ id: "owner" }] : [] });
