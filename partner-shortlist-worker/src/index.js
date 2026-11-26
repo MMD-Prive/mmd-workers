@@ -61,7 +61,14 @@ function ownerOnly(value, previous = {}) {
   if (!object(value)) fail("invalid_owner_details");
   const exclusions = Object.prototype.hasOwnProperty.call(value,"excludedCanonicalModelIds") ? value.excludedCanonicalModelIds : previous.excludedCanonicalModelIds || [];
   if (!Array.isArray(exclusions) || exclusions.length > 50 || exclusions.some(id => !RECORD.test(id))) fail("invalid_exclusions");
-  return { payoutCap: boundedNumber(value.payoutCap, 0, 1000000, true), excludedCanonicalModelIds: [...new Set(exclusions)] };
+  const result = { payoutCap: boundedNumber(value.payoutCap, 0, 1000000, true), excludedCanonicalModelIds: [...new Set(exclusions)] };
+  const requester = own(value, "requester") ? value.requester : previous.requester;
+  if (requester != null) {
+    if (!object(requester) || !["model", "self"].includes(requester.kind)) fail("invalid_requester");
+    if (requester.kind === "model" && !RECORD.test(requester.modelId || "")) fail("invalid_requester");
+    result.requester = requester.kind === "self" ? { kind: "self", filledBy: "admin" } : { kind: "model", modelId: requester.modelId, name: text(requester.name, 100, true), filledBy: "admin" };
+  }
+  return result;
 }
 function display(value) {
   if (!object(value)) fail("invalid_display");
@@ -332,6 +339,22 @@ export async function buildRecord(input) {
   if (input.policy === 'standard-pn-60m') { record.policy=input.policy;record.activatedAt=null;record.brief.format='PN'; }
   return { record, token };
 }
+// This is brief attribution only, never a recipient authentication or media grant.
+async function resolveRequester(request, env, cookie, input, previous) {
+  if (!own(input.ownerOnly || {}, "requester")) return;
+  const who = input.ownerOnly.requester;
+  if (!object(who) || !["model", "self"].includes(who.kind)) fail("invalid_requester");
+  if (who.kind === "self") { input.ownerOnly.requester = { kind: "self" }; return; }
+  if (!RECORD.test(who.modelId || "")) fail("invalid_requester");
+  if (previous?.kind === "model" && previous.modelId === who.modelId) { input.ownerOnly.requester = previous; return; }
+  const response = await adminFetch(request, env, "/v1/admin/booking-models?q=" + encodeURIComponent(who.modelId), cookie);
+  if (response.status !== 200) fail("requester_lookup_unavailable", 503);
+  let data; try { data = await response.json(); } catch { fail("requester_lookup_unavailable", 503); }
+  if (data?.ok !== true || !Array.isArray(data.items)) fail("requester_lookup_unavailable", 503);
+  const matches = data.items.filter(m => m.model_id === who.modelId);
+  if (matches.length !== 1) fail("invalid_requester");
+  input.ownerOnly.requester = { kind: "model", modelId: who.modelId, name: text(matches[0].name, 100, true) };
+}
 async function ownerRoute(request, env, parts) {
   const cookie = await requireOwner(request, env), method = request.method;
   if (!parts.length) {
@@ -344,7 +367,9 @@ async function ownerRoute(request, env, parts) {
       return json({ ok: true, items: values.filter(value => value.schema === "partner_shortlist_v1").map(ownerView), nextCursor: list.truncated ? list.cursor : null });
     }
     if (method !== "POST") fail("method_not_allowed", 405);
-    const { record: value, token } = await buildRecord(await body(request));
+    const input = await body(request);
+    await resolveRequester(request, env, cookie, input);
+    const { record: value, token } = await buildRecord(input);
     const saved = await store(env).put(keyFor(value.id), JSON.stringify(value), { onlyIf: { etagDoesNotMatch: "*" }, httpMetadata: { contentType: "application/json" } });
     if (!saved) fail("create_conflict", 409);
     return json({ ok: true, item: ownerView(value), url: shareUrl(request, value.id, token) }, 201);
@@ -361,7 +386,7 @@ async function ownerRoute(request, env, parts) {
     }
     if (own(input, "title")) next.title = text(input.title, 100, true);
     if (own(input, "brief")) next.brief = brief(input.brief);
-    if (own(input, "ownerOnly")) next.ownerOnly = ownerOnly(input.ownerOnly, value.ownerOnly);
+    if (own(input, "ownerOnly")) { await resolveRequester(request, env, cookie, input, value.ownerOnly?.requester); next.ownerOnly = ownerOnly(input.ownerOnly, value.ownerOnly); }
     if (own(input, "expiresAt")) next.expiresAt = expiry(input.expiresAt);
     if (own(input, "state")) {
       if (!["active", "revoked"].includes(input.state)) fail("invalid_state");

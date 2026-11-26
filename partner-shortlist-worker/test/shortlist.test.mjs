@@ -447,3 +447,22 @@ test('Standard scope starts once, shows initial candidates and denies excluded m
  assert.equal((await f.partner(c.id,token,'view?search=1')).status,410);
  assert.equal((await f.partner(c.id,token,'media/'+photo+'?search=1','HEAD')).status,410);
 });
+
+test('requester attribution resolves canonical name, stays private and preserves itself on unrelated edits', async()=>{
+  const f=fixture(), original=f.env.ADMIN.fetch;
+  f.env.ADMIN.fetch=async request=>new URL(request.url).pathname==='/v1/admin/booking-models'?Response.json({ok:true,items:[{model_id:canonicalId,name:'Canonical requester'}]}):original(request);
+  const input=initial();input.ownerOnly.requester={kind:'model',modelId:canonicalId,name:'Spoofed name',filledBy:'model'};
+  const created=await f.owner(O,'POST',input);assert.equal(created.status,201);const r=await created.json();
+  assert.deepEqual(r.item.ownerOnly.requester,{kind:'model',modelId:canonicalId,name:'Canonical requester',filledBy:'admin'});
+  const shared=await (await f.partner(r.item.id,new URL(r.url).hash.split('&t=')[1])).json();
+  assert.doesNotMatch(JSON.stringify(shared),/Canonical requester|ownerOnly|filledBy/);
+  const patched=await (await f.owner(O+'/'+r.item.id,'PATCH',{revision:r.item.revision,ownerOnly:{payoutCap:5000}})).json();
+  assert.equal(patched.item.ownerOnly.requester.name,'Canonical requester');
+});
+
+test('unknown requester cannot create a record; self mode does not authenticate a recipient',async()=>{
+  const f=fixture(),input=initial();input.ownerOnly.requester={kind:'model',modelId:canonicalId,name:'Unverified'};
+  const missing=await f.owner(O,'POST',input);assert.equal(missing.status,503);assert.equal(f.bucket.writes,0);
+  input.ownerOnly.requester={kind:'self',filledBy:'model'};
+  const saved=await (await f.owner(O,'POST',input)).json();assert.deepEqual(saved.item.ownerOnly.requester,{kind:'self',filledBy:'admin'});
+});

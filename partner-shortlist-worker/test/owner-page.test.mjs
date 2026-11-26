@@ -68,10 +68,11 @@ test('new job form has generic blank defaults and does not reuse the loaded priv
   const h = await harness();
   try {
     h.$('newJob').click();
-    for (const field of ['title', 'time', 'location', 'duration', 'budget', 'spec', 'format', 'extra', 'payoutCap']) assert.equal(h.$(field).value, '', field);
+    for (const field of ['title', 'location', 'duration', 'budget', 'spec', 'format', 'extra', 'payoutCap']) assert.equal(h.$(field).value, '', field);
     assert.equal(h.$('date').value, new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 10));
     const expiry = Date.parse(h.$('expiresAt').value + ':00+07:00');
     assert.ok(expiry > Date.now() + 6 * 86400000 && expiry <= Date.now() + 7 * 86400000);
+    assert.match(h.$('time').value,/^\d{2}:(00|30)$/);
     assert.equal(h.$('budget').required, true);
   } finally { h.dom.window.close(); }
 });
@@ -268,4 +269,31 @@ test('owner creates and copies the current partner/models link without rejecting
   assert.deepEqual(h.clipboard, [url]);
   assert.equal(h.errors.length, 0);
   h.dom.window.close();
+});
+
+test('intake attributes the brief to our model, formats money, and saves numeric amounts', async () => {
+  let saved;
+  const h=await harness({onRequest(path,options){
+    if(path===base&&options.method==='POST'){saved=JSON.parse(options.body);return {ok:true,item:{...fixture(),...saved}};}
+  }});
+  h.$('newJob').click();h.$('requesterKind').value='model';h.$('requesterKind').dispatchEvent(new h.dom.window.Event('change'));
+  h.$('requesterSearch').value='Sample';h.$('findRequester').click();await flush();
+  h.$('requesterResults').querySelector('button').click();
+  h.$('title').value='Model requested search';
+  for(const [id,value] of [['budget','15000'],['payoutCap','10000']]){h.$(id).value=value;h.$(id).dispatchEvent(new h.dom.window.Event('input'));}
+  assert.equal(h.$('budget').value,'15,000');assert.equal(h.$('payoutCap').value,'10,000');
+  h.$('jobForm').dispatchEvent(new h.dom.window.Event('submit',{bubbles:true,cancelable:true}));await flush();
+  assert.equal(saved.ownerOnly.requester.modelId,canonicalModelId);assert.equal(saved.brief.budget,15000);assert.equal(saved.ownerOnly.payoutCap,10000);
+  assert.equal(h.errors.length,0);h.dom.window.close();
+});
+
+test('self intake needs no model, rejects malformed money and shows local copy feedback',async()=>{
+  const h=await harness({onRequest(path,options){if(path===base+'/'+ID+'/rotate'&&options.method==='POST')return {ok:true,item:fixture(),url:'https://www.mmdbkk.com/partner/models#s='+ID+'&t='+'d'.repeat(64)};}});
+  h.$('newJob').click();h.$('requesterKind').value='self';h.$('requesterKind').dispatchEvent(new h.dom.window.Event('change'));
+  assert.equal(h.$('requesterModelFields').hidden,true);
+  h.$('budget').value='12abc';h.$('budget').dispatchEvent(new h.dom.window.Event('input'));assert.equal(h.$('budget').checkValidity(),false);
+  h.$('budget').value='1000';h.$('budget').dispatchEvent(new h.dom.window.Event('input'));assert.equal(h.$('budget').checkValidity(),true);
+  h.$('jobDialog').close();h.$('rotateLink').click();h.$('confirmAction').click();await flush();h.$('copyLink').click();await flush();
+  assert.match(h.$('copyLink').textContent,/คัดลอกแล้ว/);assert.match(h.$('copyFeedback').textContent,/คัดลอกลิงก์แล้ว/);
+  assert.equal(h.errors.length,0);h.dom.window.close();
 });
