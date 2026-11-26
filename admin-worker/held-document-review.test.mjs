@@ -52,6 +52,43 @@ test('unauthenticated API 401 and page uses existing login; no R2 reads', async 
   assert.equal(page.status, 303); assert.match(page.headers.get('location'), /internal\/admin\/login\?next=/);
   assert.equal(calls.length, 0);
 });
+test('Telegram page navigation stays behind Admin login and opens the held queue for an owner', async () => {
+  const { env, calls } = setup();
+  const path = '/internal/admin/payments?view=held-images';
+  const headers = { 'Sec-Fetch-Site': 'cross-site', 'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Dest': 'document' };
+  const signedOut = await run(env, path, { cookie: null, headers });
+  assert.equal(signedOut.status, 303);
+  const login = new URL(signedOut.headers.get('location'));
+  assert.equal(login.origin, origin);
+  assert.equal(login.pathname, '/internal/admin/login');
+  assert.equal(login.searchParams.get('next'), path);
+
+  const owner = await run(env, path, { headers });
+  assert.equal(owner.status, 200);
+  assert.match(await owner.text(), /held-images/);
+  assert.equal((await run(env, path, { cookie: await cookie(env, 'mms_partner'), headers })).status, 403);
+  assert.equal(calls.length, 0);
+});
+
+test('external navigation exception is limited to top-level GETs of the held page', async () => {
+  const { env, calls } = setup();
+  const path = '/internal/admin/payments?view=held-images';
+  const headers = { 'Sec-Fetch-Site': 'cross-site', 'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Dest': 'document' };
+  for (const api of [HELD_DOCUMENT_API, `${HELD_DOCUMENT_API}/image`]) {
+    assert.equal((await run(env, api, { headers })).status, 403);
+  }
+  for (const options of [
+    { headers: { ...headers, 'Sec-Fetch-Dest': 'iframe' } },
+    { headers: { ...headers, 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty' } },
+    { headers: { ...headers, Origin: 'https://evil.example' } },
+    { method: 'POST', headers },
+    { method: 'HEAD', headers },
+  ]) {
+    assert.equal((await run(env, path, options)).status, 403);
+  }
+  assert.equal(calls.length, 0);
+});
+
 test('service bearer, confirmation key, cross-origin and partner cannot read', async () => {
   const { env, calls } = setup();
   for (const headers of [{ Authorization: 'Bearer service' }, { 'X-Confirm-Key': 'anything' }, { Origin: 'https://evil.example' }, { 'Sec-Fetch-Site': 'cross-site' }, { 'x-mmd-admin-role': 'owner' }]) {
