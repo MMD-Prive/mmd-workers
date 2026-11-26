@@ -4,7 +4,7 @@ import {lineIntakeCommand, readLineIntakeCatalog, resolveLineIntakeReply} from '
 import {resolveKenjiLineLiveTruth} from './kenji-line-live-truth.mjs';
 import {resolveMembershipStatusReply} from './kenji-membership-status-reply.mjs';
 import {entryTopicCommand, entryTopicReply, entryPromotionReply} from './kenji-entry-topics.mjs';
-import {resolveProfileLinkReply} from './kenji-profile-link.mjs';
+import {isProtectedAlbumQuestion, publicAlbumDiscoveryReply, resolveProfileLinkReply} from './kenji-profile-link.mjs';
 
 export async function runApprovedCategoryTurn(env, event, initialRuntime, io) {
   const now = io.now ?? Date.now();
@@ -61,7 +61,7 @@ export async function runApprovedCategoryTurn(env, event, initialRuntime, io) {
         decision = ['promotion','member_promotion'].includes(topic)
           ? entryPromotionReply(promotion,topic === 'member_promotion') || ([true,'true'].includes(env.KENJI_LINE_APPROVED_PROMO_ENABLED)
             ? {...silent, handoff_required:true, handoff_reason:'promotion_unverified:per_review'} : silent)
-          : entryTopicReply(topic) ||
+          : (isProtectedAlbumQuestion(event) && publicAlbumDiscoveryReply()) || entryTopicReply(topic) ||
           approvedCategoryReply(event,env,{careBackOctoberReply,now}) ||
           (controls.model_keyword_auto_reply !== true && await resolveProfileLinkReply(env,event,{now,readAnchor:io.readProfileAnchor})) || silent;
       }

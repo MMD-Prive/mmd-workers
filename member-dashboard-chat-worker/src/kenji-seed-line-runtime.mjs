@@ -1,8 +1,8 @@
 import { restrictedReplyCategories, categoryReplyTransportAllowed } from './kenji-reply-category-gate.mjs';
 import { runApprovedCategoryTurn } from './kenji-category-turn.mjs';
-import { emsAlbumNavigationReply } from "../../shared/ems-album-navigation.mjs";
-import {isGwsAlbumQuestion,GWS_ALBUMS_URL} from './my-mmd-gws-albums.mjs';
-import { isEmsAlbumQuestion, EMS_ALBUMS_URL } from "./my-mmd-ems-albums.mjs";
+import { isProtectedAlbumQuestion, publicAlbumDiscoveryReply } from './kenji-profile-link.mjs';
+import { GWS_ALBUMS_URL } from './my-mmd-gws-albums.mjs';
+import { EMS_ALBUMS_URL } from './my-mmd-ems-albums.mjs';
 import { richMenuNavigation, resolveRichMenuNavigation } from "./rich-menu-navigation-reply.mjs";
 import { isCheckptsShortcut, resolveCheckptsShortcut, richMenuConversationStart, resolveRichMenuConversation } from "./rich-menu-conversation.mjs";
 import { CHECKPTS_INTAKE, isRetiredCheckptsCommand } from "./checkpts-command.mjs";
@@ -260,11 +260,8 @@ function continuityMetadata(options = {}, inferredIntent = "") {
 }
 
 export async function resolveKenjiSeedDecision(event = {}, env = {}, options = {}) {
-  if (event?.source?.type === "user" && event?.message?.type === "text" && isGwsAlbumQuestion(event.message.text)) {
-    return withDecisionMetadata({}, {intent:"gws_albums",reply_source:"my_mmd_gws_albums_v1",text:"ได้ครับ กดปุ่มดูอัลบั้ม GWs ใน MY MMD ได้เลยครับ หากต้องเข้าสู่ระบบ ระบบจะพากลับมาหน้าอัลบั้มต่อครับ",reply_button:{label:"ดูอัลบั้ม GWs",uri:GWS_ALBUMS_URL},handoff_required:false});
-  }
-  if (event?.source?.type === "user" && event?.message?.type === "text" && isEmsAlbumQuestion(event.message.text)) {
-    return withDecisionMetadata({}, { ...emsAlbumNavigationReply(), reply_source: "my_mmd_ems_albums_v1", reply_button: { uri: EMS_ALBUMS_URL } });
+  if (isProtectedAlbumQuestion(event)) {
+    return withDecisionMetadata({}, { ...publicAlbumDiscoveryReply(), handoff_required:false });
   }
   const raw = event?.type === "message" && event?.message?.type === "text"
     ? text(event.message.text)
@@ -724,7 +721,7 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
     const myStatus = entryTopic === "my_status";
     const retiredCheckpts = isRetiredCheckptsCommand(event);
     const checkptsShortcut = !retiredCheckpts && isCheckptsShortcut(event);
-    const emsAlbumQuestion = event?.type === "message" && event?.message?.type === "text" && (isEmsAlbumQuestion(event.message.text) || isGwsAlbumQuestion(event.message.text));
+    const emsAlbumQuestion = isProtectedAlbumQuestion(event);
     // General replies stay paused. Rich Menu postbacks use fixed menu replies;
     // only Guest/Public SUPPORT taps may enter the bounded Per AI lane.
     let menuCommandEnabled = Boolean(navigation && (autoReplyEnabled || supportReplyEnabled) && directUser &&

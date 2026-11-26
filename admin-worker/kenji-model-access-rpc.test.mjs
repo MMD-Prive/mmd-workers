@@ -613,6 +613,8 @@ test("GWs and EMs require one current Per approval for this exact client and Mod
   assert.deepEqual(await profile(baseData([member],[model],[],[],[],[decision])), {status:"profile_link",destination:"ems"});
   assert.deepEqual(await profile(baseData([],[model],[],[],[],[decision])), {status:"silent"});
   assert.deepEqual(await profile(baseData([member],[model])), {status:"silent"});
+  assert.deepEqual(await profile(baseData([entitlement("svip")],[model])), {status:"silent"});
+  assert.deepEqual(await profile(baseData([entitlement("private_standard","expired")],[model],[],[],[],[decision])), {status:"silent"});
   assert.deepEqual(await profile(baseData([],[publicModel()]), "น้องซิน"), {status:"profile_link",destination:"public"});
   assert.deepEqual(await profile(baseData([],[publicModel(),privateModel()]), "น้องซิน"), {status:"clarification"});
   assert.deepEqual(await profile(baseData([],[publicModel()]), "น้อง"), {status:"silent"});
@@ -623,10 +625,10 @@ test("GWs and EMs require one current Per approval for this exact client and Mod
     { expires_at: "2020-01-01T00:00:00Z" },
     { eligibility_group: "1200" },
   ]) {
-    const denied = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "EMs19" }, {
-      fetchImpl: airtableFetch(baseData([member], [model], [], [], [], [record("rec-decision", { ...decision.fields, ...patch })])),
-    });
+    const data = baseData([member], [model], [], [], [], [record("rec-decision", { ...decision.fields, ...patch })]);
+    const denied = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "EMs19" }, {fetchImpl: airtableFetch(data)});
     assert.deepEqual(denied, { status: "restricted_category", category: "ems" });
+    assert.deepEqual(await profile(data), {status:"silent"});
   }
 });
 

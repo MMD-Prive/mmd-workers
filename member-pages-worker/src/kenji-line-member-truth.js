@@ -189,7 +189,8 @@ async function readCanonicalEntitlementSnapshot(env, lineUserId, identity = {}) 
 
 async function readTruthContext(env, lineUserId, intent) {
   if (intent === "private_interest") {
-    return readCanonicalEntitlementSnapshot(env, lineUserId);
+    const snapshot = await readCanonicalEntitlementSnapshot(env, lineUserId);
+    return { status: snapshot.status, snapshot };
   }
   if (["my_status", "membership_status", "membership_renewal"].includes(intent)) {
     const member = await readCanonicalMemberProfile(env, lineUserId);
@@ -393,7 +394,11 @@ export async function handleKenjiLineMemberTruth(request, env = {}) {
   if (intent === "private_interest") {
     // Read-only entitlement/catalog lane: no identity-link recovery or claim.
     const catalog = await readKenjiPrivateSignupCatalog(env);
-    return json({ ...(projection || ownerProjection || { ok: true, authority: RESOLVER_SCHEMA, identity_status: "unresolved" }), private_signup_catalog: catalog });
+    const member = projection?.membership;
+    return json({ ok: true, authority: RESOLVER_SCHEMA,
+      identity_status: member ? "resolved" : "unresolved",
+      ...(member ? { membership: { level: member.level, member_blocked: member.member_blocked } } : {}),
+      private_signup_catalog: catalog });
   }
   if (!projection) {
     if (ownerProjection) return json(ownerProjection);

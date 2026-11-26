@@ -75,6 +75,26 @@ test('profile navigation reads only current exact names or explicit requests and
  assert.equal(calls.length,beforeRedirect+1);
  assert.doesNotMatch((await run('ขอดู Hiro')).decision.text,/my-mmd\/ems|redirect\.invalid/);
 });
+
+test('generic albums and unverifiable named requests send only the public directory', async () => {
+ const clear={ok:true,controls:{}};
+ let rpc=0;
+ const e={...env, LINE_KENJI_MODEL_ACCESS_ENABLED:'true', INTERNAL_TOKEN:'fixture',
+   ADMIN_WORKER:{fetch:async()=>{rpc++; return Response.json({ok:false},{status:503});}}};
+ for (const [input, fixture] of [
+   ['ขอดูอัลบั้ม EMS',e],['ขอดู GWS',e],['ขอดูโปรไฟล์ Hiro',{...e,ADMIN_WORKER:undefined}],
+   ['ขอดูโปรไฟล์ Hiro',e],
+ ]) {
+   const x=io({runtime:async()=>clear});
+   const r=await runApprovedCategoryTurn(fixture,event(input),clear,x);
+   assert.equal(r.delivered,true);
+   assert.equal(x.sent.length,1);
+   assert.deepEqual(x.sent[0].match(/https?:\/\/\S+/g),['https://mmdbkk.com/profiles']);
+   assert.equal(r.decision.cta_type,undefined);
+   assert.equal(r.decision.model_attempted,false);
+ }
+ assert.equal(rpc,1);
+});
 function io(overrides={}){const sent=[];return {now,sent,continuity:async()=>({available:true,matrix:{last_customer_intent:'booking',payload_json:{model_name:'Hiro'}}}),runtime:async()=>runtime,owner:async()=>({ok:true,active:false}),send:async(e,t,text,button)=>{assert(categoryReplyTransportAllowed(e,t,text,button));sent.push(text);return {ok:true,status:200};},...overrides};}
 test('profile follow-up requires latest same-user inbound and confirmed named-profile delivery, then rechecks access',async()=>{
  const ev={...event('ขอดูเพิ่ม'),message:{...event('ขอดูเพิ่ม').message,id:'msg-current'}};
