@@ -1,5 +1,5 @@
 import test from "node:test";
-import { createHmac } from "node:crypto";
+import { createHash, createHmac, generateKeyPairSync, sign } from "node:crypto";
 import { requireMyMmsApprovedTherapist } from "../src/my-mms-access-runtime.mjs";
 import { handleMmsTherapistProfileRequest } from "../src/therapist-profile-runtime.mjs";
 import assert from "node:assert/strict";
@@ -15,6 +15,7 @@ const ORIGIN = "https://www.mmdbkk.com";
 const CHANNEL_ID = "2011999999";
 const BASE_URL = "https://www.mmdbkk.com";
 const AUTH_LINE = `${BASE_URL}/male-massage/therapists/api/auth/line`;
+const AUTH_TELEGRAM = `${BASE_URL}/male-massage/therapists/api/auth/telegram`;
 const AUTH_ME = `${BASE_URL}/male-massage/therapists/api/auth/me`;
 const AUTH_LOGOUT = `${BASE_URL}/male-massage/therapists/api/auth/logout`;
 
@@ -121,6 +122,7 @@ function cookieFrom(response) {
 
 test("recognizes only the dedicated MMS Therapist auth paths", () => {
   assert.equal(isMmsTherapistAuthRequest("/male-massage/therapists/api/auth/line"), true);
+  assert.equal(isMmsTherapistAuthRequest(new URL(AUTH_TELEGRAM).pathname), true);
   assert.equal(isMmsTherapistAuthRequest("/male-massage/therapists/api/auth/me"), true);
   assert.equal(isMmsTherapistAuthRequest("/male-massage/therapists/api/auth/logout"), true);
   assert.equal(isMmsTherapistAuthRequest("/member/api/liff/start"), false);
@@ -335,4 +337,141 @@ for(const status of [429,500,503])test(`LINE verifier ${status} is unavailable, 
  const original=globalThis.fetch;let calls=0;
  globalThis.fetch=async(input,init)=>{calls++;assert.equal(new URL(String(input)).origin,'https://api.line.me');assert.ok(init.signal);return new Response('',{status});};
  try{const req=jsonRequest(AUTH_LINE,{id_token:'synthetic-fixture'});let response;try{response=await handleMmsTherapistAuthRequest(req,env);}catch(e){response=therapistAuthErrorResponse(e,req,env);}assert.equal(response.status,503);assert.equal((await response.json()).error.code,'LINE_VERIFY_UNAVAILABLE');assert.equal(calls,1);assert.equal(response.headers.get('set-cookie'),null);}finally{globalThis.fetch=original;}
+});
+
+test("Telegram gates the session, preserves unused invites, and binds private access to the same account", async (t) => {
+  const runtimeEnv = {
+    ...env,
+    MMS_THERAPIST_TELEGRAM_REQUIRED: "true",
+    MMS_THERAPIST_TELEGRAM_CLIENT_ID: "123456789",
+    MMS_THERAPIST_TELEGRAM_CLIENT_SECRET: "fixture-only",
+  };
+  const telegramId = 987654321;
+  const line = linePayload();
+  const lineHash = createHmac("sha256", env.MMS_THERAPIST_IDENTITY_PEPPER)
+    .update(["mms-therapist-line-v1", CHANNEL_ID, line.sub].join("\0")).digest("hex");
+  const { publicKey, privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const jwk = { ...publicKey.export({ format: "jwk" }), kid: "telegram-fixture", alg: "RS256", use: "sig" };
+  const encode = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
+  let record = activeTherapist({
+    "Therapist Auth Status": "Unlinked",
+    "LINE Subject Hash": "",
+    "Therapist Access Invite Expires At": new Date(Date.now() + 600_000).toISOString(),
+    "Therapist Telegram User ID": String(telegramId),
+    "MY MMS Access": "Approved",
+  });
+  let patchCount = 0, tokenCalls = 0, duplicate = false, corruptSignature = false;
+  let telegramClaims = {};
+  let authorizationUrl;
+  const spent = new Set();
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(String(input));
+    if (url.origin === "https://api.line.me") return Response.json(line);
+    if (url.href === "https://oauth.telegram.org/token") {
+      tokenCalls += 1;
+      assert.equal(init.redirect, "error");
+      const form = new URLSearchParams(init.body);
+      assert.equal(form.get("redirect_uri"), AUTH_TELEGRAM);
+      assert.equal(createHash("sha256").update(form.get("code_verifier")).digest("base64url"),
+        authorizationUrl.searchParams.get("code_challenge"));
+      const code = form.get("code");
+      if (spent.has(code)) return Response.json({ error: "invalid_grant" }, { status: 400 });
+      spent.add(code);
+      const now = Math.floor(Date.now() / 1000);
+      const payload = encode({
+        iss: url.origin, aud: runtimeEnv.MMS_THERAPIST_TELEGRAM_CLIENT_ID,
+        sub: "fixture-subject", id: telegramId, iat: now, exp: now + 300, ...telegramClaims,
+      });
+      const signed = encode({ alg: "RS256", kid: jwk.kid }) + "." + payload;
+      const signature = sign("sha256", Buffer.from(corruptSignature ? signed + "tampered" : signed), privateKey);
+      return Response.json({ id_token: signed + "." + signature.toString("base64url") });
+    }
+    if (url.href === "https://oauth.telegram.org/.well-known/jwks.json") return Response.json({ keys: [jwk] });
+    assert.equal(url.origin, "https://api.airtable.com");
+    if (init.method === "PATCH") {
+      patchCount += 1;
+      record = { ...record, fields: { ...record.fields, ...JSON.parse(init.body).fields } };
+      return Response.json(record);
+    }
+    const formula = url.searchParams.get("filterByFormula");
+    if (formula.includes("LINE Subject Hash")) return Response.json({ records: record.fields["LINE Subject Hash"] ? [record] : [] });
+    if (formula.includes("Therapist Access Invite Hash")) return Response.json({ records: record.fields["LINE Subject Hash"] ? [] : [record] });
+    if (formula.includes("Therapist Telegram User ID")) {
+      return Response.json({ records: duplicate ? [record, { ...record, id: "recDuplicateTherapist" }] : [record] });
+    }
+    assert.ok(formula.includes("Therapist ID"));
+    return Response.json({ records: [record] });
+  };
+
+  const start = async () => {
+    const response = await call(jsonRequest(AUTH_LINE, { id_token: "line-fixture", invite_token: "invite-fixture" }), runtimeEnv);
+    assert.equal(response.status, 200);
+    const { data } = await response.json();
+    assert.deepEqual(Object.keys(data).sort(), ["authorization_url", "telegram_required"]);
+    assert.equal(data.telegram_required, true);
+    authorizationUrl = new URL(data.authorization_url);
+    assert.equal(authorizationUrl.origin + authorizationUrl.pathname, "https://oauth.telegram.org/auth");
+    assert.equal(authorizationUrl.searchParams.get("code_challenge_method"), "S256");
+    const cookie = response.headers.get("set-cookie");
+    assert.match(cookie, /^__Host-mms_therapist_telegram=.+; Path=\/; Max-Age=300; HttpOnly; Secure; SameSite=Lax$/);
+    return { cookie: cookie.split(";")[0], state: authorizationUrl.searchParams.get("state") };
+  };
+  const finish = (flow, extra) => call(new Request(AUTH_TELEGRAM + "?" + new URLSearchParams({ state: flow.state, ...extra }), {
+    headers: flow.cookie ? { Cookie: flow.cookie } : {},
+  }), runtimeEnv);
+  const assertDenied = (response, reason) => {
+    assert.equal(response.status, 303);
+    assert.equal(response.headers.get("location"), "/male-massage/therapists/login?telegram_verification=" + reason);
+    assert.doesNotMatch(response.headers.get("set-cookie") || "", /mms_therapist_session=/);
+  };
+  const assertPrivateDenied = async (Cookie) => {
+    const req = new Request(AUTH_ME, { headers: { Cookie } });
+    assert.equal((await call(req, runtimeEnv)).status, 401);
+    await assert.rejects(requireMyMmsApprovedTherapist(req, runtimeEnv), e => e.code === "THERAPIST_SESSION_INVALID");
+    await assert.rejects(handleMmsTherapistProfileRequest(new Request(BASE_URL + "/male-massage/therapists/api/auth/profile", { headers: { Cookie } }), runtimeEnv), e => e.code === "THERAPIST_SESSION_INVALID");
+  };
+
+  const first = await start();
+  assert.equal((await call(new Request(AUTH_ME, { headers: { Cookie: first.cookie } }), runtimeEnv)).status, 401);
+  assertDenied(await finish({ ...first, cookie: "" }, { code: "no-cookie" }), "expired");
+  assertDenied(await finish({ ...first, state: "wrong-state" }, { code: "wrong-state" }), "expired");
+  assertDenied(await finish(first, { error: "access_denied" }), "cancelled");
+  assert.equal(tokenCalls, 0);
+
+  telegramClaims = { id: telegramId + 1 };
+  assertDenied(await finish(await start(), { code: "wrong-account" }), "account");
+  telegramClaims = { aud: "wrong-client" };
+  assertDenied(await finish(await start(), { code: "wrong-audience" }), "expired");
+  telegramClaims = {};
+  corruptSignature = true;
+  assertDenied(await finish(await start(), { code: "wrong-signature" }), "expired");
+  corruptSignature = false;
+  duplicate = true;
+  assertDenied(await finish(await start(), { code: "duplicate-link" }), "account");
+  duplicate = false;
+  assert.equal(patchCount, 0);
+
+  const flow = await start();
+  const response = await finish(flow, { code: "correct-account" });
+  assert.equal(response.status, 303);
+  assert.equal(response.headers.get("location"), "/male-massage/therapists/app");
+  assert.equal(response.headers.getSetCookie().length, 2);
+  const Cookie = response.headers.getSetCookie().find(cookie => cookie.startsWith("__Secure-mms_therapist_session=")).split(";")[0];
+  assert.equal(record.fields["LINE Subject Hash"], lineHash);
+  assert.equal(record.fields["Therapist Access Invite Hash"], null);
+  assert.equal(patchCount, 1);
+  assertDenied(await finish(flow, { code: "correct-account" }), "expired");
+  assert.equal(patchCount, 1);
+
+  const request = new Request(AUTH_ME, { headers: { Cookie } });
+  const me = await call(request, runtimeEnv);
+  assert.equal(me.status, 200);
+  assert.doesNotMatch(await me.text(), new RegExp(String(telegramId)));
+  assert.equal((await requireMyMmsApprovedTherapist(request, runtimeEnv)).id, record.id);
+  const legacy = await call(jsonRequest(AUTH_LINE, { id_token: "line-fixture" }), env);
+  await assertPrivateDenied(cookieFrom(legacy));
+  record.fields["Therapist Telegram User ID"] = String(telegramId + 1);
+  await assertPrivateDenied(Cookie);
 });

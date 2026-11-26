@@ -1,3 +1,5 @@
+import { SESSION_COOKIE, readCookie, sessionMatchesTherapist, verifySessionToken } from "./therapist-auth-runtime.mjs";
+import { TELEGRAM_ID_FIELD, therapistTelegramRequired } from "./therapist-telegram-oidc.mjs";
 import { PROFILE_OPERATION_CONTEXT } from "./therapist-profile-operation-context.mjs";
 import { profileWritePaused, profileWritePauseResponse } from './therapist-profile-write-pause.mjs';
 import { linkedServiceZoneCodes, loadMmsServiceZoneIndex, MAX_COVERAGE_ZONES } from "./service-zones-runtime.mjs";
@@ -5,10 +7,7 @@ import { isTherapistPhotoContent } from "./therapist-photo-content.mjs";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const PROFILE_PREFIX = "/male-massage/therapists/api/auth/profile";
-const SESSION_COOKIE = "__Secure-mms_therapist_session";
 const SESSION_ROLE = "mms_therapist";
-const SESSION_VERSION = 1;
-const SESSION_TTL_SECONDS = 8 * 60 * 60;
 const MAX_JSON_CHARS = 60_000;
 const MANIFEST_ETAG = Symbol("observed manifest etag");
 const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
@@ -206,13 +205,12 @@ async function servePublicPhoto(therapistId, photoId, headOnly, env) {
 async function requireCurrentTherapist(request, env) {
   const token = readCookie(request.headers.get("Cookie") || "", SESSION_COOKIE);
   if (!token) throw profileError(401, "THERAPIST_SESSION_REQUIRED");
-  const session = await verifySessionToken(token, env);
+  const session = await verifySessionToken(token, env, profileError);
   const record = await findUniqueTherapist(env, session.therapist_id);
   if (!record) throw profileError(401, "THERAPIST_SESSION_INVALID");
   if (clean(record.fields?.["Therapist ID"], 80) !== session.therapist_id) throw profileError(401, "THERAPIST_SESSION_INVALID");
   assertTherapistCanAuthenticate(record);
-  const binding = await hmacHex(sessionSecret(env), 'mms-therapist-line-binding-v1.' + clean(record.fields?.["LINE Subject Hash"], 200));
-  if (!constantTimeEqual(session.line_binding, binding)) throw profileError(401, "THERAPIST_SESSION_INVALID");
+  if (!await sessionMatchesTherapist(session, record, env)) throw profileError(401, "THERAPIST_SESSION_INVALID");
   return {
     record_id: record.id,
     therapist_id: clean(record.fields?.["Therapist ID"], 80),
@@ -445,6 +443,7 @@ async function findUniqueTherapist(env, therapistId) {
   url.searchParams.set("maxRecords", "2");
   url.searchParams.set("filterByFormula", `{Therapist ID}=${formulaString(therapistId)}`);
   for (const field of ["Therapist ID", "Display Name", "Availability Status", "Base Service Zone", "Coverage Service Zones", "Status", "Therapist Auth Status", "LINE Subject Hash", "MY MMS Access", "Matching Enabled", "Manual Review Only"]) url.searchParams.append("fields[]", field);
+  if (therapistTelegramRequired(env)) url.searchParams.append("fields[]", TELEGRAM_ID_FIELD);
   const payload = await airtableFetch(url, { method: "GET" }, env);
   const records = Array.isArray(payload.records) ? payload.records : [];
   if (records.length > 1) throw profileError(503, "THERAPIST_IDENTITY_CONFLICT");
@@ -488,26 +487,6 @@ function assertTherapistCanAuthenticate(record) {
   if (!clean(fields["LINE Subject Hash"], 200)) throw profileError(403, "THERAPIST_ACCESS_DENIED");
 }
 
-async function verifySessionToken(token, env) {
-  const parts = String(token || "").split(".");
-  if (parts.length !== 3 || parts[0] !== "v1") throw profileError(401, "THERAPIST_SESSION_INVALID");
-  const [, encoded, signature] = parts;
-  if (!/^[A-Za-z0-9_-]+$/.test(encoded) || !/^[a-f0-9]{64}$/.test(signature)) throw profileError(401, "THERAPIST_SESSION_INVALID");
-  const expected = await hmacHex(sessionSecret(env), `mms-therapist-session-v1.${encoded}`);
-  if (!constantTimeEqual(signature, expected)) throw profileError(401, "THERAPIST_SESSION_INVALID");
-  let payload;
-  try { payload = JSON.parse(base64UrlDecodeText(encoded)); }
-  catch { throw profileError(401, "THERAPIST_SESSION_INVALID"); }
-  const now = Math.floor(Date.now() / 1000);
-  const therapistId = clean(payload?.therapist_id, 80);
-  if (!/^[a-f0-9]{64}$/.test(payload?.line_binding || "")) throw profileError(401, "THERAPIST_SESSION_INVALID");
-  if (payload?.v !== SESSION_VERSION || payload?.role !== SESSION_ROLE) throw profileError(401, "THERAPIST_SESSION_INVALID");
-  if (!/^[A-Za-z0-9_-]{4,80}$/.test(therapistId)) throw profileError(401, "THERAPIST_SESSION_INVALID");
-  if (!Number.isFinite(payload?.iat) || !Number.isFinite(payload?.exp)) throw profileError(401, "THERAPIST_SESSION_INVALID");
-  if (payload.exp <= now || payload.iat > now + 300 || payload.exp - payload.iat > SESSION_TTL_SECONDS) throw profileError(401, "THERAPIST_SESSION_INVALID");
-  return { therapist_id: therapistId, role: SESSION_ROLE, line_binding: payload.line_binding };
-}
-
 function requireRuntimeConfig(env) {
   if (!String(env.AIRTABLE_API_TOKEN || "") || !clean(env.AIRTABLE_BASE_ID, 80) || !tableId(env)) throw profileError(503, "THERAPIST_PROFILE_NOT_CONFIGURED");
   if (String(env.MMS_THERAPIST_SESSION_SECRET || "").length < 32) throw profileError(503, "THERAPIST_PROFILE_NOT_CONFIGURED");
@@ -515,7 +494,6 @@ function requireRuntimeConfig(env) {
 }
 function requireEnabled(env) { if (String(env.MMS_THERAPIST_AUTH_ENABLED || "").toLowerCase() !== "true") throw profileError(503, "THERAPIST_AUTH_NOT_ENABLED"); }
 function tableId(env) { const id = clean(env.AIRTABLE_THERAPISTS_TABLE_ID, 80); if (!/^tbl[A-Za-z0-9]{10,30}$/.test(id)) throw profileError(503, "THERAPIST_PROFILE_NOT_CONFIGURED"); return id; }
-function sessionSecret(env) { const secret = String(env.MMS_THERAPIST_SESSION_SECRET || ""); if (secret.length < 32) throw profileError(503, "THERAPIST_PROFILE_NOT_CONFIGURED"); return secret; }
 
 function requireTrustedOrigin(request, env) {
   const origin = clean(request.headers.get("Origin"), 300);
@@ -557,18 +535,9 @@ function responseHeaders(request, env) {
 function json(payload, status, request, env, extra = {}) { return Response.json(payload, { status, headers: { ...responseHeaders(request, env), ...extra } }); }
 function methodNotAllowed(allow, request, env) { return json({ ok: false, error: { code: "METHOD_NOT_ALLOWED" } }, 405, request, env, { Allow: allow }); }
 function formulaString(value) { return `'${String(value || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`; }
-function readCookie(header, name) { for (const part of String(header || "").split(";")) { const i = part.indexOf("="); if (i >= 0 && part.slice(0, i).trim() === name) return part.slice(i + 1).trim(); } return ""; }
 function normalizePath(pathname = "") { const path = String(pathname || "").trim() || "/"; return path.length > 1 && path.endsWith("/") ? path.slice(0, -1) : path; }
 function clean(value, max = 500) { if (value === undefined || value === null) return ""; return String(value).trim().slice(0, max); }
 function escapeRegExp(value) { return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
-
-async function hmacHex(secret, value) {
-  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(String(secret)), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  const signature = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(String(value))));
-  return Array.from(signature, (byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-function base64UrlDecodeText(value) { const padded = value.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((value.length + 3) % 4); const binary = atob(padded); const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0)); return new TextDecoder().decode(bytes); }
-function constantTimeEqual(a, b) { const left = String(a || ""); const right = String(b || ""); if (left.length !== right.length) return false; let mismatch = 0; for (let i = 0; i < left.length; i += 1) mismatch |= left.charCodeAt(i) ^ right.charCodeAt(i); return mismatch === 0; }
 
 class TherapistProfileError extends Error { constructor(status, code) { super(code); this.name = "TherapistProfileError"; this.status = status; this.code = code; } }
 function profileError(status, code) { return new TherapistProfileError(status, code); }

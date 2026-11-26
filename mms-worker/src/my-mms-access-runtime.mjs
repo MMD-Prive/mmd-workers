@@ -1,3 +1,5 @@
+import { SESSION_COOKIE, readCookie, sessionMatchesTherapist, verifySessionToken } from "./therapist-auth-runtime.mjs";
+import { TELEGRAM_ID_FIELD, therapistTelegramRequired } from "./therapist-telegram-oidc.mjs";
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const INTERNAL_HOST = "mms.internal";
 const SELF_ACCESS_PATH = "/male-massage/therapists/api/app/access";
@@ -5,10 +7,6 @@ const SELF_AVAILABILITY_PATH = "/male-massage/therapists/api/app/availability";
 const ADMIN_ACCESS_RE = /^\/internal\/mms\/admin\/therapists\/([A-Za-z0-9_-]{4,80})\/my-mms-access$/;
 const ADMIN_THERAPIST_RE = /^\/internal\/mms\/admin\/therapists\/([A-Za-z0-9_-]{4,80})$/;
 const APP_ROUTE = "/male-massage/therapists/app";
-const SESSION_COOKIE = "__Secure-mms_therapist_session";
-const SESSION_ROLE = "mms_therapist";
-const SESSION_VERSION = 1;
-const SESSION_TTL_SECONDS = 8 * 60 * 60;
 const MY_MMS_VALUES = new Set(["Locked", "Approved", "Revoked"]);
 
 export function isMyMmsAccessRequest(pathname = "") {
@@ -152,12 +150,11 @@ async function requireCurrentTherapist(request, env) {
   requireRuntimeConfig(env);
   const cookie = readCookie(request.headers.get("Cookie") || "", SESSION_COOKIE);
   if (!cookie) throw accessError(401, "THERAPIST_SESSION_REQUIRED");
-  const session = await verifySessionToken(cookie, env);
+  const session = await verifySessionToken(cookie, env, accessError);
   const record = await findUniqueTherapist(env, session.therapist_id);
   if (!record) throw accessError(401, "THERAPIST_SESSION_INVALID");
   assertTherapistCanAuthenticate(record);
-  const binding = await hmacHex(sessionSecret(env), 'mms-therapist-line-binding-v1.' + clean(record.fields?.["LINE Subject Hash"], 200));
-  if (!constantTimeEqual(session.line_binding, binding)) throw accessError(401, "THERAPIST_SESSION_INVALID");
+  if (!await sessionMatchesTherapist(session, record, env)) throw accessError(401, "THERAPIST_SESSION_INVALID");
   return record;
 }
 
@@ -246,6 +243,7 @@ async function findUniqueTherapist(env, therapistId) {
     "MY MMS Access", "MY MMS Approved At", "MY MMS Approved By", "MY MMS Review Note",
     "Availability Status", "Matching Enabled", "Verified Skills",
   ]) url.searchParams.append("fields[]", field);
+  if (therapistTelegramRequired(env)) url.searchParams.append("fields[]", TELEGRAM_ID_FIELD);
   const data = await airtableFetch(url, { method: "GET" }, env);
   const records = Array.isArray(data.records) ? data.records : [];
   if (records.length > 1) throw accessError(503, "THERAPIST_IDENTITY_CONFLICT");
@@ -306,26 +304,6 @@ function requireTrustedOrigin(request, env) {
   if (!origin || !allowed.has(origin)) throw accessError(403, "ORIGIN_NOT_ALLOWED");
 }
 
-async function verifySessionToken(token, env) {
-  const parts = String(token || "").split(".");
-  if (parts.length !== 3 || parts[0] !== "v1") throw accessError(401, "THERAPIST_SESSION_INVALID");
-  const [, encoded, signature] = parts;
-  if (!/^[A-Za-z0-9_-]+$/.test(encoded) || !/^[a-f0-9]{64}$/.test(signature)) throw accessError(401, "THERAPIST_SESSION_INVALID");
-  const expected = await hmacHex(sessionSecret(env), `mms-therapist-session-v1.${encoded}`);
-  if (!constantTimeEqual(signature, expected)) throw accessError(401, "THERAPIST_SESSION_INVALID");
-  let payload;
-  try { payload = JSON.parse(base64UrlDecodeText(encoded)); }
-  catch { throw accessError(401, "THERAPIST_SESSION_INVALID"); }
-  const now = Math.floor(Date.now() / 1000);
-  const therapistId = clean(payload?.therapist_id, 80);
-  if (!/^[a-f0-9]{64}$/.test(payload?.line_binding || "")) throw accessError(401, "THERAPIST_SESSION_INVALID");
-  if (payload?.v !== SESSION_VERSION || payload?.role !== SESSION_ROLE) throw accessError(401, "THERAPIST_SESSION_INVALID");
-  if (!/^[A-Za-z0-9_-]{4,80}$/.test(therapistId)) throw accessError(401, "THERAPIST_SESSION_INVALID");
-  if (!Number.isFinite(payload?.iat) || !Number.isFinite(payload?.exp)) throw accessError(401, "THERAPIST_SESSION_INVALID");
-  if (payload.exp <= now || payload.iat > now + 300 || payload.exp - payload.iat > SESSION_TTL_SECONDS) throw accessError(401, "THERAPIST_SESSION_INVALID");
-  return { therapist_id: therapistId, role: SESSION_ROLE, line_binding: payload.line_binding };
-}
-
 function sessionSecret(env) {
   const secret = String(env.MMS_THERAPIST_SESSION_SECRET || "");
   if (secret.length < 32) throw accessError(503, "MY_MMS_ACCESS_NOT_CONFIGURED");
@@ -344,15 +322,6 @@ async function readJson(request) {
   } catch {
     throw accessError(400, "INVALID_JSON");
   }
-}
-
-function readCookie(header, name) {
-  for (const part of String(header || "").split(";")) {
-    const index = part.indexOf("=");
-    if (index < 0) continue;
-    if (part.slice(0, index).trim() === name) return part.slice(index + 1).trim();
-  }
-  return "";
 }
 
 function responseHeaders(request, env) {
@@ -394,27 +363,6 @@ function normalizePath(pathname = "") {
 function clean(value, max = 500) {
   if (value === undefined || value === null) return "";
   return String(value).trim().slice(0, max);
-}
-
-async function hmacHex(secret, value) {
-  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(String(secret)), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  const signature = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(String(value))));
-  return Array.from(signature, (byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
-function base64UrlDecodeText(value) {
-  const padded = value.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((value.length + 3) % 4);
-  const binary = atob(padded);
-  return new TextDecoder().decode(Uint8Array.from(binary, (char) => char.charCodeAt(0)));
-}
-
-function constantTimeEqual(a, b) {
-  const left = String(a || "");
-  const right = String(b || "");
-  if (left.length !== right.length) return false;
-  let mismatch = 0;
-  for (let i = 0; i < left.length; i += 1) mismatch |= left.charCodeAt(i) ^ right.charCodeAt(i);
-  return mismatch === 0;
 }
 
 class MyMmsAccessError extends Error {

@@ -1,16 +1,30 @@
+import {
+  TELEGRAM_ID_FIELD,
+  startTelegramAuthorization,
+  telegramConfig,
+  therapistTelegramId,
+  therapistTelegramRequired,
+  verifyTelegramAuthorization,
+} from "./therapist-telegram-oidc.mjs";
+
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const LINE_VERIFY_ENDPOINT = "https://api.line.me/oauth2/v2.1/verify";
 const LINE_ISSUER = "https://access.line.me";
 
 const AUTH_PREFIX = "/male-massage/therapists/api/auth";
 const AUTH_LINE_PATH = `${AUTH_PREFIX}/line`;
+const AUTH_TELEGRAM_PATH = `${AUTH_PREFIX}/telegram`;
 const AUTH_ME_PATH = `${AUTH_PREFIX}/me`;
 const AUTH_LOGOUT_PATH = `${AUTH_PREFIX}/logout`;
+const LOGIN_PATH = "/male-massage/therapists/login";
+const APP_PATH = "/male-massage/therapists/app";
 
-const SESSION_COOKIE = "__Secure-mms_therapist_session";
+export const SESSION_COOKIE = "__Secure-mms_therapist_session";
 const SESSION_ROLE = "mms_therapist";
 const SESSION_VERSION = 1;
 const SESSION_TTL_SECONDS = 8 * 60 * 60;
+const TELEGRAM_COOKIE = "__Host-mms_therapist_telegram";
+const TELEGRAM_TTL_SECONDS = 5 * 60;
 const MAX_BODY_CHARS = 20_000;
 
 const THERAPIST_FIELDS = [
@@ -28,7 +42,7 @@ const THERAPIST_FIELDS = [
 
 export function isMmsTherapistAuthRequest(pathname = "") {
   const path = normalizePath(pathname);
-  return path === AUTH_LINE_PATH || path === AUTH_ME_PATH || path === AUTH_LOGOUT_PATH;
+  return [AUTH_LINE_PATH, AUTH_TELEGRAM_PATH, AUTH_ME_PATH, AUTH_LOGOUT_PATH].includes(path);
 }
 
 export async function handleMmsTherapistAuthRequest(request, env = {}) {
@@ -48,13 +62,10 @@ export async function handleMmsTherapistAuthRequest(request, env = {}) {
   if (path === AUTH_LOGOUT_PATH) {
     if (method !== "POST") return methodNotAllowed("POST", request, env);
     requireTrustedOrigin(request, env);
-    return new Response(null, {
-      status: 204,
-      headers: {
-        ...responseHeaders(request, env),
-        "Set-Cookie": clearSessionCookie(),
-      },
-    });
+    const headers = new Headers(responseHeaders(request, env));
+    headers.append("Set-Cookie", clearSessionCookie());
+    headers.append("Set-Cookie", telegramCookie("", 0));
+    return new Response(null, { status: 204, headers });
   }
 
   requireAuthEnabled(env);
@@ -63,6 +74,11 @@ export async function handleMmsTherapistAuthRequest(request, env = {}) {
     if (method !== "POST") return methodNotAllowed("POST", request, env);
     requireTrustedOrigin(request, env);
     return loginWithLine(request, env);
+  }
+
+  if (path === AUTH_TELEGRAM_PATH) {
+    if (method !== "GET") return methodNotAllowed("GET", request, env);
+    return finishTelegramLogin(request, env);
   }
 
   if (path === AUTH_ME_PATH) {
@@ -82,6 +98,7 @@ export function therapistAuthErrorResponse(error, request, env = {}) {
 
 async function loginWithLine(request, env) {
   requireRuntimeConfig(env);
+  const telegram = therapistTelegramRequired(env) ? telegramConfig(env, authError) : null;
   const body = await readJson(request);
   const idToken = cleanToken(body.id_token, 12_000);
   const inviteToken = cleanToken(body.invite_token, 1_024, true);
@@ -90,29 +107,125 @@ async function loginWithLine(request, env) {
   const verified = await verifyLineIdToken(idToken, env);
   const subjectHash = await lineSubjectHash(verified.sub, env);
 
-  let therapist = await findUniqueTherapist(env, "LINE Subject Hash", subjectHash);
+  const linked = await findUniqueTherapist(env, "LINE Subject Hash", subjectHash);
   const now = new Date();
+  const inviteHash = !linked && inviteToken ? await sha256Hex(inviteToken) : "";
 
-  if (!therapist) {
-    if (!inviteToken) throw authError(403, "THERAPIST_LINK_REQUIRED");
-    therapist = await claimTherapistInvite(env, inviteToken, subjectHash, now);
-  } else {
-    assertTherapistCanAuthenticate(therapist);
-    therapist = await updateTherapist(env, therapist.id, {
-      "Therapist Access Last Login At": now.toISOString(),
-    });
+  if (!linked && !inviteHash) throw authError(403, "THERAPIST_LINK_REQUIRED");
+  const therapist = linked || await findTherapistInvite(env, inviteHash, now);
+  if (linked) assertTherapistCanAuthenticate(linked);
+
+  if (telegram) {
+    const telegramId = therapistTelegramId(therapist);
+    if (!telegramId) throw authError(403, "THERAPIST_TELEGRAM_LINK_REQUIRED");
+    const origin = new URL(request.url).origin;
+    if (!origin.startsWith("https://") || request.headers.get("Origin") !== origin) throw authError(403, "ORIGIN_NOT_ALLOWED");
+    const flow = await startTelegramAuthorization(telegram, origin + AUTH_TELEGRAM_PATH);
+    const encoded = base64UrlEncodeText(JSON.stringify({
+      state: flow.state,
+      verifier: flow.verifier,
+      origin,
+      recordId: therapist.id,
+      subjectHash,
+      inviteHash,
+      exp: Math.floor(now.getTime() / 1000) + TELEGRAM_TTL_SECONDS,
+    }));
+    const signature = await hmacHex(sessionSecret(env), `mms-therapist-telegram-v1.${encoded}`);
+    return authJson({ ok: true, data: {
+      telegram_required: true,
+      authorization_url: flow.authorizationUrl,
+    } }, 200, request, env, { "Set-Cookie": telegramCookie(`${encoded}.${signature}`) });
   }
 
-  assertTherapistCanAuthenticate(therapist);
-  const therapistId = clean(therapist.fields?.["Therapist ID"], 80);
-  const sessionToken = await createSessionToken({ therapist_id: therapistId, subject_hash: clean(therapist.fields?.["LINE Subject Hash"], 200) }, env, now);
-
-  return authJson({
-    ok: true,
-    data: safeAuthProfile(therapist),
-  }, 200, request, env, {
-    "Set-Cookie": sessionCookie(sessionToken),
+  const result = await completeLogin(therapist, inviteHash, subjectHash, env, now);
+  return authJson({ ok: true, data: safeAuthProfile(result.therapist) }, 200, request, env, {
+    "Set-Cookie": sessionCookie(result.token),
   });
+}
+
+async function finishTelegramLogin(request, env) {
+  if (!therapistTelegramRequired(env)) return telegramRedirect(request, env, LOGIN_PATH);
+  const url = new URL(request.url);
+  const state = url.searchParams.get("state");
+  const pending = await readTelegramChallenge(request, env);
+  if (!pending || pending.origin !== url.origin || !state || !constantTimeEqual(state, pending.state)) {
+    return telegramRedirect(request, env, LOGIN_PATH + "?telegram_verification=expired");
+  }
+  const failed = (reason) => telegramRedirect(request, env, `${LOGIN_PATH}?telegram_verification=${reason}`, true);
+  if (pending.exp <= Date.now() / 1000) return failed("expired");
+  if (url.searchParams.has("error")) return failed("cancelled");
+  if (url.searchParams.getAll("code").length !== 1) return failed("expired");
+  try {
+    requireRuntimeConfig(env);
+    const config = telegramConfig(env, authError);
+    const telegramId = await verifyTelegramAuthorization({
+      code: url.searchParams.get("code"),
+      verifier: pending.verifier,
+      redirectUri: pending.origin + AUTH_TELEGRAM_PATH,
+    }, config, authError);
+    const now = new Date();
+    const linked = await findUniqueTherapist(env, "LINE Subject Hash", pending.subjectHash);
+    const inviteHash = linked ? "" : pending.inviteHash;
+    if (!linked && !inviteHash) return failed("expired");
+    const therapist = linked || await findTherapistInvite(env, inviteHash, now);
+    if (linked) assertTherapistCanAuthenticate(therapist);
+    if (therapist.id !== pending.recordId || therapistTelegramId(therapist) !== telegramId) return failed("account");
+    const telegramOwner = await findUniqueTherapist(env, TELEGRAM_ID_FIELD, telegramId);
+    if (telegramOwner?.id !== therapist.id) return failed("account");
+    const result = await completeLogin(therapist, inviteHash, pending.subjectHash, env, now, telegramId);
+    return telegramRedirect(request, env, APP_PATH, true, result.token);
+  } catch (error) {
+    if (error instanceof TherapistAuthError) {
+      if (error.code === "THERAPIST_TELEGRAM_INVALID") return failed("expired");
+      if (error.status === 403 || error.code === "THERAPIST_IDENTITY_CONFLICT") return failed("account");
+    }
+    return failed("unavailable");
+  }
+}
+
+async function readTelegramChallenge(request, env) {
+  const value = readCookie(request.headers.get("Cookie") || "", TELEGRAM_COOKIE);
+  if (!/^[A-Za-z0-9_-]{1,2048}\.[a-f0-9]{64}$/.test(value)) return null;
+  const [encoded, signature] = value.split(".");
+  const expected = await hmacHex(sessionSecret(env), `mms-therapist-telegram-v1.${encoded}`);
+  if (!constantTimeEqual(signature, expected)) return null;
+  return JSON.parse(base64UrlDecodeText(encoded));
+}
+
+function telegramCookie(value, maxAge = TELEGRAM_TTL_SECONDS) {
+  return `${TELEGRAM_COOKIE}=${value}; Path=/; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=Lax`;
+}
+
+function telegramRedirect(request, env, location, clear = false, token = "") {
+  const headers = new Headers(responseHeaders(request, env));
+  headers.set("Location", location);
+  if (clear) headers.append("Set-Cookie", telegramCookie("", 0));
+  if (token) headers.append("Set-Cookie", sessionCookie(token));
+  return new Response(null, { status: 303, headers });
+}
+
+async function completeLogin(record, inviteHash, subjectHash, env, now, telegramId = "") {
+  const therapist = await updateTherapist(env, record.id, {
+    "Therapist Access Last Login At": now.toISOString(),
+    ...(inviteHash ? {
+      "LINE Subject Hash": subjectHash,
+      "Therapist Auth Status": "Active",
+      "Therapist Access Linked At": now.toISOString(),
+      "Therapist Access Invite Hash": null,
+      "Therapist Access Invite Expires At": null,
+    } : {}),
+  });
+  assertTherapistCanAuthenticate(therapist);
+  const line = clean(therapist.fields?.["LINE Subject Hash"], 200);
+  if (telegramId && (line !== subjectHash || therapistTelegramId(therapist) !== telegramId)) {
+    throw authError(403, "THERAPIST_ACCESS_DENIED");
+  }
+  const token = await createSessionToken({
+    therapist_id: clean(therapist.fields?.["Therapist ID"], 80),
+    subject_hash: line,
+    telegramId,
+  }, env, now);
+  return { therapist, token };
 }
 
 async function currentTherapist(request, env) {
@@ -124,14 +237,12 @@ async function currentTherapist(request, env) {
   const therapist = await findUniqueTherapist(env, "Therapist ID", session.therapist_id);
   if (!therapist) throw authError(401, "THERAPIST_SESSION_INVALID");
   assertTherapistCanAuthenticate(therapist);
-  const binding = await hmacHex(sessionSecret(env), 'mms-therapist-line-binding-v1.' + clean(therapist.fields?.["LINE Subject Hash"], 200));
-  if (!constantTimeEqual(session.line_binding, binding)) throw authError(401, "THERAPIST_SESSION_INVALID");
+  if (!await sessionMatchesTherapist(session, therapist, env)) throw authError(401, "THERAPIST_SESSION_INVALID");
 
   return authJson({ ok: true, data: safeAuthProfile(therapist) }, 200, request, env);
 }
 
-async function claimTherapistInvite(env, inviteToken, subjectHash, now) {
-  const inviteHash = await sha256Hex(inviteToken);
+async function findTherapistInvite(env, inviteHash, now) {
   const record = await findUniqueTherapist(env, "Therapist Access Invite Hash", inviteHash);
   if (!record) throw authError(403, "THERAPIST_ACCESS_DENIED");
 
@@ -145,14 +256,7 @@ async function claimTherapistInvite(env, inviteToken, subjectHash, now) {
     throw authError(403, "THERAPIST_ACCESS_DENIED");
   }
 
-  return updateTherapist(env, record.id, {
-    "LINE Subject Hash": subjectHash,
-    "Therapist Auth Status": "Active",
-    "Therapist Access Linked At": now.toISOString(),
-    "Therapist Access Last Login At": now.toISOString(),
-    "Therapist Access Invite Hash": null,
-    "Therapist Access Invite Expires At": null,
-  });
+  return record;
 }
 
 function assertTherapistCanAuthenticate(record) {
@@ -230,7 +334,7 @@ async function lineSubjectHash(subject, env) {
   return hmacHex(pepper, `mms-therapist-line-v1\u0000${channelId}\u0000${subject}`);
 }
 
-async function createSessionToken({ therapist_id, subject_hash }, env, now = new Date()) {
+async function createSessionToken({ therapist_id, subject_hash, telegramId }, env, now = new Date()) {
   const secret = sessionSecret(env);
   const iat = Math.floor(now.getTime() / 1000);
   const payload = {
@@ -241,40 +345,53 @@ async function createSessionToken({ therapist_id, subject_hash }, env, now = new
     iat,
     exp: iat + SESSION_TTL_SECONDS,
   };
+  if (telegramId) payload.telegram_binding = await hmacHex(secret, "mms-therapist-telegram-binding-v1." + telegramId);
   const encoded = base64UrlEncodeText(JSON.stringify(payload));
   const signature = await hmacHex(secret, `mms-therapist-session-v1.${encoded}`);
   return `v1.${encoded}.${signature}`;
 }
 
-async function verifySessionToken(token, env) {
+export async function verifySessionToken(token, env, fail = authError) {
   const parts = String(token || "").split(".");
-  if (parts.length !== 3 || parts[0] !== "v1") throw authError(401, "THERAPIST_SESSION_INVALID");
+  if (parts.length !== 3 || parts[0] !== "v1") throw fail(401, "THERAPIST_SESSION_INVALID");
   const [, encoded, signature] = parts;
   if (!/^[A-Za-z0-9_-]+$/.test(encoded) || !/^[a-f0-9]{64}$/.test(signature)) {
-    throw authError(401, "THERAPIST_SESSION_INVALID");
+    throw fail(401, "THERAPIST_SESSION_INVALID");
   }
 
   const expected = await hmacHex(sessionSecret(env), `mms-therapist-session-v1.${encoded}`);
-  if (!constantTimeEqual(signature, expected)) throw authError(401, "THERAPIST_SESSION_INVALID");
+  if (!constantTimeEqual(signature, expected)) throw fail(401, "THERAPIST_SESSION_INVALID");
 
   let payload;
   try {
     payload = JSON.parse(base64UrlDecodeText(encoded));
   } catch {
-    throw authError(401, "THERAPIST_SESSION_INVALID");
+    throw fail(401, "THERAPIST_SESSION_INVALID");
   }
 
   const now = Math.floor(Date.now() / 1000);
   const therapistId = clean(payload?.therapist_id, 80);
-  if (!/^[a-f0-9]{64}$/.test(payload?.line_binding || "")) throw authError(401, "THERAPIST_SESSION_INVALID");
-  if (payload?.v !== SESSION_VERSION || payload?.role !== SESSION_ROLE) throw authError(401, "THERAPIST_SESSION_INVALID");
-  if (!/^[A-Za-z0-9_-]{4,80}$/.test(therapistId)) throw authError(401, "THERAPIST_SESSION_INVALID");
-  if (!Number.isFinite(payload?.iat) || !Number.isFinite(payload?.exp)) throw authError(401, "THERAPIST_SESSION_INVALID");
+  if (!/^[a-f0-9]{64}$/.test(payload?.line_binding || "")) throw fail(401, "THERAPIST_SESSION_INVALID");
+  if (therapistTelegramRequired(env) && !/^[a-f0-9]{64}$/.test(payload.telegram_binding || "")) throw fail(401, "THERAPIST_SESSION_INVALID");
+  if (payload?.v !== SESSION_VERSION || payload?.role !== SESSION_ROLE) throw fail(401, "THERAPIST_SESSION_INVALID");
+  if (!/^[A-Za-z0-9_-]{4,80}$/.test(therapistId)) throw fail(401, "THERAPIST_SESSION_INVALID");
+  if (!Number.isFinite(payload?.iat) || !Number.isFinite(payload?.exp)) throw fail(401, "THERAPIST_SESSION_INVALID");
   if (payload.exp <= now || payload.iat > now + 300 || payload.exp - payload.iat > SESSION_TTL_SECONDS) {
-    throw authError(401, "THERAPIST_SESSION_INVALID");
+    throw fail(401, "THERAPIST_SESSION_INVALID");
   }
 
-  return { therapist_id: therapistId, role: SESSION_ROLE, line_binding: payload.line_binding };
+  return { therapist_id: therapistId, role: SESSION_ROLE, line_binding: payload.line_binding, telegram_binding: payload.telegram_binding };
+}
+
+export async function sessionMatchesTherapist(session, record, env) {
+  const secret = sessionSecret(env);
+  const line = await hmacHex(secret, "mms-therapist-line-binding-v1." + clean(record.fields?.["LINE Subject Hash"], 200));
+  if (!constantTimeEqual(session.line_binding, line)) return false;
+  if (!therapistTelegramRequired(env)) return true;
+  const telegramId = therapistTelegramId(record);
+  if (!telegramId) return false;
+  const telegram = await hmacHex(secret, "mms-therapist-telegram-binding-v1." + telegramId);
+  return constantTimeEqual(session.telegram_binding, telegram);
 }
 
 function sessionSecret(env) {
@@ -289,6 +406,7 @@ async function findUniqueTherapist(env, fieldName, value) {
   url.searchParams.set("maxRecords", "2");
   url.searchParams.set("filterByFormula", `{${fieldName}}=${formulaString(value)}`);
   for (const field of THERAPIST_FIELDS) url.searchParams.append("fields[]", field);
+  if (therapistTelegramRequired(env)) url.searchParams.append("fields[]", TELEGRAM_ID_FIELD);
 
   const response = await airtableFetch(url, { method: "GET" }, env);
   const records = Array.isArray(response.records) ? response.records : [];
@@ -385,7 +503,7 @@ function cleanToken(value, max, optional = false) {
   return token;
 }
 
-function readCookie(header, name) {
+export function readCookie(header, name) {
   for (const part of String(header || "").split(";")) {
     const index = part.indexOf("=");
     if (index < 0) continue;
@@ -509,7 +627,7 @@ function authError(status, code) {
 }
 
 export const therapistAuthContract = Object.freeze({
-  paths: Object.freeze({ line: AUTH_LINE_PATH, me: AUTH_ME_PATH, logout: AUTH_LOGOUT_PATH }),
+  paths: Object.freeze({ line: AUTH_LINE_PATH, telegram: AUTH_TELEGRAM_PATH, me: AUTH_ME_PATH, logout: AUTH_LOGOUT_PATH }),
   session: Object.freeze({ role: SESSION_ROLE, cookie: SESSION_COOKIE, ttl_seconds: SESSION_TTL_SECONDS }),
   required_therapist_fields: Object.freeze([...THERAPIST_FIELDS]),
 });

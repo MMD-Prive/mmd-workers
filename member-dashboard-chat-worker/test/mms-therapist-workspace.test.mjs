@@ -436,6 +436,34 @@ test('fresh Therapist login waits for Verify before authentication or navigation
     assert.equal(h.redirects.at(-1), path + '/app');
   }
 });
+test('Verify starts Telegram only after LINE and retains the invite while Telegram is pending', async () => {
+  const authorizationUrl = 'https://oauth.telegram.org/auth?state=fixture-state';
+  const h = loginHarness({
+    pressVerify: false,
+    authResponse: () => Response.json({ ok: true, data: { telegram_required: true, authorization_url: authorizationUrl } }),
+  });
+  await settle();
+  assert.deepEqual(h.requests, []);
+  assert.deepEqual(h.redirects, []);
+  await h.els['line-login'].click();
+  assert.deepEqual(h.requests.map(request => request.url), [path + '/api/auth/line']);
+  assert.deepEqual(h.redirects, [authorizationUrl]);
+  assert.ok(h.data.has('mms-therapist-invite-v1'));
+  assert.match(h.els.notice.textContent, /Telegram/);
+});
+test('Telegram cancellation or an invalid authorization destination keeps the login page usable', async () => {
+  const cancelled = loginHarness({ url: origin + path + '/login?telegram_verification=cancelled', pressVerify: false });
+  await settle();
+  assert.deepEqual(cancelled.requests, []);
+  assert.deepEqual(cancelled.redirects, []);
+  assert.match(cancelled.els.notice.textContent, /ยังยืนยัน Telegram ไม่เสร็จ/);
+  const invalid = loginHarness({
+    authResponse: () => Response.json({ ok: true, data: { telegram_required: true, authorization_url: 'https://other.example/auth' } }),
+  });
+  await settle();
+  assert.deepEqual(invalid.redirects, []);
+  assert.equal(invalid.els.retry.hidden, false);
+});
 test('Verify works from both Therapist LIFF entry paths',async()=>{
   for(const url of [origin+path,origin+path+'/login']){
     const h=loginHarness({url});await settle();assert.equal(h.redirects.at(-1),path+'/app');assert.equal(h.els['line-login'].disabled,false);
@@ -447,17 +475,26 @@ test('stalled LIFF initialization releases the button with a useful fallback',as
 });
 
 const webflowLogin = readFileSync(new URL('../../webflow/mms/therapist-login/therapist-login.js', import.meta.url), 'utf8');
-function webflowHarness({error=null, callback=false}={}) {
+function webflowHarness({error=null, callback=false, data={}}={}) {
   const button=new Element(), state=new Element(), values=new Map(), calls=[], redirects=[];
-  const url=origin+path+'/login?invite=webflow-invite'+(callback?'&code=oauth':'');
+  const url=origin+path+'/login?invite=webflow-invite'+(callback?'&code=oauth&state=fixture':'');
   const root={dataset:{authReady:'true',liffId:'dedicated-liff',authEndpoint:path+'/api/auth/line'},querySelector:selector=>selector.includes('state-copy')?state:button};
   const window={location:{href:url,assign:target=>redirects.push(target)},history:{replaceState(){}},sessionStorage:{getItem:k=>values.get(k),setItem:(k,v)=>values.set(k,v),removeItem:k=>values.delete(k)},liff:{async init(){},isLoggedIn:()=>true,getIDToken:()=> 'token',logout(){},login:options=>redirects.push(options.redirectUri)}};
-  vm.runInNewContext(webflowLogin,{window,document:{getElementById:()=>root},URL,URLSearchParams,Date,JSON,String,fetch:async(url,options)=>{calls.push(JSON.parse(options.body));return error?Response.json({ok:false,error:{code:error}},{status:401}):Response.json({ok:true,data:{}});}});
+  vm.runInNewContext(webflowLogin,{window,document:{getElementById:()=>root},URL,URLSearchParams,Date,JSON,String,fetch:async(url,options)=>{calls.push(JSON.parse(options.body));return error?Response.json({ok:false,error:{code:error}},{status:401}):Response.json({ok:true,data});}});
   return {button,state,values,calls,redirects};
 }
 test('Webflow compatibility login sends query invite and resumes callbacks',async()=>{
   const h=webflowHarness();await h.button.click();assert.equal(h.calls[0].invite_token,'webflow-invite');assert.equal(h.values.has('mms-therapist-invite-v1'),false);
   const callback=webflowHarness({callback:true});await settle();assert.equal(callback.calls[0].invite_token,'webflow-invite');
+});
+test('Webflow login opens Telegram only after Verify and keeps the first-link invite while pending', async () => {
+  const authorizationUrl = 'https://oauth.telegram.org/auth?state=fixture';
+  const h = webflowHarness({ data: { telegram_required: true, authorization_url: authorizationUrl } });
+  assert.deepEqual(h.calls, []);
+  assert.deepEqual(h.redirects, []);
+  await h.button.click();
+  assert.deepEqual(h.redirects, [authorizationUrl]);
+  assert.ok(h.values.has('mms-therapist-invite-v1'));
 });
 test('Webflow failed LINE authentication keeps invite and bounds fresh login',async()=>{
   const h=webflowHarness({error:'LINE_ID_TOKEN_INVALID'});await h.button.click();assert.ok(h.values.has('mms-therapist-invite-v1'));assert.equal(new URLSearchParams(new URL(h.redirects[0]).hash.slice(1)).get('invite'),'webflow-invite');

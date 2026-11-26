@@ -44,6 +44,7 @@ The Therapist workspace is a separate authorization world from My MMD member acc
 Canonical browser routes:
 
 - `POST /male-massage/therapists/api/auth/line`
+- `GET /male-massage/therapists/api/auth/telegram` (Telegram authorization callback)
 - `GET /male-massage/therapists/api/auth/me`
 - `POST /male-massage/therapists/api/auth/logout`
 
@@ -104,6 +105,16 @@ Secrets:
 - `MMS_THERAPIST_IDENTITY_PEPPER` — at least 32 random bytes / equivalent entropy
 
 `MMS_THERAPIST_AUTH_ENABLED` is committed as `false`. Do not flip it until the dedicated Therapist LINE channel, Airtable fields, first-link invite process, and same-origin route are ready.
+
+### Telegram verification
+
+Set `MMS_THERAPIST_TELEGRAM_REQUIRED=true` on the Worker to require both LINE and Telegram. A therapist taps Verify, confirms LINE, then approves Telegram Login. The Worker issues a session and consumes any first-link invite only after both identities match the same approved Therapist record. Existing LINE-only sessions require a new login after activation.
+
+- In the restricted **MMS Therapists** table, provision a single-line text field named `Therapist Telegram User ID`. Set a unique numeric Telegram user ID for each approved Therapist using the team's verified account records. A missing, mismatched, or duplicate account cannot authenticate.
+- Configure Telegram Login for the intended bot in BotFather. Register `https://www.mmdbkk.com/male-massage/therapists/api/auth/telegram` and `https://mmdbkk.com/male-massage/therapists/api/auth/telegram` if both origins are served, plus the exact callback for the staging origin. Keep the default RS256 token signing algorithm.
+- Set `MMS_THERAPIST_TELEGRAM_CLIENT_ID` and the Worker secret `MMS_THERAPIST_TELEGRAM_CLIENT_SECRET` to the BotFather Login Widget credentials. The existing Telegram notification credentials continue to serve the application-alert flow.
+
+Use a mapped test Therapist to confirm the full flow on the LINE Mini App and in a browser on staging before enabling the production setting.
 
 ### Same-origin requirement
 

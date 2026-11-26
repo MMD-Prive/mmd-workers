@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 import { myMmsAccessContract } from '../src/my-mms-access-runtime.mjs';
+import { therapistAuthContract } from '../src/therapist-auth-runtime.mjs';
 
 const source = readFileSync(new URL('../src/my-mms-access-runtime.mjs', import.meta.url), 'utf8');
 const wrapper = readFileSync(new URL('../src/runtime-index-with-therapist-invite.js', import.meta.url), 'utf8');
@@ -16,7 +17,9 @@ test('MY MMS keeps onboarding /me separate from the approved work app', () => {
 });
 
 test('MY MMS self access is session-bound and fail closed', () => {
-  assert.match(source, /__Secure-mms_therapist_session/);
+  assert.equal(therapistAuthContract.session.cookie, '__Secure-mms_therapist_session');
+  assert.match(source, /readCookie\(request\.headers\.get\("Cookie"\) \|\| "", SESSION_COOKIE\)/);
+  assert.match(source, /sessionMatchesTherapist\(session, record, env\)/);
   assert.match(source, /requireCurrentTherapist/);
   assert.match(source, /access === "Approved"/);
   assert.match(source, /MY_MMS_ACCESS_REQUIRED/);

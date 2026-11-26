@@ -32,9 +32,17 @@
 
   button.setAttribute("aria-disabled", "false");
   button.dataset.ready = "true";
-  setState("ยืนยันตัวตนผ่าน LINE เพื่อเข้าสู่พื้นที่ Therapist ของคุณ");
-
   const pageUrl = new URL(window.location.href);
+  const telegramResult = pageUrl.searchParams.get("telegram_verification");
+  const telegramMessages = {
+    expired: "การยืนยัน Telegram หมดอายุครับ กดยืนยันเพื่อเริ่มใหม่ได้เลย",
+    cancelled: "ยังยืนยัน Telegram ไม่เสร็จครับ กดยืนยันเพื่อลองอีกครั้ง",
+    account: "บัญชี Telegram ไม่ตรงกับโปรไฟล์ MMS ครับ กดยืนยันแล้วเลือกบัญชีที่เชื่อมไว้",
+    unavailable: "ตอนนี้ยืนยัน Telegram ไม่ได้ครับ ลองอีกครั้งได้เลย",
+  };
+  setState(Object.hasOwn(telegramMessages, telegramResult)
+    ? telegramMessages[telegramResult]
+    : "กดยืนยันผ่าน LINE เพื่อเข้าพื้นที่ Therapist ครับ");
   const storageKey = "mms-therapist-invite-v1";
   const recoveryKey = "mms-therapist-line-recovery-v1";
   const storage = {
@@ -90,7 +98,7 @@
       let payload = null;
       try { payload = await response.json(); } catch {}
 
-      if (!response.ok) {
+      if (!response.ok || payload?.ok !== true) {
         const code = String(payload?.error?.code || "");
         if (code === "LINE_ID_TOKEN_INVALID") {
           recoverLine();
@@ -98,9 +106,23 @@
           setState("LINE นี้ยังไม่ได้เชื่อมกับ Therapist Profile ครับ กรุณาใช้ลิงก์เปิดสิทธิ์ที่ MMS ส่งให้");
         } else if (code === "THERAPIST_ACCESS_DENIED") {
           setState("บัญชีนี้ยังเข้า Therapist Dashboard ไม่ได้ครับ กรุณาติดต่อ MMS");
+        } else if (code === "THERAPIST_TELEGRAM_LINK_REQUIRED") {
+          setState("บัญชีนี้ยังไม่ได้เชื่อม Telegram ครับ ติดต่อทีม MMS เพื่อเชื่อมบัญชีก่อนเข้าใช้งาน");
         } else {
           setState("MMS ยังยืนยันตัวตนให้ไม่ได้ครับ กรุณาลองใหม่อีกครั้ง");
         }
+        return;
+      }
+
+      if (payload.data?.telegram_required === true) {
+        const target = new URL(payload.data.authorization_url);
+        if (target.origin !== "https://oauth.telegram.org" || target.pathname !== "/auth" || target.username || target.password) {
+          throw new Error("Invalid Telegram authorization destination");
+        }
+        storage.remove(recoveryKey);
+        window.history.replaceState(null, "", pageUrl.pathname);
+        setState("กำลังเปิด Telegram เพื่อยืนยันบัญชีที่เชื่อมไว้ครับ");
+        window.location.assign(target.href);
         return;
       }
 
@@ -116,6 +138,6 @@
   }
 
   button.addEventListener("click", authenticate);
-  if (["code", "liff.state", "liff_state"].some(key => pageUrl.searchParams.has(key))) authenticate();
+  if (pageUrl.searchParams.has("code") && pageUrl.searchParams.has("state")) authenticate();
 })();
 

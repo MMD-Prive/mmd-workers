@@ -78,7 +78,7 @@ async function forwardMmsTherapistAuth(request, env) {
     return json({ ok: false, error: { code: "MMS_THERAPIST_AUTH_UPSTREAM_NOT_CONFIGURED", message: "Therapist access is unavailable." } }, 503);
   }
 
-  const upstreamResponse = await env.MMS_WORKER.fetch(new Request(request.url, request));
+  const upstreamResponse = await env.MMS_WORKER.fetch(new Request(request, { redirect: "manual" }));
   const headers = new Headers(upstreamResponse.headers);
   headers.set("x-mmd-worker", WORKER_NAME);
   headers.set("x-mmd-route-owner", WORKER_NAME);
