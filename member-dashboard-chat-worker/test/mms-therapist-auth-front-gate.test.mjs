@@ -72,6 +72,32 @@ test("MMS Therapist auth routes are delegated only to mms-worker and preserve co
   assert.match(response.headers.get("cache-control") || "", /no-store/);
 });
 
+test("Therapist Telegram callback forwards state, cookies and the Worker redirect", async () => {
+  const callback = "https://www.mmdbkk.com/male-massage/therapists/api/auth/telegram?code=fixture&state=fixture";
+  const challenge = "__Host-mms_therapist_telegram";
+  const response = await worker.fetch(new Request(callback, { headers: { cookie: challenge + "=fixture" } }), {
+    MMS_WORKER: {
+      async fetch(request) {
+        assert.equal(request.url, callback);
+        assert.equal(request.redirect, "manual");
+        assert.equal(request.headers.get("cookie"), challenge + "=fixture");
+        return new Response(null, {
+          status: 303,
+          headers: [
+            ["location", "/male-massage/therapists/app"],
+            ["set-cookie", challenge + "=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax"],
+            ["set-cookie", "__Secure-mms_therapist_session=fixture; Path=/male-massage/therapists; HttpOnly; Secure; SameSite=Lax"],
+          ],
+        });
+      },
+    },
+  });
+  assert.equal(response.status, 303);
+  assert.equal(response.headers.get("location"), "/male-massage/therapists/app");
+  assert.equal(response.headers.getSetCookie().length, 2);
+  assert.match(response.headers.get("cache-control"), /no-store/);
+});
+
 test("MMS Therapist auth front gate fails closed when mms-worker is unavailable", async () => {
   const response = await worker.fetch(new Request("https://mmdbkk.com/male-massage/therapists/api/auth/me", {
     method: "GET",

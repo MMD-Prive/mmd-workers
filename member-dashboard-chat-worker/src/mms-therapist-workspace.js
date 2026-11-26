@@ -291,6 +291,8 @@ export function therapistClient() {
     profileSection = "info"; showProfileSection("info");
   }
   const messages = {
+    THERAPIST_TELEGRAM_LINK_REQUIRED: "บัญชีนี้ยังไม่ได้เชื่อม Telegram ครับ ติดต่อทีม MMS เพื่อเชื่อมบัญชีก่อนเข้าใช้งาน",
+    THERAPIST_TELEGRAM_NOT_CONFIGURED: "ระบบยืนยัน Telegram ยังไม่พร้อมครับ ติดต่อทีม MMS ได้เลย",
     LIFF_INIT_FAILED: "LINE Mini App ยังยืนยันตัวตนไม่ได้ครับ ลองเปิด Mini App ใหม่อีกครั้ง",
     LINE_VERIFY_UNAVAILABLE: "ระบบตรวจบัญชี LINE ยังไม่พร้อมครับ กรุณาลองอีกครั้ง โดยไม่ต้องผูกบัญชีใหม่",
     THERAPIST_AUTH_UNAVAILABLE: "ระบบบัญชี Therapist ยังไม่พร้อมครับ กรุณาลองอีกครั้ง",
@@ -349,7 +351,10 @@ export function therapistClient() {
       const response = await fetch(path, { credentials: "same-origin", cache: "no-store", ...options, signal: controller.signal });
       if (epoch !== accountEpoch) throw Object.assign(new Error("STALE_RESPONSE"), { code: "STALE_RESPONSE" });
       progress?.received(step);
-      if (response.status === 204) { progress?.ready(step); return null; }
+      if (response.status === 204) {
+        if (path === P + "/api/auth/line") throw Object.assign(new Error("AUTH_INVALID_RESPONSE"), { code: "AUTH_INVALID_RESPONSE" });
+        progress?.ready(step); return null;
+      }
       const denied = response.status === 401 || response.status === 403;
       let body; try { body = await response.json(); } catch (_) { if(path===P+"/api/auth/line")throw Object.assign(new Error("AUTH_INVALID_RESPONSE"),{code:"AUTH_INVALID_RESPONSE"}); if (!denied) throw Object.assign(new Error("PROFILE_DATA_INVALID"), { code: "PROFILE_DATA_INVALID" }); }
       if (epoch !== accountEpoch) throw Object.assign(new Error("STALE_RESPONSE"), { code: "STALE_RESPONSE" });
@@ -367,7 +372,12 @@ export function therapistClient() {
       }
       if(body.data===undefined||body.data===null)throw Object.assign(new Error('PROFILE_INVALID_RESPONSE'),{code:'PROFILE_INVALID_RESPONSE'});
       if(path===A+'/service-zones'&&(!Array.isArray(body.data.zones)||body.data.zones.length===0))throw Object.assign(new Error('SERVICE_ZONE_CATALOG_INVALID'),{code:'SERVICE_ZONE_CATALOG_INVALID'});
-      if(path===P+'/api/auth/line'&&(!body.data||typeof body.data.therapist_id!=='string'||!body.data.therapist_id))throw Object.assign(new Error('AUTH_INVALID_RESPONSE'),{code:'AUTH_INVALID_RESPONSE'});
+      if (path === P + "/api/auth/line" &&
+          (body.data.telegram_required === true
+            ? typeof body.data.authorization_url !== "string"
+            : typeof body.data.therapist_id !== "string" || !body.data.therapist_id)) {
+        throw Object.assign(new Error("AUTH_INVALID_RESPONSE"), { code: "AUTH_INVALID_RESPONSE" });
+      }
       if(path===P+'/api/auth/profile'&&!validProfile(body.data)){
         if(body.data?.therapist_id&&body.data.therapist_id!==access?.therapist_id){clearPrivate();throw Object.assign(new Error('PROFILE_ACCOUNT_MISMATCH'),{code:'PROFILE_ACCOUNT_MISMATCH'});}
         throw Object.assign(new Error('PROFILE_DATA_INVALID'),{code:'PROFILE_DATA_INVALID'});
@@ -684,7 +694,15 @@ export function therapistClient() {
       window.liff.logout();
       window.liff.login({ redirectUri: redirect.href });
     }
-    notice("กดยืนยันผ่าน LINE เพื่อเข้าพื้นที่ Therapist ครับ");
+    const telegramResult = url.searchParams.get("telegram_verification");
+    const telegramMessages = {
+      expired: "การยืนยัน Telegram หมดอายุครับ กดยืนยันเพื่อเริ่มใหม่ได้เลย",
+      cancelled: "ยังยืนยัน Telegram ไม่เสร็จครับ กดยืนยันเพื่อลองอีกครั้ง",
+      account: "บัญชี Telegram ไม่ตรงกับโปรไฟล์ MMS ครับ กดยืนยันแล้วเลือกบัญชีที่เชื่อมไว้",
+      unavailable: "ตอนนี้ยืนยัน Telegram ไม่ได้ครับ ลองอีกครั้งได้เลย",
+    };
+    if (Object.hasOwn(telegramMessages, telegramResult)) notice(telegramMessages[telegramResult], true);
+    else notice("กดยืนยันผ่าน LINE เพื่อเข้าพื้นที่ Therapist ครับ");
     async function authenticate() {
       const progress = window.MmsGraphics; const step = progress?.begin("กำลังยืนยันผ่าน LINE ครับ");
       if (!window.liff) { const e = new Error("LIFF_UNAVAILABLE"); e.code = "LIFF_UNAVAILABLE"; throw e; }
@@ -710,13 +728,26 @@ export function therapistClient() {
       if (!window.liff.isLoggedIn()) { notice("กำลังเปิด LINE เพื่อยืนยันบัญชีครับ"); window.liff.login({ redirectUri: redirect.href }); return; }
       const token = window.liff.getIDToken();
       if (!token) { recoverLine(); return; }
+      let result;
       try {
-        await api(P + "/api/auth/line", json("POST", { id_token: token, ...(invite ? { invite_token: invite } : {}) }));
+        result = await api(P + "/api/auth/line", json("POST", { id_token: token, ...(invite ? { invite_token: invite } : {}) }));
       } catch (e) {
         // api() normally changes this handler on 401; preserve the auth retry.
         $("line-login").onclick = () => busy($("line-login"), authenticate);
         if (e.code === "LINE_ID_TOKEN_INVALID") { recoverLine(); return; }
         throw e;
+      }
+      if (result?.telegram_required === true) {
+        let target;
+        try { target = new URL(result.authorization_url); } catch (_) {}
+        if (target?.origin !== "https://oauth.telegram.org" || target.pathname !== "/auth" || target.username || target.password) {
+          throw Object.assign(new Error("AUTH_INVALID_RESPONSE"), { code: "AUTH_INVALID_RESPONSE" });
+        }
+        storage.remove(recoveryKey);
+        history.replaceState(null, "", P + "/login");
+        notice("กำลังเปิด Telegram เพื่อยืนยันบัญชีที่เชื่อมไว้ครับ");
+        location.replace(target.href);
+        return;
       }
       storage.remove(storageKey); storage.remove(recoveryKey);
       history.replaceState(null, "", P + "/login"); location.replace(P + "/app");
