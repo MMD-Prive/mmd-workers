@@ -240,3 +240,32 @@ test("job-specific excluded model is absent from owner search without modifying 
     assert.equal(h.errors.length,0);
   }finally{h.dom.window.close();}
 });
+
+
+test('compact workspace tabs keep one panel visible and support keyboard navigation', async () => {
+  const h = await harness();
+  assert.equal(h.$('panelBrief').hidden, false);
+  assert.equal(h.$('panelModels').hidden, true);
+  h.$('tabModels').click();
+  assert.equal(h.$('panelBrief').hidden, true);
+  assert.equal(h.$('panelModels').hidden, false);
+  assert.equal(h.$('tabModels').getAttribute('aria-selected'), 'true');
+  h.$('tabModels').dispatchEvent(new h.dom.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+  assert.equal(h.$('panelResponse').hidden, false);
+  assert.equal(h.dom.window.document.activeElement.id, 'tabResponse');
+  assert.equal(h.$('modelTotal').textContent, '0');
+  assert.equal(h.$('responseTotal').textContent, '0');
+  assert.equal(h.errors.length, 0);
+  h.dom.window.close();
+});
+
+test('owner creates and copies the current partner/models link without rejecting it', async () => {
+  const url = 'https://www.mmdbkk.com/partner/models#s=' + ID + '&t=' + 'd'.repeat(64);
+  const h = await harness({ onRequest: (path, opts) => path === base + '/' + ID + '/rotate' && opts.method === 'POST' ? {ok:true,item:fixture(),url} : null });
+  h.$('rotateLink').click(); h.$('confirmAction').click(); await flush();
+  assert.equal(h.$('shareUrl').value, url);
+  h.$('copyLink').click(); await flush();
+  assert.deepEqual(h.clipboard, [url]);
+  assert.equal(h.errors.length, 0);
+  h.dom.window.close();
+});

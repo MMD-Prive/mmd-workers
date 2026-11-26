@@ -34,7 +34,7 @@ test("authorized owner page uses fresh matching CSP nonces, no cache, valid scri
   assert.equal(first.status, 200); assert.equal(first.headers.get("x-mmd-build"), env.BUILD_SHA);
   assert.match(first.headers.get("cache-control"), /private, no-store/);
   const csp = first.headers.get("content-security-policy"), nonce = csp.match(/script-src 'nonce-([^']+)'/)[1];
-  assert.match(csp, /frame-ancestors 'none'/); assert.match(csp, /connect-src 'self'/); assert.doesNotMatch(csp, /unsafe-inline|https:/);
+  assert.match(csp, /frame-ancestors 'none'/); assert.match(csp, /connect-src 'self'/); assert.doesNotMatch(csp, /unsafe-inline/); assert.match(csp, /font-src https:\/\/cdn\.prod\.website-files\.com;/); assert.match(csp, /img-src 'self' blob:;/);
   const html = await first.text();
   const nonces = [...html.matchAll(/<(?:script|style) nonce="([^"]+)"/g)].map(match => match[1]);
   assert.equal(nonces.length, 2); assert.ok(nonces.every(value => value === nonce));
