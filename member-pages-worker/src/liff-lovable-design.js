@@ -130,7 +130,7 @@ body.app-entered:not(.signup-mode)[data-brand-audience="public"] .pm-choices img
 body.app-entered:not(.signup-mode)[data-brand-audience="public"] .pm [data-pm-avatar]{object-position:center top}
 body.app-entered:not(.signup-mode)[data-brand-audience="public"] .digital-news-summary{border-top:2px solid var(--digital-gold)}
 body.app-entered:not(.signup-mode)[data-brand-audience="public"] .digital-news-card.has-image{grid-template-columns:80px minmax(0,1fr)}
-body.app-entered:not(.signup-mode)[data-brand-audience="public"] .digital-news-image{width:80px;height:96px}
+body.app-entered:not(.signup-mode)[data-brand-audience="public"] .digital-news-image{width:80px;height:100px}
 body.app-entered:not(.signup-mode)[data-brand-audience="public"] .digital-quick-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
 body.app-entered:not(.signup-mode)[data-brand-audience="public"] .digital-quick-grid button{min-width:0;min-height:56px;white-space:normal;overflow-wrap:anywhere;font-size:12px}
 body.app-entered:not(.signup-mode) .digital-account-row{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;padding:14px 0;border-bottom:1px solid var(--digital-line);overflow-wrap:anywhere}
