@@ -25,7 +25,7 @@ export default {
             headers: {
               ...securityHeaders,
               'content-type': 'text/html; charset=utf-8',
-              'content-security-policy': `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; img-src 'self' blob:; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`,
+              'content-security-policy': `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; font-src https://cdn.prod.website-files.com; img-src 'self' blob:; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`,
             },
           });
         }
