@@ -1,5 +1,6 @@
 import { handleShortlist, requireOwner, securityHeaders } from './index.js';
 import { renderOwnerPage } from './owner-page.js';
+import { partnerModelsPage } from './partner-models-page.js';
 
 const OWNER_PAGE = '/internal/admin/model-selections';
 
@@ -7,7 +8,13 @@ export default {
   async fetch(request, env) {
     const path = new URL(request.url).pathname.replace(/\/+$/, '');
     let response;
-    if (path === OWNER_PAGE) {
+    if (path === '/partner/models') {
+      const nonce = crypto.randomUUID();
+      const html = partnerModelsPage.replace(/<script(\s|>)/g, '<script nonce="' + nonce + '"$1');
+      response = ['GET', 'HEAD'].includes(request.method)
+        ? new Response(request.method === 'HEAD' ? null : html, { headers: { ...securityHeaders, 'content-type': 'text/html; charset=utf-8', 'content-security-policy': `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; img-src 'self' blob: https://cdn.prod.website-files.com; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'` } })
+        : Response.json({ ok: false, error: 'method_not_allowed' }, { status: 405, headers: securityHeaders });
+    } else if (path === OWNER_PAGE) {
       try {
         await requireOwner(request, env);
         if (!['GET', 'HEAD'].includes(request.method)) {

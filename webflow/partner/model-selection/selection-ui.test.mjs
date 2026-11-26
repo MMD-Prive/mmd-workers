@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto";
 
 const require = createRequire(import.meta.url);
 const { JSDOM, VirtualConsole } = require(process.env.MMD_TEST_JSDOM_PATH || "jsdom");
-const source = await fs.readFile(new URL("./index.html", import.meta.url), "utf8");
+const source = await fs.readFile(process.env.MMD_SELECTION_SOURCE || new URL("./index.html", import.meta.url), "utf8");
 const id = "a".repeat(32), token = "A".repeat(43), mid = "b".repeat(32), other = "c".repeat(32);
 const p1 = "d".repeat(32), p2 = "e".repeat(32), p3 = "f".repeat(32), receiptId = "9".repeat(32);
 const base = "/v1/partner/model-selections/" + id;

@@ -39,3 +39,12 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/internal/admin/model-selections*"
 zone_name = "mmdbkk.com"
 
+
+# Partner discovery shell; model and media requests retain existing job-link authority.
+[[routes]]
+pattern = "mmdbkk.com/partner/models*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/partner/models*"
+zone_name = "mmdbkk.com"
