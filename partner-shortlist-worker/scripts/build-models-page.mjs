@@ -2,6 +2,29 @@ import fs from 'node:fs/promises';
 
 // Reuse the existing job-scoped search, media, expiry and submission client.
 let html = await fs.readFile(new URL('../../webflow/partner/model-selection/index.html', import.meta.url), 'utf8');
+const partnerTheme = await fs.readFile(new URL('../../webflow/partner/shared/partner-route-theme-v1.css', import.meta.url), 'utf8');
+const fontFaces = partnerTheme.match(/@font-face\s*\{[^}]+\}/g);
+const fontTokens = partnerTheme.match(/--partner-font-(?:th|en|secondary):[^;]+;/g);
+if (!fontFaces?.length || fontTokens?.length !== 3) {
+  throw new Error('Partner CI font definitions are missing from the shared theme');
+}
+// Use the shared type system without importing the theme's colors or layout.
+const typography = `<style id="partner-models-typography">
+${fontFaces.join('\n')}
+:root{
+  ${fontTokens.join('\n  ')}
+  font-family:var(--partner-font-th);
+}
+:lang(en){font-family:var(--partner-font-en)}
+#gateTitle,#jobTitle,#partnerAccountName,.model-name{font-family:"General Sans",var(--partner-font-th)}
+.model-name{line-height:1.4}
+.latest-brief{font-family:var(--partner-font-th)}
+.selection-journey li > span,#chipCount,#footerCount{
+  font-family:var(--partner-font-secondary);
+  font-style:normal;
+  font-variant-numeric:tabular-nums;
+}
+</style>`;
 html = html.replaceAll('ค่ะ', '').replaceAll('ครับ', '')
   .replaceAll('คัดไว้สำหรับงานนี้', 'ค้นหาโมเดลสำหรับงาน')
   .replaceAll('เปิดลิงก์เฉพาะงาน', 'Partner Models')
@@ -12,7 +35,10 @@ html = html.replace('window.I18N_DICT&&window.I18N_DICT.th&&window.I18N_DICT.th[
 // Static page labels also use this reviewed fallback; do not let an older remote
 // initializer replace the Partner wording. Keep the canonical keys in the source.
 html = html.replace(/<script src="https:\/\/cdn\.jsdelivr\.net\/gh\/MMD-Prive\/mmd-i18n@[^"\n]+"><\/script>/g, '');
-html = html.replace('</header>', '</header><nav class="wrap" aria-label="Partner navigation" style="padding-top:12px"><a href="/partner/dashboard" style="font-size:14px">← MY Partner</a></nav>');
+html = html.replace('</header>', '</header><nav class="wrap" aria-label="Partner navigation" style="padding-top:12px"><a href="/partner/dashboard" lang="en" style="font-size:14px">← MY Partner</a></nav>');
+html = html.replace('<small>Partner selection</small>', '<small lang="en">Partner selection</small>')
+  .replace('<h2 id="modelsHeading">', '<h2 id="modelsHeading" lang="en">')
+  .replace('<div class="footer-brand">', '<div class="footer-brand" lang="en">');
 html = html.replaceAll('ดูรูป เลือกคนที่สนใจ แล้วส่งตัวเลือกให้เปอร์เช็กคิว', 'เลือกคนที่ตรงบรีฟไว้ได้เลย เดี๋ยวเปอร์เช็กคิวให้')
   .replaceAll('เติมข้อมูลให้เปอร์เช็กคนได้ตรงบรีฟ', 'เติมรายละเอียดอีกนิด เปอร์จะได้หาคนให้ตรงบรีฟ')
   .replaceAll('ส่งให้เปอร์', 'ให้เปอร์เช็กคิว')
@@ -35,9 +61,9 @@ document.addEventListener('DOMContentLoaded',async function(){
 html=html.replace('<script data-shortlist-capture>',identityScript+'<script data-shortlist-capture>');
 html=html.replace('<main', '<section class="wrap" aria-label="บัญชีที่กำลังใช้งาน" style="margin-top:16px;padding:14px 16px;border:1px solid var(--line);border-radius:14px;background:var(--card)"><span class="label">บัญชีของคุณ</span><strong id="partnerAccountName">ยังไม่ได้เข้าสู่บัญชี</strong><p id="partnerAccountStatus" style="margin:2px 0 8px;font-size:14px">เข้า LINE ด้วยบัญชีเดิมได้เลย</p><a id="partnerAccountLogin" href="/sigil/model/dashboard/partner-login" style="font-size:14px">เข้าด้วย LINE ↗</a></section><main');
 
-const hero = '<section class="models-hero wrap" aria-labelledby="modelsHeroTitle"><div class="models-hero-copy"><span class="eyebrow">YOUR NEXT SELECTION</span><h1 id="modelsHeroTitle">คนที่ใช่<br>สำหรับงานนี้</h1><p>ดูรูป เลือกคนที่สนใจ<br>เดี๋ยวเปอร์ช่วยเช็กคิวให้</p></div><picture><source media="(min-width:768px)" srcset="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6b07b12c5fbc6dff9f3bb006_BossPer-Yuki-Your-Next-Selection-Desktop.webp"><img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6b07b12c0abbf49d9bfe04b6_BossPer-Yuki-Your-Next-Selection-Mobile.webp" width="1200" height="1500" alt="BossPer และ Yuki พร้อมอัลบั้มโมเดลที่คัดไว้ให้" fetchpriority="high" decoding="async"></picture></section>';
+const hero = '<section class="models-hero wrap" aria-labelledby="modelsHeroTitle"><div class="models-hero-copy"><span class="eyebrow" lang="en">YOUR NEXT SELECTION</span><h1 id="modelsHeroTitle">คนที่ใช่<br>สำหรับงานนี้</h1><p>ดูรูป เลือกคนที่สนใจ<br>เดี๋ยวเปอร์ช่วยเช็กคิวให้</p></div><picture><source media="(min-width:768px)" srcset="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6b07b12c5fbc6dff9f3bb006_BossPer-Yuki-Your-Next-Selection-Desktop.webp"><img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6b07b12c0abbf49d9bfe04b6_BossPer-Yuki-Your-Next-Selection-Mobile.webp" width="1200" height="1500" alt="BossPer และ Yuki พร้อมอัลบั้มโมเดลที่คัดไว้ให้" fetchpriority="high" decoding="async"></picture></section>';
 const heroStyle = '<style>.models-hero{position:relative;overflow:hidden;border-radius:22px;background:#e9dfd2;margin-top:16px;margin-bottom:16px}.models-hero picture,.models-hero img{display:block;width:100%}.models-hero img{height:auto;aspect-ratio:4/5;object-fit:contain}.models-hero-copy{padding:22px 22px 18px}.models-hero-copy h1{font-size:32px;line-height:1.35;letter-spacing:-.04em;margin:7px 0 9px;font-weight:600}.models-hero-copy p{margin:0;font-size:16px;line-height:1.6;color:var(--muted)}.models-hero-copy .eyebrow{font-size:10px;letter-spacing:.13em}.gate{margin-top:18px!important;padding:24px!important}.models-hero~section[aria-label="บัญชีที่กำลังใช้งาน"]{margin-top:0!important}@media(min-width:768px){.models-hero{min-height:320px;aspect-ratio:16/7}.models-hero picture{position:absolute;inset:0;height:100%}.models-hero img{width:100%;height:100%;aspect-ratio:auto;object-fit:contain}.models-hero-copy{position:relative;z-index:1;width:38%;padding:clamp(28px,4vw,48px)}.models-hero-copy h1{font-size:clamp(32px,3.5vw,48px)}.models-hero-copy p{color:#51483f}}@media(max-width:767px){.models-hero{display:grid;grid-template-columns:1fr}.models-hero-copy{padding:20px}.models-hero-copy h1 br{display:none}.models-hero-copy p br{display:none}}@media(prefers-reduced-motion:reduce){.models-hero{scroll-behavior:auto}}</style>';
-html=html.replace('</head>',heroStyle+'</head>');
+html=html.replace('</head>',heroStyle+typography+'</head>');
 html=html.replace('<section class="wrap" aria-label="บัญชีที่กำลังใช้งาน"',hero+'<section class="wrap" aria-label="บัญชีที่กำลังใช้งาน"');
 html=html.replace(/<div class="partner-art" aria-hidden="true">[\s\S]*?<\/div>/,'');
 

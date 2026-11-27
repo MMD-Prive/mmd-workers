@@ -19,6 +19,21 @@ test('Partner Models serves an empty protected client shell with executable nonc
   assert.match(html, /mmd-shortlist:/);
 });
 
+test('Partner Models uses the shared CI fonts and allows their CDN under CSP', async () => {
+  const response = await worker.fetch(new Request('https://mmdbkk.com/partner/models'), {});
+  const html = await response.text();
+  const csp = response.headers.get('content-security-policy');
+  const typography = html.match(/<style id="partner-models-typography">([\s\S]*?)<\/style>/)[1];
+  const theme = await fs.readFile(new URL('../../webflow/partner/shared/partner-route-theme-v1.css', import.meta.url), 'utf8');
+  const faces = theme.match(/@font-face\s*\{[^}]+\}/g);
+  assert.match(csp, /(?:^|;\s*)font-src https:\/\/cdn\.prod\.website-files\.com;/);
+  assert.deepEqual(typography.match(/@font-face\s*\{[^}]+\}/g), faces);
+  for (const family of ['Anuphan', 'General Sans', 'Satoshi']) {
+    assert.ok(faces.some(face => face.includes(`font-family:"${family}"`)));
+  }
+  assert.match(html, /lang="en"[^>]*>YOUR NEXT SELECTION/);
+});
+
 test('Partner Models does not accept lookalike routes, dashboard tokens, or writes', async () => {
   const head = await worker.fetch(new Request('https://mmdbkk.com/partner/models/', {method:'HEAD'}), {});
   assert.equal(head.status, 200); assert.equal(await head.text(), '');
