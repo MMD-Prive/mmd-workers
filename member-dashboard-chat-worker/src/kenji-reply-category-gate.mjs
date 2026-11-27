@@ -11,7 +11,35 @@ export function isExplicitCategoryCommand(event = {}, env = {}) {
   return /^(package|regis|apply)$/.test(command) || Boolean(entryTopicCommand(event));
 }
 export const CATEGORY_REPLY_GRANT = Symbol('kenji-approved-reply');
+const phase2StatusUrl = 'https://www.mmdbkk.com/member/liff?intent=status&world=public';
+const phase2Label = 'เช็กสิทธิ์และต่ออายุ';
+const phase2Start = Date.parse('2026-11-27T00:00:00+07:00');
+const phase2End = Date.parse('2026-12-01T00:00:00+07:00');
+const phase2Replies = new Map([
+  ['care back', 'CARE BACK Phase 2 เปิดวันที่ 27–30 พฤศจิกายน 2569 ครับ กดปุ่มด้านล่างเพื่อเปิด MY MMD แล้วดูสิทธิ์ของบัญชีคุณก่อนสมัครหรือต่ออายุ'],
+  ['โปรเดือนนี้', 'โปรเดือนนี้คือ CARE BACK Phase 2 วันที่ 27–30 พฤศจิกายน 2569 ครับ ข้อเสนอขึ้นอยู่กับสถานะสมาชิก กดปุ่มด้านล่างเพื่อเช็กสิทธิ์ของคุณใน MY MMD'],
+  ['โปรสมาชิก', 'สมาชิกปัจจุบันเช็กสิทธิ์ต่ออายุล่วงหน้าได้ครับ ถ้าเคยเป็นสมาชิกแต่ตรวจไม่พบข้อมูล ยังไม่ต้องสมัครหรือชำระซ้ำ กดปุ่มด้านล่างเพื่อตรวจสถานะใน MY MMD ก่อนครับ'],
+]);
+
+export function phase2MyStatusReply(event, env, now) {
+  if (!restrictedReplyCategories(env) || ![true, 'true'].includes(env.KENJI_LINE_APPROVED_PROMO_ENABLED) ||
+      event?.type !== 'message' || event?.message?.type !== 'text' || event?.source?.type !== 'user' ||
+      !Number.isFinite(now) || now < phase2Start || now >= phase2End) return null;
+  const command = String(event.message.text || '').normalize('NFKC').trim().toLowerCase();
+  const copy = phase2Replies.get(command);
+  return copy ? {
+    text: copy + '\n\n' + phase2StatusUrl,
+    intent: 'approved_promotion',
+    reply_source: 'care_back_canonical_public',
+    cta_route: phase2StatusUrl,
+  } : null;
+}
+
 export function membershipUriButton(decision) {
+  if (decision?.reply_source === 'care_back_canonical_public' && decision.intent === 'approved_promotion' &&
+      decision.cta_route === phase2StatusUrl && decision.text?.split('\n').at(-1) === phase2StatusUrl) {
+    return {label:phase2Label,uri:phase2StatusUrl};
+  }
   const routes = [
     'https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=overview',
     'https://miniapp.line.me/2010862595-yT4DCEMc/?intent=renew&view=package',
