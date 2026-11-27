@@ -1,0 +1,45 @@
+{
+  "pr": 3293,
+  "source_sha": "2ca68844403dcd0d47531ad25be7d5a194fccd6e",
+  "expires_at": "2026-11-30T17:00:00.000Z",
+  "workers": {
+    "member-dashboard-chat-worker": {
+      "name": "member-dashboard-chat-worker",
+      "id": "0879743e79f14eb1999a93cabe328397",
+      "version": "c44c54a7-9359-48b6-aa06-f8f8652a1b31",
+      "dep": "a16af80a-a423-4103-b816-d99e83dd4fd0",
+      "etag": "d989955a4aeafbfedb319f497be101c6edc2c2cdface79ede447f29fb5d7bf01",
+      "cfg": "0a626f5b70b2f6b6917f33edcbc93aa86bb466255cdacf65886eaff6adf5d0e5",
+      "settings": "2d541a19d01be2f16bb83da7211c6c11d4e2ad1a84f16ff03df39f3e5324e95d",
+      "module": "guide-notification-entry.js",
+      "sha": "6fdfe13ac3fdacd1ffdbd1974bd138c330f153e1242f2c988e679b1f5de74667",
+      "compat": "2026-07-02",
+      "flags": [],
+      "candidate": "6477428678a8352590931c233d025a17db274313846527b5c9fe1308e920f84b",
+      "patches": [
+        {
+          "before": "function membershipUriButton(decision) {",
+          "after": "const phase2StatusUrl = 'https://www.mmdbkk.com/member/liff?intent=status&world=public'; const phase2Label = 'เช็กสิทธิ์และต่ออายุ'; const phase2Start = Date.parse('2026-11-27T00:00:00+07:00'); const phase2End = Date.parse('2026-12-01T00:00:00+07:00'); const phase2Replies = new Map([ ['care back', 'CARE BACK Phase 2 เปิดวันที่ 27–30 พฤศจิกายน 2569 ครับ กดปุ่มด้านล่างเพื่อเปิด MY MMD แล้วดูสิทธิ์ของบัญชีคุณก่อนสมัครหรือต่ออายุ'], ['โปรเดือนนี้', 'โปรเดือนนี้คือ CARE BACK Phase 2 วันที่ 27–30 พฤศจิกายน 2569 ครับ ข้อเสนอขึ้นอยู่กับสถานะสมาชิก กดปุ่มด้านล่างเพื่อเช็กสิทธิ์ของคุณใน MY MMD'], ['โปรสมาชิก', 'สมาชิกปัจจุบันเช็กสิทธิ์ต่ออายุล่วงหน้าได้ครับ ถ้าเคยเป็นสมาชิกแต่ตรวจไม่พบข้อมูล ยังไม่ต้องสมัครหรือชำระซ้ำ กดปุ่มด้านล่างเพื่อตรวจสถานะใน MY MMD ก่อนครับ'], ]); function phase2MyStatusReply(event, env, now) { if (!restrictedReplyCategories(env) || ![true, 'true'].includes(env.KENJI_LINE_APPROVED_PROMO_ENABLED) || event?.type !== 'message' || event?.message?.type !== 'text' || event?.source?.type !== 'user' || !Number.isFinite(now) || now < phase2Start || now >= phase2End) return null; const command = String(event.message.text || '').normalize('NFKC').trim().toLowerCase(); const copy = phase2Replies.get(command); return copy ? { text: copy + '\\n\\n' + phase2StatusUrl, intent: 'approved_promotion', reply_source: 'care_back_canonical_public', cta_route: phase2StatusUrl, } : null; } function membershipUriButton(decision) { if (decision?.reply_source === 'care_back_canonical_public' && decision.intent === 'approved_promotion' && decision.cta_route === phase2StatusUrl && decision.text?.split('\\n').at(-1) === phase2StatusUrl) { return {label:phase2Label,uri:phase2StatusUrl}; }",
+          "before_sha256": "d6cc596c31bcdcead0bbe09d77b14f475952dbbd3161019ea65d654054d48535",
+          "after_sha256": "8bdc4a98e3001feff6eecbf41f3d27fcca89fc86f11944296647036583ba497f"
+        },
+        {
+          "before": "        const promotion = [\"promotion\", \"member_promotion\"].includes(topic) ? approvedCategoryReply({ ...event, message: { ...event.message, text: \"\\u0E42\\u0E1B\\u0E23\" } }, env, { careBackOctoberReply, now }) : null;",
+          "after": "        const phase2 = phase2MyStatusReply(event, env, now); const promotion = !phase2 && [\"promotion\", \"member_promotion\"].includes(topic) ? approvedCategoryReply({ ...event, message: { ...event.message, text: \"\\u0E42\\u0E1B\\u0E23\" } }, env, { careBackOctoberReply, now }) : null;",
+          "before_sha256": "5028a05a3825b95d7063d3fa8012a3ac7a39292b9cf76a2095a38446a81cd81e",
+          "after_sha256": "178be34be08f4855bbe41ba1f49e1939904ca031f53dc0faeb52454b1c858efa"
+        },
+        {
+          "before": "        decision = [\"promotion\", \"member_promotion\"].includes(topic) ? entryPromotionReply(promotion, topic === \"member_promotion\") || ([true, \"true\"].includes(env.KENJI_LINE_APPROVED_PROMO_ENABLED) ? { ...silent, handoff_required: true, handoff_reason: \"promotion_unverified:per_review\" } : silent) : entryTopicReply(topic) || approvedCategoryReply(event, env, { careBackOctoberReply, now }) || controls.model_keyword_auto_reply !== true && await resolveProfileLinkReply(env, event, { now, readAnchor: io.readProfileAnchor }) || silent;",
+          "after": "        decision = phase2 || ([\"promotion\", \"member_promotion\"].includes(topic) ? entryPromotionReply(promotion, topic === \"member_promotion\") || ([true, \"true\"].includes(env.KENJI_LINE_APPROVED_PROMO_ENABLED) ? { ...silent, handoff_required: true, handoff_reason: \"promotion_unverified:per_review\" } : silent) : entryTopicReply(topic) || approvedCategoryReply(event, env, { careBackOctoberReply, now }) || controls.model_keyword_auto_reply !== true && await resolveProfileLinkReply(env, event, { now, readAnchor: io.readProfileAnchor }) || silent);",
+          "before_sha256": "c761fab6a7e67bf773b01ecd79a448a3acfe2aa62b3e5d531a035cfb0c2dad1d",
+          "after_sha256": "25dc733522ad0b6be1cc450daa1c351b2af589c298b126b07748dde83d76ca43"
+        }
+      ],
+      "sidecar": {
+        "name": "guide-notification-entry.js.map",
+        "sha": "826f6f7dd308a91e0afdba9ce58d9820ccc5532b8c9f509a68cdf1a05235475a"
+      }
+    }
+  }
+}
