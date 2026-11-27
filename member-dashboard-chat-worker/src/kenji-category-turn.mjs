@@ -1,4 +1,4 @@
-import {approvedCategoryReply, withCategoryReplyGrant, membershipUriButton} from './kenji-reply-category-gate.mjs';
+import {approvedCategoryReply, withCategoryReplyGrant, membershipUriButton, phase2MyStatusReply} from './kenji-reply-category-gate.mjs';
 import {careBackOctoberReply} from './kenji-care-back-october.mjs';
 import {lineIntakeCommand, readLineIntakeCatalog, resolveLineIntakeReply} from './kenji-line-intake-commands.mjs';
 import {resolveKenjiLineLiveTruth} from './kenji-line-live-truth.mjs';
@@ -56,14 +56,15 @@ export async function runApprovedCategoryTurn(env, event, initialRuntime, io) {
           decision = {text:reply.text,intent:'approved_command',reply_source:`category_${intake}`};
         }
       } else {
-        const promotion = ['promotion','member_promotion'].includes(topic)
+        const phase2 = phase2MyStatusReply(event,env,now);
+        const promotion = !phase2 && ['promotion','member_promotion'].includes(topic)
           ? approvedCategoryReply({...event,message:{...event.message,text:'โปร'}},env,{careBackOctoberReply,now}) : null;
-        decision = ['promotion','member_promotion'].includes(topic)
+        decision = phase2 || (['promotion','member_promotion'].includes(topic)
           ? entryPromotionReply(promotion,topic === 'member_promotion') || ([true,'true'].includes(env.KENJI_LINE_APPROVED_PROMO_ENABLED)
             ? {...silent, handoff_required:true, handoff_reason:'promotion_unverified:per_review'} : silent)
           : (isProtectedAlbumQuestion(event) && publicAlbumDiscoveryReply()) || entryTopicReply(topic) ||
           approvedCategoryReply(event,env,{careBackOctoberReply,now}) ||
-          (controls.model_keyword_auto_reply !== true && await resolveProfileLinkReply(env,event,{now,readAnchor:io.readProfileAnchor})) || silent;
+          (controls.model_keyword_auto_reply !== true && await resolveProfileLinkReply(env,event,{now,readAnchor:io.readProfileAnchor})) || silent);
       }
     } catch { decision = {...silent, guard_reason:'category_resolution_exception'}; }
     if (decision.text || decision.handoff_required) {
