@@ -554,6 +554,10 @@ async function sendReply(env = {}, replyToken = "", replyText = "", replyButton 
   const reply = text(replyToken);
   const answer = text(replyText).slice(0, 1600);
   if (!token || !reply || !answer) return { ok: false, error: "reply_not_configured" };
+  const careBackStatusButton = restrictedReplyCategories(env) &&
+    replyButton?.label === 'เช็กสิทธิ์และต่ออายุ' &&
+    replyButton.uri === 'https://www.mmdbkk.com/member/liff?intent=status&world=public' &&
+    answer.split('\n').at(-1) === replyButton.uri;
   const membershipButton = restrictedReplyCategories(env) && replyButton?.label === 'เปิด My MMD' && [
     'https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=overview',
     'https://miniapp.line.me/2010862595-yT4DCEMc/?intent=renew&view=package',
@@ -566,7 +570,7 @@ async function sendReply(env = {}, replyToken = "", replyText = "", replyButton 
         "content-type": "application/json",
       },
       body: JSON.stringify({ replyToken: reply, messages: [{ type: "text", text: answer,
-        ...(membershipButton ? {quickReply:{items:[{type:'action',action:{type:'uri',label:'เปิด My MMD',uri:replyButton.uri}}]}} : {}),
+        ...((membershipButton || careBackStatusButton) ? {quickReply:{items:[{type:'action',action:{type:'uri',label:replyButton.label,uri:replyButton.uri}}]}} : {}),
         ...([EMS_ALBUMS_URL, GWS_ALBUMS_URL].includes(replyButton?.uri) ? { quickReply: { items: [{ type: "action", action: { type: "uri", label: replyButton.uri === GWS_ALBUMS_URL ? "ดูอัลบั้ม GWs" : "ดูอัลบั้ม EMs", uri: replyButton.uri } }] } } : {}) }] }),
     });
     return response.ok
