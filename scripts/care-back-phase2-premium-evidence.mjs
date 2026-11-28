@@ -16,7 +16,21 @@ function iso(s) {
   return Number.isFinite(+day) && day.toISOString().slice(0, 10) === m[1] ? Date.parse(s) : NaN;
 }
 const fields = r => r?.fields ?? {};
-const norm = s => typeof s === 'string' ? s.trim().toLowerCase().replace(/[^a-z0-9]+/g,'_') : '';
+const norm = value => {
+  const s = typeof value === 'object' && value ? value.name : value;
+  return typeof s === 'string' ? s.trim().toLowerCase().replace(/[^a-z0-9]+/g,'_') : '';
+};
+function paidLowerBound(payment, proof) {
+  const canonical = payment['Payment Date'] || payment.paid_at;
+  const exact = iso(canonical);
+  if (Number.isFinite(exact)) return exact;
+  // Airtable Payment Date and proof paid_at are date-only. Require both verified
+  // sources to agree. Bangkok day start is earlier than UTC day start, so use
+  // that only as a lower bound. Never use it as a confirmation timestamp.
+  if (typeof canonical !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(canonical) ||
+      proof.paid_at !== canonical) return NaN;
+  return iso(canonical + 'T00:00:00+07:00');
+}
 const ref = f => f.payment_ref || f['Payment Reference'] || f.transaction_ref;
 const matches = (rows, pred) => rows.filter(r => pred(fields(r),r));
 const one = (rows, pred) => { const r = matches(rows,pred); return r.length === 1 ? r[0] : null; };
@@ -43,9 +57,9 @@ function evidenceFor(payment, snapshot, member, asOf) {
   const proof = one(snapshot.proofs,f => ref(f) === key && norm(f.status) === 'verified');
   if (!proof || !proof.id || !linkExactly(fields(proof)['MMD — LIFF Renewal Sessions'],renew.id) ||
       !linkExactly(fields(proof).member,member.id)) return review('verified_proof_link_not_unique');
-  const paidAt = iso(p['Payment Date'] || p.paid_at);
+  const paidAt = paidLowerBound(p,fields(proof));
   // Paid time is a lower bound only; the successful journal is the upper bound.
-  // Do not reinterpret date-only values or a late audit as on-time verification.
+  // A day alone or an audit after cutoff never proves on-time verification.
   if (!Number.isFinite(paidAt) || paidAt < START) return review('campaign_lower_bound_unproven');
   if (paidAt >= END) return { status:'skip', reason:'payment_after_campaign' };
   const events = snapshot.audits.flatMap(a => {
@@ -54,7 +68,7 @@ function evidenceFor(payment, snapshot, member, asOf) {
     const after = parse(f['After JSON']);
     const at = iso(f['Created At (ISO)']);
     if (f.Action !== 'payment_review_decision' || f.Target !== 'payment_proof' ||
-        f.Result !== 'success' || f.Reason !== 'approve' || !String(f['Event ID'] || '').startsWith('mmdpr_') ||
+        norm(f.Result) !== 'success' || f.Reason !== 'approve' || !String(f['Event ID'] || '').startsWith('mmdpr_') ||
         !String(f['Source Ref'] || '').startsWith('payment-review:') ||
         before.proof_record_id !== proof.id || before.payment_ref !== key || after.payment_ref !== key ||
         before.payment_stage !== 'membership' || after.payment_stage !== 'membership' ||
