@@ -74,3 +74,16 @@ test('CLI emits only aggregate review and never a candidate or identifier', asyn
     assert.doesNotMatch(output,/recM1|pay_1|U_test|member_1/);
   } finally { await rm(dir,{recursive:true,force:true}); }
 });
+
+test('real date-only schema requires matching proof day and precise on-time audit', () => {
+  const s=fixture('2026-11-30','2026-11-30T16:59:59.999Z');
+  s.proofs[0].fields.paid_at='2026-11-30';
+  s.payments[0].fields['Payment Status']={ name:'Paid' };
+  s.audits[0].fields.Result={ name:'success' };
+  assert.equal(run(s).status,'preview');
+  s.audits[0].fields['Created At (ISO)']='2026-11-30T17:00:00Z';
+  assert.equal(run(s).status,'review');
+  s.audits[0].fields['Created At (ISO)']='2026-11-30T16:59:59.999Z';
+  s.proofs[0].fields.paid_at='2026-11-29';
+  assert.equal(run(s).status,'review');
+});
