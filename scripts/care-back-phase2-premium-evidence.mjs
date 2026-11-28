@@ -126,24 +126,44 @@ export function previewCanonicalPremium90(snapshot, { memberId, asOf, grantState
     ? review('original_confirmation_not_proven_by_cutoff')
     : { status:'skip', reason:'no_qualifying_premium_renewal' };
   const current = ['active','expiring_soon'];
-  const chain = resolved.entitlements
-    .filter(e => e.capability === 'private_premium' && [...current,'pending'].includes(e.lifecycle))
+  const premium = resolved.entitlements
+    .filter(e => e.capability === 'private_premium' &&
+      [...current,'pending','grace','expired'].includes(e.lifecycle))
     .sort((a,b) => Date.parse(a.start_at) - Date.parse(b.start_at));
-  if (!chain.length || !current.includes(chain[0].lifecycle)) return review('canonical_expiry_not_unique');
   const canonicalRow = e => one(rows,f => f.entitlement_id === e.entitlement_id);
+  const paidLink = (r, paidRef) => Boolean(r?.id && paidRef &&
+    linkExactly(fields(r).member,member.id) &&
+    linkExactly(paidTermEvidence.get(paidRef), r.id) &&
+    one(snapshot.entitlements, (_, candidate) => candidate.id === r.id) &&
+    one(snapshot.entitlements, f => ref(f) === paidRef)?.id === r.id);
+  const liveStart = premium.findIndex(e => current.includes(e.lifecycle));
+  if (liveStart < 0) return review('canonical_expiry_not_unique');
+
+  // An approved payment is not proof its earned term was written. Anchor every
+  // qualifying payment to an exact, unique canonical Premium entitlement.
+  // Include an earned historical term past handoff when it still connects to
+  // today's paid chain; never substitute the current (possibly pre-renewal) row.
+  let start = premium.findIndex(e => [...current,'pending'].includes(e.lifecycle));
+  for (const qualifying of evidence) {
+    const paidRef = qualifying.paymentRef;
+    const matches = premium.map((e,i) => ({ i, r:canonicalRow(e) }))
+      .filter(({r}) => r && ref(fields(r)) === paidRef && paidLink(r,paidRef));
+    if (matches.length !== 1) return review('qualifying_earned_term_not_proven');
+    start = Math.min(start,matches[0].i);
+  }
+  const chain = premium.slice(start);
   for (let k=0;k<chain.length;k++) {
     const e=chain[k], r=canonicalRow(e);
     if (!r?.id || !linkExactly(fields(r).member,member.id)) return review('canonical_entitlement_member_link_missing');
-    if (k === 0) continue;
     if (!Number.isFinite(iso(e.start_at)) || !Number.isFinite(iso(e.expire_at)) ||
-        iso(e.start_at) !== iso(chain[k-1].expire_at) || iso(e.expire_at) <= iso(e.start_at)) {
+        iso(e.expire_at) <= iso(e.start_at) ||
+        (k > 0 && iso(e.start_at) !== iso(chain[k-1].expire_at))) {
       return review('paid_term_chain_not_contiguous');
     }
-    const paidRef = ref(fields(r));
-    if (!linkExactly(paidTermEvidence.get(paidRef), r.id) ||
-        !one(snapshot.entitlements, f => ref(f) === paidRef)) return review('paid_successor_not_proven');
+    if (k > 0 && !paidLink(r,ref(fields(r)))) return review('paid_successor_not_proven');
   }
   const terminal=chain.at(-1);
+  if (!terminal || ![...current,'pending'].includes(terminal.lifecycle)) return review('canonical_expiry_not_unique');
   // A diagnostic fingerprint only; do not use it as a storage CAS.
   const fingerprint = createHash('sha256').update(JSON.stringify(chain.map(e => [canonicalRow(e).id,e.entitlement_id,e.start_at,e.expire_at]))).digest('hex');
   const plan = previewPremium90({ memberId, memberState:'premium', grantState, evidence,
