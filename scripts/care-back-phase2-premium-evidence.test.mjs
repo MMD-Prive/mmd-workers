@@ -87,3 +87,23 @@ test('real date-only schema requires matching proof day and precise on-time audi
   s.proofs[0].fields.paid_at='2026-11-29';
   assert.equal(run(s).status,'review');
 });
+
+test('advance renewal targets the proven paid terminal term before, at and after handoff', () => {
+  const s=fixture();
+  const old=s.entitlements[0].fields;
+  const join='2027-06-30T20:00:00+07:00';
+  old.expire_at=join;
+  s.renewals[0].fields['Member Entitlement']=['recE2'];
+  s.entitlements.push(row('recE2',{...old,entitlement_id:'advance_term_2',start_at:join,expire_at:'2029-06-30T20:00:00+07:00',payment_ref:'pay_1'}));
+  for (const now of [asOf,join,'2027-06-30T20:00:01+07:00']) {
+    const p=preview(s,{memberId,asOf:now,grantState:'absent'});
+    assert.equal(p.entitlementId,'advance_term_2');
+    assert.equal(p.after,'2029-09-28T13:00:00.000Z');
+  }
+  const broken=structuredClone(s);
+  broken.renewals[0].fields['Member Entitlement']=['recE1'];
+  assert.equal(run(broken).reason,'paid_successor_not_proven');
+  broken.renewals[0].fields['Member Entitlement']=['recE2'];
+  broken.entitlements[1].fields.start_at='2027-06-30T20:00:01+07:00';
+  assert.equal(run(broken).reason,'paid_term_chain_not_contiguous');
+});
