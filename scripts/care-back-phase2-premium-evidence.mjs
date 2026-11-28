@@ -60,8 +60,7 @@ function evidenceFor(payment, snapshot, member, asOf) {
   const paidAt = paidLowerBound(p,fields(proof));
   // Paid time is a lower bound only; the successful journal is the upper bound.
   // A day alone or an audit after cutoff never proves on-time verification.
-  if (!Number.isFinite(paidAt) || paidAt < START) return review('campaign_lower_bound_unproven');
-  if (paidAt >= END) return { status:'skip', reason:'payment_after_campaign' };
+  if (!Number.isFinite(paidAt)) return review('payment_lower_bound_unproven');
   const events = snapshot.audits.flatMap(a => {
     const f = fields(a);
     const before = parse(f['Before JSON']);
@@ -75,12 +74,17 @@ function evidenceFor(payment, snapshot, member, asOf) {
         after.authority !== 'payments-worker' || after.money_truth_changed !== true ||
         (before.renewal_session_id && before.renewal_session_id !== rf.renewal_session_id) ||
         ![rf.renewal_session_id,rf.payment_intent_session_id].filter(Boolean).includes(after.session_id) ||
-        !Number.isFinite(at) || at < paidAt || at > asOf || at >= END) return [];
+        !Number.isFinite(at) || at < paidAt || at > asOf) return [];
     return [at];
   });
-  if (events.length === 0) return review('original_confirmation_not_proven_by_cutoff');
-  return { status:'qualified', paidTermLinks:rf['Member Entitlement'], evidence:{ memberId:m.member_id, paymentRef:key, action:'renewal', tier:'premium',
-    disposition:'confirmed', authoritative:true, earliestProvenConfirmedAt:new Date(Math.min(...events)).toISOString() } };
+  if (events.length === 0) return paidAt >= END
+    ? { status:'skip', reason:'payment_after_campaign' }
+    : review('original_confirmation_not_proven_by_cutoff');
+  const upperBound = Math.min(...events);
+  return { status:'verified_term', qualifies:paidAt >= START && upperBound < END,
+    timingUncertain:paidAt < END && upperBound >= START && (paidAt < START || upperBound >= END),
+    paidTermLinks:rf['Member Entitlement'], evidence:{ memberId:m.member_id, paymentRef:key, action:'renewal', tier:'premium',
+    disposition:'confirmed', authoritative:true, earliestProvenConfirmedAt:new Date(upperBound).toISOString() } };
 }
 
 // grantState is deliberately a separate repository-owned input. Absence or applied
@@ -111,8 +115,9 @@ export function previewCanonicalPremium90(snapshot, { memberId, asOf, grantState
   for (const p of candidates) {
     if (!one(snapshot.payments, f => ref(f) === ref(fields(p)))) return review('payment_reference_not_unique');
     const outcome = evidenceFor(p,snapshot,member,iso(asOf));
-    if (outcome.status === 'qualified') {
-      evidence.push(outcome.evidence);
+    if (outcome.status === 'verified_term') {
+      if (outcome.qualifies) evidence.push(outcome.evidence);
+      else if (outcome.timingUncertain) needsReview = true;
       paidTermEvidence.set(outcome.evidence.paymentRef, outcome.paidTermLinks);
     }
     else if (outcome.status === 'review') needsReview = true;
@@ -138,7 +143,7 @@ export function previewCanonicalPremium90(snapshot, { memberId, asOf, grantState
     if (!linkExactly(paidTermEvidence.get(paidRef), r.id) ||
         !one(snapshot.entitlements, f => ref(f) === paidRef)) return review('paid_successor_not_proven');
   }
-  const terminal=chain.at(-1), term=canonicalRow(terminal);
+  const terminal=chain.at(-1);
   // A diagnostic fingerprint only; do not use it as a storage CAS.
   const fingerprint = createHash('sha256').update(JSON.stringify(chain.map(e => [canonicalRow(e).id,e.entitlement_id,e.start_at,e.expire_at]))).digest('hex');
   const plan = previewPremium90({ memberId, memberState:'premium', grantState, evidence,
