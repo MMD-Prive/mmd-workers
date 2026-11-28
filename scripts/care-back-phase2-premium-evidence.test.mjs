@@ -13,9 +13,9 @@ function fixture(paidAt='2026-10-29T10:00:00+07:00', confirmed='2026-10-29T12:00
   return { complete:true,
     members:[row('recM1',{ member_id:memberId, line_id:'U_test', 'Membership Tier':'Premium' })],
     payments:[row('recP1',{payment_ref:'pay_1',session_id:'renew_1',payment_stage:'membership',package_code:'premium','Payment Status':'Paid','Verification Status':'Verified','Payment Date':paidAt})],
-    renewals:[row('recR1',{renewal_session_id:'renew_1',line_user_id:'U_test',liff_intent:'renew',requested_package:'premium',renewal_flow_status:'materialized',verified_at:'2026-12-01T00:00:00Z'})],
+    renewals:[row('recR1',{renewal_session_id:'renew_1',line_user_id:'U_test',liff_intent:'renew',requested_package:'premium',renewal_flow_status:'materialized','Member Entitlement':['recE1'],verified_at:'2026-12-01T00:00:00Z'})],
     proofs:[row('recS1',{ payment_ref:'pay_1',status:'verified',verified_at:'2026-12-01', member:['recM1'],'MMD — LIFF Renewal Sessions':['recR1'] })],
-    entitlements:[row('recE1',{entitlement_id:'paid_term_1',member_id:memberId,member:['recM1'],package_code:'premium',access_status:'active',start_at:'2026-10-28T20:00:00+07:00',expire_at:'2029-06-30T20:00:00+07:00'})],
+    entitlements:[row('recE1',{entitlement_id:'paid_term_1',payment_ref:'pay_1',member_id:memberId,member:['recM1'],package_code:'premium',access_status:'active',start_at:'2026-10-28T20:00:00+07:00',expire_at:'2029-06-30T20:00:00+07:00'})],
     audits:[row('recA1',{Action:'payment_review_decision',Target:'payment_proof',Result:'success',Reason:'approve','Event ID':'mmdpr_1','Source Ref':'payment-review:fixture','Created At (ISO)':confirmed,
       'Before JSON':JSON.stringify({proof_record_id:'recS1',payment_ref:'pay_1',payment_stage:'membership',renewal_session_id:'renew_1'}),
       'After JSON':JSON.stringify({authority:'payments-worker',session_id:'renew_1',payment_ref:'pay_1',payment_stage:'membership',money_truth_changed:true})})] };
@@ -93,6 +93,7 @@ test('advance renewal targets the proven paid terminal term before, at and after
   const old=s.entitlements[0].fields;
   const join='2027-06-30T20:00:00+07:00';
   old.expire_at=join;
+  old.payment_ref='prior_paid';
   s.renewals[0].fields['Member Entitlement']=['recE2'];
   s.entitlements.push(row('recE2',{...old,entitlement_id:'advance_term_2',start_at:join,expire_at:'2029-06-30T20:00:00+07:00',payment_ref:'pay_1'}));
   for (const now of [asOf,join,'2027-06-30T20:00:01+07:00']) {
@@ -102,7 +103,7 @@ test('advance renewal targets the proven paid terminal term before, at and after
   }
   const broken=structuredClone(s);
   broken.renewals[0].fields['Member Entitlement']=['recE1'];
-  assert.equal(run(broken).reason,'paid_successor_not_proven');
+  assert.equal(run(broken).reason,'qualifying_earned_term_not_proven');
   broken.renewals[0].fields['Member Entitlement']=['recE2'];
   broken.entitlements[1].fields.start_at='2027-06-30T20:00:01+07:00';
   assert.equal(run(broken).reason,'paid_term_chain_not_contiguous');
@@ -130,10 +131,30 @@ test('an independently verified December successor changes the target but does n
   assert.equal(p.entitlementId,'dec_term_2');
   assert.equal(p.qualifiedPayments,1);
   assert.equal(p.after,'2031-09-28T13:00:00.000Z');
+  for (const laterAsOf of ['2029-07-01T00:00:00Z','2029-07-20T00:00:00Z']) {
+    assert.equal(preview(s,{...options,asOf:laterAsOf}).entitlementId,'dec_term_2');
+  }
   assert.equal(preview(s,{...options,grantState:'applied'}).reason,'already_applied');
   const unsupported=structuredClone(s);unsupported.audits.pop();
   assert.equal(preview(unsupported,options).reason,'paid_successor_not_proven');
   const decemberOnly=structuredClone(s);
   for(const [table] of spec) decemberOnly[table].shift();
   assert.equal(preview(decemberOnly,options).reason,'no_qualifying_premium_renewal');
+});
+
+test('verified payment with missing, dangling, unrelated or duplicate earned term stays in review', () => {
+  const prior = fixture();
+  prior.entitlements[0].fields.payment_ref = 'prior_paid';
+  prior.renewals[0].fields.renewal_flow_status = 'pending';
+  delete prior.renewals[0].fields['Member Entitlement'];
+  assert.equal(run(prior).reason,'qualifying_earned_term_not_proven');
+  prior.renewals[0].fields['Member Entitlement'] = ['recMissing'];
+  assert.equal(run(prior).reason,'qualifying_earned_term_not_proven');
+  prior.renewals[0].fields['Member Entitlement'] = ['recE1'];
+  assert.equal(run(prior).reason,'qualifying_earned_term_not_proven');
+  const earned=fixture();
+  assert.equal(run(earned).entitlementId,'paid_term_1');
+  earned.entitlements.push(row('recOtherMember',{...earned.entitlements[0].fields,
+    entitlement_id:'unrelated_term',member_id:'unrelated',member:['recM2']}));
+  assert.equal(run(earned).reason,'qualifying_earned_term_not_proven');
 });
