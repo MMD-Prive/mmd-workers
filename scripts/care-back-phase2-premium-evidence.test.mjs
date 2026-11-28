@@ -158,3 +158,35 @@ test('verified payment with missing, dangling, unrelated or duplicate earned ter
     entitlement_id:'unrelated_term',member_id:'unrelated',member:['recM2']}));
   assert.equal(run(earned).reason,'qualifying_earned_term_not_proven');
 });
+
+test('an explicit proof Payment link cannot name an unrelated or mixed row', () => {
+  const s=fixture();
+  s.payments.push(row('recOther',{ 'Payment Reference':'pay_other' }));
+  const f=s.proofs[0].fields;
+  for(const good of [undefined,[],['recP1'],[{id:'recP1'}]]) {
+    f.payment=good;
+    assert.equal(run(s).status,'preview');
+  }
+  for(const bad of [['recOther'],['recP1','recOther'],['recP1','recP1'],[{id:'recOther'}],'recP1']) {
+    f.payment=bad;
+    assert.equal(run(s).reason,'verified_proof_payment_link_conflict');
+  }
+});
+test('known canonical Payment, proof and renewal amounts must agree in satang', () => {
+  const s=fixture();
+  const [p,f,r]=[s.payments[0].fields,s.proofs[0].fields,s.renewals[0].fields];
+  p.Amount=2500; f.amount_thb='2500.00'; r.renewal_amount_thb=2500;
+  assert.equal(run(s).status,'preview');
+  f.amount_thb=2499;
+  assert.equal(run(s).reason,'verified_renewal_amount_conflict');
+  f.amount_thb=2500; r.renewal_amount_thb=2499;
+  assert.equal(run(s).reason,'verified_renewal_amount_conflict');
+  delete p.Amount;
+  assert.equal(run(s).reason,'verified_renewal_amount_conflict');
+  delete r.renewal_amount_thb;
+  assert.equal(run(s).status,'preview');
+  for (const invalid of [false,0,-1,'2,500','2500.005',2500.005]) {
+    f.amount_thb=invalid;
+    assert.equal(run(s).reason,'verified_renewal_amount_conflict');
+  }
+});
