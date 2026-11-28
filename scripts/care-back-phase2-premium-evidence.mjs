@@ -38,6 +38,18 @@ function parse(s) {
   try { const x = JSON.parse(s); return x && typeof x === 'object' && !Array.isArray(x) ? x : {}; } catch { return {}; }
 }
 function linkExactly(ids, id) { return Array.isArray(ids) && ids.length === 1 && ids[0] === id; }
+const provided = value => value != null && !(typeof value === 'string' && !value.trim());
+function amountSatang(value) {
+  if (!['number','string'].includes(typeof value)) return NaN;
+  if (typeof value === 'string' && !/^\d+(?:\.\d{1,2})?$/.test(value.trim())) return NaN;
+  const amount = Number(value);
+  const satang = Math.round(amount * 100);
+  return satang > 0 && Number.isSafeInteger(satang) && Math.abs(amount * 100 - satang) < 1e-8 ? satang : NaN;
+}
+function consistentAmounts(...amounts) {
+  const known = amounts.filter(provided).map(amountSatang);
+  return known.every(Number.isFinite) && new Set(known).size <= 1;
+}
 
 function evidenceFor(payment, snapshot, member, asOf) {
   const p = fields(payment);
@@ -57,7 +69,19 @@ function evidenceFor(payment, snapshot, member, asOf) {
   const proof = one(snapshot.proofs,f => ref(f) === key && norm(f.status) === 'verified');
   if (!proof || !proof.id || !linkExactly(fields(proof)['MMD — LIFF Renewal Sessions'],renew.id) ||
       !linkExactly(fields(proof).member,member.id)) return review('verified_proof_link_not_unique');
-  const paidAt = paidLowerBound(p,fields(proof));
+  const pf = fields(proof);
+  const links = pf.payment;
+  // Older snapshots may omit the reciprocal projection. Its absence does not
+  // prove linkage, but a populated link must identify the canonical row only.
+  if (provided(links) && (!Array.isArray(links) || (links.length &&
+      (!payment.id || !linkExactly(links.map(link => typeof link === 'string' ? link : link?.id),payment.id) ||
+       !one(snapshot.payments, (_, row) => row.id === payment.id))))) {
+    return { status:'conflict', reason:'verified_proof_payment_link_conflict' };
+  }
+  if (!consistentAmounts(p.Amount,pf.amount_thb,rf.renewal_amount_thb)) {
+    return { status:'conflict', reason:'verified_renewal_amount_conflict' };
+  }
+  const paidAt = paidLowerBound(p,pf);
   // Paid time is a lower bound only; the successful journal is the upper bound.
   // A day alone or an audit after cutoff never proves on-time verification.
   if (!Number.isFinite(paidAt)) return review('payment_lower_bound_unproven');
@@ -115,6 +139,7 @@ export function previewCanonicalPremium90(snapshot, { memberId, asOf, grantState
   for (const p of candidates) {
     if (!one(snapshot.payments, f => ref(f) === ref(fields(p)))) return review('payment_reference_not_unique');
     const outcome = evidenceFor(p,snapshot,member,iso(asOf));
+    if (outcome.status === 'conflict') return review(outcome.reason);
     if (outcome.status === 'verified_term') {
       if (outcome.qualifies) evidence.push(outcome.evidence);
       else if (outcome.timingUncertain) needsReview = true;
