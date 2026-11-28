@@ -79,7 +79,7 @@ function evidenceFor(payment, snapshot, member, asOf) {
     return [at];
   });
   if (events.length === 0) return review('original_confirmation_not_proven_by_cutoff');
-  return { status:'qualified', evidence:{ memberId:m.member_id, paymentRef:key, action:'renewal', tier:'premium',
+  return { status:'qualified', paidTermLinks:rf['Member Entitlement'], evidence:{ memberId:m.member_id, paymentRef:key, action:'renewal', tier:'premium',
     disposition:'confirmed', authoritative:true, earliestProvenConfirmedAt:new Date(Math.min(...events)).toISOString() } };
 }
 
@@ -100,31 +100,50 @@ export function previewCanonicalPremium90(snapshot, { memberId, asOf, grantState
   if (resolved.member_blocked || ['blocked','suspended','revoked'].includes(norm(mf['Membership Status'] || mf.status))) return { status:'skip', reason:'membership_not_adjustable' };
   if (['vip','svip','blackcard','black_card'].includes(norm(mf['Membership Tier'] || mf.tier)) ||
       resolved.access.protected_allowlist_required) return { status:'skip', reason:'membership_not_adjustable' };
-  const effective = resolved.entitlements.filter(e => e.capability === 'private_premium' && ['active','expiring_soon'].includes(e.lifecycle));
-  if (effective.length !== 1) return review('canonical_expiry_not_unique');
-  const term = one(rows,f => f.entitlement_id === effective[0].entitlement_id);
-  if (!term?.id || !linkExactly(fields(term).member,member.id)) return review('canonical_entitlement_member_link_missing');
-  // This source fingerprint can compare preview inputs; it is not a storage CAS.
-  const fingerprint = createHash('sha256').update(JSON.stringify([term.id, effective[0].entitlement_id, effective[0].start_at, effective[0].expire_at])).digest('hex');
   const ownRenewalSessions = new Set(matches(snapshot.renewals,f => f.line_user_id === line && norm(f.liff_intent) === 'renew').flatMap(r => [fields(r).renewal_session_id,fields(r).payment_intent_session_id].filter(Boolean)));
   const candidates = matches(snapshot.payments,p => ownRenewalSessions.has(p.session_id || p['Session ID']) &&
     norm(p['Payment Status']) === 'paid' && norm(p['Verification Status']) === 'verified' &&
     norm(p.payment_stage || p.payment_type || p.stage) === 'membership' &&
     norm(p.package_code || p['Package Code'] || p.package) === 'premium');
   const evidence = [];
+  const paidTermEvidence = new Map();
   let needsReview = false;
   for (const p of candidates) {
     if (!one(snapshot.payments, f => ref(f) === ref(fields(p)))) return review('payment_reference_not_unique');
     const outcome = evidenceFor(p,snapshot,member,iso(asOf));
-    if (outcome.status === 'qualified') evidence.push(outcome.evidence);
+    if (outcome.status === 'qualified') {
+      evidence.push(outcome.evidence);
+      paidTermEvidence.set(outcome.evidence.paymentRef, outcome.paidTermLinks);
+    }
     else if (outcome.status === 'review') needsReview = true;
   }
   if (!evidence.length) return needsReview
     ? review('original_confirmation_not_proven_by_cutoff')
     : { status:'skip', reason:'no_qualifying_premium_renewal' };
+  const current = ['active','expiring_soon'];
+  const chain = resolved.entitlements
+    .filter(e => e.capability === 'private_premium' && [...current,'pending'].includes(e.lifecycle))
+    .sort((a,b) => Date.parse(a.start_at) - Date.parse(b.start_at));
+  if (!chain.length || !current.includes(chain[0].lifecycle)) return review('canonical_expiry_not_unique');
+  const canonicalRow = e => one(rows,f => f.entitlement_id === e.entitlement_id);
+  for (let k=0;k<chain.length;k++) {
+    const e=chain[k], r=canonicalRow(e);
+    if (!r?.id || !linkExactly(fields(r).member,member.id)) return review('canonical_entitlement_member_link_missing');
+    if (k === 0) continue;
+    if (!Number.isFinite(iso(e.start_at)) || !Number.isFinite(iso(e.expire_at)) ||
+        iso(e.start_at) !== iso(chain[k-1].expire_at) || iso(e.expire_at) <= iso(e.start_at)) {
+      return review('paid_term_chain_not_contiguous');
+    }
+    const paidRef = ref(fields(r));
+    if (!linkExactly(paidTermEvidence.get(paidRef), r.id) ||
+        !one(snapshot.entitlements, f => ref(f) === paidRef)) return review('paid_successor_not_proven');
+  }
+  const terminal=chain.at(-1), term=canonicalRow(terminal);
+  // A diagnostic fingerprint only; do not use it as a storage CAS.
+  const fingerprint = createHash('sha256').update(JSON.stringify(chain.map(e => [canonicalRow(e).id,e.entitlement_id,e.start_at,e.expire_at]))).digest('hex');
   const plan = previewPremium90({ memberId, memberState:'premium', grantState, evidence,
-    entitlement:{id:effective[0].entitlement_id, memberId, tier:'premium', uniqueCurrentTerm:true,
-      expireAt:effective[0].expire_at, revision:fingerprint} });
+    entitlement:{id:terminal.entitlement_id, memberId, tier:'premium', uniqueCurrentTerm:true,
+      expireAt:terminal.expire_at, revision:fingerprint} });
   return plan;
 }
 
