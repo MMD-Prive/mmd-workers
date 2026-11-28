@@ -107,3 +107,33 @@ test('advance renewal targets the proven paid terminal term before, at and after
   broken.entitlements[1].fields.start_at='2027-06-30T20:00:01+07:00';
   assert.equal(run(broken).reason,'paid_term_chain_not_contiguous');
 });
+
+test('an independently verified December successor changes the target but does not earn a second grant', () => {
+  const s=fixture();
+  const join='2029-06-30T20:00:00+07:00';
+  const later=fixture('2026-12-02T10:00:00+07:00','2026-12-02T12:00:00+07:00');
+  const spec=[
+    ['payments','recP1','recP2'],['renewals','recR1','recR2'],
+    ['proofs','recS1','recS2'],['audits','recA1','recA2']
+  ];
+  for(const [table,from,to] of spec){
+    const json=JSON.stringify(later[table][0]).replaceAll(from,to)
+      .replaceAll('renew_1','renew_2').replaceAll('pay_1','pay_2')
+      .replaceAll('recR1','recR2').replaceAll('recS1','recS2');
+    s[table].push(JSON.parse(json));
+  }
+  s.renewals[1].fields['Member Entitlement']=['recE2'];
+  s.entitlements.push(row('recE2',{...s.entitlements[0].fields,entitlement_id:'dec_term_2',
+    start_at:join,expire_at:'2031-06-30T20:00:00+07:00',payment_ref:'pay_2'}));
+  const options={memberId,asOf:'2026-12-03T00:00:00Z',grantState:'absent'};
+  const p=preview(s,options);
+  assert.equal(p.entitlementId,'dec_term_2');
+  assert.equal(p.qualifiedPayments,1);
+  assert.equal(p.after,'2031-09-28T13:00:00.000Z');
+  assert.equal(preview(s,{...options,grantState:'applied'}).reason,'already_applied');
+  const unsupported=structuredClone(s);unsupported.audits.pop();
+  assert.equal(preview(unsupported,options).reason,'paid_successor_not_proven');
+  const decemberOnly=structuredClone(s);
+  for(const [table] of spec) decemberOnly[table].shift();
+  assert.equal(preview(decemberOnly,options).reason,'no_qualifying_premium_renewal');
+});
